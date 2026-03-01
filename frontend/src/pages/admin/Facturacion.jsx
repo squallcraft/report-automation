@@ -30,21 +30,19 @@ export default function Facturacion() {
   const [tab, setTab] = useState('facturacion')
   const reqId = useRef(0)
 
-  const cargar = (silencioso = false) => {
-    const id = ++reqId.current
-    if (!silencioso) setLoading(true)
-    api.get('/facturacion/tabla', { params: { mes, anio } })
-      .then(res => {
-        if (id !== reqId.current) return
-        setData(res.data)
-      })
-      .catch(() => { if (id === reqId.current) toast.error('Error cargando facturación') })
-      .finally(() => { if (id === reqId.current) setLoading(false) })
+  // Recarga silenciosa después de un save — sin reqId para no cancelar respuestas válidas
+  const recargar = async () => {
+    try {
+      const res = await api.get('/facturacion/tabla', { params: { mes, anio } })
+      setData(res.data)
+    } catch {
+      toast.error('Error cargando facturación')
+    }
   }
 
+  // Carga inicial y al cambiar mes/anio — usa reqId para cancelar requests obsoletos
   useEffect(() => {
-    reqId.current++
-    const id = reqId.current
+    const id = ++reqId.current
     setLoading(true)
     setSelected(new Set())
     api.get('/facturacion/tabla', { params: { mes, anio } })
@@ -77,7 +75,7 @@ export default function Facturacion() {
   const updateEstado = async (sellerId, semana, estado) => {
     try {
       await api.put(`/facturacion/pago-semana/${sellerId}`, { estado }, { params: { semana, mes, anio } })
-      cargar(true)
+      recargar()
     } catch { toast.error('Error actualizando estado') }
   }
 
@@ -94,7 +92,7 @@ export default function Facturacion() {
       }, { params: { semana: editCell.semana, mes, anio } })
       toast.success('Monto actualizado')
       setEditCell(null)
-      cargar(true)
+      recargar()
     } catch { toast.error('Error guardando monto') }
   }
 
@@ -105,7 +103,7 @@ export default function Facturacion() {
       toast.success(`${res.data.creadas} factura(s) generada(s)`)
       res.data.errores?.forEach(e => toast.error(e))
       setShowFacturar(false)
-      cargar(true)
+      recargar()
     } catch { toast.error('Error generando facturas') }
   }
 
@@ -285,8 +283,7 @@ export default function Facturacion() {
         </div>
       )}
 
-      {showFacturar && (
-        <Modal title="Confirmar Facturación" onClose={() => setShowFacturar(false)}>
+      <Modal open={showFacturar} title="Confirmar Facturación" onClose={() => setShowFacturar(false)}>
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
               Se generarán facturas para <strong>{selected.size}</strong> sellers del mes de <strong>{MESES[mes]} {anio}</strong>.
@@ -300,7 +297,6 @@ export default function Facturacion() {
             </div>
           </div>
         </Modal>
-      )}
     </div>
   )
 }
