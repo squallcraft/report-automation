@@ -1,0 +1,76 @@
+from typing import Optional, List
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.auth import require_admin, require_admin_or_administracion
+from app.models import AjusteLiquidacion, Seller, Driver, TipoEntidadEnum
+from app.schemas import AjusteCreate, AjusteOut
+
+router = APIRouter(prefix="/ajustes", tags=["Ajustes de Liquidación"])
+
+
+def _enrich_ajuste(a, db) -> dict:
+    data = {col.name: getattr(a, col.name) for col in a.__table__.columns}
+    if a.tipo == TipoEntidadEnum.SELLER:
+        entidad = db.query(Seller).get(a.entidad_id)
+        data["entidad_nombre"] = entidad.nombre if entidad else "—"
+    else:
+        entidad = db.query(Driver).get(a.entidad_id)
+        data["entidad_nombre"] = entidad.nombre if entidad else "—"
+    return data
+
+
+@router.get("", response_model=List[AjusteOut])
+def listar_ajustes(
+    semana: Optional[int] = None,
+    mes: Optional[int] = None,
+    anio: Optional[int] = None,
+    tipo: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    query = db.query(AjusteLiquidacion)
+    if semana is not None:
+        query = query.filter(AjusteLiquidacion.semana == semana)
+    if mes is not None:
+        query = query.filter(AjusteLiquidacion.mes == mes)
+    if anio is not None:
+        query = query.filter(AjusteLiquidacion.anio == anio)
+    if tipo:
+        query = query.filter(AjusteLiquidacion.tipo == tipo)
+    ajustes = query.order_by(AjusteLiquidacion.created_at.desc()).all()
+    return [_enrich_ajuste(a, db) for a in ajustes]
+
+
+@router.post("", response_model=AjusteOut, status_code=201)
+def crear_ajuste(
+    data: AjusteCreate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    if data.tipo == TipoEntidadEnum.SELLER:
+        entidad = db.query(Seller).get(data.entidad_id)
+        if not entidad:
+            raise HTTPException(status_code=404, detail="Seller no encontrado")
+    else:
+        entidad = db.query(Driver).get(data.entidad_id)
+        if not entidad:
+            raise HTTPException(status_code=404, detail="Driver no encontrado")
+
+    ajuste = AjusteLiquidacion(**data.model_dump(), creado_por=admin["nombre"])
+    db.add(ajuste)
+    db.commit()
+    db.refresh(ajuste)
+    return ajuste
+
+
+@router.delete("/{ajuste_id}")
+def eliminar_ajuste(ajuste_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    ajuste = db.query(AjusteLiquidacion).get(ajuste_id)
+    if not ajuste:
+        raise HTTPException(status_code=404, detail="Ajuste no encontrado")
+    db.delete(ajuste)
+    db.commit()
+    return {"message": "Ajuste eliminado"}

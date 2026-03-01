@@ -1,0 +1,25 @@
+### Backend ###
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/venv/
+backend/.venv/
+backend/ecourier.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/.env
+
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+
+### Docker ###
+*.log
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Environment ###
+.env
+!.env.example

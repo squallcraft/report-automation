@@ -1,0 +1,20 @@
+from typing import List
+
+from pydantic_settings import BaseSettings
+from functools import lru_cache
+
+
+class Settings(BaseSettings):
+    DATABASE_URL: str = "sqlite:///./ecourier.db"
+    SECRET_KEY: str = "cambiar-en-produccion-super-secreto-2026"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    UPLOAD_DIR: str = "uploads"
+    CORS_ORIGINS: List[str] = ["http://localhost:5173"]
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

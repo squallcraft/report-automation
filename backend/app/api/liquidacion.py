@@ -1,0 +1,615 @@
+from typing import Optional, List
+
+from datetime import datetime, timezone, date
+from collections import defaultdict
+import io
+import zipfile
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
+
+from app.database import get_db
+from app.auth import require_admin, require_admin_or_administracion, get_current_user
+from app.models import (
+    PeriodoLiquidacion, EstadoLiquidacionEnum,
+    Envio, Seller, Driver, Retiro, AjusteLiquidacion,
+    TipoEntidadEnum, EmpresaEnum, ProductoConExtra,
+)
+from app.services.calendario import get_dates_for_week
+from app.schemas import (
+    LiquidacionSellerOut, LiquidacionDriverOut, RentabilidadSellerOut,
+    PeriodoOut, PeriodoUpdate,
+)
+from app.services.liquidacion import (
+    calcular_liquidacion_sellers, calcular_liquidacion_drivers, calcular_rentabilidad,
+)
+from app.services.pdf_generator import generar_pdf_seller, generar_pdf_driver
+
+router = APIRouter(prefix="/liquidacion", tags=["Liquidación"])
+
+
+def _get_or_create_periodo(db: Session, semana: int, mes: int, anio: int) -> PeriodoLiquidacion:
+    periodo = db.query(PeriodoLiquidacion).filter(
+        PeriodoLiquidacion.semana == semana,
+        PeriodoLiquidacion.mes == mes,
+        PeriodoLiquidacion.anio == anio,
+    ).first()
+    if not periodo:
+        periodo = PeriodoLiquidacion(semana=semana, mes=mes, anio=anio)
+        db.add(periodo)
+        db.flush()
+    return periodo
+
+
+@router.get("/sellers", response_model=List[LiquidacionSellerOut])
+def liquidacion_sellers(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    periodo = _get_or_create_periodo(db, semana, mes, anio)
+    if periodo.snapshot_sellers:
+        return periodo.snapshot_sellers
+
+    resultado = calcular_liquidacion_sellers(db, semana, mes, anio)
+    periodo.snapshot_sellers = resultado
+    flag_modified(periodo, "snapshot_sellers")
+    db.commit()
+    return resultado
+
+
+@router.get("/drivers", response_model=List[LiquidacionDriverOut])
+def liquidacion_drivers(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    periodo = _get_or_create_periodo(db, semana, mes, anio)
+    if periodo.snapshot_drivers:
+        return periodo.snapshot_drivers
+
+    resultado = calcular_liquidacion_drivers(db, semana, mes, anio)
+    periodo.snapshot_drivers = resultado
+    flag_modified(periodo, "snapshot_drivers")
+    db.commit()
+    return resultado
+
+
+@router.get("/rentabilidad", response_model=List[RentabilidadSellerOut])
+def rentabilidad(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    periodo = _get_or_create_periodo(db, semana, mes, anio)
+    if periodo.snapshot_rentabilidad:
+        return periodo.snapshot_rentabilidad
+
+    resultado = calcular_rentabilidad(db, semana, mes, anio)
+    periodo.snapshot_rentabilidad = resultado
+    flag_modified(periodo, "snapshot_rentabilidad")
+    db.commit()
+    return resultado
+
+
+@router.post("/recalcular")
+def recalcular_liquidacion(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Fuerza recálculo de la liquidación y actualiza los snapshots."""
+    periodo = _get_or_create_periodo(db, semana, mes, anio)
+
+    periodo.snapshot_sellers = calcular_liquidacion_sellers(db, semana, mes, anio)
+    periodo.snapshot_drivers = calcular_liquidacion_drivers(db, semana, mes, anio)
+    periodo.snapshot_rentabilidad = calcular_rentabilidad(db, semana, mes, anio)
+    flag_modified(periodo, "snapshot_sellers")
+    flag_modified(periodo, "snapshot_drivers")
+    flag_modified(periodo, "snapshot_rentabilidad")
+    db.commit()
+
+    return {
+        "message": "Liquidación recalculada",
+        "sellers": len(periodo.snapshot_sellers),
+        "drivers": len(periodo.snapshot_drivers),
+    }
+
+
+@router.get("/pdf/seller/{seller_id}")
+def descargar_pdf_seller(
+    seller_id: int,
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    try:
+        pdf_bytes = generar_pdf_seller(db, seller_id, semana, mes, anio)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=liquidacion_seller_{seller_id}_S{semana}.pdf"},
+    )
+
+
+@router.get("/pdf/driver/{driver_id}")
+def descargar_pdf_driver(
+    driver_id: int,
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    try:
+        pdf_bytes = generar_pdf_driver(db, driver_id, semana, mes, anio)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=liquidacion_driver_{driver_id}_S{semana}.pdf"},
+    )
+
+
+# ── Detalle ──
+
+def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller no encontrado")
+
+    weekly = {}
+    for s in range(1, 6):
+        envios = db.query(Envio).filter(
+            Envio.seller_id == seller_id, Envio.semana == s,
+            Envio.mes == mes, Envio.anio == anio,
+        ).all()
+        retiros_q = db.query(Retiro).filter(
+            Retiro.seller_id == seller_id, Retiro.semana == s,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        total_retiros = 0
+        if seller.tiene_retiro and not seller.usa_pickup and envios:
+            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
+                total_retiros = sum(r.tarifa_seller for r in retiros_q)
+
+        ajustes = db.query(AjusteLiquidacion).filter(
+            AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
+            AjusteLiquidacion.entidad_id == seller_id,
+            AjusteLiquidacion.semana == s,
+            AjusteLiquidacion.mes == mes,
+            AjusteLiquidacion.anio == anio,
+        ).all()
+
+        weekly[s] = {
+            "monto": sum(e.cobro_seller + e.cobro_extra_manual for e in envios),
+            "envios": len(envios),
+            "bultos_extra": sum(e.extra_producto_seller for e in envios),
+            "retiros": total_retiros,
+            "peso_extra": sum(e.extra_comuna_seller for e in envios),
+            "ajustes": sum(a.monto for a in ajustes),
+        }
+
+    return {
+        "nombre": seller.nombre,
+        "empresa": seller.empresa or "",
+        "weekly": weekly,
+    }
+
+
+def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
+    driver = db.get(Driver, driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+
+    weekly = {}
+    for s in range(1, 6):
+        envios = db.query(Envio).filter(
+            Envio.driver_id == driver_id, Envio.semana == s,
+            Envio.mes == mes, Envio.anio == anio,
+        ).all()
+        retiros_q = db.query(Retiro).filter(
+            Retiro.driver_id == driver_id, Retiro.semana == s,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        normal = [e for e in envios if e.empresa in (None, EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value)]
+        oviedo = [e for e in envios if e.empresa in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value)]
+        tercerizado = [e for e in envios if e.empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value)]
+
+        ajustes = db.query(AjusteLiquidacion).filter(
+            AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
+            AjusteLiquidacion.entidad_id == driver_id,
+            AjusteLiquidacion.semana == s,
+            AjusteLiquidacion.mes == mes,
+            AjusteLiquidacion.anio == anio,
+        ).all()
+        bonif = sum(a.monto for a in ajustes if a.monto > 0)
+        desc = sum(a.monto for a in ajustes if a.monto < 0)
+
+        weekly[s] = {
+            "normal_count": len(normal),
+            "normal_total": sum(e.costo_driver + e.pago_extra_manual for e in normal),
+            "oviedo_count": len(oviedo),
+            "oviedo_total": sum(e.costo_driver + e.pago_extra_manual for e in oviedo),
+            "tercerizado_count": len(tercerizado),
+            "tercerizado_total": sum(e.costo_driver + e.pago_extra_manual for e in tercerizado),
+            "comuna": sum(e.extra_comuna_driver for e in envios),
+            "bultos_extra": sum(e.extra_producto_driver for e in envios),
+            "retiros": sum(r.tarifa_driver for r in retiros_q),
+            "bonificaciones": bonif,
+            "descuentos": desc,
+            "envios": len(envios),
+        }
+
+    return {
+        "nombre": driver.nombre,
+        "tarifa_ecourier": driver.tarifa_ecourier,
+        "tarifa_oviedo": driver.tarifa_oviedo,
+        "tarifa_tercerizado": driver.tarifa_tercerizado,
+        "weekly": weekly,
+    }
+
+
+def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None):
+    all_dates = get_dates_for_week(db, semana, mes, anio) if db else []
+
+    daily_map = {}
+    for d in all_dates:
+        daily_map[d] = {
+            "fecha": str(d),
+            "envios": 0,
+            "bultos_extra": 0,
+            "retiros": 0,
+            "peso_extra": 0,
+            "monto": 0,
+        }
+
+    for e in envios_list:
+        d = e.fecha_entrega
+        if d not in daily_map:
+            daily_map[d] = {"fecha": str(d), "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0}
+        daily_map[d]["envios"] += 1
+        daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
+        daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
+        daily_map[d]["monto"] += e.cobro_seller if is_seller else e.costo_driver
+
+    for r in retiros_list:
+        d = r.fecha
+        if d in daily_map:
+            daily_map[d]["retiros"] += r.tarifa_seller if is_seller else r.tarifa_driver
+
+    return sorted(daily_map.values(), key=lambda x: x["fecha"])
+
+
+def _productos_envios(db: Session, envios_list):
+    codigos = {e.codigo_producto for e in envios_list if e.codigo_producto}
+    if not codigos:
+        return []
+    productos = {p.codigo_mlc: p for p in db.query(ProductoConExtra).filter(ProductoConExtra.codigo_mlc.in_(codigos)).all()}
+    counter = defaultdict(int)
+    for e in envios_list:
+        if e.codigo_producto:
+            counter[e.codigo_producto] += 1
+    result = []
+    for cod, cnt in sorted(counter.items(), key=lambda x: -x[1]):
+        p = productos.get(cod)
+        extra_s = p.extra_seller if p else 0
+        extra_d = p.extra_driver if p else 0
+        if extra_s > 0 or extra_d > 0:
+            result.append({
+                "codigo_mlc": cod,
+                "descripcion": p.descripcion if p else "",
+                "extra_seller": extra_s,
+                "extra_driver": extra_d,
+                "cantidad": cnt,
+            })
+    return result
+
+
+@router.get("/detalle/seller/{seller_id}")
+def detalle_seller(
+    seller_id: int,
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    detail = _seller_detail(db, seller_id, mes, anio)
+    envios_semana = db.query(Envio).filter(
+        Envio.seller_id == seller_id, Envio.semana == semana,
+        Envio.mes == mes, Envio.anio == anio,
+    ).order_by(Envio.fecha_entrega).all()
+    retiros_semana = db.query(Retiro).filter(
+        Retiro.seller_id == seller_id, Retiro.semana == semana,
+        Retiro.mes == mes, Retiro.anio == anio,
+    ).all()
+    detail["daily"] = _daily_breakdown(
+        envios_semana, retiros_semana,
+        "extra_producto_seller", "extra_comuna_seller",
+        semana, mes, anio, is_seller=True, db=db,
+    )
+    detail["productos"] = _productos_envios(db, envios_semana)
+    return detail
+
+
+@router.get("/detalle/driver/{driver_id}")
+def detalle_driver(
+    driver_id: int,
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    detail = _driver_detail(db, driver_id, mes, anio)
+    envios_semana = db.query(Envio).filter(
+        Envio.driver_id == driver_id, Envio.semana == semana,
+        Envio.mes == mes, Envio.anio == anio,
+    ).order_by(Envio.fecha_entrega).all()
+    retiros_semana = db.query(Retiro).filter(
+        Retiro.driver_id == driver_id, Retiro.semana == semana,
+        Retiro.mes == mes, Retiro.anio == anio,
+    ).all()
+    detail["daily"] = _daily_breakdown(
+        envios_semana, retiros_semana,
+        "extra_producto_driver", "extra_comuna_driver",
+        semana, mes, anio, is_seller=False, db=db,
+    )
+    detail["productos"] = _productos_envios(db, envios_semana)
+    return detail
+
+
+# ── Exportar envíos a Excel ──
+
+@router.get("/exportar/envios")
+def exportar_envios(
+    seller_id: Optional[int] = None,
+    driver_id: Optional[int] = None,
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    query = db.query(Envio).filter(Envio.semana == semana, Envio.mes == mes, Envio.anio == anio)
+    if seller_id:
+        query = query.filter(Envio.seller_id == seller_id)
+    if driver_id:
+        query = query.filter(Envio.driver_id == driver_id)
+    envios = query.order_by(Envio.fecha_entrega).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Envíos"
+
+    headers = [
+        "Fecha Entrega", "Fecha Carga", "Tracking", "Seller", "Driver",
+        "Comuna", "Dirección", "Bultos", "Descripción Producto", "Código MLC",
+        "Costo Orden", "Cobro Seller", "Extra Prod. Seller", "Extra Com. Seller",
+        "Extra Manual Seller", "Pago Driver", "Extra Prod. Driver", "Extra Com. Driver",
+        "Extra Manual Driver", "Empresa", "Ruta",
+    ]
+    hfont = Font(bold=True, color="FFFFFF", size=10)
+    hfill = PatternFill(start_color="2B6CB0", end_color="2B6CB0", fill_type="solid")
+    thin = Border(
+        left=Side(style="thin", color="D0D0D0"), right=Side(style="thin", color="D0D0D0"),
+        top=Side(style="thin", color="D0D0D0"), bottom=Side(style="thin", color="D0D0D0"),
+    )
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=i, value=h)
+        c.font = hfont
+        c.fill = hfill
+        c.border = thin
+
+    for idx, e in enumerate(envios, 2):
+        seller = db.get(Seller, e.seller_id) if e.seller_id else None
+        driver = db.get(Driver, e.driver_id) if e.driver_id else None
+        row = [
+            str(e.fecha_entrega) if e.fecha_entrega else "",
+            str(e.fecha_carga) if e.fecha_carga else "",
+            e.tracking_id or "",
+            seller.nombre if seller else (e.seller_nombre_raw or ""),
+            driver.nombre if driver else (e.driver_nombre_raw or ""),
+            e.comuna or "",
+            e.direccion or "",
+            e.bultos,
+            e.descripcion_producto or "",
+            e.codigo_producto or "",
+            e.costo_orden,
+            e.cobro_seller,
+            e.extra_producto_seller,
+            e.extra_comuna_seller,
+            e.cobro_extra_manual,
+            e.costo_driver,
+            e.extra_producto_driver,
+            e.extra_comuna_driver,
+            e.pago_extra_manual,
+            e.empresa or "",
+            e.ruta_nombre or "",
+        ]
+        for ci, v in enumerate(row, 1):
+            c = ws.cell(row=idx, column=ci, value=v)
+            c.border = thin
+
+    ws.auto_filter.ref = f"A1:{chr(64 + len(headers))}1"
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    name = "envios"
+    if seller_id:
+        s = db.get(Seller, seller_id)
+        name = f"envios_{s.nombre}" if s else name
+    elif driver_id:
+        d = db.get(Driver, driver_id)
+        name = f"envios_{d.nombre}" if d else name
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={name}_S{semana}_M{mes}_{anio}.xlsx"},
+    )
+
+
+# ── ZIP masivo de PDFs ──
+
+@router.get("/zip/sellers")
+def descargar_zip_sellers(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    resultado = calcular_liquidacion_sellers(db, semana, mes, anio)
+    if not resultado:
+        raise HTTPException(status_code=404, detail="No hay datos de sellers para este período")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in resultado:
+            try:
+                pdf = generar_pdf_seller(db, item["seller_id"], semana, mes, anio)
+                nombre = item["seller_nombre"].replace("/", "-").replace("\\", "-")
+                zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
+            except Exception:
+                pass
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=liquidacion_sellers_S{semana}_M{mes}_{anio}.zip"},
+    )
+
+
+@router.get("/zip/drivers")
+def descargar_zip_drivers(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    resultado = calcular_liquidacion_drivers(db, semana, mes, anio)
+    if not resultado:
+        raise HTTPException(status_code=404, detail="No hay datos de drivers para este período")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in resultado:
+            try:
+                pdf = generar_pdf_driver(db, item["driver_id"], semana, mes, anio)
+                nombre = item["driver_nombre"].replace("/", "-").replace("\\", "-")
+                zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
+            except Exception:
+                pass
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=liquidacion_drivers_S{semana}_M{mes}_{anio}.zip"},
+    )
+
+
+# ── Períodos ──
+
+@router.get("/periodos", response_model=List[PeriodoOut])
+def listar_periodos(
+    anio: Optional[int] = None,
+    mes: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    query = db.query(PeriodoLiquidacion)
+    if anio:
+        query = query.filter(PeriodoLiquidacion.anio == anio)
+    if mes:
+        query = query.filter(PeriodoLiquidacion.mes == mes)
+    return query.order_by(PeriodoLiquidacion.anio.desc(), PeriodoLiquidacion.mes.desc(), PeriodoLiquidacion.semana.desc()).all()
+
+
+@router.post("/periodos", response_model=PeriodoOut, status_code=201)
+def crear_periodo(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    existing = db.query(PeriodoLiquidacion).filter(
+        PeriodoLiquidacion.semana == semana,
+        PeriodoLiquidacion.mes == mes,
+        PeriodoLiquidacion.anio == anio,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe un período para esa semana")
+    periodo = PeriodoLiquidacion(semana=semana, mes=mes, anio=anio)
+    db.add(periodo)
+    db.commit()
+    db.refresh(periodo)
+    return periodo
+
+
+@router.put("/periodos/{periodo_id}", response_model=PeriodoOut)
+def actualizar_periodo(
+    periodo_id: int,
+    data: PeriodoUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    periodo = db.query(PeriodoLiquidacion).get(periodo_id)
+    if not periodo:
+        raise HTTPException(status_code=404, detail="Período no encontrado")
+    periodo.estado = data.estado
+    if data.estado == EstadoLiquidacionEnum.APROBADO:
+        periodo.aprobado_por = admin["nombre"]
+        periodo.aprobado_en = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(periodo)
+    return periodo
+
+
+@router.get("/mi-pdf")
+def descargar_mi_pdf_driver(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Permite a un driver descargar su propio PDF de liquidación."""
+    from app.models import RolEnum
+    if user["rol"] != RolEnum.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo para drivers")
+    try:
+        pdf_bytes = generar_pdf_driver(db, user["id"], semana, mes, anio)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=mi_liquidacion_S{semana}.pdf"},
+    )
