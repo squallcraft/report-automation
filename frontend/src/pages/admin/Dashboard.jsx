@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, AlertTriangle, MessageSquare } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, AlertTriangle, MessageSquare, Activity, ChevronDown, ChevronUp, RefreshCw, Trash2 } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -31,12 +31,27 @@ function calcCostos(row) {
   return (row.costo_paquete_driver || 0) + (row.costo_comuna || 0) + (row.costo_bulto_extra_driver || 0) + (row.costo_retiro_driver || 0)
 }
 
+function perfColor(ms) {
+  if (ms < 300) return 'text-green-600'
+  if (ms < 1000) return 'text-amber-600'
+  return 'text-red-600'
+}
+
+function perfBadge(ms) {
+  if (ms < 300) return 'bg-green-100 text-green-700'
+  if (ms < 1000) return 'bg-amber-100 text-amber-700'
+  return 'bg-red-100 text-red-700'
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [resumen, setResumen] = useState(null)
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState({ semana: null, mes: now.getMonth() + 1, anio: now.getFullYear() })
   const [filterSemana, setFilterSemana] = useState(false)
+  const [perfOpen, setPerfOpen] = useState(false)
+  const [perfData, setPerfData] = useState(null)
+  const [perfLoading, setPerfLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -54,6 +69,27 @@ export default function Dashboard() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [period, filterSemana])
+
+  const loadPerf = useCallback(async () => {
+    setPerfLoading(true)
+    try {
+      const res = await api.get('/diagnostics/performance')
+      setPerfData(res.data)
+    } catch {
+      // sin acceso o sin datos aún
+    } finally {
+      setPerfLoading(false)
+    }
+  }, [])
+
+  const resetPerf = async () => {
+    await api.delete('/diagnostics/performance')
+    setPerfData([])
+  }
+
+  useEffect(() => {
+    if (perfOpen && !perfData) loadPerf()
+  }, [perfOpen, perfData, loadPerf])
 
   const getVal = (weekNum, key) => {
     if (!resumen?.semanas?.[weekNum]) return 0
@@ -256,6 +292,90 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+          {/* ── Panel de rendimiento API ── */}
+          <div className="mt-6 border border-gray-200 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setPerfOpen(o => !o)}
+              className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+            >
+              <span className="flex items-center gap-2">
+                <Activity size={16} className="text-primary-500" />
+                Rendimiento de la API
+                <span className="text-xs text-gray-400 font-normal">(últimas 500 llamadas por endpoint)</span>
+              </span>
+              {perfOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+
+            {perfOpen && (
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs text-gray-500">
+                    Verde &lt;300ms · Amarillo &lt;1s · Rojo ≥1s — Los datos se acumulan desde el último reinicio del servidor.
+                  </p>
+                  <div className="flex gap-2">
+                    <button onClick={loadPerf} disabled={perfLoading} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-600">
+                      <RefreshCw size={12} className={perfLoading ? 'animate-spin' : ''} />
+                      Actualizar
+                    </button>
+                    <button onClick={resetPerf} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 text-red-600">
+                      <Trash2 size={12} />
+                      Resetear
+                    </button>
+                  </div>
+                </div>
+
+                {perfLoading ? (
+                  <div className="text-center py-8 text-gray-400 text-sm">Cargando estadísticas...</div>
+                ) : !perfData || perfData.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400 text-sm">
+                    Sin datos aún. Las estadísticas se acumulan con el uso del sistema.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-gray-500 border-b border-gray-100">
+                          <th className="pb-2 font-medium pr-4">Endpoint</th>
+                          <th className="pb-2 font-medium text-right pr-3">Llamadas</th>
+                          <th className="pb-2 font-medium text-right pr-3">Promedio</th>
+                          <th className="pb-2 font-medium text-right pr-3">P95</th>
+                          <th className="pb-2 font-medium text-right pr-3">Máximo</th>
+                          <th className="pb-2 font-medium text-right">Errores</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {perfData.map((row) => (
+                          <tr key={row.endpoint} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="py-2 pr-4 font-mono text-gray-700 max-w-xs truncate" title={row.endpoint}>
+                              {row.endpoint}
+                            </td>
+                            <td className="py-2 pr-3 text-right text-gray-600">{row.llamadas_totales.toLocaleString()}</td>
+                            <td className={`py-2 pr-3 text-right font-semibold ${perfColor(row.avg_ms)}`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] ${perfBadge(row.avg_ms)}`}>
+                                {row.avg_ms < 1000 ? `${row.avg_ms}ms` : `${(row.avg_ms / 1000).toFixed(1)}s`}
+                              </span>
+                            </td>
+                            <td className={`py-2 pr-3 text-right ${perfColor(row.p95_ms)}`}>
+                              {row.p95_ms < 1000 ? `${row.p95_ms}ms` : `${(row.p95_ms / 1000).toFixed(1)}s`}
+                            </td>
+                            <td className={`py-2 pr-3 text-right ${perfColor(row.max_ms)}`}>
+                              {row.max_ms < 1000 ? `${row.max_ms}ms` : `${(row.max_ms / 1000).toFixed(1)}s`}
+                            </td>
+                            <td className="py-2 text-right">
+                              {row.errores > 0
+                                ? <span className="text-red-600 font-semibold">{row.errores} ({row.error_pct}%)</span>
+                                : <span className="text-gray-300">—</span>
+                              }
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
