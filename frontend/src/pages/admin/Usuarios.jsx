@@ -81,7 +81,7 @@ export default function Usuarios() {
             <p className="text-sm text-gray-500">Gestión de accesos administrativos</p>
           </div>
         </div>
-        <button onClick={openCreate} className="btn btn-primary flex items-center gap-2">
+        <button onClick={openCreate} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Nuevo Usuario
         </button>
       </div>
@@ -142,40 +142,38 @@ export default function Usuarios() {
         </div>
       )}
 
-      {showModal && (
-        <Modal title={editing ? 'Editar Usuario' : 'Nuevo Usuario'} onClose={() => setShowModal(false)}>
+      <Modal open={showModal} title={editing ? 'Editar Usuario' : 'Nuevo Usuario'} onClose={() => setShowModal(false)}>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
-              <input type="text" className="input w-full" value={form.username}
+              <input type="text" className="input-field" value={form.username}
                 onChange={e => setForm({ ...form, username: e.target.value })} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-              <input type="text" className="input w-full" value={form.nombre}
+              <input type="text" className="input-field" value={form.nombre}
                 onChange={e => setForm({ ...form, nombre: e.target.value })} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Contraseña {editing && <span className="text-xs text-gray-400">(dejar vacío para no cambiar)</span>}
               </label>
-              <input type="password" className="input w-full" value={form.password}
+              <input type="password" className="input-field" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-              <select className="input w-full" value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })}>
+              <select className="input-field" value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })}>
                 <option value="ADMIN">Admin (control total)</option>
                 <option value="ADMINISTRACION">Administración (solo lectura + pagos/facturas)</option>
               </select>
             </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary">Cancelar</button>
-              <button type="submit" className="btn btn-primary">{editing ? 'Guardar' : 'Crear'}</button>
+            <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancelar</button>
+              <button type="submit" className="btn-primary">{editing ? 'Guardar' : 'Crear'}</button>
             </div>
           </form>
         </Modal>
-      )}
     </div>
   )
 }
