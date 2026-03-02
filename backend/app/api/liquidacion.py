@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion, get_current_user, driver_period_allowed
+from app.auth import (
+    require_admin,
+    require_admin_or_administracion,
+    get_current_user,
+    driver_period_allowed,
+    DRIVER_CUTOFF_ANIO,
+    DRIVER_CUTOFF_MES,
+    DRIVER_CUTOFF_SEMANA,
+)
 from app.models import (
     PeriodoLiquidacion, EstadoLiquidacionEnum,
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
@@ -155,6 +163,11 @@ def descargar_pdf_driver(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
+    if not driver_period_allowed(anio, mes, semana):
+        raise HTTPException(
+            status_code=403,
+            detail="Para drivers solo se muestra información desde la semana 4 de febrero 2026.",
+        )
     try:
         pdf_bytes = generar_pdf_driver(db, driver_id, semana, mes, anio)
     except ValueError as e:
@@ -427,6 +440,9 @@ def exportar_envios(
         query = query.filter(Envio.seller_id == seller_id)
     if driver_id:
         query = query.filter(Envio.driver_id == driver_id)
+        # Para drivers, febrero 2026 solo desde semana 4 (igual que en el front)
+        if mes == DRIVER_CUTOFF_MES and anio == DRIVER_CUTOFF_ANIO:
+            query = query.filter(Envio.semana >= DRIVER_CUTOFF_SEMANA)
     envios = query.order_by(Envio.fecha_entrega, Envio.semana).all()
 
     wb = Workbook()
@@ -549,6 +565,11 @@ def descargar_zip_drivers(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
+    if not driver_period_allowed(anio, mes, semana):
+        raise HTTPException(
+            status_code=403,
+            detail="Para drivers solo se incluye información desde la semana 4 de febrero 2026.",
+        )
     resultado = calcular_liquidacion_drivers(db, semana, mes, anio)
     if not resultado:
         raise HTTPException(status_code=404, detail="No hay datos de drivers para este período")
