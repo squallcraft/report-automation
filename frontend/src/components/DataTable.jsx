@@ -65,8 +65,8 @@ export default function DataTable({
 
   return (
     <div className="card overflow-hidden p-0">
-      <div className="overflow-x-auto" style={scrollStyle}>
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto -mx-4 sm:mx-0" style={scrollStyle}>
+        <table className="w-full text-xs sm:text-sm min-w-[480px]">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-gray-200 bg-gray-50">
               {columns.map((col) => {
@@ -76,7 +76,7 @@ export default function DataTable({
                   <th
                     key={col.key}
                     onClick={() => isSortable && handleSort(col.key)}
-                    className={`px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50
+                    className={`px-2 sm:px-4 py-2 sm:py-3 text-left text-[10px] sm:text-xs font-semibold text-gray-600 uppercase tracking-wider bg-gray-50
                       ${col.align === 'right' ? 'text-right' : ''}
                       ${col.align === 'center' ? 'text-center' : ''}
                       ${isSortable ? 'cursor-pointer select-none hover:text-gray-900 hover:bg-gray-100 transition-colors' : ''}`}
@@ -137,7 +137,7 @@ export default function DataTable({
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={`px-3 py-2 whitespace-nowrap
+                    className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap text-xs sm:text-sm
                       ${col.align === 'right' ? 'text-right' : ''}
                       ${col.align === 'center' ? 'text-center' : ''}
                       ${col.className || ''}`}

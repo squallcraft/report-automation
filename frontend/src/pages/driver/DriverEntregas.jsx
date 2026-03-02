@@ -104,12 +104,12 @@ export default function DriverEntregas() {
 
   return (
     <div>
-      <div className="mb-6">
+      <div className="mb-4 sm:mb-6">
         <p className="text-xs text-amber-600 mb-1">Solo se muestra información desde la semana 4 de febrero 2026.</p>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="page-title">
           {esJefe ? 'Entregas de la Flota' : 'Mis Entregas'}
         </h1>
-        <p className="text-sm text-gray-500 mt-1">Detalle de entregas y pagos por período</p>
+        <p className="page-subtitle">Detalle de entregas y pagos por período</p>
       </div>
 
       <div className="card mb-6">

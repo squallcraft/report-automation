@@ -84,9 +84,9 @@ export default function DriverLiquidacion() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mi Liquidación</h1>
-        <p className="text-sm text-gray-500 mt-1">Resumen de pagos por período</p>
+      <div className="mb-4 sm:mb-6">
+        <h1 className="page-title">Mi Liquidación</h1>
+        <p className="page-subtitle">Resumen de pagos por período</p>
         <p className="text-xs text-amber-600 mt-0.5">Solo se muestra información desde la semana 4 de febrero 2026.</p>
       </div>
 

@@ -28,17 +28,17 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-900 via-primary-800 to-primary-950 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-900 via-primary-800 to-primary-950 px-3 sm:px-4 py-6">
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 backdrop-blur rounded-2xl mb-4">
-            <Truck size={32} className="text-white" />
+        <div className="text-center mb-5 sm:mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 bg-white/10 backdrop-blur rounded-xl sm:rounded-2xl mb-3 sm:mb-4">
+            <Truck size={28} className="text-white sm:w-8 sm:h-8" />
           </div>
-          <h1 className="text-3xl font-bold text-white">ECourier</h1>
-          <p className="text-primary-200 text-sm mt-1">Sistema de Liquidación Logística</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white">ECourier</h1>
+          <p className="text-primary-200 text-xs sm:text-sm mt-1">Sistema de Liquidación Logística</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-2xl p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl sm:rounded-2xl shadow-2xl p-5 sm:p-8 space-y-4 sm:space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Usuario o Email</label>
             <input
@@ -66,7 +66,7 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-primary-300 mt-6">
+        <p className="text-center text-xs text-primary-300 mt-4 sm:mt-6">
           ECourier &copy; {new Date().getFullYear()} — Todos los derechos reservados
         </p>
       </div>

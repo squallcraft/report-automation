@@ -8,14 +8,14 @@ export default function StatsCard({ icon: Icon, label, value, color = 'primary',
   }
 
   return (
-    <div className="card flex items-start gap-4">
-      <div className={`p-3 rounded-lg ${colorMap[color]}`}>
-        <Icon size={22} />
+    <div className="card flex items-start gap-3 sm:gap-4">
+      <div className={`p-2 sm:p-3 rounded-lg shrink-0 ${colorMap[color]}`}>
+        <Icon size={20} className="sm:w-[22px] sm:h-[22px]" />
       </div>
-      <div>
-        <p className="text-sm text-gray-500 font-medium">{label}</p>
-        <p className="text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
-        {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      <div className="min-w-0">
+        <p className="text-xs sm:text-sm text-gray-500 font-medium">{label}</p>
+        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
+        {sub && <p className="text-[10px] sm:text-xs text-gray-400 mt-1">{sub}</p>}
       </div>
     </div>
   )
