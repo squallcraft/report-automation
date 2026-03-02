@@ -192,7 +192,8 @@ def seller_excel(
 
     # Solo columnas visibles para seller (sin info de driver)
     headers = [
-        "Fecha Entrega", "Tracking", "Comuna", "Bultos",
+        "Fecha Entrega", "Tracking", "Seller Code", "External ID",
+        "Comuna", "Bultos",
         "Descripción Producto", "Código MLC",
         "Cobro Base", "Extra Prod.", "Extra Com.", "Extra Manual", "Total",
     ]
@@ -213,6 +214,8 @@ def seller_excel(
         row = [
             str(e.fecha_entrega) if e.fecha_entrega else "",
             e.tracking_id or "",
+            e.seller_code or "",
+            e.venta_id or "",
             (e.comuna or "").title(),
             e.bultos,
             e.descripcion_producto or "",
@@ -308,13 +311,13 @@ def driver_excel(
     es_contratado = getattr(driver, 'contratado', False)
     if es_contratado:
         headers = [
-            "Fecha Entrega", "Tracking", "Seller", "Comuna", "Bultos",
+            "Fecha Entrega", "Tracking", "Seller Code", "External ID", "Seller", "Comuna", "Bultos",
             "Descripción Producto",
             "Pago Base", "Pago Extra Manual", "Total",
         ]
     else:
         headers = [
-            "Fecha Entrega", "Tracking", "Seller", "Comuna", "Bultos",
+            "Fecha Entrega", "Tracking", "Seller Code", "External ID", "Seller", "Comuna", "Bultos",
             "Descripción Producto",
             "Pago Base", "Extra Prod.", "Extra Com.", "Pago Extra Manual", "Total",
         ]
@@ -337,6 +340,8 @@ def driver_excel(
             row = [
                 str(e.fecha_entrega) if e.fecha_entrega else "",
                 e.tracking_id or "",
+                e.seller_code or "",
+                e.venta_id or "",
                 seller.nombre if seller else (e.seller_nombre_raw or ""),
                 (e.comuna or "").title(),
                 e.bultos,
@@ -350,6 +355,8 @@ def driver_excel(
             row = [
                 str(e.fecha_entrega) if e.fecha_entrega else "",
                 e.tracking_id or "",
+                e.seller_code or "",
+                e.venta_id or "",
                 seller.nombre if seller else (e.seller_nombre_raw or ""),
                 (e.comuna or "").title(),
                 e.bultos,

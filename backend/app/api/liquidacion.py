@@ -450,7 +450,8 @@ def exportar_envios(
     ws.title = "Envíos"
 
     headers = [
-        "Fecha Entrega", "Fecha Carga", "Tracking", "Seller", "Driver",
+        "Fecha Entrega", "Fecha Carga", "Tracking", "Seller Code", "External ID",
+        "Seller", "Driver",
         "Comuna", "Dirección", "Bultos", "Descripción Producto", "Código MLC",
         "Costo Orden", "Cobro Seller", "Extra Prod. Seller", "Extra Com. Seller",
         "Extra Manual Seller", "Pago Driver", "Extra Prod. Driver", "Extra Com. Driver",
@@ -475,6 +476,8 @@ def exportar_envios(
             str(e.fecha_entrega) if e.fecha_entrega else "",
             str(e.fecha_carga) if e.fecha_carga else "",
             e.tracking_id or "",
+            e.seller_code or "",
+            e.venta_id or "",
             seller.nombre if seller else (e.seller_nombre_raw or ""),
             driver.nombre if driver else (e.driver_nombre_raw or ""),
             e.comuna or "",
