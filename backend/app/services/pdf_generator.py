@@ -559,6 +559,7 @@ def generar_pdf_driver(
 
     totals_vals = [_weekly_total(s) for s in range(1, 6)]
 
+    es_contratado = getattr(driver, 'contratado', False)
     rows = [
         _count_row("General", "normal_count"),
         _money_row("Subtotal Normal", "normal_total"),
@@ -566,13 +567,16 @@ def generar_pdf_driver(
         _money_row("Subtotal Oviedo", "oviedo_total"),
         _count_row(f"Tercerizado ({_fmt(tarifa_terc)})", "tercerizado_count"),
         _money_row("Subtotal Tercerizado", "tercerizado_total"),
-        _money_row("Comuna", "comuna"),
-        _money_row("Bultos Extra", "bultos_extra"),
+    ]
+    if not es_contratado:
+        rows.append(_money_row("Comuna", "comuna"))
+        rows.append(_money_row("Bultos Extra", "bultos_extra"))
+    rows.extend([
         _money_row("Retiros", "retiros"),
         _money_row("Bonificaciones", "bonificaciones"),
         _money_row("Descuentos", "descuentos"),
         ["Total"] + [_fmt(v) for v in totals_vals] + [_fmt(sum(totals_vals))],
-    ]
+    ])
 
     elements.append(_weekly_table(rows))
     elements.append(Spacer(1, 14))
@@ -588,14 +592,16 @@ def generar_pdf_driver(
         Envio.mes == mes, Envio.anio == anio,
     ).order_by(Envio.fecha_entrega).all()
 
+    es_contratado = getattr(driver, 'contratado', False)
     daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0} for d in all_dates}
     for e in envios_semana:
         d = e.fecha_entrega
         if d not in daily_map:
             daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0}
         daily_map[d]["envios"] += 1
-        daily_map[d]["bultos_extra"] += e.extra_producto_driver
-        daily_map[d]["comuna"] += e.extra_comuna_driver
+        if not es_contratado:
+            daily_map[d]["bultos_extra"] += e.extra_producto_driver
+            daily_map[d]["comuna"] += e.extra_comuna_driver
 
     retiros_semana = db.query(Retiro).filter(
         Retiro.driver_id == driver_id, Retiro.semana == semana,
@@ -612,10 +618,12 @@ def generar_pdf_driver(
         daily_cols = [
             ("Día", "fecha", "date"),
             ("Envíos", "envios", "int"),
-            ("Bultos Extra", "bultos_extra", "clp"),
-            ("Retiros", "retiros", "int"),
-            ("Comuna", "comuna", "clp"),
         ]
+        if not es_contratado:
+            daily_cols.append(("Bultos Extra", "bultos_extra", "clp"))
+        daily_cols.append(("Retiros", "retiros", "int"))
+        if not es_contratado:
+            daily_cols.append(("Comuna", "comuna", "clp"))
         elements.append(_daily_table(daily_data, daily_cols))
         elements.append(Spacer(1, 10))
         elements.append(_weekly_chart(daily_data, "envios"))

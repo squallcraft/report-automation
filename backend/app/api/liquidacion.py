@@ -241,6 +241,7 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
         bonif = sum(a.monto for a in ajustes if a.monto > 0)
         desc = sum(a.monto for a in ajustes if a.monto < 0)
 
+        es_contratado = getattr(driver, 'contratado', False)
         weekly[s] = {
             "normal_count": len(normal),
             "normal_total": sum(e.costo_driver + e.pago_extra_manual for e in normal),
@@ -248,8 +249,8 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
             "oviedo_total": sum(e.costo_driver + e.pago_extra_manual for e in oviedo),
             "tercerizado_count": len(tercerizado),
             "tercerizado_total": sum(e.costo_driver + e.pago_extra_manual for e in tercerizado),
-            "comuna": sum(e.extra_comuna_driver for e in envios),
-            "bultos_extra": sum(e.extra_producto_driver for e in envios),
+            "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
+            "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios),
             "retiros": sum(r.tarifa_driver for r in retiros_q),
             "bonificaciones": bonif,
             "descuentos": desc,
@@ -261,11 +262,12 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
         "tarifa_ecourier": driver.tarifa_ecourier,
         "tarifa_oviedo": driver.tarifa_oviedo,
         "tarifa_tercerizado": driver.tarifa_tercerizado,
+        "contratado": getattr(driver, 'contratado', False),
         "weekly": weekly,
     }
 
 
-def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None):
+def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False):
     all_dates = get_dates_for_week(db, semana, mes, anio) if db else []
 
     daily_map = {}
@@ -284,13 +286,15 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
         if d not in daily_map:
             daily_map[d] = {"fecha": str(d), "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0}
         daily_map[d]["envios"] += 1
-        daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
         if is_seller:
+            daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
             daily_map[d]["monto"] += e.cobro_seller
             daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0) + (e.cobro_extra_manual or 0)
         else:
             daily_map[d]["monto"] += e.costo_driver + (e.pago_extra_manual or 0)
-            daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
+            if not contratado:
+                daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
+                daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
     for r in retiros_list:
         d = r.fecha
@@ -382,6 +386,8 @@ def detalle_driver(
     _=Depends(require_admin_or_administracion),
 ):
     detail = _driver_detail(db, driver_id, mes, anio)
+    driver = db.get(Driver, driver_id)
+    es_contratado = getattr(driver, 'contratado', False) if driver else False
     envios_semana = db.query(Envio).filter(
         Envio.driver_id == driver_id, Envio.semana == semana,
         Envio.mes == mes, Envio.anio == anio,
@@ -393,9 +399,9 @@ def detalle_driver(
     detail["daily"] = _daily_breakdown(
         envios_semana, retiros_semana,
         "extra_producto_driver", "extra_comuna_driver",
-        semana, mes, anio, is_seller=False, db=db,
+        semana, mes, anio, is_seller=False, db=db, contratado=es_contratado,
     )
-    detail["productos"] = _productos_envios(db, envios_semana)
+    detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
     return detail
 
 

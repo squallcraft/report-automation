@@ -295,12 +295,19 @@ def driver_excel(
     ws = wb.active
     ws.title = "Mis Entregas"
 
-    # Solo columnas visibles para driver (sin info de cobro a seller)
-    headers = [
-        "Fecha Entrega", "Tracking", "Seller", "Comuna", "Bultos",
-        "Descripción Producto",
-        "Pago Base", "Extra Prod.", "Extra Com.", "Pago Extra Manual", "Total",
-    ]
+    es_contratado = getattr(driver, 'contratado', False)
+    if es_contratado:
+        headers = [
+            "Fecha Entrega", "Tracking", "Seller", "Comuna", "Bultos",
+            "Descripción Producto",
+            "Pago Base", "Pago Extra Manual", "Total",
+        ]
+    else:
+        headers = [
+            "Fecha Entrega", "Tracking", "Seller", "Comuna", "Bultos",
+            "Descripción Producto",
+            "Pago Base", "Extra Prod.", "Extra Com.", "Pago Extra Manual", "Total",
+        ]
     hfont = Font(bold=True, color="FFFFFF", size=10)
     hfill = PatternFill(start_color="059669", end_color="059669", fill_type="solid")
     thin = Border(
@@ -315,20 +322,34 @@ def driver_excel(
 
     for idx, e in enumerate(envios, 2):
         seller = db.get(Seller, e.seller_id) if e.seller_id else None
-        total = e.costo_driver + e.extra_producto_driver + e.extra_comuna_driver + (e.pago_extra_manual or 0)
-        row = [
-            str(e.fecha_entrega) if e.fecha_entrega else "",
-            e.tracking_id or "",
-            seller.nombre if seller else (e.seller_nombre_raw or ""),
-            (e.comuna or "").title(),
-            e.bultos,
-            e.descripcion_producto or "",
-            e.costo_driver,
-            e.extra_producto_driver,
-            e.extra_comuna_driver,
-            e.pago_extra_manual or 0,
-            total,
-        ]
+        if es_contratado:
+            total = e.costo_driver + (e.pago_extra_manual or 0)
+            row = [
+                str(e.fecha_entrega) if e.fecha_entrega else "",
+                e.tracking_id or "",
+                seller.nombre if seller else (e.seller_nombre_raw or ""),
+                (e.comuna or "").title(),
+                e.bultos,
+                e.descripcion_producto or "",
+                e.costo_driver,
+                e.pago_extra_manual or 0,
+                total,
+            ]
+        else:
+            total = e.costo_driver + e.extra_producto_driver + e.extra_comuna_driver + (e.pago_extra_manual or 0)
+            row = [
+                str(e.fecha_entrega) if e.fecha_entrega else "",
+                e.tracking_id or "",
+                seller.nombre if seller else (e.seller_nombre_raw or ""),
+                (e.comuna or "").title(),
+                e.bultos,
+                e.descripcion_producto or "",
+                e.costo_driver,
+                e.extra_producto_driver,
+                e.extra_comuna_driver,
+                e.pago_extra_manual or 0,
+                total,
+            ]
         for ci, v in enumerate(row, 1):
             c = ws.cell(row=idx, column=ci, value=v)
             c.border = thin
