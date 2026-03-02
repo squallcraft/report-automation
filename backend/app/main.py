@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, usuarios, tarifas_escalonadas, diagnostics
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, usuarios, tarifas_escalonadas, diagnostics, portal, chat
 from app.middleware.timing import TimingMiddleware
 
 Base.metadata.create_all(bind=engine)
@@ -15,6 +15,16 @@ with engine.connect() as conn:
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "rol" not in cols:
             conn.execute(text("ALTER TABLE admin_users ADD COLUMN rol TEXT NOT NULL DEFAULT 'ADMIN'"))
+            conn.commit()
+    if "drivers" in insp.get_table_names():
+        cols = [c["name"] for c in insp.get_columns("drivers")]
+        if "contratado" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN contratado BOOLEAN NOT NULL DEFAULT FALSE"))
+            # Marcar conductores contratados conocidos
+            conn.execute(text(
+                "UPDATE drivers SET contratado = TRUE "
+                "WHERE lower(nombre) LIKE '%erick%' OR lower(nombre) LIKE '%edwyn%'"
+            ))
             conn.commit()
 
 app = FastAPI(
@@ -51,6 +61,8 @@ app.include_router(cpc.router, prefix="/api")
 app.include_router(usuarios.router, prefix="/api")
 app.include_router(tarifas_escalonadas.router, prefix="/api")
 app.include_router(diagnostics.router, prefix="/api")
+app.include_router(portal.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 
 
 @app.get("/")

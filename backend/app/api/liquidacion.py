@@ -197,9 +197,9 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
         ).all()
 
         weekly[s] = {
-            "monto": sum(e.cobro_seller + e.cobro_extra_manual for e in envios),
+            "monto": sum(e.cobro_seller for e in envios),
             "envios": len(envios),
-            "bultos_extra": sum(e.extra_producto_seller for e in envios),
+            "bultos_extra": sum(e.extra_producto_seller + e.cobro_extra_manual for e in envios),
             "retiros": total_retiros,
             "peso_extra": sum(e.extra_comuna_seller for e in envios),
             "ajustes": sum(a.monto for a in ajustes),
@@ -284,9 +284,13 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
         if d not in daily_map:
             daily_map[d] = {"fecha": str(d), "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0}
         daily_map[d]["envios"] += 1
-        daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
         daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
-        daily_map[d]["monto"] += e.cobro_seller if is_seller else e.costo_driver
+        if is_seller:
+            daily_map[d]["monto"] += e.cobro_seller
+            daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0) + (e.cobro_extra_manual or 0)
+        else:
+            daily_map[d]["monto"] += e.costo_driver + (e.pago_extra_manual or 0)
+            daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
 
     for r in retiros_list:
         d = r.fecha
@@ -297,27 +301,47 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
 
 
 def _productos_envios(db: Session, envios_list):
-    codigos = {e.codigo_producto for e in envios_list if e.codigo_producto}
-    if not codigos:
-        return []
-    productos = {p.codigo_mlc: p for p in db.query(ProductoConExtra).filter(ProductoConExtra.codigo_mlc.in_(codigos)).all()}
-    counter = defaultdict(int)
-    for e in envios_list:
-        if e.codigo_producto:
-            counter[e.codigo_producto] += 1
     result = []
-    for cod, cnt in sorted(counter.items(), key=lambda x: -x[1]):
-        p = productos.get(cod)
-        extra_s = p.extra_seller if p else 0
-        extra_d = p.extra_driver if p else 0
-        if extra_s > 0 or extra_d > 0:
+
+    codigos = {e.codigo_producto for e in envios_list if e.codigo_producto}
+    if codigos:
+        productos = {p.codigo_mlc: p for p in db.query(ProductoConExtra).filter(ProductoConExtra.codigo_mlc.in_(codigos)).all()}
+        counter = defaultdict(int)
+        for e in envios_list:
+            if e.codigo_producto:
+                counter[e.codigo_producto] += 1
+        for cod, cnt in sorted(counter.items(), key=lambda x: -x[1]):
+            p = productos.get(cod)
+            extra_s = p.extra_seller if p else 0
+            extra_d = p.extra_driver if p else 0
+            if extra_s > 0 or extra_d > 0:
+                result.append({
+                    "codigo_mlc": cod,
+                    "descripcion": p.descripcion if p else "",
+                    "extra_seller": extra_s,
+                    "extra_driver": extra_d,
+                    "cantidad": cnt,
+                })
+
+    for e in envios_list:
+        cobro_m = e.cobro_extra_manual or 0
+        pago_m = e.pago_extra_manual or 0
+        if cobro_m > 0 or pago_m > 0:
+            desc_parts = []
+            if e.descripcion_producto:
+                desc_parts.append(e.descripcion_producto)
+            if e.comuna:
+                desc_parts.append(e.comuna)
+            if e.bultos and e.bultos > 1:
+                desc_parts.append(f"{e.bultos} bultos")
             result.append({
-                "codigo_mlc": cod,
-                "descripcion": p.descripcion if p else "",
-                "extra_seller": extra_s,
-                "extra_driver": extra_d,
-                "cantidad": cnt,
+                "codigo_mlc": e.tracking_id or f"Envío #{e.id}",
+                "descripcion": f"Extra manual — {', '.join(desc_parts)}" if desc_parts else "Extra manual",
+                "extra_seller": cobro_m,
+                "extra_driver": pago_m,
+                "cantidad": 1,
             })
+
     return result
 
 
@@ -381,7 +405,7 @@ def detalle_driver(
 def exportar_envios(
     seller_id: Optional[int] = None,
     driver_id: Optional[int] = None,
-    semana: int = Query(...),
+    semana: Optional[int] = None,
     mes: int = Query(...),
     anio: int = Query(...),
     db: Session = Depends(get_db),
@@ -390,12 +414,14 @@ def exportar_envios(
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    query = db.query(Envio).filter(Envio.semana == semana, Envio.mes == mes, Envio.anio == anio)
+    query = db.query(Envio).filter(Envio.mes == mes, Envio.anio == anio)
+    if semana is not None:
+        query = query.filter(Envio.semana == semana)
     if seller_id:
         query = query.filter(Envio.seller_id == seller_id)
     if driver_id:
         query = query.filter(Envio.driver_id == driver_id)
-    envios = query.order_by(Envio.fecha_entrega).all()
+    envios = query.order_by(Envio.fecha_entrega, Envio.semana).all()
 
     wb = Workbook()
     ws = wb.active
@@ -465,10 +491,11 @@ def exportar_envios(
         d = db.get(Driver, driver_id)
         name = f"envios_{d.nombre}" if d else name
 
+    period_suffix = f"_S{semana}_M{mes}_{anio}" if semana is not None else f"_M{mes}_{anio}"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={name}_S{semana}_M{mes}_{anio}.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename={name}{period_suffix}.xlsx"},
     )
 
 
@@ -495,12 +522,16 @@ def descargar_zip_sellers(
                 zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
             except Exception:
                 pass
+    size = buf.tell()
     buf.seek(0)
 
     return StreamingResponse(
         buf,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=liquidacion_sellers_S{semana}_M{mes}_{anio}.zip"},
+        headers={
+            "Content-Disposition": f"attachment; filename=liquidacion_sellers_S{semana}_M{mes}_{anio}.zip",
+            "Content-Length": str(size),
+        },
     )
 
 
@@ -525,12 +556,16 @@ def descargar_zip_drivers(
                 zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
             except Exception:
                 pass
+    size = buf.tell()
     buf.seek(0)
 
     return StreamingResponse(
         buf,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=liquidacion_drivers_S{semana}_M{mes}_{anio}.zip"},
+        headers={
+            "Content-Disposition": f"attachment; filename=liquidacion_drivers_S{semana}_M{mes}_{anio}.zip",
+            "Content-Length": str(size),
+        },
     )
 
 

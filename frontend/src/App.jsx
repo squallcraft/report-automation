@@ -19,13 +19,17 @@ import Calendario from './pages/admin/Calendario'
 import Facturacion from './pages/admin/Facturacion'
 import CPC from './pages/admin/CPC'
 import Usuarios from './pages/admin/Usuarios'
+import Asistente from './pages/admin/Asistente'
 
 import SellerDashboard from './pages/seller/SellerDashboard'
 import SellerEnvios from './pages/seller/SellerEnvios'
+import SellerLiquidacion from './pages/seller/SellerLiquidacion'
+import SellerFacturacion from './pages/seller/SellerFacturacion'
 import SellerConsultas from './pages/seller/SellerConsultas'
 
 import DriverDashboard from './pages/driver/DriverDashboard'
 import DriverEntregas from './pages/driver/DriverEntregas'
+import DriverLiquidacion from './pages/driver/DriverLiquidacion'
 import DriverConsultas from './pages/driver/DriverConsultas'
 
 function ProtectedRoute({ children, roles }) {
@@ -69,17 +73,21 @@ export default function App() {
         <Route path="facturacion" element={<Facturacion />} />
         <Route path="cpc" element={<CPC />} />
         <Route path="usuarios" element={<Usuarios />} />
+        <Route path="asistente" element={<Asistente />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>
         <Route index element={<SellerDashboard />} />
         <Route path="envios" element={<SellerEnvios />} />
+        <Route path="liquidacion" element={<SellerLiquidacion />} />
+        <Route path="facturacion" element={<SellerFacturacion />} />
         <Route path="consultas" element={<SellerConsultas />} />
       </Route>
 
       <Route path="/driver" element={<ProtectedRoute roles={['DRIVER']}><Layout /></ProtectedRoute>}>
         <Route index element={<DriverDashboard />} />
         <Route path="entregas" element={<DriverEntregas />} />
+        <Route path="liquidacion" element={<DriverLiquidacion />} />
         <Route path="consultas" element={<DriverConsultas />} />
       </Route>
 

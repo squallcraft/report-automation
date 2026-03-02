@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     UPLOAD_DIR: str = "uploads"
     CORS_ORIGINS: List[str] = ["http://localhost:5173"]
+    GEMINI_API_KEY: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

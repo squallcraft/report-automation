@@ -23,6 +23,7 @@ const initialForm = {
   tarifa_oviedo: 1800,
   tarifa_tercerizado: 1500,
   jefe_flota_id: '',
+  contratado: false,
   email: '',
   password: '',
 }
@@ -109,6 +110,7 @@ export default function Drivers() {
       tarifa_oviedo: driver.tarifa_oviedo ?? 1800,
       tarifa_tercerizado: driver.tarifa_tercerizado ?? 1500,
       jefe_flota_id: driver.jefe_flota_id ?? '',
+      contratado: driver.contratado ?? false,
       email: driver.email || '',
       password: '',
     })
@@ -166,11 +168,16 @@ export default function Drivers() {
 
   const columns = [
     { key: 'nombre', label: 'Nombre', render: (v, row) => (
-      <div>
+      <div className="flex items-center gap-1.5 flex-wrap">
         <span>{v}</span>
         {row.subordinados_count > 0 && (
-          <span className="ml-2 inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700">
+          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700">
             Jefe ({row.subordinados_count})
+          </span>
+        )}
+        {row.contratado && (
+          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700">
+            Contratado
           </span>
         )}
       </div>
@@ -329,6 +336,23 @@ export default function Drivers() {
                   <option key={d.id} value={d.id}>{d.nombre}</option>
                 ))}
             </select>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-orange-50 border border-orange-200">
+            <input
+              id="contratado"
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              checked={form.contratado}
+              onChange={(e) => setForm((f) => ({ ...f, contratado: e.target.checked }))}
+            />
+            <div>
+              <label htmlFor="contratado" className="text-sm font-medium text-orange-800 cursor-pointer">
+                Conductor Contratado
+              </label>
+              <p className="text-xs text-orange-600 mt-0.5">
+                No recibe pago por extras de bultos (producto) ni por extras de comuna.
+              </p>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

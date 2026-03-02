@@ -184,6 +184,11 @@ def _build_envio_from_row(
         else:
             extra_producto_driver = 0
 
+    # Conductores contratados no reciben pago por extras de bultos ni de comuna.
+    if driver and getattr(driver, 'contratado', False):
+        extra_producto_driver = 0
+        extra_comuna_driver = 0
+
     # Usar calendario si está disponible, sino fallback a fórmula simple
     if fecha_lookup and fecha_entrega in fecha_lookup:
         semana, mes_envio, anio_envio = fecha_lookup[fecha_entrega]

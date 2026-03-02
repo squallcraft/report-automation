@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
 import PeriodSelector from './PeriodSelector'
 import DataTable from './DataTable'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Download, FileSpreadsheet, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, ExternalLink, ChevronDown } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 
@@ -15,6 +15,8 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
   const [period, setPeriod] = useState(initialPeriod)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showExcelMenu, setShowExcelMenu] = useState(false)
+  const excelMenuRef = useRef(null)
 
   useEffect(() => {
     setLoading(true)
@@ -23,6 +25,16 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
       .catch(() => toast.error('Error al cargar detalle'))
       .finally(() => setLoading(false))
   }, [tipo, entityId, period])
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (excelMenuRef.current && !excelMenuRef.current.contains(e.target)) {
+        setShowExcelMenu(false)
+      }
+    }
+    if (showExcelMenu) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showExcelMenu])
 
   const downloadPdf = () => {
     api.get(`/liquidacion/pdf/${tipo}/${entityId}`, { params: period, responseType: 'blob' })
@@ -37,16 +49,19 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
       .catch(() => toast.error('Error al generar PDF'))
   }
 
-  const downloadExcel = () => {
-    const params = { ...period }
+  const downloadExcel = (semana = null) => {
+    setShowExcelMenu(false)
+    const params = { mes: period.mes, anio: period.anio }
+    if (semana !== null) params.semana = semana
     if (tipo === 'seller') params.seller_id = entityId
     else params.driver_id = entityId
+    const suffix = semana !== null ? `_S${semana}` : `_M${period.mes}`
     api.get('/liquidacion/exportar/envios', { params, responseType: 'blob' })
       .then(({ data: blob }) => {
         const url = URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
         const a = document.createElement('a')
         a.href = url
-        a.download = `envios_${tipo}_${entityId}_S${period.semana}.xlsx`
+        a.download = `envios_${tipo}_${entityId}${suffix}.xlsx`
         a.click()
         URL.revokeObjectURL(url)
       })
@@ -91,9 +106,33 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
           <button onClick={downloadPdf} className="btn-primary flex items-center gap-2">
             <Download size={16} /> PDF
           </button>
-          <button onClick={downloadExcel} className="btn-secondary flex items-center gap-2">
-            <FileSpreadsheet size={16} /> Excel Envíos
-          </button>
+          <div className="relative" ref={excelMenuRef}>
+            <button
+              onClick={() => setShowExcelMenu((v) => !v)}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <FileSpreadsheet size={16} /> Excel Envíos <ChevronDown size={14} />
+            </button>
+            {showExcelMenu && (
+              <div className="absolute right-0 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                <button
+                  onClick={() => downloadExcel(period.semana)}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+                >
+                  <span className="font-medium">Semana {period.semana}</span>
+                  <span className="block text-xs text-gray-400">Solo la semana actual</span>
+                </button>
+                <div className="border-t border-gray-100 my-1" />
+                <button
+                  onClick={() => downloadExcel(null)}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+                >
+                  <span className="font-medium">Todo {MESES[period.mes]}</span>
+                  <span className="block text-xs text-gray-400">Todas las semanas del mes</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -155,7 +194,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
           <h3 className="text-lg font-semibold text-gray-900 mb-3">Desglose Diario — Semana {period.semana}</h3>
           <DataTable
             columns={[
-              { key: 'fecha', label: 'Día' },
+              { key: 'fecha', label: 'Día', render: (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString('es-CL') : '—' },
               { key: 'envios', label: 'Envíos', align: 'center' },
               { key: 'bultos_extra', label: 'Bultos Extra', align: 'right', render: (v) => fmt(v) },
               { key: 'retiros', label: 'Retiros', align: 'center' },

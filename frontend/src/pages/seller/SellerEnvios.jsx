@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import PeriodSelector from '../../components/PeriodSelector'
+import toast from 'react-hot-toast'
+import { Download, FileSpreadsheet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -10,6 +12,8 @@ export default function SellerEnvios() {
   const [envios, setEnvios] = useState([])
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState({ semana: 1, mes: now.getMonth() + 1, anio: now.getFullYear() })
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [downloadingXls, setDownloadingXls] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -18,6 +22,34 @@ export default function SellerEnvios() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [period])
+
+  const descargarPDF = async () => {
+    setDownloadingPdf(true)
+    try {
+      const res = await api.get('/portal/seller/pdf', { params: period, responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mi_liquidacion_S${period.semana}_${period.mes}_${period.anio}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { toast.error('No hay datos para este período') }
+    finally { setDownloadingPdf(false) }
+  }
+
+  const descargarExcel = async () => {
+    setDownloadingXls(true)
+    try {
+      const res = await api.get('/portal/seller/excel', { params: period, responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mis_envios_S${period.semana}_${period.mes}_${period.anio}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { toast.error('No hay envíos para este período') }
+    finally { setDownloadingXls(false) }
+  }
 
   const columns = [
     { key: 'fecha_entrega', label: 'Fecha', render: (v) => v ? new Date(v).toLocaleDateString('es-CL') : '—' },
@@ -40,7 +72,19 @@ export default function SellerEnvios() {
       </div>
 
       <div className="card mb-6">
-        <PeriodSelector {...period} onChange={setPeriod} />
+        <div className="flex flex-wrap items-end gap-4">
+          <PeriodSelector {...period} onChange={setPeriod} />
+          <button onClick={descargarPDF} disabled={downloadingPdf || envios.length === 0}
+            className="btn-secondary flex items-center gap-2 ml-auto">
+            <Download size={16} />
+            {downloadingPdf ? 'Descargando...' : 'PDF'}
+          </button>
+          <button onClick={descargarExcel} disabled={downloadingXls || envios.length === 0}
+            className="btn-secondary flex items-center gap-2">
+            <FileSpreadsheet size={16} />
+            {downloadingXls ? 'Descargando...' : 'Excel'}
+          </button>
+        </div>
       </div>
 
       {loading ? (

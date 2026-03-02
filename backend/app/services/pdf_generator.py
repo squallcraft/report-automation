@@ -517,6 +517,7 @@ def generar_pdf_driver(
         bonif = sum(a.monto for a in ajustes if a.monto > 0)
         desc = sum(a.monto for a in ajustes if a.monto < 0)
 
+        es_contratado = getattr(driver, 'contratado', False)
         weekly[s] = {
             "normal_count": len(normal),
             "normal_total": sum(e.costo_driver + e.pago_extra_manual for e in normal),
@@ -524,8 +525,8 @@ def generar_pdf_driver(
             "oviedo_total": sum(e.costo_driver + e.pago_extra_manual for e in oviedo),
             "tercerizado_count": len(tercerizado),
             "tercerizado_total": sum(e.costo_driver + e.pago_extra_manual for e in tercerizado),
-            "comuna": sum(e.extra_comuna_driver for e in envios),
-            "bultos_extra": sum(e.extra_producto_driver for e in envios),
+            "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
+            "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios),
             "retiros": sum(r.tarifa_driver for r in retiros_q),
             "bonificaciones": bonif,
             "descuentos": desc,

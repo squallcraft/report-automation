@@ -83,6 +83,7 @@ class Driver(Base):
     tipo_cuenta = Column(String, nullable=True)
     numero_cuenta = Column(String, nullable=True)
     activo = Column(Boolean, default=True)
+    contratado = Column(Boolean, default=False)
     email = Column(String, unique=True, nullable=True)
     password_hash = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

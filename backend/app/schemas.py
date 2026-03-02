@@ -104,6 +104,7 @@ class DriverBase(BaseModel):
     tipo_cuenta: Optional[str] = None
     numero_cuenta: Optional[str] = None
     activo: bool = True
+    contratado: bool = False
     email: Optional[str] = None
 
 
@@ -123,6 +124,7 @@ class DriverUpdate(BaseModel):
     tipo_cuenta: Optional[str] = None
     numero_cuenta: Optional[str] = None
     activo: Optional[bool] = None
+    contratado: Optional[bool] = None
     email: Optional[str] = None
     password: Optional[str] = None
 

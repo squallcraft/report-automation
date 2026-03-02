@@ -4,7 +4,7 @@ import PeriodSelector from '../../components/PeriodSelector'
 import DataTable from '../../components/DataTable'
 import LiquidacionDetalle from '../../components/LiquidacionDetalle'
 import toast from 'react-hot-toast'
-import { Calculator, Download, RefreshCw, Search, X, FileArchive } from 'lucide-react'
+import { Calculator, Download, RefreshCw, Search, X, FileArchive, CheckCircle } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -19,7 +19,7 @@ export default function Liquidacion() {
   const [recalculating, setRecalculating] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [filterUser, setFilterUser] = useState('')
-  const [downloadingZip, setDownloadingZip] = useState(false)
+  const [zipProgress, setZipProgress] = useState(null) // null | { pct: number, done: boolean, label: string }
 
   const [detailView, setDetailView] = useState(null)
 
@@ -75,26 +75,56 @@ export default function Liquidacion() {
     }
   }
 
-  const downloadZip = async () => {
+  const downloadZip = () => {
     const tipo = tab === 'drivers' ? 'drivers' : 'sellers'
-    setDownloadingZip(true)
-    try {
-      const { data } = await api.get(`/liquidacion/zip/${tipo}`, {
-        params: period,
-        responseType: 'blob',
-      })
-      const url = URL.createObjectURL(new Blob([data], { type: 'application/zip' }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `liquidacion_${tipo}_S${period.semana}_M${period.mes}_${period.anio}.zip`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success('ZIP descargado')
-    } catch {
-      toast.error('Error al generar ZIP')
-    } finally {
-      setDownloadingZip(false)
+    const label = tipo === 'drivers' ? 'Drivers' : 'Sellers'
+    const params = new URLSearchParams({
+      semana: period.semana,
+      mes: period.mes,
+      anio: period.anio,
+    })
+    const token = localStorage.getItem('token')
+    const url = `/api/liquidacion/zip/${tipo}?${params}`
+
+    setZipProgress({ pct: 0, done: false, label })
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', url)
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.responseType = 'blob'
+
+    xhr.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100)
+        setZipProgress({ pct, done: false, label })
+      } else {
+        // sin Content-Length: animación indeterminada
+        setZipProgress(prev => prev ? { ...prev, pct: -1 } : null)
+      }
     }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setZipProgress({ pct: 100, done: true, label })
+        const blobUrl = URL.createObjectURL(xhr.response)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = `liquidacion_${tipo}_S${period.semana}_M${period.mes}_${period.anio}.zip`
+        a.click()
+        URL.revokeObjectURL(blobUrl)
+        setTimeout(() => setZipProgress(null), 2500)
+      } else {
+        toast.error('Error al generar ZIP')
+        setZipProgress(null)
+      }
+    }
+
+    xhr.onerror = () => {
+      toast.error('Error de red al generar ZIP')
+      setZipProgress(null)
+    }
+
+    xhr.send()
   }
 
   const allUserNombres = useMemo(() => {
@@ -221,9 +251,9 @@ export default function Liquidacion() {
             {recalculating ? 'Recalculando...' : 'Recalcular'}
           </button>
           {sellerData && (tab === 'sellers' || tab === 'drivers') && (
-            <button onClick={downloadZip} disabled={downloadingZip} className="btn-secondary flex items-center gap-2">
+            <button onClick={downloadZip} disabled={!!zipProgress} className="btn-secondary flex items-center gap-2">
               <FileArchive size={16} />
-              {downloadingZip ? 'Generando...' : `ZIP ${tab === 'drivers' ? 'Drivers' : 'Sellers'}`}
+              {zipProgress ? `Generando ${zipProgress.label}...` : `ZIP ${tab === 'drivers' ? 'Drivers' : 'Sellers'}`}
             </button>
           )}
         </div>
@@ -318,6 +348,46 @@ export default function Liquidacion() {
             </div>
           )}
         </>
+      )}
+      {/* Overlay progreso ZIP */}
+      {zipProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 w-80 flex flex-col items-center gap-5">
+            {zipProgress.done ? (
+              <CheckCircle size={48} className="text-green-500" />
+            ) : (
+              <FileArchive size={48} className="text-primary-500 animate-pulse" />
+            )}
+            <div className="text-center">
+              <p className="font-semibold text-gray-800 text-lg">
+                {zipProgress.done ? '¡ZIP listo!' : `Generando ZIP ${zipProgress.label}`}
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                {zipProgress.done
+                  ? 'La descarga comenzará en un momento'
+                  : zipProgress.pct >= 0
+                    ? `Descargando archivo... ${zipProgress.pct}%`
+                    : 'Generando PDFs y comprimiendo...'}
+              </p>
+            </div>
+            {/* Barra de progreso */}
+            <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+              {zipProgress.pct >= 0 ? (
+                <div
+                  className={`h-3 rounded-full transition-all duration-300 ${zipProgress.done ? 'bg-green-500' : 'bg-primary-500'}`}
+                  style={{ width: `${zipProgress.pct}%` }}
+                />
+              ) : (
+                <div className="h-3 rounded-full bg-primary-400 animate-[progress-indeterminate_1.4s_ease-in-out_infinite] w-1/3" />
+              )}
+            </div>
+            {zipProgress.pct >= 0 && (
+              <span className="text-2xl font-bold text-primary-600">
+                {zipProgress.done ? '100%' : `${zipProgress.pct}%`}
+              </span>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

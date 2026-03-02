@@ -4,7 +4,7 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import PeriodSelector from '../../components/PeriodSelector'
 import toast from 'react-hot-toast'
-import { Download } from 'lucide-react'
+import { Download, FileSpreadsheet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -17,6 +17,7 @@ export default function DriverEntregas() {
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState({ semana: 1, mes: now.getMonth() + 1, anio: now.getFullYear() })
   const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [downloadingXls, setDownloadingXls] = useState(false)
 
   useEffect(() => {
     api.get('/drivers/mi-flota/info')
@@ -39,6 +40,23 @@ export default function DriverEntregas() {
     : filterDriver === 'mis'
       ? envios.filter((e) => e.driver_id === user?.entidad_id)
       : envios.filter((e) => e.driver_id === parseInt(filterDriver, 10))
+
+  const descargarExcel = async () => {
+    setDownloadingXls(true)
+    try {
+      const res = await api.get('/portal/driver/excel', { params: { semana: period.semana, mes: period.mes, anio: period.anio }, responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mis_entregas_S${period.semana}_${period.mes}_${period.anio}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('No hay entregas para este período')
+    } finally {
+      setDownloadingXls(false)
+    }
+  }
 
   const descargarPDF = async () => {
     setDownloadingPdf(true)
@@ -104,14 +122,18 @@ export default function DriverEntregas() {
               </select>
             </div>
           )}
-          <button
-            onClick={descargarPDF}
-            disabled={downloadingPdf}
-            className="btn btn-secondary flex items-center gap-2 ml-auto"
-          >
-            <Download size={16} />
-            {downloadingPdf ? 'Descargando...' : 'Descargar PDF'}
-          </button>
+          <div className="flex items-center gap-2 ml-auto">
+            <button onClick={descargarPDF} disabled={downloadingPdf}
+              className="btn-secondary flex items-center gap-2">
+              <Download size={16} />
+              {downloadingPdf ? 'Descargando...' : 'PDF'}
+            </button>
+            <button onClick={descargarExcel} disabled={downloadingXls}
+              className="btn-secondary flex items-center gap-2">
+              <FileSpreadsheet size={16} />
+              {downloadingXls ? 'Descargando...' : 'Excel'}
+            </button>
+          </div>
         </div>
       </div>
 

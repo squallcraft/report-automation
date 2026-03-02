@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog,
+  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -24,6 +24,7 @@ const adminLinks = [
   { to: '/admin/logs', icon: ClipboardList, label: 'Logs' },
   { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario' },
   { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
+  { to: '/admin/asistente', icon: Bot, label: 'Asistente IA' },
 ]
 
 const administracionLinks = [
@@ -41,17 +42,21 @@ const administracionLinks = [
   { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers' },
   { to: '/admin/logs', icon: ClipboardList, label: 'Logs' },
   { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario' },
+  { to: '/admin/asistente', icon: Bot, label: 'Asistente IA' },
 ]
 
 const sellerLinks = [
   { to: '/seller', icon: LayoutDashboard, label: 'Mi Panel' },
   { to: '/seller/envios', icon: FileText, label: 'Mis Envíos' },
+  { to: '/seller/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
+  { to: '/seller/facturacion', icon: Receipt, label: 'Mi Facturación' },
   { to: '/seller/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 
 const driverLinks = [
   { to: '/driver', icon: LayoutDashboard, label: 'Mi Panel' },
-  { to: '/driver/entregas', icon: FileText, label: 'Entregas' },
+  { to: '/driver/entregas', icon: FileText, label: 'Mis Entregas' },
+  { to: '/driver/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
   { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 

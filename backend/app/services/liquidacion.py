@@ -96,8 +96,12 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
             continue
 
         total_envios = sum(e.costo_driver + e.pago_extra_manual for e in envios)
-        total_extras_producto = sum(e.extra_producto_driver for e in envios)
-        total_extras_comuna = sum(e.extra_comuna_driver for e in envios)
+        if driver.contratado:
+            total_extras_producto = 0
+            total_extras_comuna = 0
+        else:
+            total_extras_producto = sum(e.extra_producto_driver for e in envios)
+            total_extras_comuna = sum(e.extra_comuna_driver for e in envios)
 
         retiros = db.query(Retiro).filter(
             Retiro.driver_id == driver.id,
@@ -170,7 +174,13 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
                 costo_retiros = sum(r.tarifa_driver for r in retiros)
         ingreso += ingreso_retiros
 
-        costo_drivers = sum(e.costo_driver + e.pago_extra_manual + e.extra_producto_driver + e.extra_comuna_driver for e in envios)
+        def _costo_envio_driver(e):
+            driver_e = db.get(Driver, e.driver_id) if e.driver_id else None
+            es_contratado = getattr(driver_e, 'contratado', False) if driver_e else False
+            extra_p = 0 if es_contratado else e.extra_producto_driver
+            extra_c = 0 if es_contratado else e.extra_comuna_driver
+            return e.costo_driver + e.pago_extra_manual + extra_p + extra_c
+        costo_drivers = sum(_costo_envio_driver(e) for e in envios)
 
         margen_bruto = ingreso - costo_drivers - costo_retiros
         margen_porcentaje = (margen_bruto / ingreso * 100) if ingreso > 0 else 0

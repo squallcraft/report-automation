@@ -5,6 +5,8 @@ backend/*.pyc
 backend/venv/
 backend/.venv/
 backend/ecourier.db
+backend/ecourier.db-shm
+backend/ecourier.db-wal
 backend/uploads/*
 !backend/uploads/.gitkeep
 backend/.env
