@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_seller, require_driver
+from app.auth import require_seller, require_driver, driver_period_allowed
 from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     TipoEntidadEnum, PagoSemanaSeller, FacturaMensualSeller,
@@ -253,6 +253,11 @@ def driver_liquidacion(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_driver),
 ):
+    if not driver_period_allowed(anio, mes, semana):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo puedes ver información desde la semana 4 de febrero 2026 en adelante.",
+        )
     driver_id = current_user["id"]
     resultado = calcular_liquidacion_drivers(db, semana, mes, anio)
     row = next((r for r in resultado if r["driver_id"] == driver_id), None)
@@ -275,6 +280,11 @@ def driver_excel(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_driver),
 ):
+    if not driver_period_allowed(anio, mes, semana):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo puedes descargar información desde la semana 4 de febrero 2026 en adelante.",
+        )
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Border, Side
 

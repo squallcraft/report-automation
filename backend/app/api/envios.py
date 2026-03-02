@@ -2,10 +2,13 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func as sqlfunc
+from sqlalchemy import or_, and_, func as sqlfunc
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion, get_current_user
+from app.auth import (
+    require_admin, require_admin_or_administracion, get_current_user,
+    DRIVER_CUTOFF_ANIO, DRIVER_CUTOFF_MES, DRIVER_CUTOFF_SEMANA,
+)
 from app.models import Envio, Seller, Driver, RolEnum
 from app.schemas import EnvioOut, EnvioUpdate
 
@@ -123,6 +126,12 @@ def listar_envios(
             query = query.filter(Envio.driver_id.in_([user["id"]] + sub_ids))
         else:
             query = query.filter(Envio.driver_id == user["id"])
+        # Drivers solo ven envíos desde semana 4 de febrero 2026 en adelante
+        query = query.filter(or_(
+            Envio.anio > DRIVER_CUTOFF_ANIO,
+            (Envio.anio == DRIVER_CUTOFF_ANIO) & (Envio.mes > DRIVER_CUTOFF_MES),
+            (Envio.anio == DRIVER_CUTOFF_ANIO) & (Envio.mes == DRIVER_CUTOFF_MES) & (Envio.semana >= DRIVER_CUTOFF_SEMANA),
+        ))
 
     is_admin = user["rol"] in (RolEnum.ADMIN, RolEnum.ADMINISTRACION)
     query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin)

@@ -8,6 +8,8 @@ import { Download, FileSpreadsheet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
+// Drivers solo ven datos desde semana 4 de febrero 2026
+const DRIVER_MIN_PERIOD = { semana: 4, mes: 2, anio: 2026 }
 
 export default function DriverEntregas() {
   const { user } = useAuth()
@@ -15,7 +17,13 @@ export default function DriverEntregas() {
   const [flota, setFlota] = useState(null)
   const [filterDriver, setFilterDriver] = useState('todos')
   const [loading, setLoading] = useState(true)
-  const [period, setPeriod] = useState({ semana: 1, mes: now.getMonth() + 1, anio: now.getFullYear() })
+  const [period, setPeriod] = useState(() => {
+    const y = now.getFullYear()
+    const m = now.getMonth() + 1
+    if (y < 2026 || (y === 2026 && m < 2)) return DRIVER_MIN_PERIOD
+    if (y === 2026 && m === 2) return { semana: 4, mes: 2, anio: 2026 }
+    return { semana: 1, mes: m, anio: y }
+  })
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [downloadingXls, setDownloadingXls] = useState(false)
 
@@ -97,6 +105,7 @@ export default function DriverEntregas() {
   return (
     <div>
       <div className="mb-6">
+        <p className="text-xs text-amber-600 mb-1">Solo se muestra información desde la semana 4 de febrero 2026.</p>
         <h1 className="text-2xl font-bold text-gray-900">
           {esJefe ? 'Entregas de la Flota' : 'Mis Entregas'}
         </h1>

@@ -6,9 +6,17 @@ import { Download, FileSpreadsheet, Truck } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
+// Drivers solo ven datos desde semana 4 de febrero 2026
+const DRIVER_MIN_PERIOD = { semana: 4, mes: 2, anio: 2026 }
 
 export default function DriverLiquidacion() {
-  const [period, setPeriod] = useState({ semana: 1, mes: now.getMonth() + 1, anio: now.getFullYear() })
+  const [period, setPeriod] = useState(() => {
+    const y = now.getFullYear()
+    const m = now.getMonth() + 1
+    if (y < 2026 || (y === 2026 && m < 2)) return DRIVER_MIN_PERIOD
+    if (y === 2026 && m === 2) return { semana: 4, mes: 2, anio: 2026 }
+    return { semana: 1, mes: m, anio: y }
+  })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
@@ -19,8 +27,9 @@ export default function DriverLiquidacion() {
     try {
       const res = await api.get('/portal/driver/liquidacion', { params: period })
       setData(res.data)
-    } catch {
-      toast.error('Error al cargar liquidación')
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Error al cargar liquidación'
+      toast.error(typeof msg === 'string' ? msg : 'Error al cargar liquidación')
     } finally {
       setLoading(false)
     }
@@ -78,6 +87,7 @@ export default function DriverLiquidacion() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Mi Liquidación</h1>
         <p className="text-sm text-gray-500 mt-1">Resumen de pagos por período</p>
+        <p className="text-xs text-amber-600 mt-0.5">Solo se muestra información desde la semana 4 de febrero 2026.</p>
       </div>
 
       <div className="card mb-6">

@@ -100,6 +100,25 @@ def require_seller(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
+# Límite de visibilidad para drivers: solo desde semana 4 de febrero 2026 en adelante
+DRIVER_CUTOFF_ANIO = 2026
+DRIVER_CUTOFF_MES = 2
+DRIVER_CUTOFF_SEMANA = 4
+
+
+def driver_period_allowed(anio: int, mes: int, semana: int) -> bool:
+    """True si el período (anio, mes, semana) es visible para rol driver."""
+    if anio > DRIVER_CUTOFF_ANIO:
+        return True
+    if anio < DRIVER_CUTOFF_ANIO:
+        return False
+    if mes > DRIVER_CUTOFF_MES:
+        return True
+    if mes < DRIVER_CUTOFF_MES:
+        return False
+    return semana >= DRIVER_CUTOFF_SEMANA
+
+
 def require_driver(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["rol"] != RolEnum.DRIVER:
         raise HTTPException(status_code=403, detail="Acceso solo para drivers")

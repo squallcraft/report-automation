@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion, get_current_user
+from app.auth import require_admin, require_admin_or_administracion, get_current_user, driver_period_allowed
 from app.models import (
     PeriodoLiquidacion, EstadoLiquidacionEnum,
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
@@ -645,6 +645,11 @@ def descargar_mi_pdf_driver(
     from app.models import RolEnum
     if user["rol"] != RolEnum.DRIVER:
         raise HTTPException(status_code=403, detail="Solo para drivers")
+    if not driver_period_allowed(anio, mes, semana):
+        raise HTTPException(
+            status_code=403,
+            detail="Solo puedes descargar información desde la semana 4 de febrero 2026 en adelante.",
+        )
     try:
         pdf_bytes = generar_pdf_driver(db, user["id"], semana, mes, anio)
     except ValueError as e:
