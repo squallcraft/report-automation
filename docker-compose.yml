@@ -25,6 +25,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-cambiar-en-produccion}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       CORS_ORIGINS: '["https://facturacion.e-courier.cl", "http://facturacion.e-courier.cl"]'
+      HAULMER_API_KEY: ${HAULMER_API_KEY:-}
     volumes:
       - uploads:/app/uploads
 
