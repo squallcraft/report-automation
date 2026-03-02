@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.config import get_settings
 from app.auth import require_admin_or_administracion
 from app.models import (
     Seller, Envio, Retiro, AjusteLiquidacion,
@@ -17,6 +18,7 @@ from app.models import (
     EstadoPagoEnum, EstadoFacturaEnum,
 )
 from app.services.liquidacion import calcular_liquidacion_sellers
+from app.services.haulmer import emitir_factura
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
 
@@ -301,13 +303,14 @@ def generar_facturas(
     current_user=Depends(require_admin_or_administracion),
 ):
     """
-    Genera registros de factura mensual para los sellers seleccionados.
-    Consolida las semanas del mes. No emite vía Haulmer aún (solo prepara).
+    Genera registros de factura mensual y emite vía Haulmer (OpenFactura) si está configurado.
     """
     semanas = _semanas_del_mes(db, mes, anio)
     creadas = 0
     errores = []
     usuario = current_user.get("nombre", current_user.get("username", "admin"))
+    settings = get_settings()
+    emitir_haulmer = bool(settings.HAULMER_API_KEY and settings.HAULMER_EMISOR_RUT)
 
     for sid in seller_ids:
         seller = db.get(Seller, sid)
@@ -345,14 +348,50 @@ def generar_facturas(
             existing.iva = iva
             existing.total = subtotal + iva
             existing.estado = EstadoFacturaEnum.PENDIENTE.value
+            factura_obj = existing
         else:
-            factura = FacturaMensualSeller(
+            factura_obj = FacturaMensualSeller(
                 seller_id=sid, mes=mes, anio=anio,
                 subtotal_neto=subtotal, iva=iva, total=subtotal + iva,
                 emitida_por=usuario,
             )
-            db.add(factura)
+            db.add(factura_obj)
+            db.flush()
+
         creadas += 1
+
+        # Emitir en Haulmer si está configurado y hay monto
+        if emitir_haulmer and factura_obj.total > 0:
+            if not (seller.rut and str(seller.rut).strip()):
+                errores.append(f"{seller.nombre}: sin RUT, no se puede emitir factura electrónica")
+            else:
+                glosa = f"Servicios de transporte y logística - Mes {mes} {anio}"
+                folio, resp, err = emitir_factura(
+                    api_key=settings.HAULMER_API_KEY,
+                    api_url=settings.HAULMER_API_URL,
+                    emisor_rut=settings.HAULMER_EMISOR_RUT,
+                    emisor_razon=settings.HAULMER_EMISOR_RAZON or "Emisor",
+                    emisor_giro=settings.HAULMER_EMISOR_GIRO or GIRO_DEFAULT,
+                    emisor_dir=settings.HAULMER_EMISOR_DIR or "Sin dirección",
+                    emisor_cmna=settings.HAULMER_EMISOR_CMNA or "Sin comuna",
+                    emisor_acteco=settings.HAULMER_EMISOR_ACTECO,
+                    receptor_rut=seller.rut,
+                    receptor_razon=seller.nombre,
+                    receptor_giro=(seller.giro or "").strip() or settings.HAULMER_EMISOR_GIRO or GIRO_DEFAULT,
+                    mnt_neto=factura_obj.subtotal_neto,
+                    iva=factura_obj.iva,
+                    mnt_total=factura_obj.total,
+                    glosa_detalle=glosa,
+                    idempotency_key=f"ecourier-{sid}-{mes}-{anio}",
+                )
+                if err:
+                    errores.append(f"{seller.nombre}: {err}")
+                else:
+                    factura_obj.folio_haulmer = folio or (str(resp.get("FOLIO") or resp.get("folio") or "") if isinstance(resp, dict) else "")
+                    factura_obj.estado = EstadoFacturaEnum.EMITIDA.value
+                    factura_obj.emitida_en = datetime.now(timezone.utc)
+                    if isinstance(resp, dict):
+                        factura_obj.respuesta_api = {k: v for k, v in resp.items() if k in ("FOLIO", "folio", "RESOLUCION")}
 
     db.commit()
     return {"creadas": creadas, "errores": errores}

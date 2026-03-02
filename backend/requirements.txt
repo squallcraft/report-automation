@@ -13,3 +13,4 @@ reportlab>=4.0
 font-roboto>=0.0.1
 psycopg2-binary>=2.9
 google-genai>=1.0.0
+httpx>=0.25.0

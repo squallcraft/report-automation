@@ -26,6 +26,12 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       CORS_ORIGINS: '["https://facturacion.e-courier.cl", "http://facturacion.e-courier.cl"]'
       HAULMER_API_KEY: ${HAULMER_API_KEY:-}
+      HAULMER_EMISOR_RUT: ${HAULMER_EMISOR_RUT:-}
+      HAULMER_EMISOR_RAZON: ${HAULMER_EMISOR_RAZON:-}
+      HAULMER_EMISOR_GIRO: ${HAULMER_EMISOR_GIRO:-Servicios de transporte y logística}
+      HAULMER_EMISOR_DIR: ${HAULMER_EMISOR_DIR:-}
+      HAULMER_EMISOR_CMNA: ${HAULMER_EMISOR_CMNA:-}
+      HAULMER_EMISOR_ACTECO: ${HAULMER_EMISOR_ACTECO:-492110}
     volumes:
       - uploads:/app/uploads
 
