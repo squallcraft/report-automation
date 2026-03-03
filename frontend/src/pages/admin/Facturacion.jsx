@@ -51,6 +51,7 @@ export default function Facturacion() {
   useEffect(() => {
     const id = ++reqId.current
     setLoading(true)
+    setData(null)   // limpiar datos anteriores para mostrar spinner inmediatamente
     setSelected(new Set())
     api.get('/facturacion/tabla', { params: { mes, anio } })
       .then(res => { if (id === reqId.current) setData(res.data) })
@@ -325,8 +326,11 @@ export default function Facturacion() {
             </table>
           </div>
         )
-      ) : loading && !data ? (
-        <div className="text-center py-12 text-gray-400">Cargando...</div>
+      ) : loading ? (
+        <div className="card text-center py-12 text-gray-400">
+          <Loader2 size={28} className="mx-auto mb-3 animate-spin opacity-40" />
+          <p>Cargando {MESES[mes]} {anio}...</p>
+        </div>
       ) : !data || sellers.length === 0 ? (
         <div className="card text-center py-12 text-gray-400">
           No hay datos de facturación para {MESES[mes]} {anio}
@@ -448,7 +452,7 @@ export default function Facturacion() {
                     >
                       Todo {MESES[mes]}
                     </button>
-                    {semanas.map(s => (
+                    {(semanas.length > 0 ? semanas : [1, 2, 3, 4, 5]).map(s => (
                       <button
                         key={s}
                         onClick={() => setFacturarSemana(String(s))}
