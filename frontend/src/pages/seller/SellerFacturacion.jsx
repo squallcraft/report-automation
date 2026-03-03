@@ -20,6 +20,8 @@ export default function SellerFacturacion() {
   const [anio, setAnio] = useState(now.getFullYear())
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [historial, setHistorial] = useState([])
+  const [historialLoading, setHistorialLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -28,6 +30,14 @@ export default function SellerFacturacion() {
       .catch(() => toast.error('Error al cargar facturación'))
       .finally(() => setLoading(false))
   }, [mes, anio])
+
+  useEffect(() => {
+    setHistorialLoading(true)
+    api.get('/portal/seller/facturas-historial', { params: { limite: 24 } })
+      .then(res => setHistorial(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setHistorial([]))
+      .finally(() => setHistorialLoading(false))
+  }, [])
 
   const semanas = data?.semanas_disponibles || []
 
@@ -58,10 +68,37 @@ export default function SellerFacturacion() {
       {loading ? (
         <div className="text-center py-12 text-gray-400">Cargando...</div>
       ) : !data || data.subtotal_neto === 0 ? (
-        <div className="card text-center py-12 text-gray-400">
-          <Receipt size={40} className="mx-auto mb-3 opacity-30" />
-          <p>No hay datos de facturación para {MESES[mes]} {anio}</p>
-        </div>
+        <>
+          <div className="card text-center py-12 text-gray-400">
+            <Receipt size={40} className="mx-auto mb-3 opacity-30" />
+            <p>No hay datos de facturación para {MESES[mes]} {anio}</p>
+          </div>
+          {!historialLoading && historial.length > 0 && (
+            <div className="mt-6 card">
+              <h2 className="text-sm font-semibold text-gray-800 mb-3">Facturas anteriores</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                      <th className="pb-2 font-medium">Mes / Año</th>
+                      <th className="pb-2 font-medium text-right">Total</th>
+                      <th className="pb-2 font-medium text-center">Folio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historial.map((f) => (
+                      <tr key={`${f.mes}-${f.anio}`} className="border-b border-gray-100">
+                        <td className="py-2 text-gray-700">{MESES[f.mes]} {f.anio}</td>
+                        <td className="py-2 text-right font-mono">{fmt(f.total)}</td>
+                        <td className="py-2 text-center text-gray-600">{f.folio_haulmer || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <>
           {/* Resumen totales */}
@@ -134,6 +171,37 @@ export default function SellerFacturacion() {
               </div>
             </div>
           )}
+
+          {/* Facturas anteriores */}
+          <div className="mt-6 card">
+            <h2 className="text-sm font-semibold text-gray-800 mb-3">Facturas anteriores</h2>
+            {historialLoading ? (
+              <p className="text-sm text-gray-500">Cargando...</p>
+            ) : historial.length === 0 ? (
+              <p className="text-sm text-gray-500">No hay facturas emitidas anteriores</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                      <th className="pb-2 font-medium">Mes / Año</th>
+                      <th className="pb-2 font-medium text-right">Total</th>
+                      <th className="pb-2 font-medium text-center">Folio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historial.map((f) => (
+                      <tr key={`${f.mes}-${f.anio}`} className="border-b border-gray-100">
+                        <td className="py-2 text-gray-700">{MESES[f.mes]} {f.anio}</td>
+                        <td className="py-2 text-right font-mono">{fmt(f.total)}</td>
+                        <td className="py-2 text-center text-gray-600">{f.folio_haulmer || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

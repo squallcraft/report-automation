@@ -138,6 +138,37 @@ def seller_facturacion(
     }
 
 
+@router.get("/seller/facturas-historial")
+def seller_facturas_historial(
+    limite: int = Query(24, ge=1, le=60),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_seller),
+):
+    """Historial de facturas emitidas para el seller actual."""
+    from app.models import EstadoFacturaEnum
+    seller_id = current_user["id"]
+    facturas = (
+        db.query(FacturaMensualSeller)
+        .filter(
+            FacturaMensualSeller.seller_id == seller_id,
+            FacturaMensualSeller.estado == EstadoFacturaEnum.EMITIDA.value,
+        )
+        .order_by(FacturaMensualSeller.anio.desc(), FacturaMensualSeller.mes.desc())
+        .limit(limite)
+        .all()
+    )
+    return [
+        {
+            "mes": f.mes,
+            "anio": f.anio,
+            "total": f.total,
+            "folio_haulmer": f.folio_haulmer,
+            "emitida_en": f.emitida_en.isoformat() if f.emitida_en else None,
+        }
+        for f in facturas
+    ]
+
+
 @router.get("/seller/pdf")
 def seller_pdf(
     semana: int = Query(...),

@@ -1,12 +1,15 @@
 """
 API de Facturación: control semanal de cobros a sellers y factura mensual.
 """
+import json
 from typing import Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.config import get_settings
@@ -162,8 +165,13 @@ def tabla_facturacion(
         row["factura_estado"] = factura.estado if factura else None
         row["factura_folio"] = factura.folio_haulmer if factura else None
 
-        # Solo incluir sellers que tengan al menos un monto > 0
-        if subtotal > 0 or (factura and factura.estado != EstadoFacturaEnum.PENDIENTE.value):
+        # Incluir si: tiene monto, tiene factura emitida, o tiene al menos un envío en el mes (para no ocultar clientes con data)
+        tiene_envios_mes = db.query(Envio).filter(
+            Envio.seller_id == seller.id,
+            Envio.mes == mes,
+            Envio.anio == anio,
+        ).first() is not None
+        if subtotal > 0 or (factura and factura.estado != EstadoFacturaEnum.PENDIENTE.value) or tiene_envios_mes:
             result.append(row)
 
     return {"semanas_disponibles": semanas, "sellers": result}
@@ -395,3 +403,192 @@ def generar_facturas(
 
     db.commit()
     return {"creadas": creadas, "errores": errores}
+
+
+def _procesar_un_seller_factura(
+    db: Session,
+    sid: int,
+    mes: int,
+    anio: int,
+    semanas: List[int],
+    usuario: str,
+    settings,
+    emitir_haulmer: bool,
+) -> tuple[Optional[object], Optional[str], Optional[str], int]:
+    """
+    Procesa un seller: crea/actualiza factura y opcionalmente emite en Haulmer.
+    Retorna (factura_obj, seller_nombre, error, creadas_delta).
+    creadas_delta es 1 si se creó/actualizó registro, 0 si se saltó por error previo.
+    """
+    seller = db.get(Seller, sid)
+    if not seller:
+        return None, None, f"Seller ID {sid} no encontrado", 0
+    existing = db.query(FacturaMensualSeller).filter(
+        FacturaMensualSeller.seller_id == sid,
+        FacturaMensualSeller.mes == mes,
+        FacturaMensualSeller.anio == anio,
+    ).first()
+    if existing and existing.estado == EstadoFacturaEnum.EMITIDA.value:
+        return None, seller.nombre, f"{seller.nombre}: ya tiene factura emitida", 0
+
+    subtotal = 0
+    for sem in semanas:
+        pago = db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == sid,
+            PagoSemanaSeller.semana == sem,
+            PagoSemanaSeller.mes == mes,
+            PagoSemanaSeller.anio == anio,
+        ).first()
+        if pago and pago.monto_override is not None:
+            subtotal += pago.monto_override
+        else:
+            subtotal += _get_monto_semanal_seller(db, sid, sem, mes, anio)
+    iva = int(subtotal * 0.19)
+
+    if existing:
+        existing.subtotal_neto = subtotal
+        existing.iva = iva
+        existing.total = subtotal + iva
+        existing.estado = EstadoFacturaEnum.PENDIENTE.value
+        factura_obj = existing
+    else:
+        factura_obj = FacturaMensualSeller(
+            seller_id=sid, mes=mes, anio=anio,
+            subtotal_neto=subtotal, iva=iva, total=subtotal + iva,
+            emitida_por=usuario,
+        )
+        db.add(factura_obj)
+        db.flush()
+
+    creadas_delta = 1
+    err_msg = None
+    if emitir_haulmer and factura_obj.total > 0:
+        if not (seller.rut and str(seller.rut).strip()):
+            err_msg = f"{seller.nombre}: sin RUT, no se puede emitir factura electrónica"
+        else:
+            glosa = f"Servicios de transporte y logística - Mes {mes} {anio}"
+            folio, resp, err = emitir_factura(
+                api_key=settings.HAULMER_API_KEY,
+                api_url=settings.HAULMER_API_URL,
+                emisor_rut=settings.HAULMER_EMISOR_RUT,
+                emisor_razon=settings.HAULMER_EMISOR_RAZON or "Emisor",
+                emisor_giro=settings.HAULMER_EMISOR_GIRO or GIRO_DEFAULT,
+                emisor_dir=settings.HAULMER_EMISOR_DIR or "Sin dirección",
+                emisor_cmna=settings.HAULMER_EMISOR_CMNA or "Sin comuna",
+                emisor_acteco=settings.HAULMER_EMISOR_ACTECO,
+                receptor_rut=seller.rut,
+                receptor_razon=seller.nombre,
+                receptor_giro=(seller.giro or "").strip() or settings.HAULMER_EMISOR_GIRO or GIRO_DEFAULT,
+                mnt_neto=factura_obj.subtotal_neto,
+                iva=factura_obj.iva,
+                mnt_total=factura_obj.total,
+                glosa_detalle=glosa,
+                idempotency_key=f"ecourier-{sid}-{mes}-{anio}",
+            )
+            if err:
+                err_msg = f"{seller.nombre}: {err}"
+            else:
+                factura_obj.folio_haulmer = folio or (str(resp.get("FOLIO") or resp.get("folio") or "") if isinstance(resp, dict) else "")
+                factura_obj.estado = EstadoFacturaEnum.EMITIDA.value
+                factura_obj.emitida_en = datetime.now(timezone.utc)
+                if isinstance(resp, dict):
+                    factura_obj.respuesta_api = {k: v for k, v in resp.items() if k in ("FOLIO", "folio", "RESOLUCION")}
+    return factura_obj, seller.nombre, err_msg, creadas_delta
+
+
+@router.post("/generar-facturas-stream")
+def generar_facturas_stream(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    seller_ids: List[int] = Body(..., embed=False),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_administracion),
+):
+    """Genera facturas y emite en Haulmer; retorna stream SSE con progreso (current/total) y resultado final."""
+    def event_stream():
+        try:
+            if not seller_ids:
+                yield f"event: done\ndata: {json.dumps({'creadas': 0, 'errores': ['Ningún seller seleccionado']})}\n\n"
+                return
+            semanas = _semanas_del_mes(db, mes, anio)
+            usuario = current_user.get("nombre", current_user.get("username", "admin"))
+            settings = get_settings()
+            emitir_haulmer = bool(settings.HAULMER_API_KEY and settings.HAULMER_EMISOR_RUT)
+            total = len(seller_ids)
+            creadas = 0
+            errores = []
+            for i, sid in enumerate(seller_ids):
+                _, seller_nombre, err_msg, delta = _procesar_un_seller_factura(
+                    db, sid, mes, anio, semanas, usuario, settings, emitir_haulmer,
+                )
+                creadas += delta
+                if err_msg:
+                    errores.append(err_msg)
+                yield f"event: progress\ndata: {json.dumps({'current': i + 1, 'total': total, 'seller_nombre': seller_nombre or '—'})}\n\n"
+            db.commit()
+            yield f"event: done\ndata: {json.dumps({'creadas': creadas, 'errores': errores})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@router.get("/historial")
+def historial_facturas(
+    desde_mes: Optional[int] = Query(None),
+    desde_anio: Optional[int] = Query(None),
+    hasta_mes: Optional[int] = Query(None),
+    hasta_anio: Optional[int] = Query(None),
+    seller_id: Optional[int] = Query(None),
+    limite: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Lista facturas emitidas (historial). Sin filtros: últimos 12 meses."""
+    q = db.query(FacturaMensualSeller).filter(FacturaMensualSeller.estado == EstadoFacturaEnum.EMITIDA.value)
+    if seller_id is not None:
+        q = q.filter(FacturaMensualSeller.seller_id == seller_id)
+    if desde_anio is not None:
+        q = q.filter(
+            or_(
+                FacturaMensualSeller.anio > desde_anio,
+                (FacturaMensualSeller.anio == desde_anio) & (FacturaMensualSeller.mes >= (desde_mes or 1)),
+            )
+        )
+    if hasta_anio is not None:
+        q = q.filter(
+            or_(
+                FacturaMensualSeller.anio < hasta_anio,
+                (FacturaMensualSeller.anio == hasta_anio) & (FacturaMensualSeller.mes <= (hasta_mes or 12)),
+            )
+        )
+    if desde_anio is None and hasta_anio is None:
+        from datetime import date
+        hoy = date.today()
+        d_anio = hoy.year - 1
+        d_mes = hoy.month
+        q = q.filter(
+            or_(
+                FacturaMensualSeller.anio > d_anio,
+                (FacturaMensualSeller.anio == d_anio) & (FacturaMensualSeller.mes >= d_mes),
+            )
+        )
+    rows = q.order_by(FacturaMensualSeller.anio.desc(), FacturaMensualSeller.mes.desc()).limit(limite).all()
+    result = []
+    for f in rows:
+        seller = db.get(Seller, f.seller_id)
+        result.append({
+            "id": f.id,
+            "seller_id": f.seller_id,
+            "seller_nombre": seller.nombre if seller else "—",
+            "mes": f.mes,
+            "anio": f.anio,
+            "total": f.total,
+            "folio_haulmer": f.folio_haulmer,
+            "emitida_en": f.emitida_en.isoformat() if f.emitida_en else None,
+        })
+    return result

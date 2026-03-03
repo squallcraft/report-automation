@@ -63,6 +63,8 @@ export default function Sellers() {
 
   const [importing, setImporting] = useState(false)
   const [importingRutGiro, setImportingRutGiro] = useState(false)
+  const [sellerFacturas, setSellerFacturas] = useState([])
+  const [sellerFacturasLoading, setSellerFacturasLoading] = useState(false)
 
   const fetchSellers = () => {
     api.get('/sellers')
@@ -129,6 +131,18 @@ export default function Sellers() {
   useEffect(() => {
     fetchSellers()
   }, [])
+
+  useEffect(() => {
+    if (!editing?.id) {
+      setSellerFacturas([])
+      return
+    }
+    setSellerFacturasLoading(true)
+    api.get('/facturacion/historial', { params: { seller_id: editing.id, limite: 24 } })
+      .then(({ data }) => setSellerFacturas(Array.isArray(data) ? data : []))
+      .catch(() => setSellerFacturas([]))
+      .finally(() => setSellerFacturasLoading(false))
+  }, [editing?.id])
 
   const openCreate = () => {
     setEditing(null)
@@ -464,6 +478,37 @@ export default function Sellers() {
               />
             </div>
           </div>
+          {editing && (
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Facturas emitidas</p>
+              {sellerFacturasLoading ? (
+                <p className="text-xs text-gray-500">Cargando...</p>
+              ) : sellerFacturas.length === 0 ? (
+                <p className="text-xs text-gray-500">Sin facturas emitidas</p>
+              ) : (
+                <div className="max-h-40 overflow-y-auto rounded border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left font-medium text-gray-600">Mes / Año</th>
+                        <th className="px-2 py-1.5 text-right font-medium text-gray-600">Total</th>
+                        <th className="px-2 py-1.5 text-center font-medium text-gray-600">Folio</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sellerFacturas.map((f) => (
+                        <tr key={`${f.mes}-${f.anio}`} className="border-t border-gray-100">
+                          <td className="px-2 py-1.5 text-gray-700">{new Date(f.anio, f.mes - 1).toLocaleString('es-CL', { month: 'short', year: 'numeric' })}</td>
+                          <td className="px-2 py-1.5 text-right font-mono">{fmtClp(f.total)}</td>
+                          <td className="px-2 py-1.5 text-center text-gray-600">{f.folio_haulmer || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
               Cancelar

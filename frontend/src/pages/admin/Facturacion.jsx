@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { FileText, Check, DollarSign } from 'lucide-react'
+import { FileText, Check, DollarSign, Loader2 } from 'lucide-react'
 import Modal from '../../components/Modal'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -28,6 +28,10 @@ export default function Facturacion() {
   const [filterText, setFilterText] = useState('')
   const [showFacturar, setShowFacturar] = useState(false)
   const [tab, setTab] = useState('facturacion')
+  const [progress, setProgress] = useState(null)
+  const [historialData, setHistorialData] = useState([])
+  const [historialLoading, setHistorialLoading] = useState(false)
+  const [historialAnio, setHistorialAnio] = useState(new Date().getFullYear())
   const reqId = useRef(0)
 
   // Recarga silenciosa después de un save — sin reqId para no cancelar respuestas válidas
@@ -50,6 +54,10 @@ export default function Facturacion() {
       .catch(() => { if (id === reqId.current) toast.error('Error cargando facturación') })
       .finally(() => { if (id === reqId.current) setLoading(false) })
   }, [mes, anio])
+
+  useEffect(() => {
+    if (tab === 'historial') loadHistorial()
+  }, [tab, historialAnio])
 
   const semanas = data?.semanas_disponibles || []
   const sellers = useMemo(() => {
@@ -98,13 +106,72 @@ export default function Facturacion() {
 
   const generarFacturas = async () => {
     if (selected.size === 0) return toast.error('Selecciona al menos un seller')
+    const ids = [...selected]
+    setProgress({ current: 0, total: ids.length, seller_nombre: '' })
+    const token = localStorage.getItem('token')
+    const base = api.defaults.baseURL || '/api'
+    const url = `${base}/facturacion/generar-facturas-stream?mes=${mes}&anio=${anio}`
     try {
-      const res = await api.post('/facturacion/generar-facturas', [...selected], { params: { mes, anio } })
-      toast.success(`${res.data.creadas} factura(s) generada(s)`)
-      res.data.errores?.forEach(e => toast.error(e))
-      setShowFacturar(false)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(ids),
+      })
+      if (!res.ok) throw new Error(res.statusText)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let lastEvent = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const blocks = buffer.split('\n\n')
+        buffer = blocks.pop() || ''
+        for (const block of blocks) {
+          const lines = block.split('\n')
+          for (const line of lines) {
+            if (line.startsWith('event: ')) lastEvent = line.slice(7).trim()
+            else if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6).trim()
+              if (!dataStr) continue
+              try {
+                const data = JSON.parse(dataStr)
+                if (lastEvent === 'progress') {
+                  setProgress({ current: data.current, total: data.total, seller_nombre: data.seller_nombre || '' })
+                } else if (lastEvent === 'done') {
+                  setProgress(null)
+                  setShowFacturar(false)
+                  toast.success(`${data.creadas} factura(s) procesada(s)`)
+                  data.errores?.forEach(e => toast.error(e))
+                  recargar()
+                  if (tab === 'historial') loadHistorial()
+                  return
+                } else if (lastEvent === 'error') {
+                  setProgress(null)
+                  toast.error(data.detail || 'Error')
+                  return
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      }
+      setProgress(null)
       recargar()
-    } catch { toast.error('Error generando facturas') }
+      if (tab === 'historial') loadHistorial()
+    } catch (e) {
+      setProgress(null)
+      toast.error(e.message || 'Error generando facturas')
+    }
+  }
+
+  const loadHistorial = () => {
+    setHistorialLoading(true)
+    api.get('/facturacion/historial', { params: { desde_mes: 1, desde_anio: historialAnio, hasta_mes: 12, hasta_anio: historialAnio } })
+      .then(({ data }) => setHistorialData(Array.isArray(data) ? data : []))
+      .catch(() => toast.error('Error cargando historial'))
+      .finally(() => setHistorialLoading(false))
   }
 
   const totalesGenerales = useMemo(() => {
@@ -129,17 +196,22 @@ export default function Facturacion() {
       </div>
 
       <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {['facturacion', 'pagos'].map(t => (
+        {[
+          ['facturacion', 'Facturación Mensual'],
+          ['pagos', 'Control de Pagos Semanal'],
+          ['historial', 'Historial emitidas'],
+        ].map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               tab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'facturacion' ? 'Facturación Mensual' : 'Control de Pagos Semanal'}
+            {label}
           </button>
         ))}
       </div>
 
+      {tab !== 'historial' && (
       <div className="card mb-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
@@ -169,6 +241,19 @@ export default function Facturacion() {
           </div>
         )}
       </div>
+      )}
+
+      {tab === 'historial' && (
+        <div className="card mb-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">Año:</label>
+            <select className="input w-28" value={historialAnio} onChange={e => setHistorialAnio(Number(e.target.value))}>
+              {[2024, 2025, 2026, 2027].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <button type="button" onClick={loadHistorial} className="btn btn-secondary text-sm">Actualizar</button>
+          </div>
+        </div>
+      )}
 
       {sellers.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-4">
@@ -187,7 +272,40 @@ export default function Facturacion() {
         </div>
       )}
 
-      {loading && !data ? (
+      {tab === 'historial' ? (
+        historialLoading ? (
+          <div className="text-center py-12 text-gray-400">Cargando historial...</div>
+        ) : historialData.length === 0 ? (
+          <div className="card text-center py-12 text-gray-400">
+            No hay facturas emitidas para el año {historialAnio}
+          </div>
+        ) : (
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                  <th className="pb-2 font-medium">Vendedor</th>
+                  <th className="pb-2 font-medium">Mes / Año</th>
+                  <th className="pb-2 font-medium text-right">Total</th>
+                  <th className="pb-2 font-medium text-center">Folio</th>
+                  <th className="pb-2 font-medium">Emitida</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historialData.map((f) => (
+                  <tr key={`${f.seller_id}-${f.mes}-${f.anio}`} className="border-b border-gray-100">
+                    <td className="py-2 font-medium text-gray-800">{f.seller_nombre}</td>
+                    <td className="py-2">{MESES[f.mes]} {f.anio}</td>
+                    <td className="py-2 text-right font-mono">{fmt(f.total)}</td>
+                    <td className="py-2 text-center text-gray-600">{f.folio_haulmer || '—'}</td>
+                    <td className="py-2 text-xs text-gray-500">{f.emitida_en ? new Date(f.emitida_en).toLocaleString('es-CL') : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : loading && !data ? (
         <div className="text-center py-12 text-gray-400">Cargando...</div>
       ) : !data || sellers.length === 0 ? (
         <div className="card text-center py-12 text-gray-400">
@@ -283,18 +401,35 @@ export default function Facturacion() {
         </div>
       )}
 
-      <Modal open={showFacturar} title="Confirmar Facturación" onClose={() => setShowFacturar(false)}>
+      <Modal open={showFacturar} title="Confirmar Facturación" onClose={() => !progress && setShowFacturar(false)}>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
-              Se generarán facturas para <strong>{selected.size}</strong> sellers del mes de <strong>{MESES[mes]} {anio}</strong>.
-            </p>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
-              Esto creará los registros de factura. La emisión real vía Haulmer se realizará cuando se configure la integración.
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setShowFacturar(false)} className="btn btn-secondary">Cancelar</button>
-              <button onClick={generarFacturas} className="btn btn-primary">Confirmar y Generar</button>
-            </div>
+            {progress ? (
+              <>
+                <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-blue-900">Procesando facturas</p>
+                    <p className="text-sm text-blue-700">{progress.current} / {progress.total} — {progress.seller_nombre || '...'}</p>
+                  </div>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="bg-primary-600 h-2 rounded-full transition-all duration-300" style={{ width: `${progress.total ? (100 * progress.current / progress.total) : 0}%` }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-600">
+                  Se generarán facturas para <strong>{selected.size}</strong> sellers del mes de <strong>{MESES[mes]} {anio}</strong>.
+                </p>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+                  Se crearán los registros y se emitirán en Haulmer (los que tengan RUT). Verás el avance en tiempo real.
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                  <button onClick={() => setShowFacturar(false)} className="btn btn-secondary">Cancelar</button>
+                  <button onClick={generarFacturas} className="btn btn-primary">Confirmar y Generar</button>
+                </div>
+              </>
+            )}
           </div>
         </Modal>
     </div>
