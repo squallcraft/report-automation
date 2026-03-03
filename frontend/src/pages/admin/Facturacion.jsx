@@ -32,6 +32,8 @@ export default function Facturacion() {
   const [historialData, setHistorialData] = useState([])
   const [historialLoading, setHistorialLoading] = useState(false)
   const [historialAnio, setHistorialAnio] = useState(new Date().getFullYear())
+  const [historialMes, setHistorialMes] = useState(0)       // 0 = todos los meses
+  const [historialSearch, setHistorialSearch] = useState('')
   const [facturarSemana, setFacturarSemana] = useState('mes')   // 'mes' | '1'..'5'
   const [yaEmitidas, setYaEmitidas] = useState([])              // sellers ya facturados
   const [forzar, setForzar] = useState(false)
@@ -70,6 +72,21 @@ export default function Facturacion() {
     const q = filterText.toLowerCase()
     return data.sellers.filter(s => s.seller_nombre.toLowerCase().includes(q))
   }, [data, filterText])
+
+  const historialFiltrado = useMemo(() => {
+    let items = historialData
+    if (historialMes > 0) items = items.filter(f => f.mes === historialMes)
+    if (historialSearch.trim()) {
+      const q = historialSearch.trim().toLowerCase()
+      items = items.filter(f =>
+        f.seller_nombre?.toLowerCase().includes(q) ||
+        String(f.folio_haulmer || '').includes(q) ||
+        `${MESES[f.mes]} ${f.anio}`.toLowerCase().includes(q) ||
+        String(f.total || '').includes(q)
+      )
+    }
+    return items
+  }, [historialData, historialMes, historialSearch])
 
   const toggleSelect = (id) => {
     setSelected(prev => {
@@ -205,8 +222,8 @@ export default function Facturacion() {
   }, [sellers])
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col h-full gap-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <FileText size={24} className="text-primary-600" />
           <div>
@@ -216,7 +233,7 @@ export default function Facturacion() {
         </div>
       </div>
 
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200">
         {[
           ['facturacion', 'Facturación Mensual'],
           ['pagos', 'Control de Pagos Semanal'],
@@ -233,7 +250,7 @@ export default function Facturacion() {
       </div>
 
       {tab !== 'historial' && (
-      <div className="card mb-4">
+      <div className="card">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Mes:</label>
@@ -265,19 +282,31 @@ export default function Facturacion() {
       )}
 
       {tab === 'historial' && (
-        <div className="card mb-4">
+        <div className="card">
           <div className="flex flex-wrap items-center gap-4">
             <label className="text-sm font-medium text-gray-700">Año:</label>
             <select className="input w-28" value={historialAnio} onChange={e => setHistorialAnio(Number(e.target.value))}>
               {[2024, 2025, 2026, 2027].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
+            <label className="text-sm font-medium text-gray-700">Mes:</label>
+            <select className="input w-36" value={historialMes} onChange={e => setHistorialMes(Number(e.target.value))}>
+              <option value={0}>Todos</option>
+              {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+            </select>
+            <input
+              type="text"
+              placeholder="Buscar vendedor, folio, total..."
+              className="input flex-1 min-w-[200px]"
+              value={historialSearch}
+              onChange={e => setHistorialSearch(e.target.value)}
+            />
             <button type="button" onClick={loadHistorial} className="btn btn-secondary text-sm">Actualizar</button>
           </div>
         </div>
       )}
 
       {sellers.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="card bg-blue-50 border-blue-200 text-center">
             <p className="text-xs text-blue-600 font-medium">Subtotal Neto</p>
             <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
@@ -296,34 +325,38 @@ export default function Facturacion() {
       {tab === 'historial' ? (
         historialLoading ? (
           <div className="text-center py-12 text-gray-400">Cargando historial...</div>
-        ) : historialData.length === 0 ? (
+        ) : historialFiltrado.length === 0 ? (
           <div className="card text-center py-12 text-gray-400">
-            No hay facturas emitidas para el año {historialAnio}
+            {historialData.length === 0
+              ? `No hay facturas emitidas para el año ${historialAnio}`
+              : 'No hay resultados con los filtros aplicados'}
           </div>
         ) : (
-          <div className="card overflow-x-auto">
+          <div className="card overflow-hidden p-0 flex-1 min-h-0">
+            <div className="overflow-auto h-full">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-gray-50">
                 <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-                  <th className="pb-2 font-medium">Vendedor</th>
-                  <th className="pb-2 font-medium">Mes / Año</th>
-                  <th className="pb-2 font-medium text-right">Total</th>
-                  <th className="pb-2 font-medium text-center">Folio</th>
-                  <th className="pb-2 font-medium">Emitida</th>
+                  <th className="pb-2 pt-3 px-4 font-medium">Vendedor</th>
+                  <th className="pb-2 pt-3 px-4 font-medium">Mes / Año</th>
+                  <th className="pb-2 pt-3 px-4 font-medium text-right">Total</th>
+                  <th className="pb-2 pt-3 px-4 font-medium text-center">Folio</th>
+                  <th className="pb-2 pt-3 px-4 font-medium">Emitida</th>
                 </tr>
               </thead>
               <tbody>
-                {historialData.map((f) => (
+                {historialFiltrado.map((f) => (
                   <tr key={`${f.seller_id}-${f.mes}-${f.anio}`} className="border-b border-gray-100">
-                    <td className="py-2 font-medium text-gray-800">{f.seller_nombre}</td>
-                    <td className="py-2">{MESES[f.mes]} {f.anio}</td>
-                    <td className="py-2 text-right font-mono">{fmt(f.total)}</td>
-                    <td className="py-2 text-center text-gray-600">{f.folio_haulmer || '—'}</td>
-                    <td className="py-2 text-xs text-gray-500">{f.emitida_en ? new Date(f.emitida_en).toLocaleString('es-CL') : '—'}</td>
+                    <td className="py-2 px-4 font-medium text-gray-800">{f.seller_nombre}</td>
+                    <td className="py-2 px-4">{MESES[f.mes]} {f.anio}</td>
+                    <td className="py-2 px-4 text-right font-mono">{fmt(f.total)}</td>
+                    <td className="py-2 px-4 text-center text-gray-600">{f.folio_haulmer || '—'}</td>
+                    <td className="py-2 px-4 text-xs text-gray-500">{f.emitida_en ? new Date(f.emitida_en).toLocaleString('es-CL') : '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )
       ) : loading ? (
@@ -336,33 +369,34 @@ export default function Facturacion() {
           No hay datos de facturación para {MESES[mes]} {anio}
         </div>
       ) : (
-        <div className="card overflow-x-auto">
+        <div className="card overflow-hidden p-0 flex-1 min-h-0">
+          <div className="overflow-auto h-full">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-gray-50">
               <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
                 {tab === 'facturacion' && (
-                  <th className="pb-2 pr-2">
+                  <th className="pb-2 pt-3 px-3 pr-2">
                     <input type="checkbox" checked={selected.size === sellers.length && sellers.length > 0}
                       onChange={toggleAll} className="rounded" />
                   </th>
                 )}
-                <th className="pb-2 font-medium">Vendedor</th>
-                {semanas.map(s => <th key={s} className="pb-2 font-medium text-right">Sem {s}</th>)}
-                <th className="pb-2 font-medium text-right">Subtotal</th>
-                <th className="pb-2 font-medium text-right">Total + IVA</th>
-                {tab === 'facturacion' && <th className="pb-2 font-medium text-center">Factura</th>}
+                <th className="pb-2 pt-3 px-3 font-medium">Vendedor</th>
+                {semanas.map(s => <th key={s} className="pb-2 pt-3 px-3 font-medium text-right">Sem {s}</th>)}
+                <th className="pb-2 pt-3 px-3 font-medium text-right">Subtotal</th>
+                <th className="pb-2 pt-3 px-3 font-medium text-right">Total + IVA</th>
+                {tab === 'facturacion' && <th className="pb-2 pt-3 px-3 font-medium text-center">Factura</th>}
               </tr>
             </thead>
             <tbody>
               {sellers.map(s => (
                 <tr key={s.seller_id} className="border-b border-gray-100 hover:bg-gray-50">
                   {tab === 'facturacion' && (
-                    <td className="py-2 pr-2">
+                    <td className="py-2 px-3 pr-2">
                       <input type="checkbox" checked={selected.has(s.seller_id)}
                         onChange={() => toggleSelect(s.seller_id)} className="rounded" />
                     </td>
                   )}
-                  <td className="py-2">
+                  <td className="py-2 px-3">
                     <span className="font-medium text-gray-800">{s.seller_nombre}</span>
                     {s.rut && <span className="text-xs text-gray-400 ml-2">{s.rut}</span>}
                   </td>
@@ -370,7 +404,7 @@ export default function Facturacion() {
                     const semData = s.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE', editable: false }
                     const isEditing = editCell?.sellerId === s.seller_id && editCell?.semana === sem
                     return (
-                      <td key={sem} className="py-2 text-right">
+                      <td key={sem} className="py-2 px-3 text-right">
                         {tab === 'pagos' ? (
                           <div className="flex flex-col items-end gap-1">
                             <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
@@ -405,10 +439,10 @@ export default function Facturacion() {
                       </td>
                     )
                   })}
-                  <td className="py-2 text-right font-semibold text-gray-800 font-mono">{fmt(s.subtotal_neto)}</td>
-                  <td className="py-2 text-right font-semibold text-green-700 font-mono">{fmt(s.total_con_iva)}</td>
+                  <td className="py-2 px-3 text-right font-semibold text-gray-800 font-mono">{fmt(s.subtotal_neto)}</td>
+                  <td className="py-2 px-3 text-right font-semibold text-green-700 font-mono">{fmt(s.total_con_iva)}</td>
                   {tab === 'facturacion' && (
-                    <td className="py-2 text-center">
+                    <td className="py-2 px-3 text-center">
                       {s.factura_estado === 'EMITIDA' ? (
                         <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Folio: {s.factura_folio || '—'}</span>
                       ) : s.factura_estado === 'PENDIENTE' ? (
@@ -422,6 +456,7 @@ export default function Facturacion() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

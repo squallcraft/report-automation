@@ -32,8 +32,10 @@ export default function Layout() {
         />
       )}
 
-      <main className="flex-1 overflow-y-auto bg-gray-50 pt-12 lg:pt-0 p-3 sm:p-5 lg:p-8 min-h-screen">
-        <Outlet />
+      <main className="flex-1 overflow-hidden flex flex-col bg-gray-50 pt-12 lg:pt-0">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 min-h-0">
+          <Outlet />
+        </div>
       </main>
     </div>
   )

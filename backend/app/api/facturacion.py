@@ -21,7 +21,7 @@ from app.models import (
     EstadoPagoEnum, EstadoFacturaEnum,
 )
 from app.services.liquidacion import calcular_liquidacion_sellers
-from app.services.haulmer import emitir_factura
+from app.services.haulmer import emitir_factura, _formatear_rut as _fmt_rut
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
 
@@ -370,8 +370,9 @@ def generar_facturas(
 
         # Emitir en Haulmer si está configurado y hay monto
         if emitir_haulmer and factura_obj.total > 0:
-            if not (seller.rut and str(seller.rut).strip()):
-                errores.append(f"{seller.nombre}: sin RUT, no se puede emitir factura electrónica")
+            rut_formateado = _fmt_rut(seller.rut)
+            if not rut_formateado:
+                errores.append(f"{seller.nombre}: RUT inválido o vacío ({seller.rut!r}), no se puede emitir factura electrónica")
             else:
                 glosa = f"Servicios de transporte y logística - Mes {mes} {anio}"
                 folio, resp, err = emitir_factura(
@@ -469,8 +470,9 @@ def _procesar_un_seller_factura(
     creadas_delta = 1
     err_msg = None
     if emitir_haulmer and factura_obj.total > 0:
-        if not (seller.rut and str(seller.rut).strip()):
-            err_msg = f"{seller.nombre}: sin RUT, no se puede emitir factura electrónica"
+        rut_formateado = _fmt_rut(seller.rut)
+        if not rut_formateado:
+            err_msg = f"{seller.nombre}: RUT inválido o vacío ({seller.rut!r}), no se puede emitir factura electrónica"
         else:
             glosa = f"Servicios de transporte y logística - Mes {mes} {anio}"
             folio, resp, err = emitir_factura(

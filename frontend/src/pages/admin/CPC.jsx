@@ -79,8 +79,8 @@ export default function CPC() {
   }, [drivers, semanas])
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col h-full gap-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Truck size={24} className="text-primary-600" />
           <div>
@@ -93,7 +93,7 @@ export default function CPC() {
         </button>
       </div>
 
-      <div className="card mb-4">
+      <div className="card">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Mes:</label>
@@ -113,7 +113,7 @@ export default function CPC() {
       </div>
 
       {drivers.length > 0 && (
-        <div className="grid grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-4 gap-4">
           <div className="card bg-blue-50 border-blue-200 text-center">
             <p className="text-xs text-blue-600 font-medium">Total Egresos Neto</p>
             <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
@@ -140,24 +140,25 @@ export default function CPC() {
           No hay datos de pagos para {MESES[mes]} {anio}
         </div>
       ) : (
-        <div className="card overflow-x-auto">
+        <div className="card overflow-hidden p-0 flex-1 min-h-0">
+          <div className="overflow-auto h-full">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-gray-50">
               <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-                <th className="pb-2 font-medium">Conductor</th>
-                <th className="pb-2 font-medium text-center">Banco</th>
-                {semanas.map(s => <th key={s} className="pb-2 font-medium text-right">Sem {s}</th>)}
-                <th className="pb-2 font-medium text-right">Subtotal</th>
+                <th className="pb-2 pt-3 px-4 font-medium">Conductor</th>
+                <th className="pb-2 pt-3 px-4 font-medium text-center">Banco</th>
+                {semanas.map(s => <th key={s} className="pb-2 pt-3 px-4 font-medium text-right">Sem {s}</th>)}
+                <th className="pb-2 pt-3 px-4 font-medium text-right">Subtotal</th>
               </tr>
             </thead>
             <tbody>
               {drivers.map(d => (
                 <tr key={d.driver_id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-2">
+                  <td className="py-2 px-4">
                     <span className="font-medium text-gray-800">{d.driver_nombre}</span>
                     {d.rut && <span className="text-xs text-gray-400 ml-2">{d.rut}</span>}
                   </td>
-                  <td className="py-2 text-center">
+                  <td className="py-2 px-4 text-center">
                     {d.banco ? (
                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded"
                         title={`${d.tipo_cuenta || ''} ${d.numero_cuenta || ''}`}>{d.banco}</span>
@@ -168,7 +169,7 @@ export default function CPC() {
                   {semanas.map(sem => {
                     const semData = d.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE' }
                     return (
-                      <td key={sem} className="py-2 text-right">
+                      <td key={sem} className="py-2 px-4 text-right">
                         <div className="flex flex-col items-end gap-1">
                           <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
                           {semData.monto_neto > 0 && (
@@ -186,11 +187,12 @@ export default function CPC() {
                       </td>
                     )
                   })}
-                  <td className="py-2 text-right font-semibold text-gray-800 font-mono">{fmt(d.subtotal_neto)}</td>
+                  <td className="py-2 px-4 text-right font-semibold text-gray-800 font-mono">{fmt(d.subtotal_neto)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

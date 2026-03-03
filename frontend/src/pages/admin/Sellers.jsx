@@ -264,8 +264,8 @@ export default function Sellers() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col h-full gap-4">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Sellers</h1>
           <p className="text-sm text-gray-500 mt-1">Gestiona los sellers del sistema</p>
@@ -302,12 +302,14 @@ export default function Sellers() {
         </div>
       </div>
 
+      <div className="flex-1 min-h-0">
       <DataTable
         columns={columns}
         data={sellers}
         onRowClick={handleRowClick}
         emptyMessage="No hay sellers"
       />
+      </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Seller' : 'Nuevo Seller'} wide>
         <form onSubmit={handleSubmit} className="space-y-4">

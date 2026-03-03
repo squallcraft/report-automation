@@ -233,13 +233,13 @@ export default function Liquidacion() {
     : null
 
   return (
-    <div>
-      <div className="mb-8">
+    <div className="flex flex-col h-full gap-4">
+      <div>
         <h1 className="text-2xl font-bold text-gray-900">Liquidación</h1>
         <p className="text-sm text-gray-500 mt-1">Calcula cobros, pagos y rentabilidad por período</p>
       </div>
 
-      <div className="card mb-6">
+      <div className="card">
         <div className="flex flex-wrap items-end gap-4">
           <PeriodSelector {...period} onChange={setPeriod} />
           <button onClick={load} disabled={loading} className="btn-primary flex items-center gap-2">
@@ -260,8 +260,8 @@ export default function Liquidacion() {
       </div>
 
       {sellerData && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div className="flex flex-col flex-1 min-h-0 gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
               {tabs.map((t) => (
                 <button
@@ -310,6 +310,7 @@ export default function Liquidacion() {
           </div>
 
           {tab === 'sellers' && (
+            <div className="flex-1 min-h-0">
             <DataTable
               columns={sellerColumns}
               data={filteredSellers}
@@ -317,8 +318,10 @@ export default function Liquidacion() {
               sortable
               onRowClick={(row) => openDetail('seller', row.seller_id)}
             />
+            </div>
           )}
           {tab === 'drivers' && (
+            <div className="flex-1 min-h-0">
             <DataTable
               columns={driverColumns}
               data={filteredDrivers}
@@ -326,8 +329,10 @@ export default function Liquidacion() {
               sortable
               onRowClick={(row) => openDetail('driver', row.driver_id)}
             />
+            </div>
           )}
           {tab === 'rentabilidad' && (
+            <div className="flex-1 min-h-0">
             <DataTable
               columns={rentColumns}
               data={filteredRent}
@@ -335,10 +340,11 @@ export default function Liquidacion() {
               sortable
               onRowClick={(row) => openDetail('seller', row.seller_id)}
             />
+            </div>
           )}
 
           {totalLabel && currentData.length > 0 && (
-            <div className={`mt-4 card ${totalLabel.bg}`}>
+            <div className={`card ${totalLabel.bg}`}>
               <div className="flex justify-between items-center">
                 <span className={`font-semibold ${totalLabel.color}`}>{totalLabel.text}</span>
                 <span className={`text-2xl font-bold ${totalLabel.color}`}>
@@ -347,7 +353,7 @@ export default function Liquidacion() {
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
       {/* Overlay progreso ZIP */}
       {zipProgress && (

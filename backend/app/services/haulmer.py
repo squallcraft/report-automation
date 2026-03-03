@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _formatear_rut(rut: Optional[str]) -> str:
-    """Asegura formato RUT con guión (12345678-9)."""
+    """Asegura formato RUT con guión (12345678-9). Retorna '' si el RUT es inválido."""
     if not rut or not str(rut).strip():
         return ""
     r = str(rut).strip().upper().replace(".", "").replace(" ", "")
@@ -20,10 +20,17 @@ def _formatear_rut(rut: Optional[str]) -> str:
         return ""
     if "-" not in r and len(r) > 1:
         r = r[:-1] + "-" + r[-1]
-    # Validar que tiene algo antes del guión
     parts = r.split("-")
     if len(parts) != 2 or not parts[0] or not parts[1]:
-        logger.warning("RUT con formato inválido: %r → %r", rut, r)
+        logger.warning("RUT con formato inválido (partes): %r → %r", rut, r)
+        return ""
+    # La parte numérica debe tener al menos 7 dígitos
+    if not parts[0].isdigit() or len(parts[0]) < 7:
+        logger.warning("RUT con parte numérica inválida: %r → %r", rut, r)
+        return ""
+    # El dígito verificador debe ser dígito o 'K'
+    if parts[1] not in [str(d) for d in range(10)] + ["K"]:
+        logger.warning("RUT con dígito verificador inválido: %r → %r", rut, r)
         return ""
     return r
 
@@ -57,12 +64,13 @@ def emitir_factura(
     if not api_key or not api_key.strip():
         return None, None, "HAULMER_API_KEY no configurada"
 
+    receptor_rut_original = receptor_rut
     receptor_rut = _formatear_rut(receptor_rut)
     emisor_rut = _formatear_rut(emisor_rut)
     logger.info("Haulmer emit — emisor_rut=%r receptor_rut=%r receptor_razon=%r mnt_total=%s",
                 emisor_rut, receptor_rut, receptor_razon, mnt_total)
     if not receptor_rut:
-        return None, None, "RUT del receptor (seller) es requerido"
+        return None, None, f"RUT del receptor (seller) inválido o vacío — valor original: {receptor_rut_original!r}"
     if not emisor_rut:
         return None, None, "RUT del emisor no configurado (HAULMER_EMISOR_RUT)"
 
@@ -78,7 +86,7 @@ def emitir_factura(
                     "FchEmis": fch_emis,
                     "TpoTranCompra": 1,
                     "TpoTranVenta": 1,
-                    "FmaPago": 2,
+                    "FmaPago": 1,
                 },
                 "Emisor": {
                     "RUTEmisor": emisor_rut,

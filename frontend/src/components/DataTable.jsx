@@ -64,8 +64,8 @@ export default function DataTable({
   const scrollStyle = maxHeight ? { maxHeight, overflowY: 'auto' } : {}
 
   return (
-    <div className="card overflow-hidden p-0">
-      <div className="overflow-x-auto -mx-4 sm:mx-0" style={scrollStyle}>
+    <div className="card overflow-hidden p-0 h-full flex flex-col">
+      <div className={`overflow-x-auto -mx-4 sm:mx-0 ${maxHeight ? '' : 'flex-1 overflow-y-auto'}`} style={scrollStyle}>
         <table className="w-full text-xs sm:text-sm min-w-[480px]">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-gray-200 bg-gray-50">
