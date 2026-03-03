@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { FileText, Check, DollarSign, Loader2 } from 'lucide-react'
+import { FileText, Check, DollarSign, Loader2, AlertTriangle } from 'lucide-react'
 import Modal from '../../components/Modal'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -32,6 +32,9 @@ export default function Facturacion() {
   const [historialData, setHistorialData] = useState([])
   const [historialLoading, setHistorialLoading] = useState(false)
   const [historialAnio, setHistorialAnio] = useState(new Date().getFullYear())
+  const [facturarSemana, setFacturarSemana] = useState('mes')   // 'mes' | '1'..'5'
+  const [yaEmitidas, setYaEmitidas] = useState([])              // sellers ya facturados
+  const [forzar, setForzar] = useState(false)
   const reqId = useRef(0)
 
   // Recarga silenciosa después de un save — sin reqId para no cancelar respuestas válidas
@@ -104,13 +107,29 @@ export default function Facturacion() {
     } catch { toast.error('Error guardando monto') }
   }
 
+  const abrirModalFacturar = async () => {
+    setFacturarSemana('mes')
+    setForzar(false)
+    setYaEmitidas([])
+    if (selected.size > 0) {
+      try {
+        const ids = [...selected].join(',')
+        const { data: emitidas } = await api.get('/facturacion/verificar-emitidas', { params: { mes, anio, seller_ids: ids } })
+        setYaEmitidas(emitidas || [])
+      } catch { /* silencioso */ }
+    }
+    setShowFacturar(true)
+  }
+
   const generarFacturas = async () => {
     if (selected.size === 0) return toast.error('Selecciona al menos un seller')
     const ids = [...selected]
     setProgress({ current: 0, total: ids.length, seller_nombre: '' })
     const token = localStorage.getItem('token')
     const base = api.defaults.baseURL || '/api'
-    const url = `${base}/facturacion/generar-facturas-stream?mes=${mes}&anio=${anio}`
+    const semanaParam = facturarSemana !== 'mes' ? `&semana=${facturarSemana}` : ''
+    const forzarParam = forzar ? '&forzar=true' : ''
+    const url = `${base}/facturacion/generar-facturas-stream?mes=${mes}&anio=${anio}${semanaParam}${forzarParam}`
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -143,7 +162,8 @@ export default function Facturacion() {
                   setProgress(null)
                   setShowFacturar(false)
                   toast.success(`${data.creadas} factura(s) procesada(s)`)
-                  data.errores?.forEach(e => toast.error(e))
+                  data.errores?.forEach(e => toast.error(e, { duration: 6000 }))
+                  data.advertencias?.forEach(a => toast(a, { icon: '⚠️', duration: 6000 }))
                   recargar()
                   if (tab === 'historial') loadHistorial()
                   return
@@ -229,7 +249,7 @@ export default function Facturacion() {
           <input type="text" placeholder="Buscar seller..." className="input w-48"
             value={filterText} onChange={e => setFilterText(e.target.value)} />
           {tab === 'facturacion' && selected.size > 0 && (
-            <button onClick={() => setShowFacturar(true)} className="btn btn-primary flex items-center gap-2 ml-auto">
+            <button onClick={abrirModalFacturar} className="btn btn-primary flex items-center gap-2 ml-auto">
               <DollarSign size={16} /> Facturar ({selected.size})
             </button>
           )}
@@ -418,15 +438,74 @@ export default function Facturacion() {
               </>
             ) : (
               <>
+                {/* Selector de período */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Período a facturar</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setFacturarSemana('mes')}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${facturarSemana === 'mes' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400'}`}
+                    >
+                      Todo {MESES[mes]}
+                    </button>
+                    {semanas.map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setFacturarSemana(String(s))}
+                        className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${facturarSemana === String(s) ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-700 border-gray-300 hover:border-primary-400'}`}
+                      >
+                        Semana {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <p className="text-sm text-gray-600">
-                  Se generarán facturas para <strong>{selected.size}</strong> sellers del mes de <strong>{MESES[mes]} {anio}</strong>.
+                  Se generarán facturas para <strong>{selected.size}</strong> seller(s) —{' '}
+                  {facturarSemana === 'mes'
+                    ? <><strong>todo el mes</strong> de <strong>{MESES[mes]} {anio}</strong></>
+                    : <><strong>Semana {facturarSemana}</strong> de <strong>{MESES[mes]} {anio}</strong></>
+                  }.
                 </p>
+
+                {/* Alerta de ya emitidas */}
+                {yaEmitidas.length > 0 && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                    <div className="flex items-start gap-2 mb-2">
+                      <AlertTriangle size={16} className="text-amber-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm font-medium text-amber-800">
+                        {yaEmitidas.length} seller(s) ya tienen factura emitida este mes:
+                      </p>
+                    </div>
+                    <ul className="text-xs text-amber-700 space-y-0.5 ml-6">
+                      {yaEmitidas.map(e => (
+                        <li key={e.seller_id}>• {e.seller_nombre} {e.folio_haulmer ? `(Folio: ${e.folio_haulmer})` : ''}</li>
+                      ))}
+                    </ul>
+                    <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={forzar}
+                        onChange={e => setForzar(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm text-amber-800 font-medium">Igualmente re-emitir estas facturas</span>
+                    </label>
+                  </div>
+                )}
+
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
                   Se crearán los registros y se emitirán en Haulmer (los que tengan RUT). Verás el avance en tiempo real.
                 </div>
                 <div className="flex justify-end gap-3 pt-2">
                   <button onClick={() => setShowFacturar(false)} className="btn btn-secondary">Cancelar</button>
-                  <button onClick={generarFacturas} className="btn btn-primary">Confirmar y Generar</button>
+                  <button
+                    onClick={generarFacturas}
+                    disabled={yaEmitidas.length > 0 && !forzar && selected.size === yaEmitidas.length}
+                    className="btn btn-primary disabled:opacity-50"
+                  >
+                    Confirmar y Generar
+                  </button>
                 </div>
               </>
             )}

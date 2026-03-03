@@ -414,22 +414,28 @@ def _procesar_un_seller_factura(
     usuario: str,
     settings,
     emitir_haulmer: bool,
-) -> tuple[Optional[object], Optional[str], Optional[str], int]:
+    forzar: bool = False,
+) -> tuple[Optional[object], Optional[str], Optional[str], Optional[str], int]:
     """
     Procesa un seller: crea/actualiza factura y opcionalmente emite en Haulmer.
-    Retorna (factura_obj, seller_nombre, error, creadas_delta).
-    creadas_delta es 1 si se creó/actualizó registro, 0 si se saltó por error previo.
+    Retorna (factura_obj, seller_nombre, error, advertencia, creadas_delta).
+    - forzar=True permite re-facturar aunque ya esté EMITIDA (genera advertencia).
     """
     seller = db.get(Seller, sid)
     if not seller:
-        return None, None, f"Seller ID {sid} no encontrado", 0
+        return None, None, f"Seller ID {sid} no encontrado", None, 0
+
     existing = db.query(FacturaMensualSeller).filter(
         FacturaMensualSeller.seller_id == sid,
         FacturaMensualSeller.mes == mes,
         FacturaMensualSeller.anio == anio,
     ).first()
+
+    advertencia = None
     if existing and existing.estado == EstadoFacturaEnum.EMITIDA.value:
-        return None, seller.nombre, f"{seller.nombre}: ya tiene factura emitida", 0
+        if not forzar:
+            return None, seller.nombre, None, f"{seller.nombre}: ya tiene factura emitida (folio {existing.folio_haulmer or '—'})", 0
+        advertencia = f"{seller.nombre}: ya tenía factura emitida (folio {existing.folio_haulmer or '—'}), se re-emite"
 
     subtotal = 0
     for sem in semanas:
@@ -493,40 +499,50 @@ def _procesar_un_seller_factura(
                 factura_obj.emitida_en = datetime.now(timezone.utc)
                 if isinstance(resp, dict):
                     factura_obj.respuesta_api = {k: v for k, v in resp.items() if k in ("FOLIO", "folio", "RESOLUCION")}
-    return factura_obj, seller.nombre, err_msg, creadas_delta
+    return factura_obj, seller.nombre, err_msg, advertencia, creadas_delta
 
 
 @router.post("/generar-facturas-stream")
 def generar_facturas_stream(
     mes: int = Query(...),
     anio: int = Query(...),
+    semana: Optional[int] = Query(None),
+    forzar: bool = Query(False),
     seller_ids: List[int] = Body(..., embed=False),
     db: Session = Depends(get_db),
     current_user=Depends(require_admin_or_administracion),
 ):
-    """Genera facturas y emite en Haulmer; retorna stream SSE con progreso (current/total) y resultado final."""
+    """
+    Genera facturas y emite en Haulmer; retorna stream SSE con progreso.
+    - semana: si se especifica, calcula solo esa semana (en lugar del mes completo).
+    - forzar: si True, permite re-facturar sellers que ya tienen factura emitida.
+    """
     def event_stream():
         try:
             if not seller_ids:
-                yield f"event: done\ndata: {json.dumps({'creadas': 0, 'errores': ['Ningún seller seleccionado']})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'creadas': 0, 'errores': [], 'advertencias': []})}\n\n"
                 return
-            semanas = _semanas_del_mes(db, mes, anio)
+            todas_semanas = _semanas_del_mes(db, mes, anio)
+            semanas = [semana] if semana and semana in todas_semanas else todas_semanas
             usuario = current_user.get("nombre", current_user.get("username", "admin"))
             settings = get_settings()
             emitir_haulmer = bool(settings.HAULMER_API_KEY and settings.HAULMER_EMISOR_RUT)
             total = len(seller_ids)
             creadas = 0
             errores = []
+            advertencias = []
             for i, sid in enumerate(seller_ids):
-                _, seller_nombre, err_msg, delta = _procesar_un_seller_factura(
-                    db, sid, mes, anio, semanas, usuario, settings, emitir_haulmer,
+                _, seller_nombre, err_msg, adv_msg, delta = _procesar_un_seller_factura(
+                    db, sid, mes, anio, semanas, usuario, settings, emitir_haulmer, forzar=forzar,
                 )
                 creadas += delta
                 if err_msg:
                     errores.append(err_msg)
+                if adv_msg:
+                    advertencias.append(adv_msg)
                 yield f"event: progress\ndata: {json.dumps({'current': i + 1, 'total': total, 'seller_nombre': seller_nombre or '—'})}\n\n"
             db.commit()
-            yield f"event: done\ndata: {json.dumps({'creadas': creadas, 'errores': errores})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'creadas': creadas, 'errores': errores, 'advertencias': advertencias})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'detail': str(e)})}\n\n"
 
@@ -535,6 +551,38 @@ def generar_facturas_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+@router.get("/verificar-emitidas")
+def verificar_emitidas(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    seller_ids: str = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Verifica qué sellers de la lista ya tienen factura EMITIDA para el mes/año dado.
+    seller_ids: lista separada por comas.
+    Retorna lista de {seller_id, seller_nombre, folio_haulmer}.
+    """
+    ids = [int(x) for x in seller_ids.split(",") if x.strip().isdigit()]
+    ya_emitidas = []
+    for sid in ids:
+        factura = db.query(FacturaMensualSeller).filter(
+            FacturaMensualSeller.seller_id == sid,
+            FacturaMensualSeller.mes == mes,
+            FacturaMensualSeller.anio == anio,
+            FacturaMensualSeller.estado == EstadoFacturaEnum.EMITIDA.value,
+        ).first()
+        if factura:
+            seller = db.get(Seller, sid)
+            ya_emitidas.append({
+                "seller_id": sid,
+                "seller_nombre": seller.nombre if seller else f"ID {sid}",
+                "folio_haulmer": factura.folio_haulmer,
+            })
+    return ya_emitidas
 
 
 @router.get("/historial")
