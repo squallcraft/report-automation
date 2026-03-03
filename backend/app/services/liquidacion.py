@@ -12,6 +12,48 @@ from app.models import (
 )
 
 
+_RETIRO_FALLBACK_DESDE = (2026, 2, 4)  # (anio, mes, semana) — desde aquí se aplica tarifa diaria
+
+
+def _periodo_permite_fallback(semana: int, mes: int, anio: int) -> bool:
+    return (anio, mes, semana) >= _RETIRO_FALLBACK_DESDE
+
+
+def _calcular_retiro_seller(seller, envios: list, retiros: list, semana: int, mes: int, anio: int) -> int:
+    """
+    Calcula el cobro de retiro para un seller en una semana.
+    - Si hay registros en la tabla retiros, los suma (siempre).
+    - Si no hay registros y el período es >= S4/Feb2026, usa tarifa_retiro
+      del seller multiplicada por los días distintos con envíos.
+    - Períodos anteriores a S4/Feb2026 no usan el fallback (comportamiento original).
+    - Respeta min_paquetes_retiro_gratis y usa_pickup.
+    """
+    if not seller.tiene_retiro or seller.usa_pickup or not envios:
+        return 0
+    if seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis:
+        return 0
+    if retiros:
+        return sum(r.tarifa_seller for r in retiros)
+    if seller.tarifa_retiro and _periodo_permite_fallback(semana, mes, anio):
+        dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+        return seller.tarifa_retiro * dias_con_envios
+    return 0
+
+
+def _calcular_retiro_seller_driver_cost(seller, envios: list, retiros: list, semana: int, mes: int, anio: int) -> int:
+    """Costo para el driver por el retiro del seller (para rentabilidad)."""
+    if not seller.tiene_retiro or seller.usa_pickup or not envios:
+        return 0
+    if seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis:
+        return 0
+    if retiros:
+        return sum(r.tarifa_driver for r in retiros)
+    if seller.tarifa_retiro_driver and _periodo_permite_fallback(semana, mes, anio):
+        dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+        return seller.tarifa_retiro_driver * dias_con_envios
+    return 0
+
+
 def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
     """Calcula el cobro a cada seller para una semana específica."""
     sellers = db.query(Seller).filter(Seller.activo == True).all()
@@ -34,18 +76,13 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
         total_extras_producto = sum(e.extra_producto_seller for e in envios)
         total_extras_comuna = sum(e.extra_comuna_seller for e in envios)
 
-        total_retiros = 0
-        if seller.tiene_retiro and not seller.usa_pickup and len(envios) > 0:
-            if seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis:
-                total_retiros = 0
-            else:
-                retiros = db.query(Retiro).filter(
-                    Retiro.seller_id == seller.id,
-                    Retiro.semana == semana,
-                    Retiro.mes == mes,
-                    Retiro.anio == anio,
-                ).all()
-                total_retiros = sum(r.tarifa_seller for r in retiros)
+        retiros_q = db.query(Retiro).filter(
+            Retiro.seller_id == seller.id,
+            Retiro.semana == semana,
+            Retiro.mes == mes,
+            Retiro.anio == anio,
+        ).all()
+        total_retiros = _calcular_retiro_seller(seller, envios, retiros_q, semana, mes, anio)
 
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
@@ -160,18 +197,14 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
         user_nombres = sorted({e.user_nombre for e in envios if e.user_nombre})
         ingreso = sum(e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller for e in envios)
 
-        ingreso_retiros = 0
-        costo_retiros = 0
-        if seller.tiene_retiro and not seller.usa_pickup and len(envios) > 0:
-            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-                retiros = db.query(Retiro).filter(
-                    Retiro.seller_id == seller.id,
-                    Retiro.semana == semana,
-                    Retiro.mes == mes,
-                    Retiro.anio == anio,
-                ).all()
-                ingreso_retiros = sum(r.tarifa_seller for r in retiros)
-                costo_retiros = sum(r.tarifa_driver for r in retiros)
+        retiros_rent = db.query(Retiro).filter(
+            Retiro.seller_id == seller.id,
+            Retiro.semana == semana,
+            Retiro.mes == mes,
+            Retiro.anio == anio,
+        ).all()
+        ingreso_retiros = _calcular_retiro_seller(seller, envios, retiros_rent, semana, mes, anio)
+        costo_retiros = _calcular_retiro_seller_driver_cost(seller, envios, retiros_rent, semana, mes, anio)
         ingreso += ingreso_retiros
 
         def _costo_envio_driver(e):

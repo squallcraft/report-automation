@@ -51,7 +51,11 @@ def _monto_semanal_seller(db, seller_id, semana, mes, anio):
                 Retiro.seller_id == seller_id, Retiro.semana == semana,
                 Retiro.mes == mes, Retiro.anio == anio,
             ).all()
-            total += sum(r.tarifa_seller for r in retiros)
+            if retiros:
+                total += sum(r.tarifa_seller for r in retiros)
+            elif seller.tarifa_retiro and (semana >= 4 if (mes == 2 and anio == 2026) else (anio, mes) > (2026, 2)):
+                dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+                total += seller.tarifa_retiro * dias_con_envios
     ajustes = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
         AjusteLiquidacion.entidad_id == seller_id,

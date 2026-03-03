@@ -199,7 +199,11 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
         total_retiros = 0
         if seller.tiene_retiro and not seller.usa_pickup and envios:
             if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-                total_retiros = sum(r.tarifa_seller for r in retiros_q)
+                if retiros_q:
+                    total_retiros = sum(r.tarifa_seller for r in retiros_q)
+                elif seller.tarifa_retiro and (s >= 4 if (mes == 2 and anio == 2026) else (anio, mes) > (2026, 2)):
+                    dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+                    total_retiros = seller.tarifa_retiro * dias_con_envios
 
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
