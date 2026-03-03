@@ -284,7 +284,7 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
     }
 
 
-def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False):
+def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False, seller=None):
     all_dates = get_dates_for_week(db, semana, mes, anio) if db else []
 
     daily_map = {}
@@ -313,10 +313,23 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
+    # Agrupar retiros por fecha
+    retiros_por_dia: dict = {}
     for r in retiros_list:
-        d = r.fecha
-        if d in daily_map:
-            daily_map[d]["retiros"] += r.tarifa_seller if is_seller else r.tarifa_driver
+        retiros_por_dia.setdefault(r.fecha, []).append(r)
+
+    if retiros_list:
+        for d, rs in retiros_por_dia.items():
+            if d in daily_map:
+                daily_map[d]["retiros"] += sum(r.tarifa_seller if is_seller else r.tarifa_driver for r in rs)
+    elif is_seller and seller and seller.tiene_retiro and not seller.usa_pickup:
+        # Fallback: tarifa diaria del seller para días con envíos (solo desde S4/Feb2026)
+        aplica_fallback = (anio, mes, semana) >= (2026, 2, 4)
+        if aplica_fallback and seller.tarifa_retiro:
+            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios_list) >= seller.min_paquetes_retiro_gratis):
+                for d, info in daily_map.items():
+                    if info["envios"] > 0:
+                        daily_map[d]["retiros"] = seller.tarifa_retiro
 
     return sorted(daily_map.values(), key=lambda x: x["fecha"])
 
@@ -376,6 +389,7 @@ def detalle_seller(
     _=Depends(require_admin_or_administracion),
 ):
     detail = _seller_detail(db, seller_id, mes, anio)
+    seller = db.get(Seller, seller_id)
     envios_semana = db.query(Envio).filter(
         Envio.seller_id == seller_id, Envio.semana == semana,
         Envio.mes == mes, Envio.anio == anio,
@@ -387,7 +401,7 @@ def detalle_seller(
     detail["daily"] = _daily_breakdown(
         envios_semana, retiros_semana,
         "extra_producto_seller", "extra_comuna_seller",
-        semana, mes, anio, is_seller=True, db=db,
+        semana, mes, anio, is_seller=True, db=db, seller=seller,
     )
     detail["productos"] = _productos_envios(db, envios_semana)
     return detail

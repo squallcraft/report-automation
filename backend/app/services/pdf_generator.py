@@ -30,6 +30,23 @@ from app.models import (
 )
 from app.services.calendario import get_dates_for_week as _cal_get_dates
 
+_RETIRO_FALLBACK_DESDE = (2026, 2, 4)  # (anio, mes, semana)
+
+
+def _periodo_permite_fallback(semana: int, mes: int, anio: int) -> bool:
+    return (anio, mes, semana) >= _RETIRO_FALLBACK_DESDE
+
+
+def _retiro_seller_diario(seller, envios_dia: list, retiros_dia: list, semana: int, mes: int, anio: int) -> int:
+    """Retiro seller para un día: usa registros de tabla o tarifa fija del seller."""
+    if not seller.tiene_retiro or seller.usa_pickup or not envios_dia:
+        return 0
+    if retiros_dia:
+        return sum(r.tarifa_seller for r in retiros_dia)
+    if seller.tarifa_retiro and _periodo_permite_fallback(semana, mes, anio):
+        return seller.tarifa_retiro
+    return 0
+
 # Registrar Roboto (usa font-roboto si está instalado)
 try:
     import font_roboto
@@ -387,7 +404,11 @@ def generar_pdf_seller(
         total_retiros = 0
         if seller.tiene_retiro and not seller.usa_pickup and len(envios) > 0:
             if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-                total_retiros = sum(r.tarifa_seller for r in retiros_q)
+                if retiros_q:
+                    total_retiros = sum(r.tarifa_seller for r in retiros_q)
+                elif seller.tarifa_retiro and _periodo_permite_fallback(s, mes, anio):
+                    dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+                    total_retiros = seller.tarifa_retiro * dias_con_envios
 
         weekly[s] = {
             "monto": sum(e.cobro_seller + e.cobro_extra_manual for e in envios),
@@ -455,11 +476,17 @@ def generar_pdf_seller(
         Retiro.seller_id == seller_id, Retiro.semana == semana,
         Retiro.mes == mes, Retiro.anio == anio,
     ).all()
+    # Agrupar retiros por fecha para el fallback diario
+    retiros_por_dia: dict = {}
+    for r in retiros_semana:
+        retiros_por_dia.setdefault(r.fecha, []).append(r)
+
     if seller.tiene_retiro and not seller.usa_pickup:
-        for r in retiros_semana:
-            d = r.fecha
-            if d in daily_map:
-                daily_map[d]["retiros"] += r.tarifa_seller
+        if not (seller.min_paquetes_retiro_gratis > 0 and len(envios_semana) >= seller.min_paquetes_retiro_gratis):
+            for d in daily_map:
+                envios_dia = [e for e in envios_semana if e.fecha_entrega == d]
+                retiros_dia = retiros_por_dia.get(d, [])
+                daily_map[d]["retiros"] = _retiro_seller_diario(seller, envios_dia, retiros_dia, semana, mes, anio)
 
     daily_data = sorted(daily_map.values(), key=lambda x: x["fecha"])
 
@@ -468,7 +495,7 @@ def generar_pdf_seller(
             ("Día", "fecha", "date"),
             ("Envíos", "envios", "int"),
             ("Bultos Extra", "bultos_extra", "clp"),
-            ("Retiros", "retiros", "int"),
+            ("Retiros", "retiros", "clp"),
             ("Peso Extra", "peso_extra", "clp"),
         ]
         elements.append(_daily_table(daily_data, daily_cols))
@@ -593,12 +620,13 @@ def generar_pdf_driver(
     ).order_by(Envio.fecha_entrega).all()
 
     es_contratado = getattr(driver, 'contratado', False)
-    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0} for d in all_dates}
+    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0, "cobro": 0} for d in all_dates}
     for e in envios_semana:
         d = e.fecha_entrega
         if d not in daily_map:
-            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0}
+            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0, "cobro": 0}
         daily_map[d]["envios"] += 1
+        daily_map[d]["cobro"] += e.costo_driver + (e.pago_extra_manual or 0)
         if not es_contratado:
             daily_map[d]["bultos_extra"] += e.extra_producto_driver
             daily_map[d]["comuna"] += e.extra_comuna_driver
@@ -618,10 +646,11 @@ def generar_pdf_driver(
         daily_cols = [
             ("Día", "fecha", "date"),
             ("Envíos", "envios", "int"),
+            ("Cobro", "cobro", "clp"),
         ]
         if not es_contratado:
             daily_cols.append(("Bultos Extra", "bultos_extra", "clp"))
-        daily_cols.append(("Retiros", "retiros", "int"))
+        daily_cols.append(("Retiros", "retiros", "clp"))
         if not es_contratado:
             daily_cols.append(("Comuna", "comuna", "clp"))
         elements.append(_daily_table(daily_data, daily_cols))

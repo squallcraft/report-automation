@@ -197,7 +197,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
               { key: 'fecha', label: 'Día', render: (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString('es-CL') : '—' },
               { key: 'envios', label: 'Envíos', align: 'center' },
               { key: 'bultos_extra', label: 'Bultos Extra', align: 'right', render: (v) => fmt(v) },
-              { key: 'retiros', label: 'Retiros', align: 'center' },
+              { key: 'retiros', label: 'Retiros', align: 'right', render: (v) => fmt(v) },
               { key: 'peso_extra', label: isSeller ? 'Peso Extra' : 'Comuna', align: 'right', render: (v) => fmt(v) },
               { key: 'monto', label: isSeller ? 'Cobro' : 'Pago', align: 'right', render: (v) => fmt(v) },
             ]}
