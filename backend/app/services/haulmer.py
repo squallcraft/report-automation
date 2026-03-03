@@ -60,8 +60,7 @@ def emitir_factura(
     receptor_rut = _formatear_rut(receptor_rut)
     emisor_rut = _formatear_rut(emisor_rut)
     logger.info("Haulmer emit — emisor_rut=%r receptor_rut=%r receptor_razon=%r mnt_total=%s",
-                emisor_rut, receptor_rut, receptor_razon, mnt_total)
-    if not receptor_rut:
+                emisor_rut, receptor_rut, receptor_razon, mnt_total)    if not receptor_rut:
         return None, None, "RUT del receptor (seller) es requerido"
     if not emisor_rut:
         return None, None, "RUT del emisor no configurado (HAULMER_EMISOR_RUT)"
@@ -87,7 +86,6 @@ def emitir_factura(
                     "Acteco": emisor_acteco,
                     "DirOrigen": (emisor_dir or "Sin dirección").strip()[:70],
                     "CmnaOrigen": (emisor_cmna or "Sin comuna").strip()[:20],
-                    "CdgSIISucur": "81303347",
                 },
                 "Receptor": {
                     "RUTRecep": receptor_rut,
@@ -123,6 +121,9 @@ def emitir_factura(
     }
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key[:64]
+
+    import json as _json
+    logger.info("Haulmer payload: %s", _json.dumps(body, ensure_ascii=False)[:2000])
 
     try:
         with httpx.Client(timeout=30.0) as client:
