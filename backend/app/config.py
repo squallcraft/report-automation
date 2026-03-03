@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:5173"]
     GEMINI_API_KEY: str = ""
     HAULMER_API_KEY: str = ""
-    HAULMER_API_URL: str = "https://dev-api.haulmer.com/v2/dte/document"
+    HAULMER_API_URL: str = "https://api.haulmer.com/v2/dte/document"
     # Emisor (tu empresa) para facturación electrónica
     HAULMER_EMISOR_RUT: str = ""
     HAULMER_EMISOR_RAZON: str = ""
