@@ -217,7 +217,7 @@ async def importar_sellers(
 
 
 @router.get("/plantilla/rut-giro/descargar")
-def descargar_plantilla_rut_giro(db: Session = Depends(get_db), _=Depends(require_admin)):
+def descargar_plantilla_rut_giro(db: Session = Depends(get_db), _=Depends(require_admin_or_administracion)):
     """Plantilla Excel con sellers homologados para completar RUT y Giro."""
     wb = Workbook()
     ws = wb.active
@@ -267,7 +267,7 @@ def descargar_plantilla_rut_giro(db: Session = Depends(get_db), _=Depends(requir
 async def importar_rut_giro(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=Depends(require_admin_or_administracion),
 ):
     """Importa RUT y Giro de sellers desde Excel."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):

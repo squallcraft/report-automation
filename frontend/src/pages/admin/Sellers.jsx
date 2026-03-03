@@ -43,6 +43,8 @@ const initialForm = {
   tarifa_retiro_driver: 0,
   min_paquetes_retiro_gratis: 0,
   usa_pickup: false,
+  rut: '',
+  giro: '',
   email: '',
   password: '',
 }
@@ -60,6 +62,7 @@ export default function Sellers() {
   const [toDelete, setToDelete] = useState(null)
 
   const [importing, setImporting] = useState(false)
+  const [importingRutGiro, setImportingRutGiro] = useState(false)
 
   const fetchSellers = () => {
     api.get('/sellers')
@@ -95,6 +98,34 @@ export default function Sellers() {
     finally { setImporting(false); e.target.value = '' }
   }
 
+  const handleDownloadPlantillaRutGiro = async () => {
+    try {
+      const { data } = await api.get('/sellers/plantilla/rut-giro/descargar', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'plantilla_rut_giro_sellers.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Descarga lista. Completa RUT y Giro y vuelve a importar.')
+    } catch { toast.error('Error al descargar plantilla RUT/Giro') }
+  }
+
+  const handleImportRutGiro = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImportingRutGiro(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const { data } = await api.post('/sellers/importar/rut-giro', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      toast.success(`${data.actualizados} seller(s) actualizados con RUT/Giro`)
+      if (data.errores?.length) data.errores.forEach((err) => toast.error(err))
+      fetchSellers()
+    } catch (err) { toast.error(err.response?.data?.detail || 'Error al importar RUT/Giro') }
+    finally { setImportingRutGiro(false); e.target.value = '' }
+  }
+
   useEffect(() => {
     fetchSellers()
   }, [])
@@ -119,6 +150,8 @@ export default function Sellers() {
       tarifa_retiro_driver: seller.tarifa_retiro_driver ?? 0,
       min_paquetes_retiro_gratis: seller.min_paquetes_retiro_gratis ?? 0,
       usa_pickup: seller.usa_pickup ?? false,
+      rut: seller.rut || '',
+      giro: seller.giro || '',
       email: seller.email || '',
       password: '',
     })
@@ -158,6 +191,8 @@ export default function Sellers() {
       tarifa_retiro: parseInt(form.tarifa_retiro, 10) || 0,
       tarifa_retiro_driver: parseInt(form.tarifa_retiro_driver, 10) || 0,
       min_paquetes_retiro_gratis: parseInt(form.min_paquetes_retiro_gratis, 10) || 0,
+      rut: (form.rut || '').trim() || null,
+      giro: (form.giro || '').trim() || null,
     }
     if (!payload.password) delete payload.password
 
@@ -177,6 +212,7 @@ export default function Sellers() {
 
   const columns = [
     { key: 'nombre', label: 'Nombre' },
+    { key: 'rut', label: 'RUT', render: (v) => v ? <span className="text-sm font-mono">{v}</span> : <span className="text-gray-400">—</span> },
     { key: 'empresa', label: 'Empresa', render: (v) => <EmpresaBadge empresa={v} /> },
     { key: 'zona', label: 'Zona' },
     { key: 'plan_tarifario', label: 'Plan Tarifa', render: (v) => v || '—' },
@@ -219,20 +255,36 @@ export default function Sellers() {
           <h1 className="text-2xl font-bold text-gray-900">Sellers</h1>
           <p className="text-sm text-gray-500 mt-1">Gestiona los sellers del sistema</p>
         </div>
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
-              <Download size={16} /> Plantilla
-            </button>
-            <label className={`btn-secondary flex items-center gap-2 text-sm cursor-pointer ${importing ? 'opacity-50' : ''}`}>
-              <Upload size={16} /> {importing ? 'Importando...' : 'Importar Excel'}
-              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={importing} />
-            </label>
+        <div className="flex flex-wrap items-center gap-2">
+          {canEdit && (
+            <>
+              <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
+                <Download size={16} /> Plantilla
+              </button>
+              <label className={`btn-secondary flex items-center gap-2 text-sm cursor-pointer ${importing ? 'opacity-50' : ''}`}>
+                <Upload size={16} /> {importing ? 'Importando...' : 'Importar Excel'}
+                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={importing} />
+              </label>
+              <span className="text-gray-400 text-sm mx-1">|</span>
+            </>
+          )}
+          {(canEdit || user?.rol === 'ADMINISTRACION') && (
+            <>
+              <button onClick={handleDownloadPlantillaRutGiro} className="btn-secondary flex items-center gap-2 text-sm" title="Descarga sellers actuales con columnas RUT y Giro (vacías) para completar y volver a subir">
+                <Download size={16} /> Plantilla RUT/Giro
+              </button>
+              <label className={`btn-secondary flex items-center gap-2 text-sm cursor-pointer ${importingRutGiro ? 'opacity-50' : ''}`} title="Sube el Excel con RUT y Giro completados">
+                <Upload size={16} /> {importingRutGiro ? 'Importando...' : 'Importar RUT/Giro'}
+                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportRutGiro} disabled={importingRutGiro} />
+              </label>
+            </>
+          )}
+          {canEdit && (
             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
               <Plus size={18} /> Nuevo Seller
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <DataTable
@@ -263,6 +315,29 @@ export default function Sellers() {
                 placeholder="Alias 1, Alias 2"
                 value={form.aliases}
                 onChange={(e) => setForm((f) => ({ ...f, aliases: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-amber-50/50 p-3 rounded-lg border border-amber-200">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">RUT</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="12345678-9"
+                value={form.rut}
+                onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Requerido para emitir facturas electrónicas</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Giro</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Ej: Comercio al por menor"
+                value={form.giro}
+                onChange={(e) => setForm((f) => ({ ...f, giro: e.target.value }))}
               />
             </div>
           </div>
