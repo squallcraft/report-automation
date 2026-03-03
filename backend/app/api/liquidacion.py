@@ -331,6 +331,10 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                     if info["envios"] > 0:
                         daily_map[d]["retiros"] = seller.tarifa_retiro
 
+    # monto = cobro base envíos + retiro del día
+    for info in daily_map.values():
+        info["monto"] = info["monto"] + info["retiros"]
+
     return sorted(daily_map.values(), key=lambda x: x["fecha"])
 
 

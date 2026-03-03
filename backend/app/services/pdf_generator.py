@@ -488,6 +488,10 @@ def generar_pdf_seller(
                 retiros_dia = retiros_por_dia.get(d, [])
                 daily_map[d]["retiros"] = _retiro_seller_diario(seller, envios_dia, retiros_dia, semana, mes, anio)
 
+    # cobro = monto base + retiro del día
+    for info in daily_map.values():
+        info["cobro"] = info["monto"] + info["retiros"]
+
     daily_data = sorted(daily_map.values(), key=lambda x: x["fecha"])
 
     if daily_data:
@@ -497,6 +501,7 @@ def generar_pdf_seller(
             ("Bultos Extra", "bultos_extra", "clp"),
             ("Retiros", "retiros", "clp"),
             ("Peso Extra", "peso_extra", "clp"),
+            ("Cobro", "cobro", "clp"),
         ]
         elements.append(_daily_table(daily_data, daily_cols))
         elements.append(Spacer(1, 10))
@@ -639,6 +644,10 @@ def generar_pdf_driver(
         d = r.fecha
         if d in daily_map:
             daily_map[d]["retiros"] += r.tarifa_driver
+
+    # cobro = pago envíos + retiro del día
+    for info in daily_map.values():
+        info["cobro"] = info["cobro"] + info["retiros"]
 
     daily_data = sorted(daily_map.values(), key=lambda x: x["fecha"])
 
