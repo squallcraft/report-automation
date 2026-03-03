@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     HAULMER_EMISOR_RUT: str = ""
     HAULMER_EMISOR_RAZON: str = ""
     HAULMER_EMISOR_GIRO: str = "Servicios de transporte y logística"
-    HAULMER_EMISOR_DIR: str = "MONEDA 1137 56 SANTIAGO"
+    HAULMER_EMISOR_DIR: str = "MONEDA 1137 56"
     HAULMER_EMISOR_CMNA: str = "Santiago"
     HAULMER_EMISOR_ACTECO: int = 532000
 
