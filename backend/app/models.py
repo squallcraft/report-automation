@@ -393,4 +393,32 @@ class AdminUser(Base):
     nombre = Column(String, nullable=True)
     rol = Column(String, nullable=False, default=RolEnum.ADMIN.value)
     activo = Column(Boolean, default=True)
+    # None = usa defaults del rol. Lista de slugs para ADMINISTRACION con permisos custom.
+    permisos = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    """Token de un solo uso para restablecer contraseña (válido 1 hora)."""
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    # Puede ser admin_user, seller o driver — guardamos tipo y entidad_id
+    entity_type = Column(String, nullable=False)   # "admin" | "seller" | "driver"
+    entity_id = Column(Integer, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class AuditLog(Base):
+    """Registro de eventos de seguridad."""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, nullable=True)
+    action = Column(String, nullable=False)   # LOGIN_SUCCESS, LOGIN_FAIL, RESET_REQUEST, RESET_SUCCESS
+    ip = Column(String, nullable=True)
+    detail = Column(String, nullable=True)
+    timestamp = Column(DateTime, server_default=func.now(), index=True)

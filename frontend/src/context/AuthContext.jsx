@@ -27,6 +27,7 @@ export function AuthProvider({ children }) {
       rol: data.rol,
       nombre: data.nombre,
       entidad_id: data.entidad_id,
+      permisos: data.permisos || [],
     }
     localStorage.setItem('user', JSON.stringify(userData))
     setUser(userData)

@@ -36,6 +36,7 @@ class TokenResponse(BaseModel):
     rol: str
     nombre: str
     entidad_id: Optional[int] = None
+    permisos: Optional[List[str]] = None
 
 
 # ── Sellers ──

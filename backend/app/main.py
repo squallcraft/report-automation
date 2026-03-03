@@ -20,11 +20,15 @@ with engine.connect() as conn:
         cols = [c["name"] for c in insp.get_columns("drivers")]
         if "contratado" not in cols:
             conn.execute(text("ALTER TABLE drivers ADD COLUMN contratado BOOLEAN NOT NULL DEFAULT FALSE"))
-            # Marcar conductores contratados conocidos
             conn.execute(text(
                 "UPDATE drivers SET contratado = TRUE "
                 "WHERE lower(nombre) LIKE '%erick%' OR lower(nombre) LIKE '%edwyn%'"
             ))
+            conn.commit()
+    if "admin_users" in insp.get_table_names():
+        cols = [c["name"] for c in insp.get_columns("admin_users")]
+        if "permisos" not in cols:
+            conn.execute(text("ALTER TABLE admin_users ADD COLUMN permisos JSON"))
             conn.commit()
 
 app = FastAPI(

@@ -14,13 +14,18 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     HAULMER_API_KEY: str = ""
     HAULMER_API_URL: str = "https://api.haulmer.com/v2/dte/document"
-    # Emisor (tu empresa) para facturación electrónica
     HAULMER_EMISOR_RUT: str = ""
     HAULMER_EMISOR_RAZON: str = ""
     HAULMER_EMISOR_GIRO: str = "Servicios de transporte y logística"
     HAULMER_EMISOR_DIR: str = "MONEDA 1137 56"
     HAULMER_EMISOR_CMNA: str = "SANTIAGO"
     HAULMER_EMISOR_ACTECO: int = 532000
+    # Reset de contraseña
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASS: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

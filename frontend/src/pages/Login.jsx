@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 import { Truck } from 'lucide-react'
@@ -18,10 +18,16 @@ export default function Login() {
       const user = await login(username, password)
       toast.success(`Bienvenido, ${user.nombre}`)
       if (user.rol === 'ADMIN') navigate('/admin')
+      else if (user.rol === 'ADMINISTRACION') navigate('/admin')
       else if (user.rol === 'SELLER') navigate('/seller')
       else if (user.rol === 'DRIVER') navigate('/driver')
-    } catch {
-      toast.error('Credenciales incorrectas')
+    } catch (err) {
+      const detail = err?.response?.data?.detail
+      if (detail === 'Demasiados intentos. Espera 1 minuto.') {
+        toast.error(detail)
+      } else {
+        toast.error('Credenciales incorrectas')
+      }
     } finally {
       setLoading(false)
     }
@@ -51,7 +57,12 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+              <Link to="/forgot-password" className="text-xs text-primary-600 hover:text-primary-800">
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}

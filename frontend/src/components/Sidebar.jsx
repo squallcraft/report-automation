@@ -9,40 +9,22 @@ import { useState, useEffect } from 'react'
 
 const adminLinks = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/sellers', icon: Users, label: 'Sellers' },
-  { to: '/admin/drivers', icon: Truck, label: 'Drivers' },
-  { to: '/admin/ingesta', icon: Upload, label: 'Ingesta' },
-  { to: '/admin/envios', icon: FileText, label: 'Envíos' },
-  { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación' },
-  { to: '/admin/productos', icon: Package, label: 'Productos Extra' },
-  { to: '/admin/comunas', icon: MapPin, label: 'Comunas' },
-  { to: '/admin/ajustes', icon: Settings, label: 'Ajustes' },
-  { to: '/admin/retiros', icon: DollarSign, label: 'Retiros' },
-  { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas' },
-  { to: '/admin/facturacion', icon: Receipt, label: 'Facturación' },
-  { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers' },
-  { to: '/admin/logs', icon: ClipboardList, label: 'Logs' },
-  { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario' },
-  { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
-  { to: '/admin/asistente', icon: Bot, label: 'Asistente IA' },
-]
-
-const administracionLinks = [
-  { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/sellers', icon: Users, label: 'Sellers' },
-  { to: '/admin/drivers', icon: Truck, label: 'Drivers' },
-  { to: '/admin/envios', icon: FileText, label: 'Envíos' },
-  { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación' },
-  { to: '/admin/productos', icon: Package, label: 'Productos Extra' },
-  { to: '/admin/comunas', icon: MapPin, label: 'Comunas' },
-  { to: '/admin/ajustes', icon: Settings, label: 'Ajustes' },
-  { to: '/admin/retiros', icon: DollarSign, label: 'Retiros' },
-  { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas' },
-  { to: '/admin/facturacion', icon: Receipt, label: 'Facturación' },
-  { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers' },
-  { to: '/admin/logs', icon: ClipboardList, label: 'Logs' },
-  { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario' },
-  { to: '/admin/asistente', icon: Bot, label: 'Asistente IA' },
+  { to: '/admin/sellers', icon: Users, label: 'Sellers', permiso: 'sellers' },
+  { to: '/admin/drivers', icon: Truck, label: 'Drivers', permiso: 'drivers' },
+  { to: '/admin/ingesta', icon: Upload, label: 'Ingesta', permiso: 'ingesta' },
+  { to: '/admin/envios', icon: FileText, label: 'Envíos', permiso: 'envios' },
+  { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
+  { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
+  { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
+  { to: '/admin/ajustes', icon: Settings, label: 'Ajustes', permiso: 'ajustes' },
+  { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
+  { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
+  { to: '/admin/facturacion', icon: Receipt, label: 'Facturación', permiso: 'facturacion' },
+  { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
+  { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
+  { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
+  { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },   // solo ADMIN (sin permiso slug)
+  { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
 ]
 
 const sellerLinks = [
@@ -72,7 +54,17 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   }, [location.pathname])
 
   let links = adminLinks
-  if (user?.rol === 'ADMINISTRACION') links = administracionLinks
+  if (user?.rol === 'ADMINISTRACION') {
+    const permisos = user?.permisos || []
+    links = adminLinks.filter(l => {
+      if (!l.permiso) return false          // sin slug = solo ADMIN (ej: Usuarios)
+      return permisos.includes(l.permiso)
+    })
+    // Dashboard siempre visible para ADMINISTRACION
+    if (!links.find(l => l.to === '/admin')) {
+      links = [adminLinks[0], ...links]
+    }
+  }
   if (user?.rol === 'SELLER') links = sellerLinks
   if (user?.rol === 'DRIVER') links = driverLinks
 

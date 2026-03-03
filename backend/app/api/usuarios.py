@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_admin, hash_password
+from app.auth import require_admin, hash_password, resolver_permisos, PERMISOS_DISPONIBLES
 from app.models import AdminUser, RolEnum
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
@@ -25,19 +25,36 @@ class UsuarioUpdate(BaseModel):
     activo: Optional[bool] = None
 
 
+class PermisosUpdate(BaseModel):
+    permisos: List[str]
+
+
 class UsuarioOut(BaseModel):
     id: int
     username: str
     nombre: Optional[str] = None
     rol: str
     activo: bool
+    permisos_efectivos: List[str] = []
 
     model_config = {"from_attributes": True}
 
 
+def _to_out(user: AdminUser) -> UsuarioOut:
+    return UsuarioOut(
+        id=user.id,
+        username=user.username,
+        nombre=user.nombre,
+        rol=user.rol,
+        activo=user.activo,
+        permisos_efectivos=resolver_permisos(user),
+    )
+
+
 @router.get("", response_model=List[UsuarioOut])
 def listar_usuarios(db: Session = Depends(get_db), _=Depends(require_admin)):
-    return db.query(AdminUser).order_by(AdminUser.username).all()
+    users = db.query(AdminUser).order_by(AdminUser.username).all()
+    return [_to_out(u) for u in users]
 
 
 @router.post("", response_model=UsuarioOut, status_code=201)
@@ -56,7 +73,7 @@ def crear_usuario(data: UsuarioCreate, db: Session = Depends(get_db), _=Depends(
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    return _to_out(user)
 
 
 @router.put("/{user_id}", response_model=UsuarioOut)
@@ -81,7 +98,47 @@ def actualizar_usuario(user_id: int, data: UsuarioUpdate, db: Session = Depends(
         user.activo = data.activo
     db.commit()
     db.refresh(user)
-    return user
+    return _to_out(user)
+
+
+@router.put("/{user_id}/permisos", response_model=UsuarioOut)
+def actualizar_permisos(
+    user_id: int,
+    data: PermisosUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Establece la lista de permisos custom para un usuario ADMINISTRACION."""
+    user = db.get(AdminUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if user.rol == RolEnum.ADMIN.value:
+        raise HTTPException(status_code=400, detail="Los usuarios ADMIN siempre tienen acceso total")
+
+    invalidos = [p for p in data.permisos if p not in PERMISOS_DISPONIBLES]
+    if invalidos:
+        raise HTTPException(status_code=400, detail=f"Permisos inválidos: {', '.join(invalidos)}")
+
+    user.permisos = data.permisos
+    db.commit()
+    db.refresh(user)
+    return _to_out(user)
+
+
+@router.delete("/{user_id}/permisos", response_model=UsuarioOut)
+def resetear_permisos(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """Elimina permisos custom — el usuario vuelve a usar los defaults del rol."""
+    user = db.get(AdminUser, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    user.permisos = None
+    db.commit()
+    db.refresh(user)
+    return _to_out(user)
 
 
 @router.delete("/{user_id}")

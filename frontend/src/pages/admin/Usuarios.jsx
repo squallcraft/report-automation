@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { UserCog, Plus, Edit2, Trash2 } from 'lucide-react'
+import { UserCog, Plus, Edit2, Trash2, ShieldCheck, RotateCcw } from 'lucide-react'
 import Modal from '../../components/Modal'
 
 const ROL_LABELS = { ADMIN: 'Admin', ADMINISTRACION: 'Administración' }
@@ -10,12 +10,56 @@ const ROL_COLORS = {
   ADMINISTRACION: 'bg-blue-100 text-blue-700',
 }
 
+// Permisos disponibles agrupados por categoría
+const GRUPOS_PERMISOS = [
+  {
+    grupo: 'Datos',
+    items: [
+      { slug: 'ingesta', label: 'Ingesta' },
+      { slug: 'envios', label: 'Envíos' },
+      { slug: 'sellers', label: 'Sellers' },
+      { slug: 'drivers', label: 'Drivers' },
+      { slug: 'retiros', label: 'Retiros' },
+    ],
+  },
+  {
+    grupo: 'Operación',
+    items: [
+      { slug: 'liquidacion', label: 'Liquidación' },
+      { slug: 'facturacion', label: 'Facturación' },
+      { slug: 'cpc', label: 'CPC Drivers' },
+      { slug: 'ajustes', label: 'Ajustes' },
+    ],
+  },
+  {
+    grupo: 'Configuración',
+    items: [
+      { slug: 'productos', label: 'Productos Extra' },
+      { slug: 'comunas', label: 'Comunas' },
+      { slug: 'calendario', label: 'Calendario' },
+    ],
+  },
+  {
+    grupo: 'Otros',
+    items: [
+      { slug: 'consultas', label: 'Consultas' },
+      { slug: 'logs', label: 'Logs' },
+      { slug: 'asistente', label: 'Asistente IA' },
+    ],
+  },
+]
+
+const TODOS_LOS_SLUGS = GRUPOS_PERMISOS.flatMap(g => g.items.map(i => i.slug))
+
 export default function Usuarios() {
   const [usuarios, setUsuarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showPermisos, setShowPermisos] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [editingPermisos, setEditingPermisos] = useState(null)
   const [form, setForm] = useState({ username: '', nombre: '', password: '', rol: 'ADMINISTRACION' })
+  const [permisosSel, setPermisosSel] = useState([])
 
   const cargar = () => {
     api.get('/usuarios')
@@ -38,11 +82,16 @@ export default function Usuarios() {
     setShowModal(true)
   }
 
+  const openPermisos = (u) => {
+    setEditingPermisos(u)
+    setPermisosSel(u.permisos_efectivos || [])
+    setShowPermisos(true)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.username.trim()) return toast.error('El usuario es obligatorio')
     if (!editing && !form.password.trim()) return toast.error('La contraseña es obligatoria')
-
     try {
       if (editing) {
         const payload = { username: form.username, nombre: form.nombre, rol: form.rol }
@@ -60,6 +109,48 @@ export default function Usuarios() {
     }
   }
 
+  const handleSavePermisos = async () => {
+    try {
+      await api.put(`/usuarios/${editingPermisos.id}/permisos`, { permisos: permisosSel })
+      toast.success('Permisos actualizados')
+      setShowPermisos(false)
+      cargar()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error guardando permisos')
+    }
+  }
+
+  const handleResetPermisos = async () => {
+    if (!window.confirm('¿Restaurar los permisos por defecto para este usuario?')) return
+    try {
+      await api.delete(`/usuarios/${editingPermisos.id}/permisos`)
+      toast.success('Permisos restaurados al default')
+      setShowPermisos(false)
+      cargar()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error')
+    }
+  }
+
+  const togglePermiso = (slug) => {
+    setPermisosSel(prev =>
+      prev.includes(slug) ? prev.filter(p => p !== slug) : [...prev, slug]
+    )
+  }
+
+  const toggleGrupo = (items) => {
+    const slugs = items.map(i => i.slug)
+    const todosActivos = slugs.every(s => permisosSel.includes(s))
+    if (todosActivos) {
+      setPermisosSel(prev => prev.filter(p => !slugs.includes(p)))
+    } else {
+      setPermisosSel(prev => [...new Set([...prev, ...slugs])])
+    }
+  }
+
+  const selectAll = () => setPermisosSel([...TODOS_LOS_SLUGS])
+  const clearAll = () => setPermisosSel([])
+
   const handleDelete = async (u) => {
     if (!window.confirm(`¿Desactivar usuario "${u.username}"?`)) return
     try {
@@ -72,13 +163,13 @@ export default function Usuarios() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col h-full gap-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <UserCog size={24} className="text-primary-600" />
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Usuarios del Sistema</h1>
-            <p className="text-sm text-gray-500">Gestión de accesos administrativos</p>
+            <p className="text-sm text-gray-500">Gestión de accesos y permisos administrativos</p>
           </div>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
@@ -86,21 +177,24 @@ export default function Usuarios() {
         </button>
       </div>
 
-      <div className="card mb-4 p-4 bg-blue-50 border-blue-200 text-sm text-blue-800">
+      <div className="card p-4 bg-blue-50 border-blue-200 text-sm text-blue-800">
         <strong>Admin:</strong> Control total del sistema.{' '}
-        <strong>Administración:</strong> Puede ver todo, descargar PDFs, emitir facturas y gestionar pagos. No puede cargar ni modificar datos.
+        <strong>Administración:</strong> Acceso personalizable por sección. Usa el botón{' '}
+        <ShieldCheck size={13} className="inline" /> para editar sus permisos.
       </div>
 
       {loading ? (
         <div className="text-center py-12 text-gray-400">Cargando...</div>
       ) : (
-        <div className="card overflow-hidden p-0">
+        <div className="card overflow-hidden p-0 flex-1 min-h-0">
+          <div className="overflow-auto h-full">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
+            <thead className="sticky top-0 z-10 bg-gray-50">
+              <tr className="border-b border-gray-200">
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Usuario</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Nombre</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">Rol</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Permisos activos</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">Estado</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600">Acciones</th>
               </tr>
@@ -115,6 +209,22 @@ export default function Usuarios() {
                       {ROL_LABELS[u.rol] || u.rol}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    {u.rol === 'ADMIN' ? (
+                      <span className="text-xs text-gray-400 italic">Acceso total</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1 max-w-xs">
+                        {(u.permisos_efectivos || []).slice(0, 5).map(p => (
+                          <span key={p} className="text-[10px] px-1.5 py-0.5 bg-primary-50 text-primary-700 rounded border border-primary-100">
+                            {p}
+                          </span>
+                        ))}
+                        {(u.permisos_efectivos || []).length > 5 && (
+                          <span className="text-[10px] text-gray-400">+{u.permisos_efectivos.length - 5} más</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-xs px-2 py-0.5 rounded ${u.activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                       {u.activo ? 'Activo' : 'Inactivo'}
@@ -125,6 +235,11 @@ export default function Usuarios() {
                       <button onClick={() => openEdit(u)} className="text-blue-600 hover:text-blue-800" title="Editar">
                         <Edit2 size={15} />
                       </button>
+                      {u.rol === 'ADMINISTRACION' && u.activo && (
+                        <button onClick={() => openPermisos(u)} className="text-primary-600 hover:text-primary-800" title="Editar permisos">
+                          <ShieldCheck size={15} />
+                        </button>
+                      )}
                       {u.activo && (
                         <button onClick={() => handleDelete(u)} className="text-red-500 hover:text-red-700" title="Desactivar">
                           <Trash2 size={15} />
@@ -135,45 +250,127 @@ export default function Usuarios() {
                 </tr>
               ))}
               {!usuarios.length && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No hay usuarios</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay usuarios</td></tr>
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
+      {/* Modal crear/editar usuario */}
       <Modal open={showModal} title={editing ? 'Editar Usuario' : 'Nuevo Usuario'} onClose={() => setShowModal(false)}>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
-              <input type="text" className="input-field" value={form.username}
-                onChange={e => setForm({ ...form, username: e.target.value })} />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Usuario</label>
+            <input type="text" className="input-field" value={form.username}
+              onChange={e => setForm({ ...form, username: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+            <input type="text" className="input-field" value={form.nombre}
+              onChange={e => setForm({ ...form, nombre: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Contraseña {editing && <span className="text-xs text-gray-400">(dejar vacío para no cambiar)</span>}
+            </label>
+            <input type="password" className="input-field" value={form.password}
+              onChange={e => setForm({ ...form, password: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
+            <select className="input-field" value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })}>
+              <option value="ADMIN">Admin (control total)</option>
+              <option value="ADMINISTRACION">Administración (permisos configurables)</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+            <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancelar</button>
+            <button type="submit" className="btn-primary">{editing ? 'Guardar' : 'Crear'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal de permisos */}
+      <Modal
+        open={showPermisos}
+        title={`Permisos — ${editingPermisos?.username || ''}`}
+        onClose={() => setShowPermisos(false)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Activa o desactiva las secciones a las que este usuario puede acceder.
+          </p>
+
+          {/* Acciones rápidas */}
+          <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+            <button type="button" onClick={selectAll} className="text-xs text-primary-600 hover:text-primary-800 font-medium">
+              Seleccionar todo
+            </button>
+            <span className="text-gray-300">|</span>
+            <button type="button" onClick={clearAll} className="text-xs text-gray-500 hover:text-gray-700">
+              Quitar todo
+            </button>
+            <span className="ml-auto text-xs text-gray-400">
+              {permisosSel.length} / {TODOS_LOS_SLUGS.length} activos
+            </span>
+          </div>
+
+          {/* Checkboxes agrupados */}
+          <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+            {GRUPOS_PERMISOS.map(({ grupo, items }) => {
+              const todosActivos = items.every(i => permisosSel.includes(i.slug))
+              const algunoActivo = items.some(i => permisosSel.includes(i.slug))
+              return (
+                <div key={grupo}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGrupo(items)}
+                    className="flex items-center gap-2 mb-2 w-full text-left"
+                  >
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors
+                      ${todosActivos ? 'bg-primary-600 border-primary-600' : algunoActivo ? 'bg-primary-100 border-primary-400' : 'border-gray-300'}`}
+                    >
+                      {todosActivos && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      {algunoActivo && !todosActivos && <div className="w-2 h-0.5 bg-primary-500 rounded" />}
+                    </div>
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{grupo}</span>
+                  </button>
+                  <div className="grid grid-cols-2 gap-y-1.5 gap-x-4 ml-6">
+                    {items.map(({ slug, label }) => (
+                      <label key={slug} className="flex items-center gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={permisosSel.includes(slug)}
+                          onChange={() => togglePermiso(slug)}
+                          className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700 group-hover:text-gray-900">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+            <button
+              type="button"
+              onClick={handleResetPermisos}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
+              title="Restaurar permisos por defecto del rol"
+            >
+              <RotateCcw size={14} /> Restaurar defaults
+            </button>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowPermisos(false)} className="btn-secondary">Cancelar</button>
+              <button type="button" onClick={handleSavePermisos} className="btn-primary">Guardar permisos</button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-              <input type="text" className="input-field" value={form.nombre}
-                onChange={e => setForm({ ...form, nombre: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Contraseña {editing && <span className="text-xs text-gray-400">(dejar vacío para no cambiar)</span>}
-              </label>
-              <input type="password" className="input-field" value={form.password}
-                onChange={e => setForm({ ...form, password: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
-              <select className="input-field" value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })}>
-                <option value="ADMIN">Admin (control total)</option>
-                <option value="ADMINISTRACION">Administración (solo lectura + pagos/facturas)</option>
-              </select>
-            </div>
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
-              <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancelar</button>
-              <button type="submit" className="btn-primary">{editing ? 'Guardar' : 'Crear'}</button>
-            </div>
-          </form>
-        </Modal>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

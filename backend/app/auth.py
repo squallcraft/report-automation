@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Callable
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -13,6 +13,33 @@ from app.models import AdminUser, Seller, Driver, RolEnum
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+# ---------------------------------------------------------------------------
+# Permisos disponibles por slug
+# ADMIN siempre tiene todos. ADMINISTRACION parte con PERMISOS_DEFAULT_ADMINISTRACION
+# y puede tener una lista custom guardada en AdminUser.permisos.
+# ---------------------------------------------------------------------------
+PERMISOS_DISPONIBLES: list[str] = [
+    "sellers", "drivers", "ingesta", "envios", "liquidacion",
+    "productos", "comunas", "ajustes", "retiros", "consultas",
+    "facturacion", "cpc", "logs", "calendario", "asistente",
+]
+
+PERMISOS_DEFAULT_ADMINISTRACION: list[str] = [
+    "envios", "liquidacion", "productos", "comunas", "ajustes",
+    "retiros", "consultas", "facturacion", "cpc", "logs", "calendario", "asistente",
+    "sellers", "drivers",
+]
+
+
+def resolver_permisos(user: AdminUser) -> list[str]:
+    """Retorna la lista efectiva de permisos para un AdminUser."""
+    if user.rol == RolEnum.ADMIN.value:
+        return PERMISOS_DISPONIBLES[:]
+    # ADMINISTRACION: si tiene permisos custom en DB los usa, si no el default
+    if user.permisos is not None:
+        return [p for p in user.permisos if p in PERMISOS_DISPONIBLES]
+    return PERMISOS_DEFAULT_ADMINISTRACION[:]
 
 
 def hash_password(password: str) -> str:
@@ -61,21 +88,26 @@ def get_current_user(
         if not user.activo:
             raise HTTPException(status_code=401, detail="Usuario desactivado")
         effective_rol = RolEnum(user.rol) if user.rol else RolEnum.ADMIN
-        return {"rol": effective_rol, "id": user.id, "nombre": user.nombre or user.username}
+        return {
+            "rol": effective_rol,
+            "id": user.id,
+            "nombre": user.nombre or user.username,
+            "permisos": resolver_permisos(user),
+        }
     elif rol == RolEnum.SELLER:
         seller = db.query(Seller).filter(Seller.id == uid).first()
         if not seller:
             raise HTTPException(status_code=401, detail="Seller no encontrado")
         if not seller.activo:
             raise HTTPException(status_code=401, detail="Cuenta desactivada")
-        return {"rol": RolEnum.SELLER, "id": seller.id, "nombre": seller.nombre}
+        return {"rol": RolEnum.SELLER, "id": seller.id, "nombre": seller.nombre, "permisos": []}
     elif rol == RolEnum.DRIVER:
         driver = db.query(Driver).filter(Driver.id == uid).first()
         if not driver:
             raise HTTPException(status_code=401, detail="Driver no encontrado")
         if not driver.activo:
             raise HTTPException(status_code=401, detail="Cuenta desactivada")
-        return {"rol": RolEnum.DRIVER, "id": driver.id, "nombre": driver.nombre}
+        return {"rol": RolEnum.DRIVER, "id": driver.id, "nombre": driver.nombre, "permisos": []}
 
     raise HTTPException(status_code=401, detail="Rol no reconocido")
 
@@ -123,3 +155,30 @@ def require_driver(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["rol"] != RolEnum.DRIVER:
         raise HTTPException(status_code=403, detail="Acceso solo para drivers")
     return current_user
+
+
+def check_ownership(current_user: dict, entity_id: int) -> None:
+    """
+    Verifica que el usuario autenticado (seller o driver) solo acceda
+    a sus propios datos. Los admins siempre pasan.
+    Levanta 403 si hay violación.
+    """
+    if current_user["rol"] in (RolEnum.ADMIN, RolEnum.ADMINISTRACION):
+        return
+    if current_user["id"] != entity_id:
+        raise HTTPException(status_code=403, detail="No tienes permiso para acceder a estos datos")
+
+
+def require_permission(slug: str) -> Callable:
+    """
+    Factory de dependencias. Verifica que el usuario tenga el permiso `slug`.
+    ADMIN siempre pasa. ADMINISTRACION necesita el slug en su lista de permisos.
+    Uso: @router.get("/ruta", dependencies=[require_permission("ingesta")])
+    """
+    def _check(current_user: dict = Depends(get_current_user)) -> dict:
+        if current_user["rol"] == RolEnum.ADMIN:
+            return current_user
+        if slug not in current_user.get("permisos", []):
+            raise HTTPException(status_code=403, detail=f"Sin permiso para acceder a esta sección")
+        return current_user
+    return Depends(_check)
