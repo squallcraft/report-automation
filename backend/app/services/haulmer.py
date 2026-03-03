@@ -57,7 +57,7 @@ def emitir_factura(
     if not emisor_rut:
         return None, None, "RUT del emisor no configurado (HAULMER_EMISOR_RUT)"
 
-    fch_emis = date.today().strftime("%d-%m-%Y")
+    fch_emis = date.today().strftime("%Y-%m-%d")
 
     body: dict[str, Any] = {
         "response": ["XML", "PDF", "FOLIO", "RESOLUCION"],
