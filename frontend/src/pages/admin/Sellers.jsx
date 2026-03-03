@@ -207,6 +207,7 @@ export default function Sellers() {
       min_paquetes_retiro_gratis: parseInt(form.min_paquetes_retiro_gratis, 10) || 0,
       rut: (form.rut || '').trim() || null,
       giro: (form.giro || '').trim() || null,
+      email: (form.email || '').trim() || null,
     }
     if (!payload.password) delete payload.password
 
@@ -457,17 +458,18 @@ export default function Sellers() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email (opcional)</label>
               <input
                 type="email"
                 className="input-field"
+                placeholder="Para acceso al portal seller"
                 value={form.email}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {editing ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
+                {editing ? 'Contraseña (opcional, dejar vacío para no cambiar)' : 'Contraseña (opcional)'}
               </label>
               <input
                 type="password"

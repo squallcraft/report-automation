@@ -330,7 +330,10 @@ def crear_seller(data: SellerCreate, db: Session = Depends(get_db), _=Depends(re
     existing = db.query(Seller).filter(Seller.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un seller con ese nombre")
-    seller = Seller(**data.model_dump(exclude={"password"}))
+    dump = data.model_dump(exclude={"password"})
+    if dump.get("email") == "":
+        dump["email"] = None
+    seller = Seller(**dump)
     if data.password:
         seller.password_hash = hash_password(data.password)
     db.add(seller)
@@ -348,6 +351,8 @@ def actualizar_seller(
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
     update_data = data.model_dump(exclude_unset=True, exclude={"password"})
+    if update_data.get("email") == "":
+        update_data["email"] = None
     for key, value in update_data.items():
         setattr(seller, key, value)
     if data.password:
