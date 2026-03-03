@@ -16,8 +16,15 @@ def _formatear_rut(rut: Optional[str]) -> str:
     if not rut or not str(rut).strip():
         return ""
     r = str(rut).strip().upper().replace(".", "").replace(" ", "")
+    if not r:
+        return ""
     if "-" not in r and len(r) > 1:
         r = r[:-1] + "-" + r[-1]
+    # Validar que tiene algo antes del guión
+    parts = r.split("-")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        logger.warning("RUT con formato inválido: %r → %r", rut, r)
+        return ""
     return r
 
 
@@ -52,6 +59,8 @@ def emitir_factura(
 
     receptor_rut = _formatear_rut(receptor_rut)
     emisor_rut = _formatear_rut(emisor_rut)
+    logger.info("Haulmer emit — emisor_rut=%r receptor_rut=%r receptor_razon=%r mnt_total=%s",
+                emisor_rut, receptor_rut, receptor_razon, mnt_total)
     if not receptor_rut:
         return None, None, "RUT del receptor (seller) es requerido"
     if not emisor_rut:
@@ -132,7 +141,7 @@ def emitir_factura(
 
     if resp.status_code != 200 and resp.status_code != 201:
         msg = data.get("message") or data.get("error") or resp.text or f"HTTP {resp.status_code}"
-        logger.warning("Haulmer API error %s: %s", resp.status_code, msg)
+        logger.warning("Haulmer API error %s: %s | body=%s", resp.status_code, msg, resp.text[:500])
         return None, data, msg
 
     # Respuesta exitosa: puede venir FOLIO en el body (según doc)
