@@ -463,12 +463,13 @@ def generar_pdf_seller(
         Envio.mes == mes, Envio.anio == anio,
     ).order_by(Envio.fecha_entrega).all()
 
-    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0} for d in all_dates}
+    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0} for d in all_dates}
     for e in envios_semana:
         d = e.fecha_entrega
         if d not in daily_map:
-            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0}
+            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0}
         daily_map[d]["envios"] += 1
+        daily_map[d]["monto"] += e.cobro_seller + (e.cobro_extra_manual or 0)
         daily_map[d]["bultos_extra"] += e.extra_producto_seller
         daily_map[d]["peso_extra"] += e.extra_comuna_seller
 
