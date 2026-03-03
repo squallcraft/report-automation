@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     HAULMER_EMISOR_GIRO: str = "Servicios de transporte y logística"
     HAULMER_EMISOR_DIR: str = ""
     HAULMER_EMISOR_CMNA: str = ""
-    HAULMER_EMISOR_ACTECO: int = 492110
+    HAULMER_EMISOR_ACTECO: int = 532000
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
