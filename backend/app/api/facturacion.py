@@ -19,7 +19,8 @@ from app.models import (
     PagoSemanaSeller, FacturaMensualSeller,
     CalendarioSemanas, TipoEntidadEnum,
     EstadoPagoEnum, EstadoFacturaEnum,
-)from app.services.liquidacion import calcular_liquidacion_sellers
+)
+from app.services.liquidacion import calcular_liquidacion_sellers
 from app.services.haulmer import emitir_factura, _formatear_rut as _fmt_rut
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
