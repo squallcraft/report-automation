@@ -216,7 +216,8 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
         weekly[s] = {
             "monto": sum(e.cobro_seller for e in envios),
             "envios": len(envios),
-            "bultos_extra": sum(e.extra_producto_seller + e.cobro_extra_manual for e in envios),
+            "bultos_extra": sum(e.extra_producto_seller for e in envios),
+            "cobro_extra_manual": sum(e.cobro_extra_manual for e in envios),
             "retiros": total_retiros,
             "peso_extra": sum(e.extra_comuna_seller for e in envios),
             "ajustes": sum(a.monto for a in ajustes),

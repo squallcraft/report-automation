@@ -157,9 +157,7 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
         ).all()
         total_ajustes = sum(a.monto for a in ajustes)
 
-        subtotal = total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
-        iva = int(subtotal * 0.19)
-        total = subtotal + iva
+        total = total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
 
         resultados.append({
             "driver_id": driver.id,
@@ -170,8 +168,8 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
             "total_extras_comuna": total_extras_comuna,
             "total_retiros": total_retiros,
             "total_ajustes": total_ajustes,
-            "subtotal": subtotal,
-            "iva": iva,
+            "subtotal": total,
+            "iva": 0,
             "total": total,
         })
 

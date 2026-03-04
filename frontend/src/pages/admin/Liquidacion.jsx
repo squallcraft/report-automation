@@ -201,7 +201,6 @@ export default function Liquidacion() {
     { key: 'total_extras_comuna', label: 'Ext. Com.', align: 'right', render: (v) => fmt(v) },
     { key: 'total_retiros', label: 'Retiros', align: 'right', render: (v) => fmt(v) },
     { key: 'total_ajustes', label: 'Ajustes', align: 'right', render: (v) => v !== 0 ? <span className={v > 0 ? 'text-green-600' : 'text-red-600'}>{fmt(v)}</span> : '—' },
-    { key: 'iva', label: 'IVA', align: 'right', render: (v) => v > 0 ? fmt(v) : '—' },
     { key: 'total', label: 'Total', align: 'right', render: (v) => <span className="font-bold">{fmt(v)}</span> },
     { key: 'actions', label: '', render: (_, row) => (
       <button onClick={(e) => { e.stopPropagation(); downloadPdf('driver', row.driver_id, row.driver_nombre) }} className="p-1.5 hover:bg-gray-100 rounded-lg" title="Descargar PDF">
@@ -229,7 +228,7 @@ export default function Liquidacion() {
   const totalLabel = tab === 'sellers'
     ? { text: 'Total Cobros (con IVA)', value: filteredSellers.reduce((a, s) => a + s.total_con_iva, 0), bg: 'bg-primary-50 border-primary-200', color: 'text-primary-900' }
     : tab === 'drivers'
-    ? { text: 'Total Pagos (con IVA)', value: filteredDrivers.reduce((a, d) => a + d.total, 0), bg: 'bg-emerald-50 border-emerald-200', color: 'text-emerald-900' }
+    ? { text: 'Total Pagos a Drivers', value: filteredDrivers.reduce((a, d) => a + d.total, 0), bg: 'bg-emerald-50 border-emerald-200', color: 'text-emerald-900' }
     : null
 
   return (

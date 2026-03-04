@@ -421,8 +421,6 @@ def generar_pdf_seller(
     def sub(s):
         w = weekly[s]
         return w["monto"] + w["bultos_extra"] + w["retiros"] + w["peso_extra"]
-
-    subtotals = [sub(s) for s in range(1, 6)]
     ivas = [int(v * 0.19) for v in subtotals]
     totals = [subtotals[i] + ivas[i] for i in range(5)]
     total_semana = totals[semana - 1]
