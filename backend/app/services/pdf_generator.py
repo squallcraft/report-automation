@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
-    EmpresaEnum,
+    EmpresaEnum, TipoEntidadEnum,
 )
 from app.services.calendario import get_dates_for_week as _cal_get_dates
 
