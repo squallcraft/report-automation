@@ -397,14 +397,21 @@ class RetiroBase(BaseModel):
     semana: int
     mes: int
     anio: int
-    seller_id: int
-    driver_id: int
+    seller_id: Optional[int] = None
+    driver_id: Optional[int] = None
     tarifa_seller: int = 0
     tarifa_driver: int = 0
 
 
-class RetiroCreate(RetiroBase):
-    pass
+class RetiroCreate(BaseModel):
+    fecha: date
+    semana: int
+    mes: int
+    anio: int
+    seller_id: int
+    driver_id: int
+    tarifa_seller: int = 0
+    tarifa_driver: int = 0
 
 
 class RetiroOut(RetiroBase):
