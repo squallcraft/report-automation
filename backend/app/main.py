@@ -30,6 +30,14 @@ with engine.connect() as conn:
         if "permisos" not in cols:
             conn.execute(text("ALTER TABLE admin_users ADD COLUMN permisos JSON"))
             conn.commit()
+    if "retiros" in insp.get_table_names() and engine.dialect.name == "postgresql":
+        retiro_cols = {c["name"]: c for c in insp.get_columns("retiros")}
+        if retiro_cols.get("seller_id", {}).get("nullable") is False:
+            conn.execute(text("ALTER TABLE retiros ALTER COLUMN seller_id DROP NOT NULL"))
+            conn.commit()
+        if retiro_cols.get("driver_id", {}).get("nullable") is False:
+            conn.execute(text("ALTER TABLE retiros ALTER COLUMN driver_id DROP NOT NULL"))
+            conn.commit()
 
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",
