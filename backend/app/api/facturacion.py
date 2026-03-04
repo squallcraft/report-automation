@@ -19,8 +19,7 @@ from app.models import (
     PagoSemanaSeller, FacturaMensualSeller,
     CalendarioSemanas, TipoEntidadEnum,
     EstadoPagoEnum, EstadoFacturaEnum,
-)
-from app.services.liquidacion import calcular_liquidacion_sellers
+)from app.services.liquidacion import calcular_liquidacion_sellers
 from app.services.haulmer import emitir_factura, _formatear_rut as _fmt_rut
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
@@ -74,9 +73,16 @@ def _get_monto_semanal_seller(db: Session, seller_id: int, semana: int, mes: int
     if not envios:
         return 0
 
+    seller = db.get(Seller, seller_id)
     total_envios = sum(e.cobro_seller + e.cobro_extra_manual for e in envios)
     total_extras_producto = sum(e.extra_producto_seller for e in envios)
     total_extras_comuna = sum(e.extra_comuna_seller for e in envios)
+
+    total_retiros = 0
+    if seller and seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
+        if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
+            dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+            total_retiros = seller.tarifa_retiro * dias_con_envios
 
     ajustes = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
@@ -87,7 +93,7 @@ def _get_monto_semanal_seller(db: Session, seller_id: int, semana: int, mes: int
     ).all()
     total_ajustes = sum(a.monto for a in ajustes)
 
-    return total_envios + total_extras_producto + total_extras_comuna + total_ajustes
+    return total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
 
 
 @router.get("/tabla")

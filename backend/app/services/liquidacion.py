@@ -1,11 +1,11 @@
 """
 Motor de liquidación: calcula cobros a sellers y pagos a drivers.
 
-Regla de negocio — Retiros:
+Reglas de negocio — Retiros:
   - La tabla `retiros` representa paradas físicas de un conductor para recoger carga.
   - `tarifa_driver` de cada retiro se suma al pago del conductor.
-  - Los sellers NO se cobran desde esta tabla; su cobro de retiro ya está calculado
-    por otra vía (configuración del seller: tarifa_retiro, tiene_retiro, etc.).
+  - El cobro de retiro al seller se calcula desde la configuración del seller
+    (tarifa_retiro × días con envíos), NO desde la tabla retiros.
 """
 from typing import List
 
@@ -15,6 +15,22 @@ from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     TipoEntidadEnum,
 )
+
+
+def _calcular_retiro_seller(seller, envios: list) -> int:
+    """
+    Cobro de retiro al seller para una semana.
+    Usa tarifa_retiro del seller × días distintos con envíos.
+    Respeta min_paquetes_retiro_gratis y usa_pickup.
+    """
+    if not seller.tiene_retiro or seller.usa_pickup or not envios:
+        return 0
+    if seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis:
+        return 0
+    if not seller.tarifa_retiro:
+        return 0
+    dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+    return seller.tarifa_retiro * dias_con_envios
 
 
 def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
@@ -38,6 +54,7 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
         total_envios = sum(e.cobro_seller + e.cobro_extra_manual for e in envios)
         total_extras_producto = sum(e.extra_producto_seller for e in envios)
         total_extras_comuna = sum(e.extra_comuna_seller for e in envios)
+        total_retiros = _calcular_retiro_seller(seller, envios)
 
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
@@ -48,7 +65,7 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
         ).all()
         total_ajustes = sum(a.monto for a in ajustes)
 
-        subtotal = total_envios + total_extras_producto + total_extras_comuna + total_ajustes
+        subtotal = total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
         iva = int(subtotal * 0.19)
         total_con_iva = subtotal + iva
 
@@ -61,7 +78,7 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
             "cantidad_envios": len(envios),
             "total_extras_producto": total_extras_producto,
             "total_extras_comuna": total_extras_comuna,
-            "total_retiros": 0,
+            "total_retiros": total_retiros,
             "total_ajustes": total_ajustes,
             "subtotal": subtotal,
             "iva": iva,
@@ -87,12 +104,13 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
         if not envios:
             continue
 
-        total_envios = sum(e.costo_driver + e.pago_extra_manual for e in envios)
+        total_envios = sum(e.costo_driver for e in envios)
+        pago_extra_envios = sum(e.pago_extra_manual for e in envios)
         if driver.contratado:
             total_extras_producto = 0
             total_extras_comuna = 0
         else:
-            total_extras_producto = sum(e.extra_producto_driver for e in envios)
+            total_extras_producto = sum(e.extra_producto_driver for e in envios) + pago_extra_envios
             total_extras_comuna = sum(e.extra_comuna_driver for e in envios)
 
         retiros = db.query(Retiro).filter(
@@ -156,6 +174,7 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
             e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller
             for e in envios
         )
+        ingreso += _calcular_retiro_seller(seller, envios)
 
         def _costo_envio_driver(e):
             driver_e = db.get(Driver, e.driver_id) if e.driver_id else None

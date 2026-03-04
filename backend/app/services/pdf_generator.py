@@ -380,16 +380,23 @@ def generar_pdf_seller(
             Envio.seller_id == seller_id, Envio.semana == s,
             Envio.mes == mes, Envio.anio == anio,
         ).all()
+        total_retiros = 0
+        if seller.tiene_retiro and not seller.usa_pickup and envios and seller.tarifa_retiro:
+            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
+                dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
+                total_retiros = seller.tarifa_retiro * dias_con_envios
+
         weekly[s] = {
             "monto": sum(e.cobro_seller + e.cobro_extra_manual for e in envios),
             "envios": len(envios),
             "bultos_extra": sum(e.extra_producto_seller for e in envios),
+            "retiros": total_retiros,
             "peso_extra": sum(e.extra_comuna_seller for e in envios),
         }
 
     def sub(s):
         w = weekly[s]
-        return w["monto"] + w["bultos_extra"] + w["peso_extra"]
+        return w["monto"] + w["bultos_extra"] + w["retiros"] + w["peso_extra"]
 
     subtotals = [sub(s) for s in range(1, 6)]
     ivas = [int(v * 0.19) for v in subtotals]
@@ -413,6 +420,7 @@ def generar_pdf_seller(
         _row("Monto", "monto"),
         _row("Envíos", "envios", False),
         _row("Bultos Extra", "bultos_extra"),
+        _row("Retiros", "retiros"),
         _row("Peso Extra", "peso_extra"),
         ["Subtotal"] + [_fmt(v) for v in subtotals] + [_fmt(sum(subtotals))],
         ["IVA"] + [_fmt(v) for v in ivas] + [_fmt(sum(ivas))],
@@ -498,15 +506,16 @@ def generar_pdf_driver(
         desc = sum(a.monto for a in ajustes if a.monto < 0)
 
         es_contratado = getattr(driver, 'contratado', False)
+        pago_extra_envios = sum(e.pago_extra_manual for e in envios)
         weekly[s] = {
             "normal_count": len(normal),
-            "normal_total": sum(e.costo_driver + e.pago_extra_manual for e in normal),
+            "normal_total": sum(e.costo_driver for e in normal),
             "oviedo_count": len(oviedo),
-            "oviedo_total": sum(e.costo_driver + e.pago_extra_manual for e in oviedo),
+            "oviedo_total": sum(e.costo_driver for e in oviedo),
             "tercerizado_count": len(tercerizado),
-            "tercerizado_total": sum(e.costo_driver + e.pago_extra_manual for e in tercerizado),
+            "tercerizado_total": sum(e.costo_driver for e in tercerizado),
             "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
-            "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios),
+            "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
             "retiros": sum(r.tarifa_driver for r in retiros_q),
             "bonificaciones": bonif,
             "descuentos": desc,
@@ -579,9 +588,9 @@ def generar_pdf_driver(
         if d not in daily_map:
             daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0, "cobro": 0}
         daily_map[d]["envios"] += 1
-        daily_map[d]["cobro"] += e.costo_driver + (e.pago_extra_manual or 0)
+        daily_map[d]["cobro"] += e.costo_driver
         if not es_contratado:
-            daily_map[d]["bultos_extra"] += e.extra_producto_driver
+            daily_map[d]["bultos_extra"] += e.extra_producto_driver + (e.pago_extra_manual or 0)
             daily_map[d]["comuna"] += e.extra_comuna_driver
 
     retiros_semana = db.query(Retiro).filter(
