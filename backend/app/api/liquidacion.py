@@ -192,18 +192,6 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
             Envio.seller_id == seller_id, Envio.semana == s,
             Envio.mes == mes, Envio.anio == anio,
         ).all()
-        retiros_q = db.query(Retiro).filter(
-            Retiro.seller_id == seller_id, Retiro.semana == s,
-            Retiro.mes == mes, Retiro.anio == anio,
-        ).all()
-        total_retiros = 0
-        if seller.tiene_retiro and not seller.usa_pickup and envios:
-            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-                if retiros_q:
-                    total_retiros = sum(r.tarifa_seller for r in retiros_q)
-                elif seller.tarifa_retiro and (s >= 4 if (mes == 2 and anio == 2026) else (anio, mes) > (2026, 2)):
-                    dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
-                    total_retiros = seller.tarifa_retiro * dias_con_envios
 
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
@@ -218,7 +206,6 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
             "envios": len(envios),
             "bultos_extra": sum(e.extra_producto_seller for e in envios),
             "cobro_extra_manual": sum(e.cobro_extra_manual for e in envios),
-            "retiros": total_retiros,
             "peso_extra": sum(e.extra_comuna_seller for e in envios),
             "ajustes": sum(a.monto for a in ajustes),
         }
@@ -314,25 +301,13 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0)
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
-    # Agrupar retiros por fecha
-    retiros_por_dia: dict = {}
-    for r in retiros_list:
-        retiros_por_dia.setdefault(r.fecha, []).append(r)
+    # Retiros solo aplican al desglose de drivers (tarifa_driver por parada)
+    if not is_seller and retiros_list:
+        for r in retiros_list:
+            if r.fecha in daily_map:
+                daily_map[r.fecha]["retiros"] += r.tarifa_driver
 
-    if retiros_list:
-        for d, rs in retiros_por_dia.items():
-            if d in daily_map:
-                daily_map[d]["retiros"] += sum(r.tarifa_seller if is_seller else r.tarifa_driver for r in rs)
-    elif is_seller and seller and seller.tiene_retiro and not seller.usa_pickup:
-        # Fallback: tarifa diaria del seller para días con envíos (solo desde S4/Feb2026)
-        aplica_fallback = (anio, mes, semana) >= (2026, 2, 4)
-        if aplica_fallback and seller.tarifa_retiro:
-            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios_list) >= seller.min_paquetes_retiro_gratis):
-                for d, info in daily_map.items():
-                    if info["envios"] > 0:
-                        daily_map[d]["retiros"] = seller.tarifa_retiro
-
-    # monto = cobro base envíos + retiro del día
+    # monto diario = cobro/pago base + retiro del día (solo drivers)
     for info in daily_map.values():
         info["monto"] = info["monto"] + info["retiros"]
 
@@ -399,14 +374,10 @@ def detalle_seller(
         Envio.seller_id == seller_id, Envio.semana == semana,
         Envio.mes == mes, Envio.anio == anio,
     ).order_by(Envio.fecha_entrega).all()
-    retiros_semana = db.query(Retiro).filter(
-        Retiro.seller_id == seller_id, Retiro.semana == semana,
-        Retiro.mes == mes, Retiro.anio == anio,
-    ).all()
     detail["daily"] = _daily_breakdown(
-        envios_semana, retiros_semana,
+        envios_semana, [],
         "extra_producto_seller", "extra_comuna_seller",
-        semana, mes, anio, is_seller=True, db=db, seller=seller,
+        semana, mes, anio, is_seller=True, db=db,
     )
     detail["productos"] = _productos_envios(db, envios_semana)
     return detail

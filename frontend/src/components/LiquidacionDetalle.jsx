@@ -197,7 +197,6 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
               { key: 'fecha', label: 'Día', render: (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString('es-CL') : '—' },
               { key: 'envios', label: 'Envíos', align: 'center' },
               { key: 'bultos_extra', label: 'Bultos Extra', align: 'right', render: (v) => fmt(v) },
-              { key: 'retiros', label: 'Retiros', align: 'right', render: (v) => fmt(v) },
               { key: 'peso_extra', label: isSeller ? 'Peso Extra' : 'Comuna', align: 'right', render: (v) => fmt(v) },
               { key: 'monto', label: isSeller ? 'Cobro' : 'Pago', align: 'right', render: (v) => fmt(v) },
             ]}
@@ -249,7 +248,6 @@ function buildSellerRows(data) {
     mkRow('Envíos', 'envios', false, true),
     mkRow('Bultos Extra', 'bultos_extra'),
     mkRow('Extra Manual', 'cobro_extra_manual'),
-    mkRow('Retiros', 'retiros'),
     mkRow('Peso Extra', 'peso_extra'),
     mkRow('Ajustes', 'ajustes'),
   ]
@@ -258,7 +256,7 @@ function buildSellerRows(data) {
   let subtotalSum = 0
   for (let s = 1; s <= 5; s++) {
     const ws = w[s] || {}
-    subtotalValues[s] = (ws.monto || 0) + (ws.bultos_extra || 0) + (ws.cobro_extra_manual || 0) + (ws.retiros || 0) + (ws.peso_extra || 0) + (ws.ajustes || 0)
+    subtotalValues[s] = (ws.monto || 0) + (ws.bultos_extra || 0) + (ws.cobro_extra_manual || 0) + (ws.peso_extra || 0) + (ws.ajustes || 0)
     subtotalSum += subtotalValues[s]
   }
   rows.push({ label: 'Subtotal', values: subtotalValues, subtotal: subtotalSum, isMoney: true, bold: true })
@@ -324,7 +322,7 @@ function buildDriverRows(data) {
 
 function calcSellerTotal(weekly, semana) {
   const w = weekly[semana] || {}
-  const sub = (w.monto || 0) + (w.bultos_extra || 0) + (w.cobro_extra_manual || 0) + (w.retiros || 0) + (w.peso_extra || 0) + (w.ajustes || 0)
+  const sub = (w.monto || 0) + (w.bultos_extra || 0) + (w.cobro_extra_manual || 0) + (w.peso_extra || 0) + (w.ajustes || 0)
   return sub + Math.round(sub * 0.19)
 }
 

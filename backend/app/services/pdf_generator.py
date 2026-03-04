@@ -26,26 +26,9 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
-    TipoEntidadEnum, EmpresaEnum,
+    EmpresaEnum,
 )
 from app.services.calendario import get_dates_for_week as _cal_get_dates
-
-_RETIRO_FALLBACK_DESDE = (2026, 2, 4)  # (anio, mes, semana)
-
-
-def _periodo_permite_fallback(semana: int, mes: int, anio: int) -> bool:
-    return (anio, mes, semana) >= _RETIRO_FALLBACK_DESDE
-
-
-def _retiro_seller_diario(seller, envios_dia: list, retiros_dia: list, semana: int, mes: int, anio: int) -> int:
-    """Retiro seller para un día: usa registros de tabla o tarifa fija del seller."""
-    if not seller.tiene_retiro or seller.usa_pickup or not envios_dia:
-        return 0
-    if retiros_dia:
-        return sum(r.tarifa_seller for r in retiros_dia)
-    if seller.tarifa_retiro and _periodo_permite_fallback(semana, mes, anio):
-        return seller.tarifa_retiro
-    return 0
 
 # Registrar Roboto (usa font-roboto si está instalado)
 try:
@@ -397,30 +380,18 @@ def generar_pdf_seller(
             Envio.seller_id == seller_id, Envio.semana == s,
             Envio.mes == mes, Envio.anio == anio,
         ).all()
-        retiros_q = db.query(Retiro).filter(
-            Retiro.seller_id == seller_id, Retiro.semana == s,
-            Retiro.mes == mes, Retiro.anio == anio,
-        ).all()
-        total_retiros = 0
-        if seller.tiene_retiro and not seller.usa_pickup and len(envios) > 0:
-            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-                if retiros_q:
-                    total_retiros = sum(r.tarifa_seller for r in retiros_q)
-                elif seller.tarifa_retiro and _periodo_permite_fallback(s, mes, anio):
-                    dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
-                    total_retiros = seller.tarifa_retiro * dias_con_envios
-
         weekly[s] = {
             "monto": sum(e.cobro_seller + e.cobro_extra_manual for e in envios),
             "envios": len(envios),
             "bultos_extra": sum(e.extra_producto_seller for e in envios),
-            "retiros": total_retiros,
             "peso_extra": sum(e.extra_comuna_seller for e in envios),
         }
 
     def sub(s):
         w = weekly[s]
-        return w["monto"] + w["bultos_extra"] + w["retiros"] + w["peso_extra"]
+        return w["monto"] + w["bultos_extra"] + w["peso_extra"]
+
+    subtotals = [sub(s) for s in range(1, 6)]
     ivas = [int(v * 0.19) for v in subtotals]
     totals = [subtotals[i] + ivas[i] for i in range(5)]
     total_semana = totals[semana - 1]
@@ -442,7 +413,6 @@ def generar_pdf_seller(
         _row("Monto", "monto"),
         _row("Envíos", "envios", False),
         _row("Bultos Extra", "bultos_extra"),
-        _row("Retiros", "retiros"),
         _row("Peso Extra", "peso_extra"),
         ["Subtotal"] + [_fmt(v) for v in subtotals] + [_fmt(sum(subtotals))],
         ["IVA"] + [_fmt(v) for v in ivas] + [_fmt(sum(ivas))],
@@ -454,42 +424,22 @@ def generar_pdf_seller(
     elements.append(_footer_message())
     elements.append(Spacer(1, 10))
 
-    # Daily breakdown with all dates for the week (Mon-Sun via calendario)
+    # Desglose diario — sin retiros en sellers
     all_dates = _get_dates_for_week(semana, mes, anio, db=db)
     envios_semana = db.query(Envio).filter(
         Envio.seller_id == seller_id, Envio.semana == semana,
         Envio.mes == mes, Envio.anio == anio,
     ).order_by(Envio.fecha_entrega).all()
 
-    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0} for d in all_dates}
+    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "peso_extra": 0, "cobro": 0} for d in all_dates}
     for e in envios_semana:
         d = e.fecha_entrega
         if d not in daily_map:
-            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "peso_extra": 0, "monto": 0}
+            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "peso_extra": 0, "cobro": 0}
         daily_map[d]["envios"] += 1
-        daily_map[d]["monto"] += e.cobro_seller + (e.cobro_extra_manual or 0)
+        daily_map[d]["cobro"] += e.cobro_seller + (e.cobro_extra_manual or 0)
         daily_map[d]["bultos_extra"] += e.extra_producto_seller
         daily_map[d]["peso_extra"] += e.extra_comuna_seller
-
-    retiros_semana = db.query(Retiro).filter(
-        Retiro.seller_id == seller_id, Retiro.semana == semana,
-        Retiro.mes == mes, Retiro.anio == anio,
-    ).all()
-    # Agrupar retiros por fecha para el fallback diario
-    retiros_por_dia: dict = {}
-    for r in retiros_semana:
-        retiros_por_dia.setdefault(r.fecha, []).append(r)
-
-    if seller.tiene_retiro and not seller.usa_pickup:
-        if not (seller.min_paquetes_retiro_gratis > 0 and len(envios_semana) >= seller.min_paquetes_retiro_gratis):
-            for d in daily_map:
-                envios_dia = [e for e in envios_semana if e.fecha_entrega == d]
-                retiros_dia = retiros_por_dia.get(d, [])
-                daily_map[d]["retiros"] = _retiro_seller_diario(seller, envios_dia, retiros_dia, semana, mes, anio)
-
-    # cobro = monto base + retiro del día
-    for info in daily_map.values():
-        info["cobro"] = info["monto"] + info["retiros"]
 
     daily_data = sorted(daily_map.values(), key=lambda x: x["fecha"])
 
@@ -498,7 +448,6 @@ def generar_pdf_seller(
             ("Día", "fecha", "date"),
             ("Envíos", "envios", "int"),
             ("Bultos Extra", "bultos_extra", "clp"),
-            ("Retiros", "retiros", "clp"),
             ("Peso Extra", "peso_extra", "clp"),
             ("Cobro", "cobro", "clp"),
         ]
