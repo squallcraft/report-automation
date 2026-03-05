@@ -12,6 +12,7 @@ export default function DriverDashboard() {
   const { user } = useAuth()
   const [period, setPeriod] = useState({ semana: 1, mes: now.getMonth() + 1, anio: now.getFullYear() })
   const [envios, setEnvios] = useState([])
+  const [liquidacion, setLiquidacion] = useState(null)
   const [flota, setFlota] = useState(null)
   const [filterDriver, setFilterDriver] = useState('todos')
   const [loading, setLoading] = useState(true)
@@ -24,8 +25,14 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     setLoading(true)
-    api.get('/envios', { params: period })
-      .then(({ data }) => setEnvios(data))
+    Promise.all([
+      api.get('/envios', { params: period }),
+      api.get('/portal/driver/liquidacion', { params: period }).catch(() => null),
+    ])
+      .then(([envRes, liqRes]) => {
+        setEnvios(envRes.data || [])
+        setLiquidacion(liqRes?.data || null)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [period])
@@ -36,7 +43,13 @@ export default function DriverDashboard() {
       ? envios.filter((e) => e.driver_id === user?.entidad_id)
       : envios.filter((e) => e.driver_id === parseInt(filterDriver, 10))
 
-  const totalPago = filtered.reduce((acc, e) => acc + e.costo_driver + e.extra_producto_driver + e.extra_comuna_driver, 0)
+  const envioTotal = (e) =>
+    (e.costo_driver || 0) + (e.extra_producto_driver || 0) + (e.extra_comuna_driver || 0) + (e.pago_extra_manual || 0)
+
+  // Para el propio driver (no jefe filtrando sub): usar total de liquidación (incluye retiros y ajustes)
+  const totalPago = (filterDriver === 'todos' || filterDriver === 'mis') && liquidacion?.total != null
+    ? liquidacion.total
+    : filtered.reduce((acc, e) => acc + envioTotal(e), 0)
 
   const esJefe = flota?.es_jefe_flota
 
@@ -99,7 +112,7 @@ export default function DriverDashboard() {
                   <tbody>
                     {[{ id: user?.entidad_id, nombre: `${user?.nombre} (yo)` }, ...(flota?.subordinados || [])].map((d) => {
                       const dEnvios = envios.filter((e) => e.driver_id === d.id)
-                      const dTotal = dEnvios.reduce((acc, e) => acc + e.costo_driver + e.extra_producto_driver + e.extra_comuna_driver, 0)
+                      const dTotal = dEnvios.reduce((acc, e) => acc + envioTotal(e), 0)
                       return (
                         <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium">{d.nombre}</td>
