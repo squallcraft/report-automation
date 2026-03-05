@@ -515,6 +515,10 @@ def actualizar_driver(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
     update_data = data.model_dump(exclude_unset=True, exclude={"password"})
+    # Convertir strings vacíos en campos únicos nullable a None
+    for nullable_unique in ("email", "rut"):
+        if nullable_unique in update_data and update_data[nullable_unique] == "":
+            update_data[nullable_unique] = None
     for key, value in update_data.items():
         setattr(driver, key, value)
     if data.password:

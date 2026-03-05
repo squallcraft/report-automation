@@ -149,6 +149,7 @@ export default function Drivers() {
       tarifa_oviedo: parseInt(form.tarifa_oviedo, 10) || 1800,
       tarifa_tercerizado: parseInt(form.tarifa_tercerizado, 10) || 1500,
       jefe_flota_id: form.jefe_flota_id ? parseInt(form.jefe_flota_id, 10) : null,
+      email: form.email?.trim() || null,
     }
     if (!payload.password) delete payload.password
 
