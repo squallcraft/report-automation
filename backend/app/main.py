@@ -38,6 +38,7 @@ with engine.connect() as conn:
         if retiro_cols.get("driver_id", {}).get("nullable") is False:
             conn.execute(text("ALTER TABLE retiros ALTER COLUMN driver_id DROP NOT NULL"))
             conn.commit()
+    # pagos_cartola_drivers ya se crea via create_all si no existía (tabla nueva)
 
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",

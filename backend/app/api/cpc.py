@@ -1,19 +1,52 @@
 """
 API CPC (Control de Pagos a Conductores): control semanal de egresos a drivers.
 """
+import io
+import re
+from datetime import date
+from difflib import SequenceMatcher
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import pandas as pd
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
     Driver, Envio, Retiro, AjusteLiquidacion,
-    PagoSemanaDriver, CalendarioSemanas,
+    PagoSemanaDriver, PagoCartola, CalendarioSemanas,
     TipoEntidadEnum, EstadoPagoEnum,
 )
+
+# ---------------------------------------------------------------------------
+# Datos fijos del emisor (E-Courier)
+# ---------------------------------------------------------------------------
+EMISOR_RUT = "77512163"
+EMISOR_DV = "7"
+EMISOR_NOMBRE = "LOGISTICA Y TRANSPORTE E-COURIER SPA"
+EMISOR_BANCO_COD = "001"  # Banco de Chile = 001
+EMISOR_CUENTA = "8012931700"
+EMISOR_EMAIL = "hablemos@e-courier.cl"
+
+# Códigos banco para el archivo TEF (Banco de Chile predeterminado)
+BANCO_CODIGOS = {
+    "banco de chile": "001",
+    "bci": "016",
+    "banco estado": "012",
+    "banco estado de chile": "012",
+    "santander": "037",
+    "itau": "039",
+    "scotiabank": "014",
+    "security": "049",
+    "falabella": "051",
+    "ripley": "053",
+    "consorcio": "055",
+    "coopeuch": "672",
+}
 
 router = APIRouter(prefix="/cpc", tags=["CPC"])
 
@@ -208,3 +241,358 @@ def actualizar_pagos_batch_driver(
 
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+# ---------------------------------------------------------------------------
+# Helpers TEF
+# ---------------------------------------------------------------------------
+
+def _get_banco_codigo(banco_nombre: Optional[str]) -> str:
+    if not banco_nombre:
+        return "001"
+    return BANCO_CODIGOS.get(banco_nombre.lower().strip(), "001")
+
+
+def _normalizar_rut(rut: Optional[str]) -> tuple[str, str]:
+    """Retorna (rut_sin_puntos_sin_dv, dv)."""
+    if not rut:
+        return ("00000000", "0")
+    clean = re.sub(r"[.\s]", "", rut.upper().strip())
+    if "-" in clean:
+        partes = clean.split("-")
+        return (partes[0], partes[1])
+    if len(clean) > 1:
+        return (clean[:-1], clean[-1])
+    return (clean, "0")
+
+
+def _generar_linea_tef(seq: int, driver: Driver, monto: int) -> str:
+    """
+    Genera una línea del archivo TEF Banco de Chile (formato predeterminado).
+    Campos de ancho fijo según especificación:
+      pos 1-3   : código banco destino (3)
+      pos 4-12  : RUT sin DV del beneficiario (9, cero a la izq)
+      pos 13    : DV del beneficiario (1)
+      pos 14-53 : Nombre beneficiario (40, espacios a la der)
+      pos 54-62 : N° cuenta destino (9, cero a la izq)  — se extiende si es más largo
+      pos 55-63 (ajuste): tipo cuenta (1): 1=cta cte, 2=ahorro, 3=vista
+      pos 64-76 : monto (13, cero a la izq, en pesos sin decimales)
+      pos 77-86 : email (40)
+      pos 117-119: código banco origen (3)
+      pos 120-128: RUT sin DV origen (9)
+      pos 129   : DV origen (1)
+      pos 130-168: N° cuenta origen (9 → usamos 10 dígitos)
+      NOTA: usamos formato simplificado compatible con Banco de Chile estándar.
+    """
+    banco_cod = _get_banco_codigo(driver.banco)
+    rut_num, rut_dv = _normalizar_rut(driver.rut)
+
+    tipo_map = {"corriente": "1", "cta corriente": "1", "ahorro": "2", "vista": "3", "cta vista": "3"}
+    tipo_cod = tipo_map.get((driver.tipo_cuenta or "").lower().strip(), "1")
+
+    cuenta_dst = re.sub(r"\D", "", driver.numero_cuenta or "0").zfill(9)[:9]
+    nombre = (driver.nombre or "").upper()[:40].ljust(40)
+    monto_str = str(monto).zfill(13)
+    email = (EMISOR_EMAIL).ljust(40)[:40]
+
+    rut_orig = EMISOR_RUT.zfill(9)
+    cuenta_orig = EMISOR_CUENTA.zfill(9)[:9]
+
+    linea = (
+        f"{banco_cod}"           # 3  banco destino
+        f"{rut_num.zfill(9)}"    # 9  rut beneficiario
+        f"{rut_dv}"              # 1  dv beneficiario
+        f"{nombre}"              # 40 nombre
+        f"{cuenta_dst}"          # 9  cuenta destino
+        f"{tipo_cod}"            # 1  tipo cuenta
+        f"{monto_str}"           # 13 monto
+        f"{email}"               # 40 email beneficiario
+        f"{EMISOR_BANCO_COD}"    # 3  banco origen
+        f"{rut_orig}"            # 9  rut origen
+        f"{EMISOR_DV}"           # 1  dv origen
+        f"{cuenta_orig}"         # 9  cuenta origen
+        "\r\n"
+    )
+    return linea
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: generar planilla TEF
+# ---------------------------------------------------------------------------
+
+class ItemTEF(BaseModel):
+    driver_id: int
+    monto: int
+
+
+class GenerarTEFRequest(BaseModel):
+    semana: int
+    mes: int
+    anio: int
+    items: List[ItemTEF]
+
+
+@router.post("/generar-tef")
+def generar_tef(
+    body: GenerarTEFRequest,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Genera el archivo .TXT TEF Banco de Chile para los drivers seleccionados."""
+    lineas = []
+    total_monto = 0
+    for idx, item in enumerate(body.items, start=1):
+        driver = db.get(Driver, item.driver_id)
+        if not driver:
+            continue
+        lineas.append(_generar_linea_tef(idx, driver, item.monto))
+        total_monto += item.monto
+
+    contenido = "".join(lineas)
+    hoy = date.today().strftime("%Y%m%d")
+    filename = f"TEF_ECourier_{hoy}_S{body.semana}.txt"
+
+    return StreamingResponse(
+        io.BytesIO(contenido.encode("latin-1", errors="replace")),
+        media_type="text/plain; charset=latin-1",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers cartola
+# ---------------------------------------------------------------------------
+
+def _similaridad(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def _extraer_nombre_cartola(descripcion: str) -> str:
+    """De 'Traspaso A: Diego Santander Driver' extrae 'Diego Santander Driver'."""
+    for prefijo in ["traspaso a:", "traspaso de:", "app-traspaso a:", "app-traspaso de:"]:
+        if descripcion.lower().startswith(prefijo):
+            return descripcion[len(prefijo):].strip()
+    return descripcion.strip()
+
+
+def _parsear_cartola(archivo_bytes: bytes) -> list[dict]:
+    """
+    Lee el .xls/.xlsx de cartola Banco de Chile.
+    Retorna lista de {fecha, descripcion, monto, nombre_extraido}.
+    Solo cargos (pagos hechos, columna Cargos > 0).
+    """
+    try:
+        df = pd.read_excel(io.BytesIO(archivo_bytes), header=None)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {exc}")
+
+    # Buscar fila de encabezado que contenga "Fecha" y "Cargos"
+    header_row = None
+    for i, row in df.iterrows():
+        vals = [str(v).strip().lower() for v in row.values]
+        if any("fecha" in v for v in vals) and any("cargos" in v for v in vals):
+            header_row = i
+            break
+
+    if header_row is None:
+        raise HTTPException(status_code=400, detail="No se encontró encabezado de movimientos en la cartola.")
+
+    df.columns = [str(df.iloc[header_row, c]).strip() for c in range(df.shape[1])]
+    df = df.iloc[header_row + 1:].reset_index(drop=True)
+
+    # Detectar columnas relevantes por nombre aproximado
+    col_fecha = next((c for c in df.columns if "fecha" in c.lower()), None)
+    col_desc = next((c for c in df.columns if "descripci" in c.lower()), None)
+    col_cargos = next((c for c in df.columns if "cargos" in c.lower()), None)
+
+    if not col_cargos:
+        raise HTTPException(status_code=400, detail="No se encontró columna de Cargos en la cartola.")
+
+    movimientos = []
+    for _, row in df.iterrows():
+        monto_raw = row.get(col_cargos, None)
+        try:
+            monto = int(float(str(monto_raw).replace(".", "").replace(",", ".")))
+        except Exception:
+            continue
+        if monto <= 0:
+            continue
+
+        desc = str(row.get(col_desc, "")).strip()
+        if not desc or desc.lower() in ("nan", ""):
+            continue
+
+        fecha = str(row.get(col_fecha, "")).strip() if col_fecha else ""
+        nombre = _extraer_nombre_cartola(desc)
+        movimientos.append({
+            "fecha": fecha,
+            "descripcion": desc,
+            "nombre_extraido": nombre,
+            "monto": monto,
+        })
+
+    return movimientos
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: preview cartola
+# ---------------------------------------------------------------------------
+
+@router.post("/cartola/preview")
+async def cartola_preview(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Parsea la cartola bancaria y retorna un preview con los matches propuestos.
+    No graba nada en BD.
+    """
+    contenido = await archivo.read()
+    movimientos = _parsear_cartola(contenido)
+
+    drivers = db.query(Driver).filter(Driver.activo == True).all()
+    driver_map = {d.nombre.lower(): d for d in drivers}
+
+    # Pagos ya registrados esta semana (para mostrar acumulado)
+    pagados_existentes: dict[int, int] = {}
+    for p in db.query(PagoCartola).filter(
+        PagoCartola.semana == semana,
+        PagoCartola.mes == mes,
+        PagoCartola.anio == anio,
+    ).all():
+        pagados_existentes[p.driver_id] = pagados_existentes.get(p.driver_id, 0) + p.monto
+
+    resultado = []
+    for mov in movimientos:
+        nombre_norm = mov["nombre_extraido"].lower()
+        # Buscar mejor match
+        mejor_driver = None
+        mejor_score = 0.0
+        for d_nombre, d in driver_map.items():
+            score = _similaridad(nombre_norm, d_nombre)
+            if score > mejor_score:
+                mejor_score = score
+                mejor_driver = d
+
+        match_confiable = mejor_score >= 0.55
+
+        ya_pagado = pagados_existentes.get(mejor_driver.id, 0) if mejor_driver else 0
+        liquidado = _get_monto_semanal_driver(db, mejor_driver.id, semana, mes, anio) if mejor_driver else 0
+
+        resultado.append({
+            "descripcion": mov["descripcion"],
+            "nombre_extraido": mov["nombre_extraido"],
+            "fecha": mov["fecha"],
+            "monto": mov["monto"],
+            "driver_id": mejor_driver.id if mejor_driver else None,
+            "driver_nombre": mejor_driver.nombre if mejor_driver else None,
+            "score": round(mejor_score, 2),
+            "match_confiable": match_confiable,
+            "ya_pagado": ya_pagado,
+            "liquidado": liquidado,
+        })
+
+    return {"semana": semana, "mes": mes, "anio": anio, "items": resultado}
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: confirmar cartola
+# ---------------------------------------------------------------------------
+
+class ItemConfirmarCartola(BaseModel):
+    driver_id: int
+    monto: int
+    fecha: Optional[str] = None
+    descripcion: Optional[str] = None
+
+
+class ConfirmarCartolaRequest(BaseModel):
+    semana: int
+    mes: int
+    anio: int
+    items: List[ItemConfirmarCartola]
+
+
+@router.post("/cartola/confirmar")
+def cartola_confirmar(
+    body: ConfirmarCartolaRequest,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Graba los pagos confirmados desde la cartola en BD."""
+    grabados = 0
+    for item in body.items:
+        if item.driver_id <= 0 or item.monto <= 0:
+            continue
+        pago = PagoCartola(
+            driver_id=item.driver_id,
+            semana=body.semana,
+            mes=body.mes,
+            anio=body.anio,
+            monto=item.monto,
+            fecha_pago=item.fecha,
+            descripcion=item.descripcion,
+            fuente="cartola",
+        )
+        db.add(pago)
+        grabados += 1
+
+    db.commit()
+    return {"ok": True, "grabados": grabados}
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: pagos acumulados por semana/driver
+# ---------------------------------------------------------------------------
+
+@router.get("/pagos-acumulados")
+def pagos_acumulados(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Retorna monto total pagado por driver_id y semana para el mes/año dado.
+    { driver_id: { "1": monto, "2": monto, ... } }
+    """
+    rows = db.query(
+        PagoCartola.driver_id,
+        PagoCartola.semana,
+        func.sum(PagoCartola.monto).label("total"),
+    ).filter(
+        PagoCartola.mes == mes,
+        PagoCartola.anio == anio,
+    ).group_by(PagoCartola.driver_id, PagoCartola.semana).all()
+
+    resultado: dict[str, dict[str, int]] = {}
+    for r in rows:
+        did = str(r.driver_id)
+        sem = str(r.semana)
+        if did not in resultado:
+            resultado[did] = {}
+        resultado[did][sem] = r.total
+
+    return resultado
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: total pagado (para dashboard)
+# ---------------------------------------------------------------------------
+
+@router.get("/total-pagado")
+def total_pagado_mes(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    total = db.query(func.sum(PagoCartola.monto)).filter(
+        PagoCartola.mes == mes,
+        PagoCartola.anio == anio,
+    ).scalar() or 0
+    return {"total_pagado": total}

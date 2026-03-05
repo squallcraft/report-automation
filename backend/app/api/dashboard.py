@@ -10,7 +10,7 @@ from sqlalchemy import func as sqlfunc, distinct
 from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
-    Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
+    Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum, PagoCartola,
 )
 from app.schemas import DashboardStats
 
@@ -47,7 +47,13 @@ def obtener_stats(
         Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller
     ), 0)).filter(*base_filter).scalar()
 
-    total_pagado = db.query(sqlfunc.coalesce(sqlfunc.sum(
+    total_pagado = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
+        PagoCartola.mes == mes,
+        PagoCartola.anio == anio,
+    ).scalar()
+
+    # Costo calculado (liquidado) — usado para el margen
+    costo_calculado = db.query(sqlfunc.coalesce(sqlfunc.sum(
         Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver
     ), 0)).filter(*base_filter).scalar()
 
@@ -63,7 +69,7 @@ def obtener_stats(
         total_envios_mes=total_envios_mes,
         total_cobrado_mes=int(total_cobrado),
         total_pagado_mes=int(total_pagado),
-        margen_mes=int(total_cobrado) - int(total_pagado),
+        margen_mes=int(total_cobrado) - int(costo_calculado),
         envios_sin_homologar=envios_sin_homologar,
         consultas_pendientes=consultas_pendientes,
     )
