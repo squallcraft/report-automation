@@ -491,7 +491,7 @@ def generar_pdf_driver(
             Retiro.driver_id == driver_id, Retiro.semana == s,
             Retiro.mes == mes, Retiro.anio == anio,
         ).all()
-        normal = [e for e in envios if e.empresa in (None, EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value)]
+        normal = [e for e in envios if e.empresa in (None, "", EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value)]
         oviedo = [e for e in envios if e.empresa in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value)]
         tercerizado = [e for e in envios if e.empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value)]
 
