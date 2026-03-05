@@ -45,10 +45,12 @@ def _enrich_envio(envio, db, rol=None) -> dict:
     return data
 
 
-def _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin=True):
+def _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin=True, meses=None):
     if semana is not None:
         query = query.filter(Envio.semana == semana)
-    if mes is not None:
+    if meses:
+        query = query.filter(Envio.mes.in_(meses))
+    elif mes is not None:
         query = query.filter(Envio.mes == mes)
     if anio is not None:
         query = query.filter(Envio.anio == anio)
@@ -100,6 +102,7 @@ def _resolve_sort(sort_by: Optional[str]):
 def listar_envios(
     semana: Optional[int] = None,
     mes: Optional[int] = None,
+    meses: Optional[str] = None,
     anio: Optional[int] = None,
     seller_id: Optional[int] = None,
     driver_id: Optional[int] = None,
@@ -114,6 +117,7 @@ def listar_envios(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    meses_list = [int(m) for m in meses.split(',') if m.strip().isdigit()] if meses else None
     query = db.query(Envio)
 
     if user["rol"] == RolEnum.SELLER:
@@ -134,7 +138,7 @@ def listar_envios(
         ))
 
     is_admin = user["rol"] in (RolEnum.ADMIN, RolEnum.ADMINISTRACION)
-    query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin)
+    query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin, meses=meses_list)
 
     sort_expr = _resolve_sort(sort_by)
     if sort_dir == "asc":
@@ -150,6 +154,7 @@ def listar_envios(
 def contar_envios(
     semana: Optional[int] = None,
     mes: Optional[int] = None,
+    meses: Optional[str] = None,
     anio: Optional[int] = None,
     seller_id: Optional[int] = None,
     driver_id: Optional[int] = None,
@@ -160,8 +165,9 @@ def contar_envios(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
+    meses_list = [int(m) for m in meses.split(',') if m.strip().isdigit()] if meses else None
     query = db.query(Envio)
-    query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa)
+    query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, meses=meses_list)
     return {"count": query.count()}
 
 

@@ -9,6 +9,9 @@ import { FileText, Search, ChevronLeft, ChevronRight, PackagePlus, Pencil, X } f
 const fmtClp = (v) => `$${(v ?? 0).toLocaleString('es-CL')}`
 const PAGE_SIZE = 500
 
+const now = new Date()
+const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
 export default function Envios() {
   const [searchParams] = useSearchParams()
 
@@ -20,8 +23,8 @@ export default function Envios() {
   const [searchInput, setSearchInput] = useState('')
   const [filters, setFilters] = useState({
     semana: searchParams.get('semana') || '',
-    mes: searchParams.get('mes') || '',
-    anio: searchParams.get('anio') || '',
+    meses: searchParams.get('mes') ? [Number(searchParams.get('mes'))] : [now.getMonth() + 1],
+    anio: searchParams.get('anio') || String(now.getFullYear()),
   })
   const [sellers, setSellers] = useState([])
   const [drivers, setDrivers] = useState([])
@@ -58,7 +61,11 @@ export default function Envios() {
     const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE, sort_by: sortBy, sort_dir: sortDir }
     if (search) params.search = search
     if (filters.semana) params.semana = filters.semana
-    if (filters.mes) params.mes = filters.mes
+    if (filters.meses && filters.meses.length === 1) {
+      params.mes = filters.meses[0]
+    } else if (filters.meses && filters.meses.length > 1) {
+      params.meses = filters.meses.join(',')
+    }
     if (filters.anio) params.anio = filters.anio
     if (colFilters.seller_nombre) params.seller_id = colFilters.seller_nombre
     if (colFilters.driver_nombre) params.driver_id = colFilters.driver_nombre
@@ -101,7 +108,7 @@ export default function Envios() {
   const clearFilters = () => {
     setSearch('')
     setSearchInput('')
-    setFilters({ semana: '', mes: '', anio: '' })
+    setFilters({ semana: '', meses: [now.getMonth() + 1], anio: String(now.getFullYear()) })
     setColFilters({ seller_nombre: '', driver_nombre: '', comuna: '', empresa: '', tracking_id: '' })
     setSortBy('fecha_entrega')
     setSortDir('desc')
@@ -182,7 +189,7 @@ export default function Envios() {
       .finally(() => setSavingProducto(false))
   }
 
-  const hasFilters = search || filters.semana || filters.mes || filters.anio
+  const hasFilters = search || filters.semana || (filters.meses && filters.meses.length !== 1) || filters.anio !== String(now.getFullYear())
     || colFilters.seller_nombre || colFilters.driver_nombre || colFilters.comuna || colFilters.empresa || colFilters.tracking_id
 
   const empresaOptions = useMemo(() => [
@@ -285,12 +292,32 @@ export default function Envios() {
               {[1,2,3,4,5].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div className="w-28">
+          <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
-            <select className="input-field" value={filters.mes} onChange={(e) => { setFilters((f) => ({ ...f, mes: e.target.value })); setPage(0) }}>
-              <option value="">Todos</option>
-              {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1}</option>)}
-            </select>
+            <div className="flex flex-wrap gap-1">
+              {MESES.map((label, i) => {
+                const m = i + 1
+                const active = filters.meses.includes(m)
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setFilters(f => {
+                        const next = active
+                          ? f.meses.filter(x => x !== m)
+                          : [...f.meses, m]
+                        return { ...f, meses: next.length ? next : [m] }
+                      })
+                      setPage(0)
+                    }}
+                    className={`px-2 py-1 text-xs rounded border transition-colors ${active ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'}`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <div className="w-28">
             <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
