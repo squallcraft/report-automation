@@ -17,7 +17,7 @@ from app.auth import require_seller, require_driver, driver_period_allowed
 from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     TipoEntidadEnum, PagoSemanaSeller, FacturaMensualSeller,
-    CalendarioSemanas, EstadoPagoEnum,
+    CalendarioSemanas, EstadoPagoEnum, PagoCartolaSeller,
 )
 from app.services.liquidacion import calcular_liquidacion_sellers, calcular_liquidacion_drivers
 from app.services.pdf_generator import generar_pdf_seller, generar_pdf_driver
@@ -282,6 +282,96 @@ def seller_excel(
     )
 
 
+# ── SELLER: Ganancias ────────────────────────────────────────────────────────
+
+@router.get("/seller/ganancias")
+def seller_ganancias(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_seller),
+):
+    """
+    Resumen de pagos recibidos del seller autenticado para un mes/año.
+    - Tabla semanal: liquidado, cobrado, estado por semana.
+    - Historial de pagos individuales (PagoCartolaSeller) del mes.
+    """
+    from app.api.facturacion import _get_monto_semanal_seller
+
+    seller_id = current_user["id"]
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller no encontrado")
+
+    semanas_rows = db.query(CalendarioSemanas.semana).filter(
+        CalendarioSemanas.mes == mes,
+        CalendarioSemanas.anio == anio,
+    ).order_by(CalendarioSemanas.semana).all()
+    semanas = [r[0] for r in semanas_rows] if semanas_rows else [1, 2, 3, 4, 5]
+
+    # ── Tabla semanal ────────────────────────────────────────────────────────
+    semanas_detalle = []
+    total_liquidado = 0
+    total_cobrado = 0
+
+    for sem in semanas:
+        liquidado = _get_monto_semanal_seller(db, seller_id, sem, mes, anio)
+        if liquidado == 0:
+            continue
+
+        pago = db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == seller_id,
+            PagoSemanaSeller.semana == sem,
+            PagoSemanaSeller.mes == mes,
+            PagoSemanaSeller.anio == anio,
+        ).first()
+
+        estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
+        cobrado = liquidado if estado == EstadoPagoEnum.PAGADO.value else (
+            pago.monto_neto if pago and estado == EstadoPagoEnum.INCOMPLETO.value else 0
+        )
+
+        semanas_detalle.append({
+            "semana": sem,
+            "liquidado": liquidado,
+            "cobrado": cobrado,
+            "estado": estado,
+        })
+        total_liquidado += liquidado
+        total_cobrado += cobrado
+
+    # ── Pagos individuales (PagoCartolaSeller) ───────────────────────────────
+    pagos_rows = db.query(PagoCartolaSeller).filter(
+        PagoCartolaSeller.seller_id == seller_id,
+        PagoCartolaSeller.mes == mes,
+        PagoCartolaSeller.anio == anio,
+    ).order_by(PagoCartolaSeller.fecha_pago.desc(), PagoCartolaSeller.created_at.desc()).all()
+
+    pagos = [
+        {
+            "id": p.id,
+            "fecha_pago": p.fecha_pago,
+            "semana": p.semana,
+            "monto": p.monto,
+            "fuente": p.fuente,
+            "descripcion": p.descripcion,
+        }
+        for p in pagos_rows
+    ]
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "resumen": {
+            "total_liquidado": total_liquidado,
+            "total_cobrado": total_cobrado,
+            "pendiente": total_liquidado - total_cobrado,
+        },
+        "semanas": semanas_detalle,
+        "pagos": pagos,
+    }
+
+
 # ── DRIVER ──────────────────────────────────────────────────────────────────
 
 @router.get("/driver/liquidacion")
@@ -428,3 +518,179 @@ def driver_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=entregas_{nombre}_S{semana}_M{mes}_{anio}.xlsx"},
     )
+
+
+@router.get("/driver/pagos-recibidos")
+def driver_pagos_recibidos(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_driver),
+):
+    """
+    Devuelve los pagos recibidos (semanas en estado PAGADO) para el driver autenticado.
+    Incluye monto liquidado y monto pagado por semana.
+    """
+    from app.models import PagoSemanaDriver
+    from app.api.cpc import _get_monto_semanal_driver
+
+    driver_id = current_user["id"]
+
+    semanas_rows = db.query(CalendarioSemanas.semana).filter(
+        CalendarioSemanas.mes == mes,
+        CalendarioSemanas.anio == anio,
+    ).order_by(CalendarioSemanas.semana).all()
+    semanas = [r[0] for r in semanas_rows] if semanas_rows else [1, 2, 3, 4, 5]
+
+    resultado = []
+    total_liquidado = 0
+    total_pagado = 0
+
+    for sem in semanas:
+        liquidado = _get_monto_semanal_driver(db, driver_id, sem, mes, anio)
+        if liquidado == 0:
+            continue
+
+        pago = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == sem,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+        ).first()
+
+        estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
+        pagado = liquidado if estado == EstadoPagoEnum.PAGADO.value else 0
+
+        resultado.append({
+            "semana": sem,
+            "liquidado": liquidado,
+            "pagado": pagado,
+            "estado": estado,
+        })
+        total_liquidado += liquidado
+        total_pagado += pagado
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "semanas": resultado,
+        "total_liquidado": total_liquidado,
+        "total_pagado": total_pagado,
+    }
+
+
+@router.get("/driver/ganancias")
+def driver_ganancias(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_driver),
+):
+    """
+    Resumen de ganancias del driver autenticado para un mes/año.
+    - Tabla semanal: liquidado, pagado, estado por semana.
+    - Historial de pagos individuales (PagoCartola) del mes.
+    Si es jefe de flota, incluye también las semanas y pagos de sus subordinados
+    (señalizados con el nombre del driver).
+    """
+    from app.models import PagoSemanaDriver, PagoCartola
+    from app.api.cpc import _get_monto_semanal_driver
+
+    driver_id = current_user["id"]
+    driver = db.get(Driver, driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+
+    subordinados = db.query(Driver).filter(
+        Driver.jefe_flota_id == driver_id,
+        Driver.activo == True,
+    ).all()
+    es_jefe = len(subordinados) > 0
+
+    semanas_rows = db.query(CalendarioSemanas.semana).filter(
+        CalendarioSemanas.mes == mes,
+        CalendarioSemanas.anio == anio,
+    ).order_by(CalendarioSemanas.semana).all()
+    semanas = [r[0] for r in semanas_rows] if semanas_rows else [1, 2, 3, 4, 5]
+
+    # ── Tabla semanal ────────────────────────────────────────────────────────
+    drivers_a_calcular = [{"id": driver_id, "nombre": driver.nombre, "es_propio": True}]
+    if es_jefe:
+        for sub in subordinados:
+            drivers_a_calcular.append({"id": sub.id, "nombre": sub.nombre, "es_propio": False})
+
+    semanas_detalle = []
+    total_liquidado = 0
+    total_pagado = 0
+
+    for sem in semanas:
+        for d in drivers_a_calcular:
+            liquidado = _get_monto_semanal_driver(db, d["id"], sem, mes, anio)
+            if liquidado == 0:
+                continue
+
+            pago = db.query(PagoSemanaDriver).filter(
+                PagoSemanaDriver.driver_id == d["id"],
+                PagoSemanaDriver.semana == sem,
+                PagoSemanaDriver.mes == mes,
+                PagoSemanaDriver.anio == anio,
+            ).first()
+
+            estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
+            pagado = liquidado if estado == EstadoPagoEnum.PAGADO.value else (
+                pago.monto_neto if pago and estado == EstadoPagoEnum.INCOMPLETO.value else 0
+            )
+
+            semanas_detalle.append({
+                "semana": sem,
+                "driver_id": d["id"],
+                "driver_nombre": d["nombre"],
+                "es_propio": d["es_propio"],
+                "liquidado": liquidado,
+                "pagado": pagado,
+                "estado": estado,
+            })
+
+            if d["es_propio"] or not es_jefe:
+                total_liquidado += liquidado
+                total_pagado += pagado
+
+    # ── Pagos individuales (PagoCartola) ────────────────────────────────────
+    ids_a_buscar = [driver_id] + ([s.id for s in subordinados] if es_jefe else [])
+
+    pagos_rows = db.query(PagoCartola).filter(
+        PagoCartola.driver_id.in_(ids_a_buscar),
+        PagoCartola.mes == mes,
+        PagoCartola.anio == anio,
+    ).order_by(PagoCartola.fecha_pago.desc(), PagoCartola.created_at.desc()).all()
+
+    # Mapa id→nombre para subordinados
+    nombre_map = {d["id"]: d["nombre"] for d in drivers_a_calcular}
+
+    pagos = [
+        {
+            "id": p.id,
+            "fecha_pago": p.fecha_pago,
+            "semana": p.semana,
+            "monto": p.monto,
+            "fuente": p.fuente,
+            "descripcion": p.descripcion,
+            "driver_id": p.driver_id,
+            "driver_nombre": nombre_map.get(p.driver_id, ""),
+            "es_propio": p.driver_id == driver_id,
+        }
+        for p in pagos_rows
+    ]
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "es_jefe": es_jefe,
+        "resumen": {
+            "total_liquidado": total_liquidado,
+            "total_pagado": total_pagado,
+            "pendiente": total_liquidado - total_pagado,
+        },
+        "semanas": semanas_detalle,
+        "pagos": pagos,
+    }

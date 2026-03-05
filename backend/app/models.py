@@ -335,6 +335,24 @@ class PagoCartola(Base):
     driver = relationship("Driver")
 
 
+class PagoCartolaSeller(Base):
+    """Pago efectivo recibido de un seller, importado desde cartola bancaria o registrado manualmente."""
+    __tablename__ = "pagos_cartola_sellers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=False)
+    semana = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto = Column(Integer, nullable=False)
+    fecha_pago = Column(String, nullable=True)
+    descripcion = Column(String, nullable=True)
+    fuente = Column(String, nullable=False, default="cartola")  # "cartola" | "manual"
+    created_at = Column(DateTime, server_default=func.now())
+
+    seller = relationship("Seller")
+
+
 class FacturaMensualSeller(Base):
     """Factura mensual consolidada emitida a cada seller vía Haulmer."""
     __tablename__ = "facturas_mensuales_sellers"

@@ -16,6 +16,72 @@ function EstadoBadge({ activo }) {
   )
 }
 
+const BANCOS_OPCIONES = [
+  { codigo: '001', nombre: 'Banco de Chile' },
+  { codigo: '009', nombre: 'Banco Internacional' },
+  { codigo: '012', nombre: 'Scotiabank Chile' },
+  { codigo: '014', nombre: 'Banco BICE' },
+  { codigo: '016', nombre: 'Banco Estado de Chile' },
+  { codigo: '028', nombre: 'BCI' },
+  { codigo: '031', nombre: 'Itaú CorpBanca' },
+  { codigo: '034', nombre: 'Banco Security' },
+  { codigo: '037', nombre: 'Banco Santander' },
+  { codigo: '039', nombre: 'Banco Consorcio' },
+  { codigo: '402', nombre: 'Banco Falabella' },
+  { codigo: '403', nombre: 'Banco Ripley' },
+  { codigo: '672', nombre: 'Coopeuch' },
+  { codigo: '729', nombre: 'Prepago Los Héroes' },
+  { codigo: '028-tenpo', nombre: 'Tenpo (BCI)' },
+  { codigo: '028-mach', nombre: 'MACH (BCI)' },
+  { codigo: '741', nombre: 'Copec Pay' },
+  { codigo: '875', nombre: 'Mercado Pago' },
+]
+
+const TIPOS_CUENTA = [
+  { valor: 'corriente', label: 'Cuenta Corriente' },
+  { valor: 'vista', label: 'Cuenta Vista / Cuenta RUT' },
+  { valor: 'ahorro', label: 'Cuenta de Ahorro' },
+]
+
+// Nombre canónico para el backend a partir del código selector
+const bancoNombreCanonicoDesde = (codigo) => {
+  const map = {
+    '001': 'Banco de Chile', '009': 'Banco Internacional', '012': 'Scotiabank',
+    '014': 'Banco BICE', '016': 'Banco Estado', '028': 'BCI', '031': 'Itaú CorpBanca',
+    '034': 'Banco Security', '037': 'Banco Santander', '039': 'Banco Consorcio',
+    '402': 'Banco Falabella', '403': 'Banco Ripley', '672': 'Coopeuch',
+    '729': 'Prepago Los Héroes', '028-tenpo': 'Tenpo', '028-mach': 'MACH',
+    '741': 'Copec Pay',
+    '875': 'Mercado Pago',
+  }
+  return map[codigo] || codigo
+}
+
+// Inferir código selector desde el nombre almacenado en el driver
+const bancoCodigoDesdeNombre = (nombre) => {
+  if (!nombre) return ''
+  const n = nombre.toLowerCase().trim()
+  if (n.includes('tenpo')) return '028-tenpo'
+  if (n.includes('mach')) return '028-mach'
+  if (n.includes('copec')) return '741'
+  if (n.includes('mercado pago') || n.includes('mercadopago')) return '875'
+  if (n.includes('chile') && n.includes('banco')) return '001'
+  if (n.includes('internacional')) return '009'
+  if (n.includes('scotiabank')) return '012'
+  if (n.includes('bice')) return '014'
+  if (n.includes('estado')) return '016'
+  if (n.includes('bci') || n.includes('credito e inversiones')) return '028'
+  if (n.includes('itau') || n.includes('itaú') || n.includes('corpbanca')) return '031'
+  if (n.includes('security')) return '034'
+  if (n.includes('santander')) return '037'
+  if (n.includes('consorcio')) return '039'
+  if (n.includes('falabella')) return '402'
+  if (n.includes('ripley')) return '403'
+  if (n.includes('coopeuch')) return '672'
+  if (n.includes('heroes') || n.includes('héroes')) return '729'
+  return ''
+}
+
 const initialForm = {
   nombre: '',
   aliases: '',
@@ -26,6 +92,10 @@ const initialForm = {
   contratado: false,
   email: '',
   password: '',
+  rut: '',
+  banco_codigo: '',
+  tipo_cuenta: '',
+  numero_cuenta: '',
 }
 
 export default function Drivers() {
@@ -113,6 +183,10 @@ export default function Drivers() {
       contratado: driver.contratado ?? false,
       email: driver.email || '',
       password: '',
+      rut: driver.rut || '',
+      banco_codigo: bancoCodigoDesdeNombre(driver.banco),
+      tipo_cuenta: driver.tipo_cuenta || '',
+      numero_cuenta: driver.numero_cuenta || '',
     })
     setModalOpen(true)
   }
@@ -150,7 +224,12 @@ export default function Drivers() {
       tarifa_tercerizado: parseInt(form.tarifa_tercerizado, 10) || 1500,
       jefe_flota_id: form.jefe_flota_id ? parseInt(form.jefe_flota_id, 10) : null,
       email: form.email?.trim() || null,
+      rut: form.rut?.trim() || null,
+      banco: form.banco_codigo ? bancoNombreCanonicoDesde(form.banco_codigo) : null,
+      tipo_cuenta: form.tipo_cuenta || null,
+      numero_cuenta: form.numero_cuenta?.trim() || null,
     }
+    delete payload.banco_codigo
     if (!payload.password) delete payload.password
 
     const promise = editing
@@ -357,6 +436,64 @@ export default function Drivers() {
               </p>
             </div>
           </div>
+          {/* ── Datos bancarios ── */}
+          <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+            <p className="text-sm font-semibold text-gray-700">Datos Bancarios</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">RUT</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="12.345.678-9"
+                  value={form.rut}
+                  onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
+                <select
+                  className="input-field"
+                  value={form.banco_codigo}
+                  onChange={(e) => setForm((f) => ({ ...f, banco_codigo: e.target.value }))}
+                >
+                  <option value="">— Seleccionar banco —</option>
+                  {BANCOS_OPCIONES.map((b) => (
+                    <option key={b.codigo} value={b.codigo}>{b.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cuenta</label>
+                <select
+                  className="input-field"
+                  value={form.tipo_cuenta}
+                  onChange={(e) => setForm((f) => ({ ...f, tipo_cuenta: e.target.value }))}
+                >
+                  <option value="">— Seleccionar tipo —</option>
+                  {TIPOS_CUENTA.map((t) => (
+                    <option key={t.valor} value={t.valor}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Número de Cuenta</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="0000000000"
+                  value={form.numero_cuenta}
+                  onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))}
+                />
+                {form.banco_codigo === '016' && form.tipo_cuenta === 'vista' && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Cuenta RUT Banco Estado: ingresa el RUT completo con dígito verificador (ej. 123456789).
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {editing ? 'Contraseña (dejar vacío para no cambiar)' : 'Contraseña'}

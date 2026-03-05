@@ -16,6 +16,30 @@ function fmt(v) {
   return `$${Math.abs(Number(v)).toLocaleString('es-CL')}`
 }
 
+// Bancos aceptados por Banco de Chile para TEF masivo
+const BANCOS_TEF_VALIDOS = new Set([
+  // Bancos tradicionales
+  'banco de chile',
+  'banco internacional',
+  'scotiabank', 'banco scotiabank', 'scotiabank chile',
+  'banco bice', 'bice',
+  'banco estado', 'banco estado de chile', 'bancoestado',
+  'bci', 'banco bci', 'banco de credito e inversiones',
+  'itau', 'itaú', 'banco itau', 'itaucorpbanca', 'itau corpbanca', 'corpbanca',
+  'security', 'banco security',
+  'santander', 'banco santander', 'santander chile',
+  'consorcio', 'banco consorcio',
+  'falabella', 'banco falabella',
+  'ripley', 'banco ripley',
+  // Fintech / billeteras
+  'coopeuch',
+  'prepago los heroes',
+  'tenpo',
+  'copec pay',
+  'mach', 'machbank',
+  'mercado pago', 'mercadopago',
+])
+
 // ---------------------------------------------------------------------------
 // Modal generador TEF — Opción A: jefes de flota consolidan su flota
 // ---------------------------------------------------------------------------
@@ -46,6 +70,9 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
 
   const toggle = (id) => setItems(prev => prev.map(it => it.driver_id === id ? { ...it, incluir: !it.incluir } : it))
   const setMonto = (id, val) => setItems(prev => prev.map(it => it.driver_id === id ? { ...it, monto: Number(val) || 0 } : it))
+  const seleccionarTodos = () => setItems(prev => prev.map(it => ({ ...it, incluir: true })))
+  const deseleccionarTodos = () => setItems(prev => prev.map(it => ({ ...it, incluir: false })))
+  const todosSeleccionados = items.length > 0 && items.every(it => it.incluir)
 
   const seleccionados = items.filter(it => it.incluir)
   const totalTEF = seleccionados.reduce((a, it) => a + it.monto, 0)
@@ -55,6 +82,11 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
     const sinDatos = seleccionados.filter(it => !it.banco || !it.numero_cuenta)
     if (sinDatos.length) {
       toast.error(`Sin datos bancarios: ${sinDatos.map(d => d.driver_nombre).join(', ')}`)
+      return
+    }
+    const bancoInvalido = seleccionados.filter(it => it.banco && !BANCOS_TEF_VALIDOS.has(it.banco.toLowerCase().trim()))
+    if (bancoInvalido.length) {
+      toast.error(`Banco no soportado en TEF: ${bancoInvalido.map(d => `${d.driver_nombre} (${d.banco})`).join(', ')}`)
       return
     }
     setCargando(true)
@@ -106,7 +138,15 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-200">
-                <th className="py-2 w-8"></th>
+                <th className="py-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={todosSeleccionados}
+                    onChange={e => e.target.checked ? seleccionarTodos() : deseleccionarTodos()}
+                    className="w-3.5 h-3.5 accent-primary-600"
+                    title={todosSeleccionados ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                  />
+                </th>
                 <th className="py-2 text-left font-medium">Destinatario</th>
                 <th className="py-2 text-left font-medium">Banco</th>
                 <th className="py-2 text-right font-medium">Liquidado</th>
@@ -129,6 +169,9 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
                       )}
                     </div>
                     {!it.banco && <span className="text-xs text-red-400 font-medium">sin datos bancarios</span>}
+                    {it.banco && !BANCOS_TEF_VALIDOS.has(it.banco.toLowerCase().trim()) && (
+                      <span className="text-xs text-amber-500 font-medium" title="Este banco no es compatible con TEF Banco de Chile">⚠ banco no soportado en TEF</span>
+                    )}
                   </td>
                   <td className="py-2 text-xs text-gray-500">
                     {it.banco ? `${it.banco} · ${it.numero_cuenta || '—'}` : '—'}
@@ -167,6 +210,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
   const [cargando, setCargando] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
   const [items, setItems] = useState([])
+  const [todosDrivers, setTodosDrivers] = useState([])
   const inputRef = useRef()
 
   const cargarPreview = async () => {
@@ -180,26 +224,45 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setPreview(data)
-      setItems(data.items.map(it => ({ ...it, incluir: it.match_confiable && it.driver_id != null })))
+      setTodosDrivers(data.drivers || [])
+      // Todos los items empiezan con checkbox activo si tienen driver asignado
+      setItems(data.items.map(it => ({
+        ...it,
+        incluir: it.driver_id != null,
+        driver_id_sel: it.driver_id,
+        driver_nombre_sel: it.driver_nombre,
+      })))
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error procesando cartola')
     } finally { setCargando(false) }
   }
 
-  const toggleItem = (idx) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
+  const toggleItem = (idx) =>
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
+
+  const cambiarDriver = (idx, driverId) => {
+    const d = todosDrivers.find(x => x.id === Number(driverId))
+    setItems(prev => prev.map((it, i) => i === idx ? {
+      ...it,
+      driver_id_sel: d ? d.id : null,
+      driver_nombre_sel: d ? d.nombre : null,
+      incluir: d != null,  // activar checkbox automáticamente al asignar
+    } : it))
+  }
 
   const confirmar = async () => {
-    const seleccionados = items.filter(it => it.incluir && it.driver_id)
+    const seleccionados = items.filter(it => it.incluir && it.driver_id_sel)
     if (!seleccionados.length) return toast.error('No hay items válidos para confirmar')
     setConfirmando(true)
     try {
       await api.post('/cpc/cartola/confirmar', {
         semana, mes, anio,
         items: seleccionados.map(it => ({
-          driver_id: it.driver_id,
+          driver_id: it.driver_id_sel,
           monto: it.monto,
           fecha: it.fecha,
           descripcion: it.descripcion,
+          nombre_extraido: it.nombre_extraido,  // para guardar alias
         })),
       })
       toast.success(`${seleccionados.length} pagos registrados`)
@@ -209,11 +272,12 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
     finally { setConfirmando(false) }
   }
 
-  const totalConfirmar = items.filter(it => it.incluir && it.driver_id).reduce((a, it) => a + it.monto, 0)
+  const totalConfirmar = items.filter(it => it.incluir && it.driver_id_sel).reduce((a, it) => a + it.monto, 0)
+  const totalItems = items.filter(it => it.incluir && it.driver_id_sel).length
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Cargar Cartola Bancaria</h2>
@@ -246,16 +310,17 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
         {preview && (
           <>
             <div className="flex-1 overflow-auto px-6 py-2">
-              <div className="mb-2 flex items-center gap-3 text-xs text-gray-500">
-                <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable</span>
-                <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto — revisa</span>
+              <div className="mb-2 flex items-center gap-4 text-xs text-gray-500">
+                <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable (≥55%)</span>
+                <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto — verifica o cambia</span>
+                <span className="text-gray-400">· Haz clic en el conductor para cambiarlo. Al confirmar se guarda la homologación.</span>
               </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-gray-500 border-b border-gray-200">
                     <th className="py-2 w-8"></th>
-                    <th className="py-2 text-left font-medium">Descripción cartola</th>
-                    <th className="py-2 text-left font-medium">Conductor matched</th>
+                    <th className="py-2 text-left font-medium">Nombre en cartola</th>
+                    <th className="py-2 text-left font-medium">Conductor asignado</th>
                     <th className="py-2 text-right font-medium">Monto</th>
                     <th className="py-2 text-right font-medium">Ya pagado</th>
                     <th className="py-2 text-right font-medium">Liquidado</th>
@@ -266,22 +331,46 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                     <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
                       <td className="py-1.5">
                         <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)}
-                          disabled={!it.driver_id} className="w-3.5 h-3.5 accent-primary-600" />
+                          className="w-3.5 h-3.5 accent-primary-600" />
                       </td>
-                      <td className="py-1.5 max-w-[200px]">
-                        <span className="truncate block" title={it.descripcion}>{it.nombre_extraido}</span>
+                      <td className="py-1.5 max-w-[180px]">
+                        <span className="truncate block font-medium text-gray-800" title={it.descripcion}>
+                          {it.nombre_extraido}
+                        </span>
                         <span className="text-gray-400 text-[10px]">{it.fecha}</span>
                       </td>
-                      <td className="py-1.5">
-                        {it.driver_nombre ? (
-                          <span className={`inline-flex items-center gap-1 ${it.match_confiable ? 'text-green-700' : 'text-amber-600'}`}>
-                            {it.match_confiable ? <Check size={11} /> : <AlertCircle size={11} />}
-                            {it.driver_nombre}
-                            <span className="text-gray-400 text-[10px]">({Math.round(it.score * 100)}%)</span>
-                          </span>
-                        ) : (
-                          <span className="text-red-400">Sin match</span>
-                        )}
+                      <td className="py-1.5 min-w-[200px]">
+                        <div className="flex items-center gap-1.5">
+                          {/* Indicador de confianza */}
+                          {it.driver_id_sel ? (
+                            it.match_confiable && it.driver_id_sel === it.driver_id
+                              ? <Check size={11} className="text-green-600 flex-shrink-0" />
+                              : <AlertCircle size={11} className="text-amber-500 flex-shrink-0" />
+                          ) : (
+                            <AlertCircle size={11} className="text-red-400 flex-shrink-0" />
+                          )}
+                          {/* Dropdown selector */}
+                          <select
+                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white flex-1 min-w-0"
+                            value={it.driver_id_sel ?? ''}
+                            onChange={e => cambiarDriver(idx, e.target.value)}
+                          >
+                            <option value="">— Sin asignar —</option>
+                            {todosDrivers.map(d => (
+                              <option key={d.id} value={d.id}>{d.nombre}</option>
+                            ))}
+                          </select>
+                          {/* Score solo si es match automático */}
+                          {it.driver_id_sel === it.driver_id && it.score > 0 && (
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">
+                              ({Math.round(it.score * 100)}%)
+                            </span>
+                          )}
+                          {/* Indicador de edición manual */}
+                          {it.driver_id_sel !== it.driver_id && it.driver_id_sel && (
+                            <span className="text-[10px] text-blue-500 flex-shrink-0">editado</span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-1.5 text-right font-mono">{fmt(it.monto)}</td>
                       <td className="py-1.5 text-right font-mono text-blue-600">{it.ya_pagado > 0 ? fmt(it.ya_pagado) : '—'}</td>
@@ -293,7 +382,8 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
               <span className="text-sm text-gray-600">
-                {items.filter(it => it.incluir && it.driver_id).length} pagos · <span className="font-semibold text-gray-800">{fmt(totalConfirmar)}</span>
+                {totalItems} pagos · <span className="font-semibold text-gray-800">{fmt(totalConfirmar)}</span>
+                <span className="text-xs text-gray-400 ml-2">· Las homologaciones se guardarán automáticamente</span>
               </span>
               <div className="flex gap-3">
                 <button onClick={onClose} className="btn btn-secondary">Cancelar</button>
@@ -497,6 +587,20 @@ export default function CPC() {
     } catch { toast.error('Error al descargar plantilla') }
   }
 
+  const importarPlantilla = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const { data } = await api.post('/drivers/importar/bancaria', form)
+      toast.success(`${data.actualizados} conductores actualizados`)
+      if (data.errores?.length) toast.error(`${data.errores.length} errores: ${data.errores[0]}`)
+      cargar(true)
+    } catch { toast.error('Error al importar plantilla') }
+  }
+
   const totalesGenerales = useMemo(() => {
     if (!drivers.length) return { neto: 0, pagado: 0 }
     return drivers.reduce((acc, d) => {
@@ -534,6 +638,10 @@ export default function CPC() {
           <button onClick={descargarPlantilla} className="btn btn-secondary flex items-center gap-2 text-sm">
             <Download size={15} /> Plantilla Bancaria
           </button>
+          <label className="btn btn-secondary flex items-center gap-2 text-sm cursor-pointer">
+            <Upload size={15} /> Cargar Bancaria
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={importarPlantilla} />
+          </label>
           <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
             <Upload size={15} /> Cargar Cartola
           </button>

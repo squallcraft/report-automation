@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { FileText, Check, DollarSign, Loader2, AlertTriangle } from 'lucide-react'
+import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X } from 'lucide-react'
 import Modal from '../../components/Modal'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -14,6 +14,200 @@ const ESTADO_COLORS = {
 function fmt(v) {
   if (!v) return '$0'
   return `$${Math.abs(v).toLocaleString('es-CL')}`
+}
+
+// ---------------------------------------------------------------------------
+// Modal Cartola Sellers
+// ---------------------------------------------------------------------------
+const SEMANAS_LIST = [1, 2, 3, 4, 5]
+
+function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
+  const [semana, setSemana] = useState(1)
+  const [archivo, setArchivo] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [cargando, setCargando] = useState(false)
+  const [confirmando, setConfirmando] = useState(false)
+  const [items, setItems] = useState([])
+  const [todosSellers, setTodosSellers] = useState([])
+  const inputRef = useRef()
+
+  const cargarPreview = async () => {
+    if (!archivo) return toast.error('Selecciona un archivo')
+    setCargando(true)
+    try {
+      const form = new FormData()
+      form.append('archivo', archivo)
+      const { data } = await api.post('/facturacion/cartola/preview', form, {
+        params: { semana, mes, anio },
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setPreview(data)
+      setTodosSellers(data.sellers || [])
+      setItems(data.items.map(it => ({
+        ...it,
+        incluir: it.seller_id != null,
+        seller_id_sel: it.seller_id,
+        seller_nombre_sel: it.seller_nombre,
+      })))
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error procesando cartola')
+    } finally { setCargando(false) }
+  }
+
+  const toggleItem = (idx) =>
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
+
+  const cambiarSeller = (idx, sellerId) => {
+    const s = todosSellers.find(x => x.id === Number(sellerId))
+    setItems(prev => prev.map((it, i) => i === idx ? {
+      ...it,
+      seller_id_sel: s ? s.id : null,
+      seller_nombre_sel: s ? s.nombre : null,
+      incluir: s != null,
+    } : it))
+  }
+
+  const confirmar = async () => {
+    const seleccionados = items.filter(it => it.incluir && it.seller_id_sel)
+    if (!seleccionados.length) return toast.error('No hay items válidos para confirmar')
+    setConfirmando(true)
+    try {
+      await api.post('/facturacion/cartola/confirmar', {
+        semana, mes, anio,
+        items: seleccionados.map(it => ({
+          seller_id: it.seller_id_sel,
+          monto: it.monto,
+          fecha: it.fecha,
+          descripcion: it.descripcion,
+          nombre_extraido: it.nombre_extraido,
+        })),
+      })
+      toast.success(`${seleccionados.length} pagos registrados`)
+      onConfirmado()
+      onClose()
+    } catch { toast.error('Error confirmando pagos') }
+    finally { setConfirmando(false) }
+  }
+
+  const totalConfirmar = items.filter(it => it.incluir && it.seller_id_sel).reduce((a, it) => a + it.monto, 0)
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Cargar Cartola — Pagos Sellers</h2>
+            <p className="text-sm text-gray-500">{MESES[mes]} {anio} · Registra abonos recibidos de sellers</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+        </div>
+
+        <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Semana que corresponden los pagos</label>
+            <select className="input-field text-sm w-32" value={semana} onChange={e => setSemana(Number(e.target.value))}>
+              {SEMANAS_LIST.map(s => <option key={s} value={s}>Semana {s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Archivo cartola (.xls / .xlsx)</label>
+            <input ref={inputRef} type="file" accept=".xls,.xlsx" className="hidden"
+              onChange={e => setArchivo(e.target.files[0])} />
+            <button onClick={() => inputRef.current.click()} className="btn btn-secondary flex items-center gap-2 text-sm">
+              <Upload size={14} /> {archivo ? archivo.name : 'Seleccionar archivo'}
+            </button>
+          </div>
+          <button onClick={cargarPreview} disabled={cargando || !archivo}
+            className="btn btn-primary text-sm flex items-center gap-2">
+            {cargando ? 'Procesando...' : <><FileText size={14} /> Analizar</>}
+          </button>
+        </div>
+
+        {preview && (
+          <>
+            <div className="flex-1 overflow-auto px-6 py-2">
+              <div className="mb-2 flex items-center gap-4 text-xs text-gray-500">
+                <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable (≥55%)</span>
+                <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto — verifica</span>
+                <span className="text-gray-400">· Al confirmar se guarda la homologación automáticamente.</span>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-500 border-b border-gray-200">
+                    <th className="py-2 w-8"></th>
+                    <th className="py-2 text-left font-medium">Nombre en cartola</th>
+                    <th className="py-2 text-left font-medium">Seller asignado</th>
+                    <th className="py-2 text-right font-medium">Monto</th>
+                    <th className="py-2 text-right font-medium">Ya cobrado</th>
+                    <th className="py-2 text-right font-medium">Liquidado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => (
+                    <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
+                      <td className="py-1.5">
+                        <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)}
+                          className="w-3.5 h-3.5 accent-primary-600" />
+                      </td>
+                      <td className="py-1.5 max-w-[180px]">
+                        <span className="truncate block font-medium text-gray-800" title={it.descripcion}>
+                          {it.nombre_extraido}
+                        </span>
+                        <span className="text-gray-400 text-[10px]">{it.fecha}</span>
+                      </td>
+                      <td className="py-1.5 min-w-[200px]">
+                        <div className="flex items-center gap-1.5">
+                          {it.seller_id_sel
+                            ? (it.match_confiable && it.seller_id_sel === it.seller_id
+                              ? <Check size={11} className="text-green-600 flex-shrink-0" />
+                              : <AlertCircle size={11} className="text-amber-500 flex-shrink-0" />)
+                            : <AlertCircle size={11} className="text-red-400 flex-shrink-0" />
+                          }
+                          <select
+                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white flex-1 min-w-0"
+                            value={it.seller_id_sel ?? ''}
+                            onChange={e => cambiarSeller(idx, e.target.value)}
+                          >
+                            <option value="">— Sin asignar —</option>
+                            {todosSellers.map(s => (
+                              <option key={s.id} value={s.id}>{s.nombre}</option>
+                            ))}
+                          </select>
+                          {it.seller_id_sel === it.seller_id && it.score > 0 && (
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">
+                              ({Math.round(it.score * 100)}%)
+                            </span>
+                          )}
+                          {it.seller_id_sel !== it.seller_id && it.seller_id_sel && (
+                            <span className="text-[10px] text-blue-500 flex-shrink-0">editado</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-1.5 text-right font-mono">{fmt(it.monto)}</td>
+                      <td className="py-1.5 text-right font-mono text-blue-600">{it.ya_cobrado > 0 ? fmt(it.ya_cobrado) : '—'}</td>
+                      <td className="py-1.5 text-right font-mono text-gray-600">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+              <span className="text-sm text-gray-600">
+                {items.filter(it => it.incluir && it.seller_id_sel).length} pagos · <span className="font-semibold text-gray-800">{fmt(totalConfirmar)}</span>
+                <span className="text-xs text-gray-400 ml-2">· Homologaciones se guardan automáticamente</span>
+              </span>
+              <div className="flex gap-3">
+                <button onClick={onClose} className="btn btn-secondary">Cancelar</button>
+                <button onClick={confirmar} disabled={confirmando} className="btn btn-primary flex items-center gap-2">
+                  <Check size={16} /> {confirmando ? 'Guardando...' : 'Confirmar pagos'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export default function Facturacion() {
@@ -32,6 +226,8 @@ export default function Facturacion() {
   const [historialData, setHistorialData] = useState([])
   const [historialLoading, setHistorialLoading] = useState(false)
   const [historialAnio, setHistorialAnio] = useState(new Date().getFullYear())
+  const [modalCartola, setModalCartola] = useState(false)
+  const [pagosAcumulados, setPagosAcumulados] = useState({})
   const [historialMes, setHistorialMes] = useState(0)       // 0 = todos los meses
   const [historialSearch, setHistorialSearch] = useState('')
   const [facturarSemana, setFacturarSemana] = useState('mes')   // 'mes' | '1'..'5'
@@ -59,6 +255,9 @@ export default function Facturacion() {
       .then(res => { if (id === reqId.current) setData(res.data) })
       .catch(() => { if (id === reqId.current) toast.error('Error cargando facturación') })
       .finally(() => { if (id === reqId.current) setLoading(false) })
+    api.get('/facturacion/pagos-acumulados', { params: { mes, anio } })
+      .then(res => setPagosAcumulados(res.data || {}))
+      .catch(() => {})
   }, [mes, anio])
 
   useEffect(() => {
@@ -266,6 +465,11 @@ export default function Facturacion() {
           </div>
           <input type="text" placeholder="Buscar seller..." className="input w-48"
             value={filterText} onChange={e => setFilterText(e.target.value)} />
+          {tab === 'pagos' && (
+            <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
+              <Upload size={15} /> Cargar Cartola
+            </button>
+          )}
           {tab === 'facturacion' && selected.size > 0 && (
             <button onClick={abrirModalFacturar} className="btn btn-primary flex items-center gap-2 ml-auto">
               <DollarSign size={16} /> Facturar ({selected.size})
@@ -381,7 +585,14 @@ export default function Facturacion() {
                   </th>
                 )}
                 <th className="pb-2 pt-3 px-3 font-medium">Vendedor</th>
-                {semanas.map(s => <th key={s} className="pb-2 pt-3 px-3 font-medium text-right">Sem {s}</th>)}
+                {semanas.map(s => tab === 'pagos' ? (
+                  <>
+                    <th key={`${s}-liq`} className="pb-2 pt-3 px-2 font-medium text-right text-gray-700">Sem {s}</th>
+                    <th key={`${s}-cob`} className="pb-2 pt-3 px-2 font-medium text-right text-blue-600">Recibido</th>
+                  </>
+                ) : (
+                  <th key={s} className="pb-2 pt-3 px-3 font-medium text-right">Sem {s}</th>
+                ))}
                 <th className="pb-2 pt-3 px-3 font-medium text-right">Subtotal</th>
                 <th className="pb-2 pt-3 px-3 font-medium text-right">Total + IVA</th>
                 {tab === 'facturacion' && <th className="pb-2 pt-3 px-3 font-medium text-center">Factura</th>}
@@ -403,22 +614,39 @@ export default function Facturacion() {
                   {semanas.map(sem => {
                     const semData = s.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE', editable: false }
                     const isEditing = editCell?.sellerId === s.seller_id && editCell?.semana === sem
-                    return (
-                      <td key={sem} className="py-2 px-3 text-right">
-                        {tab === 'pagos' ? (
+                    const cobradoSem = pagosAcumulados[String(s.seller_id)]?.[String(sem)] || 0
+                    const completo = cobradoSem > 0 && semData.monto_neto > 0 && cobradoSem >= semData.monto_neto
+                    return tab === 'pagos' ? (
+                      <>
+                        <td key={`${sem}-liq`} className="py-2 px-2 text-right">
                           <div className="flex flex-col items-end gap-1">
                             <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
-                            <select
-                              className={`text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer ${ESTADO_COLORS[semData.estado] || ESTADO_COLORS.PENDIENTE}`}
-                              value={semData.estado}
-                              onChange={e => updateEstado(s.seller_id, sem, e.target.value)}
-                            >
-                              <option value="PENDIENTE">Pendiente</option>
-                              <option value="PAGADO">Pagado</option>
-                              <option value="INCOMPLETO">Incompleto</option>
-                            </select>
+                            {semData.monto_neto > 0 && (
+                              <select
+                                className={`text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer ${ESTADO_COLORS[semData.estado] || ESTADO_COLORS.PENDIENTE}`}
+                                value={semData.estado}
+                                onChange={e => updateEstado(s.seller_id, sem, e.target.value)}
+                              >
+                                <option value="PENDIENTE">Pendiente</option>
+                                <option value="PAGADO">Pagado</option>
+                                <option value="INCOMPLETO">Incompleto</option>
+                              </select>
+                            )}
                           </div>
-                        ) : isEditing ? (
+                        </td>
+                        <td key={`${sem}-cob`} className="py-2 px-2 text-right">
+                          {cobradoSem > 0 ? (
+                            <span className={`font-mono text-xs font-semibold ${completo ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {fmt(cobradoSem)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </td>
+                      </>
+                    ) : (
+                      <td key={sem} className="py-2 px-3 text-right">
+                        {isEditing ? (
                           <div className="flex items-center gap-1 justify-end">
                             <span className="text-xs text-gray-400">$</span>
                             <input type="number" className="input w-24 text-right text-sm py-0.5"
@@ -550,6 +778,17 @@ export default function Facturacion() {
             )}
           </div>
         </Modal>
+      {modalCartola && (
+        <ModalCartolaSeller
+          mes={mes} anio={anio}
+          onClose={() => setModalCartola(false)}
+          onConfirmado={() => {
+            api.get('/facturacion/pagos-acumulados', { params: { mes, anio } })
+              .then(res => setPagosAcumulados(res.data || {}))
+              .catch(() => {})
+          }}
+        />
+      )}
     </div>
   )
 }

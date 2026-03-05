@@ -7,7 +7,10 @@ from app.database import engine, Base
 from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, usuarios, tarifas_escalonadas, diagnostics, portal, chat
 from app.middleware.timing import TimingMiddleware
 
-Base.metadata.create_all(bind=engine)
+try:
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+except Exception:
+    pass  # Race condition entre workers — la tabla ya fue creada por otro worker
 
 with engine.connect() as conn:
     insp = inspect(engine)
@@ -57,6 +60,25 @@ with engine.connect() as conn:
             conn.execute(text("ALTER TABLE retiros ALTER COLUMN driver_id DROP NOT NULL"))
             conn.commit()
     # pagos_cartola_drivers ya se crea via create_all si no existía (tabla nueva)
+    # pagos_cartola_sellers ya se crea via create_all si no existía (tabla nueva)
+
+    # ── Corrección de homologación: Oscar (27) → Oscar Martínez (54) ──────────
+    # El homologador asignaba envíos de "Oscar Martínez" al driver incompleto "Oscar" (id=27)
+    # en lugar del correcto "Oscar Martínez" (id=54). Se reasignan todos sus envíos.
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE envios
+            SET driver_id = 54
+            WHERE driver_id = 27
+              AND driver_nombre_raw = 'Oscar Martínez'
+        """))
+        conn.execute(text("""
+            UPDATE drivers
+            SET aliases = COALESCE(aliases, '[]'::json)::jsonb || '["Oscar Martínez"]'::jsonb
+            WHERE id = 54
+              AND NOT (COALESCE(aliases, '[]'::json)::jsonb @> '["Oscar Martínez"]'::jsonb)
+        """))
+        conn.commit()
 
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",

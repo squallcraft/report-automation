@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X,
+  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -32,6 +32,7 @@ const sellerLinks = [
   { to: '/seller/envios', icon: FileText, label: 'Mis Envíos' },
   { to: '/seller/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
   { to: '/seller/facturacion', icon: Receipt, label: 'Mi Facturación' },
+  { to: '/seller/mis-pagos', icon: TrendingUp, label: 'Mis Pagos' },
   { to: '/seller/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 
@@ -39,6 +40,7 @@ const driverLinks = [
   { to: '/driver', icon: LayoutDashboard, label: 'Mi Panel' },
   { to: '/driver/entregas', icon: FileText, label: 'Mis Entregas' },
   { to: '/driver/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
+  { to: '/driver/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
   { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 

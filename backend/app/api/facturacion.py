@@ -5,7 +5,7 @@ import json
 from typing import Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -189,33 +189,14 @@ def actualizar_pago_semana(
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
 
-    pago = db.query(PagoSemanaSeller).filter(
-        PagoSemanaSeller.seller_id == seller_id,
-        PagoSemanaSeller.semana == semana,
-        PagoSemanaSeller.mes == mes,
-        PagoSemanaSeller.anio == anio,
-    ).first()
-
-    monto_sistema = _get_monto_semanal_seller(db, seller_id, semana, mes, anio)
-
-    if not pago:
-        pago = PagoSemanaSeller(
-            seller_id=seller_id,
-            semana=semana, mes=mes, anio=anio,
-            monto_neto=monto_sistema,
-        )
-        db.add(pago)
-
-    if body.estado is not None:
-        pago.estado = body.estado
-    if body.monto_override is not None:
-        pago.monto_override = body.monto_override
-    if body.nota is not None:
-        pago.nota = body.nota
-    pago.monto_neto = monto_sistema
-
+    pago = _upsert_pago_semana_seller(
+        db, seller_id, semana, mes, anio,
+        estado=body.estado,
+        monto_override=body.monto_override,
+        nota=body.nota,
+    )
     db.commit()
-    return {"ok": True, "monto_neto": pago.monto_override if pago.monto_override is not None else monto_sistema}
+    return {"ok": True, "monto_neto": pago.monto_override if pago.monto_override is not None else pago.monto_neto}
 
 
 @router.put("/pago-semana-batch")
@@ -234,30 +215,12 @@ def actualizar_pagos_batch(
         if not seller_id or not semana:
             continue
 
-        pago = db.query(PagoSemanaSeller).filter(
-            PagoSemanaSeller.seller_id == seller_id,
-            PagoSemanaSeller.semana == semana,
-            PagoSemanaSeller.mes == mes,
-            PagoSemanaSeller.anio == anio,
-        ).first()
-
-        monto_sistema = _get_monto_semanal_seller(db, seller_id, semana, mes, anio)
-
-        if not pago:
-            pago = PagoSemanaSeller(
-                seller_id=seller_id,
-                semana=semana, mes=mes, anio=anio,
-                monto_neto=monto_sistema,
-            )
-            db.add(pago)
-
-        if "monto_override" in item:
-            pago.monto_override = item["monto_override"]
-        if "estado" in item:
-            pago.estado = item["estado"]
-        if "nota" in item:
-            pago.nota = item["nota"]
-        pago.monto_neto = monto_sistema
+        _upsert_pago_semana_seller(
+            db, seller_id, semana, mes, anio,
+            estado=item.get("estado"),
+            monto_override=item.get("monto_override"),
+            nota=item.get("nota"),
+        )
         updated += 1
 
     db.commit()
@@ -639,3 +602,315 @@ def historial_facturas(
             "emitida_en": f.emitida_en.isoformat() if f.emitida_en else None,
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Helper: upsert PagoSemanaSeller con registro automático en PagoCartolaSeller
+# ---------------------------------------------------------------------------
+
+def _upsert_pago_semana_seller(
+    db: Session,
+    seller_id: int,
+    semana: int,
+    mes: int,
+    anio: int,
+    estado: str = None,
+    nota: str = None,
+    monto_override: int = None,
+):
+    """Crea o actualiza PagoSemanaSeller.
+    Si estado cambia a PAGADO → crea registro manual en PagoCartolaSeller.
+    Si vuelve a PENDIENTE/INCOMPLETO → elimina el registro manual automático.
+    """
+    from datetime import date
+    from app.models import PagoCartolaSeller
+
+    pago = db.query(PagoSemanaSeller).filter(
+        PagoSemanaSeller.seller_id == seller_id,
+        PagoSemanaSeller.semana == semana,
+        PagoSemanaSeller.mes == mes,
+        PagoSemanaSeller.anio == anio,
+    ).first()
+    estado_anterior = pago.estado if pago else None
+
+    monto_sistema = _get_monto_semanal_seller(db, seller_id, semana, mes, anio)
+
+    if not pago:
+        pago = PagoSemanaSeller(
+            seller_id=seller_id,
+            semana=semana, mes=mes, anio=anio,
+            monto_neto=monto_sistema,
+        )
+        db.add(pago)
+
+    if estado is not None:
+        pago.estado = estado
+    if monto_override is not None:
+        pago.monto_override = monto_override
+    if nota is not None:
+        pago.nota = nota
+    pago.monto_neto = monto_sistema
+
+    # Gestión automática de PagoCartolaSeller
+    if estado is not None and estado != estado_anterior:
+        if estado == EstadoPagoEnum.PAGADO.value:
+            existe_manual = db.query(PagoCartolaSeller).filter(
+                PagoCartolaSeller.seller_id == seller_id,
+                PagoCartolaSeller.semana == semana,
+                PagoCartolaSeller.mes == mes,
+                PagoCartolaSeller.anio == anio,
+                PagoCartolaSeller.fuente == "manual",
+            ).first()
+            if not existe_manual:
+                db.add(PagoCartolaSeller(
+                    seller_id=seller_id,
+                    semana=semana, mes=mes, anio=anio,
+                    monto=monto_sistema,
+                    fecha_pago=date.today().isoformat(),
+                    descripcion="Pago recibido manual por administrador",
+                    fuente="manual",
+                ))
+        elif estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
+            db.query(PagoCartolaSeller).filter(
+                PagoCartolaSeller.seller_id == seller_id,
+                PagoCartolaSeller.semana == semana,
+                PagoCartolaSeller.mes == mes,
+                PagoCartolaSeller.anio == anio,
+                PagoCartolaSeller.fuente == "manual",
+                PagoCartolaSeller.descripcion == "Pago recibido manual por administrador",
+            ).delete()
+
+    return pago
+
+
+# ---------------------------------------------------------------------------
+# Endpoints: pagos acumulados por seller/semana (desde PagoCartolaSeller)
+# ---------------------------------------------------------------------------
+
+@router.get("/pagos-acumulados")
+def pagos_acumulados_sellers(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Suma de PagoCartolaSeller por seller y semana para el mes."""
+    from app.models import PagoCartolaSeller
+    from sqlalchemy import func
+
+    rows = db.query(
+        PagoCartolaSeller.seller_id,
+        PagoCartolaSeller.semana,
+        func.sum(PagoCartolaSeller.monto).label("total"),
+    ).filter(
+        PagoCartolaSeller.mes == mes,
+        PagoCartolaSeller.anio == anio,
+    ).group_by(PagoCartolaSeller.seller_id, PagoCartolaSeller.semana).all()
+
+    resultado = {}
+    for r in rows:
+        sid = str(r.seller_id)
+        if sid not in resultado:
+            resultado[sid] = {}
+        resultado[sid][str(r.semana)] = r.total
+
+    return resultado
+
+
+# ---------------------------------------------------------------------------
+# Endpoints: cartola seller (preview + confirmar)
+# ---------------------------------------------------------------------------
+
+def _parsear_cartola_seller(archivo_bytes: bytes) -> list:
+    """
+    Lee cartola Banco de Chile y retorna abonos recibidos ('Traspaso De:').
+    """
+    import io
+    import pandas as pd
+
+    try:
+        df = pd.read_excel(io.BytesIO(archivo_bytes), header=None)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se pudo leer el archivo: {exc}")
+
+    header_row = None
+    for i, row in df.iterrows():
+        vals = [str(v).strip().lower() for v in row.values]
+        if any("fecha" in v for v in vals) and any("abono" in v for v in vals):
+            header_row = i
+            break
+    # Fallback: buscar también con "cargos" (misma fila tiene ambas columnas)
+    if header_row is None:
+        for i, row in df.iterrows():
+            vals = [str(v).strip().lower() for v in row.values]
+            if any("fecha" in v for v in vals) and any("cargos" in v for v in vals):
+                header_row = i
+                break
+
+    if header_row is None:
+        raise HTTPException(status_code=400, detail="No se encontró encabezado de movimientos en la cartola.")
+
+    header_vals = [str(df.iloc[header_row, c]).strip().lower() for c in range(df.shape[1])]
+    idx_fecha  = next((i for i, v in enumerate(header_vals) if "fecha" in v), None)
+    idx_desc   = next((i for i, v in enumerate(header_vals) if "descripci" in v), None)
+    idx_abonos = next((i for i, v in enumerate(header_vals) if "abono" in v), None)
+
+    if idx_abonos is None:
+        raise HTTPException(status_code=400, detail="No se encontró columna de Abonos en la cartola.")
+
+    movimientos = []
+    for i in range(header_row + 1, len(df)):
+        row = df.iloc[i]
+        monto_raw = row.iloc[idx_abonos] if idx_abonos < len(row) else None
+        try:
+            monto = int(float(str(monto_raw).replace(".", "").replace(",", ".")))
+        except Exception:
+            continue
+        if monto <= 0:
+            continue
+
+        desc = str(row.iloc[idx_desc]).strip() if idx_desc is not None else ""
+        if not desc or desc.lower() in ("nan", ""):
+            continue
+
+        desc_lower = desc.lower()
+        if not any(desc_lower.startswith(p) for p in [
+            "traspaso de:", "app-traspaso de:", "transferencia de:", "app-transferencia de:"
+        ]):
+            continue
+
+        fecha = str(row.iloc[idx_fecha]).strip() if idx_fecha is not None else ""
+        nombre = desc
+        for prefijo in ["traspaso de:", "app-traspaso de:", "transferencia de:", "app-transferencia de:"]:
+            if desc_lower.startswith(prefijo):
+                nombre = desc[len(prefijo):].strip()
+                break
+
+        movimientos.append({
+            "fecha": fecha,
+            "descripcion": desc,
+            "nombre_extraido": nombre,
+            "monto": monto,
+        })
+
+    return movimientos
+
+
+def _similaridad_seller(a: str, b: str) -> float:
+    from difflib import SequenceMatcher
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+@router.post("/cartola/preview")
+async def cartola_seller_preview(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Parsea cartola bancaria y retorna preview de abonos recibidos de sellers."""
+    from app.models import PagoCartolaSeller
+
+    contenido = await archivo.read()
+    movimientos = _parsear_cartola_seller(contenido)
+
+    sellers = db.query(Seller).filter(Seller.activo == True).all()
+
+    cobrados_existentes: dict[int, int] = {}
+    for p in db.query(PagoCartolaSeller).filter(
+        PagoCartolaSeller.semana == semana,
+        PagoCartolaSeller.mes == mes,
+        PagoCartolaSeller.anio == anio,
+    ).all():
+        cobrados_existentes[p.seller_id] = cobrados_existentes.get(p.seller_id, 0) + p.monto
+
+    resultado = []
+    for mov in movimientos:
+        nombre_norm = mov["nombre_extraido"].lower()
+        mejor_seller = None
+        mejor_score = 0.0
+
+        for s in sellers:
+            score = _similaridad_seller(nombre_norm, s.nombre.lower())
+            for alias in (s.aliases or []):
+                sc = _similaridad_seller(nombre_norm, alias.lower())
+                if sc > score:
+                    score = sc
+            if score > mejor_score:
+                mejor_score = score
+                mejor_seller = s
+
+        match_confiable = mejor_score >= 0.55
+        ya_cobrado = cobrados_existentes.get(mejor_seller.id, 0) if mejor_seller else 0
+        liquidado = _get_monto_semanal_seller(db, mejor_seller.id, semana, mes, anio) if mejor_seller else 0
+
+        resultado.append({
+            "descripcion": mov["descripcion"],
+            "nombre_extraido": mov["nombre_extraido"],
+            "fecha": mov["fecha"],
+            "monto": mov["monto"],
+            "seller_id": mejor_seller.id if mejor_seller else None,
+            "seller_nombre": mejor_seller.nombre if mejor_seller else None,
+            "score": round(mejor_score, 2),
+            "match_confiable": match_confiable,
+            "ya_cobrado": ya_cobrado,
+            "liquidado": liquidado,
+        })
+
+    todos_sellers = [{"id": s.id, "nombre": s.nombre} for s in sorted(sellers, key=lambda x: x.nombre)]
+    return {"semana": semana, "mes": mes, "anio": anio, "items": resultado, "sellers": todos_sellers}
+
+
+class ItemConfirmarCartolaSeller(BaseModel):
+    seller_id: int
+    monto: int
+    fecha: Optional[str] = None
+    descripcion: Optional[str] = None
+    nombre_extraido: Optional[str] = None
+
+
+class ConfirmarCartolaSellerRequest(BaseModel):
+    semana: int
+    mes: int
+    anio: int
+    items: List[ItemConfirmarCartolaSeller]
+
+
+@router.post("/cartola/confirmar")
+def cartola_seller_confirmar(
+    body: ConfirmarCartolaSellerRequest,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Graba pagos recibidos de sellers desde cartola. Guarda alias automáticamente."""
+    from app.models import PagoCartolaSeller
+
+    grabados = 0
+    for item in body.items:
+        if item.seller_id <= 0 or item.monto <= 0:
+            continue
+        db.add(PagoCartolaSeller(
+            seller_id=item.seller_id,
+            semana=body.semana,
+            mes=body.mes,
+            anio=body.anio,
+            monto=item.monto,
+            fecha_pago=item.fecha,
+            descripcion=item.descripcion,
+            fuente="cartola",
+        ))
+        grabados += 1
+
+        # Guardar alias si es nuevo
+        if item.nombre_extraido:
+            seller = db.get(Seller, item.seller_id)
+            if seller:
+                alias_nuevo = item.nombre_extraido.strip()
+                aliases_actuales = [a.lower() for a in (seller.aliases or [])]
+                if alias_nuevo.lower() != seller.nombre.lower() and alias_nuevo.lower() not in aliases_actuales:
+                    seller.aliases = list(seller.aliases or []) + [alias_nuevo]
+
+    db.commit()
+    return {"ok": True, "grabados": grabados}

@@ -34,18 +34,46 @@ EMISOR_EMAIL = "hablemos@e-courier.cl"
 
 # Códigos banco para el archivo TEF (Banco de Chile predeterminado)
 BANCO_CODIGOS = {
+    # Bancos tradicionales (códigos según listado oficial Banco de Chile)
     "banco de chile": "001",
-    "bci": "016",
-    "banco estado": "012",
-    "banco estado de chile": "012",
+    "banco internacional": "009",
+    "scotiabank": "012",
+    "banco scotiabank": "012",
+    "scotiabank chile": "012",
+    "banco bice": "014",
+    "bice": "014",
+    "banco estado": "016",
+    "banco estado de chile": "016",
+    "bancoestado": "016",
+    "bci": "028",
+    "banco bci": "028",
+    "banco de credito e inversiones": "028",
+    "itau": "031",
+    "banco itau": "031",
+    "itaú": "031",
+    "itaucorpbanca": "031",
+    "itau corpbanca": "031",
+    "corpbanca": "031",
+    "security": "034",
+    "banco security": "034",
     "santander": "037",
-    "itau": "039",
-    "scotiabank": "014",
-    "security": "049",
-    "falabella": "051",
-    "ripley": "053",
-    "consorcio": "055",
+    "banco santander": "037",
+    "santander chile": "037",
+    "consorcio": "039",
+    "banco consorcio": "039",
+    "falabella": "402",
+    "banco falabella": "402",
+    "ripley": "403",
+    "banco ripley": "403",
+    # Fintech / billeteras digitales
     "coopeuch": "672",
+    "prepago los heroes": "729",
+    "tenpo": "028",        # Tenpo SpA — opera sobre infraestructura BCI (código 028)
+    "copec pay": "741",    # CMPD S.A. — sponsor Banco Security
+    "mercado pago": "875", # Mercado Pago Emisora S.A.
+    "mercadopago": "875",
+    "mach": "028",         # MACH by BCI — subproducto de BCI (código 028)
+    "machbank": "028",
 }
 
 router = APIRouter(prefix="/cpc", tags=["CPC"])
@@ -115,7 +143,7 @@ def tabla_cpc(
     semanas = _semanas_del_mes(db, mes, anio)
     drivers = db.query(Driver).filter(Driver.activo == True).order_by(Driver.nombre).all()
 
-    def _build_driver_semanas(driver: Driver) -> tuple[dict, int]:
+    def _build_driver_semanas(driver: Driver, es_jefe: bool = False) -> tuple[dict, int]:
         semanas_data = {}
         subtotal = 0
         for sem in semanas:
@@ -128,6 +156,8 @@ def tabla_cpc(
 
             if pago and pago.monto_override is not None:
                 monto = pago.monto_override
+            elif es_jefe:
+                monto = _get_monto_consolidado_driver(db, driver.id, sem, mes, anio)
             else:
                 monto = _get_monto_semanal_driver(db, driver.id, sem, mes, anio)
 
@@ -167,16 +197,13 @@ def tabla_cpc(
     for jefe_id, jefe in sorted(jefes.items(), key=lambda x: x[1].nombre):
         subs = subordinados_por_jefe.get(jefe_id, [])
 
-        # Sumar semanas de todos los subordinados
-        semanas_consolidado: dict[str, dict] = {str(s): {"monto_neto": 0, "estado": EstadoPagoEnum.PENDIENTE.value, "nota": None} for s in semanas}
-        subtotal_consolidado = 0
+        # Monto consolidado (jefe + subordinados) calculado en _build_driver_semanas con es_jefe=True
+        semanas_consolidado, subtotal_consolidado = _build_driver_semanas(jefe, es_jefe=True)
 
+        # Detalle de subordinados (para expandir en UI)
         detalle_subordinados = []
         for sub in sorted(subs, key=lambda d: d.nombre):
             sub_semanas, sub_subtotal = _build_driver_semanas(sub)
-            for sem in semanas:
-                semanas_consolidado[str(sem)]["monto_neto"] += sub_semanas[str(sem)]["monto_neto"]
-            subtotal_consolidado += sub_subtotal
             if sub_subtotal > 0:
                 detalle_subordinados.append({
                     "driver_id": sub.id,
@@ -184,18 +211,6 @@ def tabla_cpc(
                     "semanas": sub_semanas,
                     "subtotal_neto": sub_subtotal,
                 })
-
-        # El estado consolidado usa el pago registrado al jefe (si existe)
-        for sem in semanas:
-            pago_jefe = db.query(PagoSemanaDriver).filter(
-                PagoSemanaDriver.driver_id == jefe.id,
-                PagoSemanaDriver.semana == sem,
-                PagoSemanaDriver.mes == mes,
-                PagoSemanaDriver.anio == anio,
-            ).first()
-            if pago_jefe:
-                semanas_consolidado[str(sem)]["estado"] = pago_jefe.estado
-                semanas_consolidado[str(sem)]["nota"] = pago_jefe.nota
 
         if subtotal_consolidado > 0:
             result.append({
@@ -234,6 +249,86 @@ def tabla_cpc(
     return {"semanas_disponibles": semanas, "drivers": result}
 
 
+def _get_monto_consolidado_driver(db: Session, driver_id: int, semana: int, mes: int, anio: int) -> int:
+    """
+    Monto total a pagar: si el driver es jefe de flota, incluye la suma de sus subordinados.
+    Este es el monto real que se paga al jefe por toda su flota.
+    """
+    monto_propio = _get_monto_semanal_driver(db, driver_id, semana, mes, anio)
+    subordinados = db.query(Driver).filter(
+        Driver.jefe_flota_id == driver_id,
+        Driver.activo == True,
+    ).all()
+    monto_subs = sum(_get_monto_semanal_driver(db, sub.id, semana, mes, anio) for sub in subordinados)
+    return monto_propio + monto_subs
+
+
+def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio: int, estado: str = None, nota: str = None, monto_override: int = None):
+    """Crea o actualiza un PagoSemanaDriver. Retorna el registro.
+    Si el estado cambia a PAGADO, crea un registro manual en PagoCartola.
+    Si el estado cambia a PENDIENTE/INCOMPLETO, elimina el registro manual previo.
+    """
+    pago = db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.driver_id == driver_id,
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+    ).first()
+    estado_anterior = pago.estado if pago else None
+
+    # Para jefes de flota, monto_neto = consolidado de su flota
+    monto_sistema = _get_monto_consolidado_driver(db, driver_id, semana, mes, anio)
+    if not pago:
+        pago = PagoSemanaDriver(
+            driver_id=driver_id,
+            semana=semana, mes=mes, anio=anio,
+            monto_neto=monto_sistema,
+        )
+        db.add(pago)
+    if estado is not None:
+        pago.estado = estado
+    if monto_override is not None:
+        pago.monto_override = monto_override
+    if nota is not None:
+        pago.nota = nota
+    pago.monto_neto = monto_sistema
+
+    # Gestión de registro en PagoCartola al cambiar estado
+    if estado is not None and estado != estado_anterior:
+        if estado == EstadoPagoEnum.PAGADO.value:
+            # Crear registro manual solo si no existe ya uno manual para esta semana
+            existe_manual = db.query(PagoCartola).filter(
+                PagoCartola.driver_id == driver_id,
+                PagoCartola.semana == semana,
+                PagoCartola.mes == mes,
+                PagoCartola.anio == anio,
+                PagoCartola.fuente == "manual",
+            ).first()
+            if not existe_manual:
+                db.add(PagoCartola(
+                    driver_id=driver_id,
+                    semana=semana,
+                    mes=mes,
+                    anio=anio,
+                    monto=monto_sistema,
+                    fecha_pago=date.today().isoformat(),
+                    descripcion="Pago emitido manual por administrador",
+                    fuente="manual",
+                ))
+        elif estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
+            # Al revertir a pendiente/incompleto, eliminar el registro manual automático
+            db.query(PagoCartola).filter(
+                PagoCartola.driver_id == driver_id,
+                PagoCartola.semana == semana,
+                PagoCartola.mes == mes,
+                PagoCartola.anio == anio,
+                PagoCartola.fuente == "manual",
+                PagoCartola.descripcion == "Pago emitido manual por administrador",
+            ).delete()
+
+    return pago
+
+
 @router.put("/pago-semana/{driver_id}")
 def actualizar_pago_semana_driver(
     driver_id: int,
@@ -248,30 +343,21 @@ def actualizar_pago_semana_driver(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
 
-    pago = db.query(PagoSemanaDriver).filter(
-        PagoSemanaDriver.driver_id == driver_id,
-        PagoSemanaDriver.semana == semana,
-        PagoSemanaDriver.mes == mes,
-        PagoSemanaDriver.anio == anio,
-    ).first()
+    _upsert_pago_semana(
+        db, driver_id, semana, mes, anio,
+        estado=body.estado,
+        monto_override=body.monto_override,
+        nota=body.nota,
+    )
 
-    monto_sistema = _get_monto_semanal_driver(db, driver_id, semana, mes, anio)
-
-    if not pago:
-        pago = PagoSemanaDriver(
-            driver_id=driver_id,
-            semana=semana, mes=mes, anio=anio,
-            monto_neto=monto_sistema,
-        )
-        db.add(pago)
-
+    # Si es jefe de flota, propagar el estado a todos sus subordinados
     if body.estado is not None:
-        pago.estado = body.estado
-    if body.monto_override is not None:
-        pago.monto_override = body.monto_override
-    if body.nota is not None:
-        pago.nota = body.nota
-    pago.monto_neto = monto_sistema
+        subordinados = db.query(Driver).filter(
+            Driver.jefe_flota_id == driver_id,
+            Driver.activo == True,
+        ).all()
+        for sub in subordinados:
+            _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=body.estado)
 
     db.commit()
     return {"ok": True}
@@ -293,30 +379,23 @@ def actualizar_pagos_batch_driver(
         if not driver_id or not semana:
             continue
 
-        pago = db.query(PagoSemanaDriver).filter(
-            PagoSemanaDriver.driver_id == driver_id,
-            PagoSemanaDriver.semana == semana,
-            PagoSemanaDriver.mes == mes,
-            PagoSemanaDriver.anio == anio,
-        ).first()
+        estado = item.get("estado")
+        _upsert_pago_semana(
+            db, driver_id, semana, mes, anio,
+            estado=estado,
+            monto_override=item.get("monto_override"),
+            nota=item.get("nota"),
+        )
 
-        monto_sistema = _get_monto_semanal_driver(db, driver_id, semana, mes, anio)
+        # Propagar estado a subordinados si es jefe de flota
+        if estado is not None:
+            subordinados = db.query(Driver).filter(
+                Driver.jefe_flota_id == driver_id,
+                Driver.activo == True,
+            ).all()
+            for sub in subordinados:
+                _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=estado)
 
-        if not pago:
-            pago = PagoSemanaDriver(
-                driver_id=driver_id,
-                semana=semana, mes=mes, anio=anio,
-                monto_neto=monto_sistema,
-            )
-            db.add(pago)
-
-        if "monto_override" in item:
-            pago.monto_override = item["monto_override"]
-        if "estado" in item:
-            pago.estado = item["estado"]
-        if "nota" in item:
-            pago.nota = item["nota"]
-        pago.monto_neto = monto_sistema
         updated += 1
 
     db.commit()
@@ -348,50 +427,113 @@ def _normalizar_rut(rut: Optional[str]) -> tuple[str, str]:
 
 def _generar_linea_tef(seq: int, driver: Driver, monto: int) -> str:
     """
-    Genera una línea del archivo TEF Banco de Chile (formato predeterminado).
-    Campos de ancho fijo según especificación:
-      pos 1-3   : código banco destino (3)
-      pos 4-12  : RUT sin DV del beneficiario (9, cero a la izq)
-      pos 13    : DV del beneficiario (1)
-      pos 14-53 : Nombre beneficiario (40, espacios a la der)
-      pos 54-62 : N° cuenta destino (9, cero a la izq)  — se extiende si es más largo
-      pos 55-63 (ajuste): tipo cuenta (1): 1=cta cte, 2=ahorro, 3=vista
-      pos 64-76 : monto (13, cero a la izq, en pesos sin decimales)
-      pos 77-86 : email (40)
-      pos 117-119: código banco origen (3)
-      pos 120-128: RUT sin DV origen (9)
-      pos 129   : DV origen (1)
-      pos 130-168: N° cuenta origen (9 → usamos 10 dígitos)
-      NOTA: usamos formato simplificado compatible con Banco de Chile estándar.
+    Genera una línea del archivo TEF Banco de Chile (Formato Predeterminado oficial).
+    Largo total: 219 caracteres + CRLF.
+
+    Pos  1- 3  Tipo Operación (3):  TOB=otro banco, TEC=Banco de Chile
+    Pos  4-13  RUT Cliente/Emisor (10): derecha, ceros
+    Pos 14-25  Cuenta de Cargo (12): derecha, ceros
+    Pos 26-35  RUT Beneficiario (10): derecha, ceros  (rutNum+DV sin puntos)
+    Pos 36-65  Nombre Beneficiario (30): izquierda, espacios
+    Pos 66-83  Cuenta Beneficiario (18): izquierda, espacios
+    Pos 84-93  RUT Banco Beneficiario (10): derecha, ceros
+    Pos 94-104 Monto (11): derecha, ceros
+    Pos 105    Abono Inmediato (1): espacio
+    Pos 106-135 Motivo (30): izquierda, espacios
+    Pos 136    Notificación email (1): "1"
+    Pos 137-166 Asunto email (30): izquierda, espacios
+    Pos 167-216 Dirección email (50): izquierda, espacios
+    Pos 217-219 Tipo de Cuenta (3): CTD=corriente, JUV=vista/ahorro
     """
-    banco_cod = _get_banco_codigo(driver.banco)
+    # Tipo operación: TOB si el banco destino es distinto de Banco de Chile
+    banco_destino_cod = _get_banco_codigo(driver.banco)
+    tipo_op = "TEC" if banco_destino_cod == "001" else "TOB"
+
+    # RUT emisor sin DV + DV → concatenados → zfill(10)
+    rut_cliente = (EMISOR_RUT + EMISOR_DV).zfill(10)
+
+    # Cuenta de cargo (12, derecha, ceros)
+    cuenta_cargo = re.sub(r"\D", "", EMISOR_CUENTA).zfill(12)[:12]
+
+    # RUT beneficiario: numeros+DV sin puntos → zfill(10)
     rut_num, rut_dv = _normalizar_rut(driver.rut)
+    rut_benef = (rut_num + rut_dv).zfill(10)
 
-    tipo_map = {"corriente": "1", "cta corriente": "1", "ahorro": "2", "vista": "3", "cta vista": "3"}
-    tipo_cod = tipo_map.get((driver.tipo_cuenta or "").lower().strip(), "1")
+    # Nombre beneficiario (30, izquierda, espacios)
+    nombre = (driver.nombre or "").upper()[:30].ljust(30)
 
-    cuenta_dst = re.sub(r"\D", "", driver.numero_cuenta or "0").zfill(9)[:9]
-    nombre = (driver.nombre or "").upper()[:40].ljust(40)
-    monto_str = str(monto).zfill(13)
-    email = (EMISOR_EMAIL).ljust(40)[:40]
+    # Cuenta beneficiario (18, izquierda, espacios) — solo dígitos
+    cuenta_benef_raw = re.sub(r"\D", "", driver.numero_cuenta or "")
+    # Banco Estado Vista (Cuenta RUT): el número de cuenta es el RUT con DV.
+    # Si registraron solo los dígitos del RUT sin DV, completamos automáticamente.
+    if not cuenta_benef_raw or (
+        banco_destino_cod == "016"
+        and (driver.tipo_cuenta or "").lower().strip() in ("vista", "cuenta vista")
+        and cuenta_benef_raw == re.sub(r"\D", "", rut_num)
+    ):
+        cuenta_benef_raw = rut_num + rut_dv
+    cuenta_benef = cuenta_benef_raw.ljust(18)[:18]
 
-    rut_orig = EMISOR_RUT.zfill(9)
-    cuenta_orig = EMISOR_CUENTA.zfill(9)[:9]
+    # RUT banco beneficiario — RUT oficial del banco como persona jurídica (10, derecha, ceros)
+    BANCO_RUTS = {
+        "001": "0970040005",  # Banco de Chile           97.004.000-5
+        "009": "0970110003",  # Banco Internacional      97.011.000-3
+        "012": "0970320008",  # Scotiabank Chile         97.032.000-8
+        "014": "097080000K",  # Banco BICE               97.080.000-K
+        "016": "0970300007",  # Banco Estado de Chile    97.030.000-7
+        "028": "0970060006",  # BCI                      97.006.000-6
+        "031": "0970230009",  # Itaú CorpBanca           97.023.000-9
+        "034": "0970530002",  # Banco Security           97.053.000-2
+        "037": "097036000K",  # Banco Santander          97.036.000-K
+        "039": "0966527005",  # Banco Consorcio          96.652.700-5
+        "402": "0965096604",  # Banco Falabella          96.509.660-4
+        "403": "0979470002",  # Banco Ripley             97.947.000-2
+        "672": "0855860000",  # Coopeuch                 85.586.000-0
+        "729": "0762609309",  # Prepago Los Héroes       76.260.930-9
+        "741": "0970530002",  # Copec Pay → RUT Banco Security (sponsor) 97.053.000-2
+        "875": "0762838641",  # Mercado Pago Emisora S.A. 76.283.864-1
+    }
+    rut_banco_benef = BANCO_RUTS.get(banco_destino_cod, "0970040005")
+
+    # Monto (11, derecha, ceros)
+    monto_str = str(monto).zfill(11)[:11]
+
+    # Abono inmediato (1 espacio en blanco)
+    abono = " "
+
+    # Motivo (30, izquierda, espacios)
+    motivo = "PAGO CONDUCTOR".ljust(30)[:30]
+
+    # Notificación email (1)
+    notif = "1"
+
+    # Asunto (30, izquierda, espacios)
+    asunto = "Pago eCourier".ljust(30)[:30]
+
+    # Email beneficiario (50, izquierda, espacios)
+    email_benef = (driver.email or "").ljust(50)[:50]
+
+    # Tipo de cuenta (3): CTD=corriente, JUV=vista o ahorro
+    tipo_raw = (driver.tipo_cuenta or "").lower().strip()
+    tipo_cuenta = "CTD" if "corriente" in tipo_raw else "JUV"
 
     linea = (
-        f"{banco_cod}"           # 3  banco destino
-        f"{rut_num.zfill(9)}"    # 9  rut beneficiario
-        f"{rut_dv}"              # 1  dv beneficiario
-        f"{nombre}"              # 40 nombre
-        f"{cuenta_dst}"          # 9  cuenta destino
-        f"{tipo_cod}"            # 1  tipo cuenta
-        f"{monto_str}"           # 13 monto
-        f"{email}"               # 40 email beneficiario
-        f"{EMISOR_BANCO_COD}"    # 3  banco origen
-        f"{rut_orig}"            # 9  rut origen
-        f"{EMISOR_DV}"           # 1  dv origen
-        f"{cuenta_orig}"         # 9  cuenta origen
-        "\r\n"
+        f"{tipo_op}"          # 1-3   Tipo Operación       (3)
+        f"{rut_cliente}"      # 4-13  RUT Cliente          (10)
+        f"{cuenta_cargo}"     # 14-25 Cuenta Cargo         (12)
+        f"{rut_benef}"        # 26-35 RUT Beneficiario     (10)
+        f"{nombre}"           # 36-65 Nombre Beneficiario  (30)
+        f"{cuenta_benef}"     # 66-83 Cuenta Beneficiario  (18)
+        f"{rut_banco_benef}"  # 84-93 RUT Banco Benef.     (10)
+        f"{monto_str}"        # 94-104 Monto               (11)
+        f"{abono}"            # 105   Abono Inmediato      (1)
+        f"{motivo}"           # 106-135 Motivo             (30)
+        f"{notif}"            # 136   Notif email          (1)
+        f"{asunto}"           # 137-166 Asunto             (30)
+        f"{email_benef}"      # 167-216 Email              (50)
+        # Tipo de Cuenta (CTD/JUV) solo para TOB (otros bancos), NO para TEC (Banco de Chile)
+        + (tipo_cuenta if tipo_op == "TOB" else "")  # 217-219 (solo TOB)
+        + "\r\n"
     )
     return linea
 
@@ -459,7 +601,7 @@ def _parsear_cartola(archivo_bytes: bytes) -> list[dict]:
     """
     Lee el .xls/.xlsx de cartola Banco de Chile.
     Retorna lista de {fecha, descripcion, monto, nombre_extraido}.
-    Solo cargos (pagos hechos, columna Cargos > 0).
+    Solo incluye cargos de "Traspaso A:" (pagos emitidos a terceros).
     """
     try:
         df = pd.read_excel(io.BytesIO(archivo_bytes), header=None)
@@ -477,20 +619,21 @@ def _parsear_cartola(archivo_bytes: bytes) -> list[dict]:
     if header_row is None:
         raise HTTPException(status_code=400, detail="No se encontró encabezado de movimientos en la cartola.")
 
-    df.columns = [str(df.iloc[header_row, c]).strip() for c in range(df.shape[1])]
-    df = df.iloc[header_row + 1:].reset_index(drop=True)
+    # Detectar índices de columnas por posición en la fila de encabezado
+    header_vals = [str(df.iloc[header_row, c]).strip().lower() for c in range(df.shape[1])]
+    idx_fecha = next((i for i, v in enumerate(header_vals) if "fecha" in v), None)
+    idx_desc  = next((i for i, v in enumerate(header_vals) if "descripci" in v), None)
+    idx_cargos = next((i for i, v in enumerate(header_vals) if "cargos" in v), None)
 
-    # Detectar columnas relevantes por nombre aproximado
-    col_fecha = next((c for c in df.columns if "fecha" in c.lower()), None)
-    col_desc = next((c for c in df.columns if "descripci" in c.lower()), None)
-    col_cargos = next((c for c in df.columns if "cargos" in c.lower()), None)
-
-    if not col_cargos:
+    if idx_cargos is None:
         raise HTTPException(status_code=400, detail="No se encontró columna de Cargos en la cartola.")
 
     movimientos = []
-    for _, row in df.iterrows():
-        monto_raw = row.get(col_cargos, None)
+    for i in range(header_row + 1, len(df)):
+        row = df.iloc[i]
+
+        # Monto en columna de cargos
+        monto_raw = row.iloc[idx_cargos] if idx_cargos < len(row) else None
         try:
             monto = int(float(str(monto_raw).replace(".", "").replace(",", ".")))
         except Exception:
@@ -498,11 +641,18 @@ def _parsear_cartola(archivo_bytes: bytes) -> list[dict]:
         if monto <= 0:
             continue
 
-        desc = str(row.get(col_desc, "")).strip()
+        desc = str(row.iloc[idx_desc]).strip() if idx_desc is not None else ""
         if not desc or desc.lower() in ("nan", ""):
             continue
 
-        fecha = str(row.get(col_fecha, "")).strip() if col_fecha else ""
+        # Solo incluir traspasos emitidos (pagos a drivers)
+        desc_lower = desc.lower()
+        if not any(desc_lower.startswith(p) for p in [
+            "traspaso a:", "app-traspaso a:", "transferencia a:", "app-transferencia a:"
+        ]):
+            continue
+
+        fecha = str(row.iloc[idx_fecha]).strip() if idx_fecha is not None else ""
         nombre = _extraer_nombre_cartola(desc)
         movimientos.append({
             "fecha": fecha,
@@ -529,13 +679,13 @@ async def cartola_preview(
 ):
     """
     Parsea la cartola bancaria y retorna un preview con los matches propuestos.
+    Busca matches en nombre principal y aliases del driver.
     No graba nada en BD.
     """
     contenido = await archivo.read()
     movimientos = _parsear_cartola(contenido)
 
     drivers = db.query(Driver).filter(Driver.activo == True).all()
-    driver_map = {d.nombre.lower(): d for d in drivers}
 
     # Pagos ya registrados esta semana (para mostrar acumulado)
     pagados_existentes: dict[int, int] = {}
@@ -549,11 +699,17 @@ async def cartola_preview(
     resultado = []
     for mov in movimientos:
         nombre_norm = mov["nombre_extraido"].lower()
-        # Buscar mejor match
         mejor_driver = None
         mejor_score = 0.0
-        for d_nombre, d in driver_map.items():
-            score = _similaridad(nombre_norm, d_nombre)
+
+        for d in drivers:
+            # Buscar contra nombre principal
+            score = _similaridad(nombre_norm, d.nombre.lower())
+            # Buscar contra cada alias — tomar el mejor
+            for alias in (d.aliases or []):
+                s = _similaridad(nombre_norm, alias.lower())
+                if s > score:
+                    score = s
             if score > mejor_score:
                 mejor_score = score
                 mejor_driver = d
@@ -576,7 +732,10 @@ async def cartola_preview(
             "liquidado": liquidado,
         })
 
-    return {"semana": semana, "mes": mes, "anio": anio, "items": resultado}
+    # Devolver también la lista de todos los drivers para el dropdown de edición
+    todos_drivers = [{"id": d.id, "nombre": d.nombre} for d in sorted(drivers, key=lambda x: x.nombre)]
+
+    return {"semana": semana, "mes": mes, "anio": anio, "items": resultado, "drivers": todos_drivers}
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +747,7 @@ class ItemConfirmarCartola(BaseModel):
     monto: int
     fecha: Optional[str] = None
     descripcion: Optional[str] = None
+    nombre_extraido: Optional[str] = None  # Para guardar como alias
 
 
 class ConfirmarCartolaRequest(BaseModel):
@@ -603,7 +763,10 @@ def cartola_confirmar(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Graba los pagos confirmados desde la cartola en BD."""
+    """
+    Graba los pagos confirmados desde la cartola en BD.
+    Guarda nombre_extraido como alias del driver si no existe ya.
+    """
     grabados = 0
     for item in body.items:
         if item.driver_id <= 0 or item.monto <= 0:
@@ -620,6 +783,18 @@ def cartola_confirmar(
         )
         db.add(pago)
         grabados += 1
+
+        # Guardar alias si viene nombre_extraido y no coincide exactamente con el nombre del driver
+        if item.nombre_extraido:
+            driver = db.get(Driver, item.driver_id)
+            if driver:
+                alias_nuevo = item.nombre_extraido.strip()
+                alias_lower = alias_nuevo.lower()
+                nombre_lower = driver.nombre.lower()
+                aliases_actuales = [a.lower() for a in (driver.aliases or [])]
+                # Solo agregar si no es el nombre principal ni ya existe como alias
+                if alias_lower != nombre_lower and alias_lower not in aliases_actuales:
+                    driver.aliases = list(driver.aliases or []) + [alias_nuevo]
 
     db.commit()
     return {"ok": True, "grabados": grabados}
