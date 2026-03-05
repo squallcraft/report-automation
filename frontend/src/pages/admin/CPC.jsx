@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown } from 'lucide-react'
+import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users } from 'lucide-react'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const SEMANAS = [1, 2, 3, 4, 5]
@@ -17,9 +17,10 @@ function fmt(v) {
 }
 
 // ---------------------------------------------------------------------------
-// Modal generador de planilla TEF
+// Modal generador TEF — Opción A: jefes de flota consolidan su flota
 // ---------------------------------------------------------------------------
 function ModalTEF({ semana, mes, anio, drivers, onClose }) {
+  // Construir items: jefes con monto consolidado, independientes con monto individual
   const [items, setItems] = useState(() =>
     drivers.map(d => ({
       driver_id: d.driver_id,
@@ -27,6 +28,8 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
       rut: d.rut,
       banco: d.banco,
       numero_cuenta: d.numero_cuenta,
+      es_jefe: d.es_jefe_flota,
+      subordinados: d.subordinados || [],
       liquidado: d.semanas?.[String(semana)]?.monto_neto || 0,
       monto: d.semanas?.[String(semana)]?.monto_neto || 0,
       incluir: (d.semanas?.[String(semana)]?.monto_neto || 0) > 0,
@@ -48,10 +51,10 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
   const totalTEF = seleccionados.reduce((a, it) => a + it.monto, 0)
 
   const descargar = async () => {
-    if (!seleccionados.length) return toast.error('Selecciona al menos un conductor')
+    if (!seleccionados.length) return toast.error('Selecciona al menos un destinatario')
     const sinDatos = seleccionados.filter(it => !it.banco || !it.numero_cuenta)
     if (sinDatos.length) {
-      toast.error(`${sinDatos.map(d => d.driver_nombre).join(', ')} sin datos bancarios`)
+      toast.error(`Sin datos bancarios: ${sinDatos.map(d => d.driver_nombre).join(', ')}`)
       return
     }
     setCargando(true)
@@ -63,7 +66,7 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
       const url = URL.createObjectURL(new Blob([data], { type: 'text/plain' }))
       const a = document.createElement('a')
       a.href = url
-      a.download = `TEF_ECourier_${anio}${String(mes).padStart(2,'0')}_S${semana}.txt`
+      a.download = `TEF_ECourier_${anio}${String(mes).padStart(2, '0')}_S${semana}.txt`
       a.click()
       URL.revokeObjectURL(url)
       toast.success('Archivo TEF descargado')
@@ -82,13 +85,17 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
         </div>
 
+        <div className="px-6 py-3 border-b border-gray-100 bg-blue-50">
+          <p className="text-xs text-blue-700">
+            <strong>Jefes de flota:</strong> reciben 1 pago consolidado por toda su flota. Los conductores de su flota no aparecen como líneas separadas.
+          </p>
+        </div>
+
         <div className="px-6 py-3 border-b border-gray-100 flex flex-wrap items-center gap-3">
           <span className="text-sm text-gray-600">Aplicar % a todos:</span>
-          <input
-            type="number" min="1" max="100" placeholder="ej: 50"
+          <input type="number" min="1" max="100" placeholder="ej: 50"
             className="input w-24 text-sm" value={porcentaje}
-            onChange={e => setPorcentaje(e.target.value)}
-          />
+            onChange={e => setPorcentaje(e.target.value)} />
           <button onClick={aplicarPorcentaje} className="btn btn-secondary text-sm py-1.5">Aplicar</button>
           <button onClick={() => setItems(prev => prev.map(it => ({ ...it, monto: it.liquidado })))}
             className="btn btn-secondary text-sm py-1.5">Reset 100%</button>
@@ -100,7 +107,7 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-200">
                 <th className="py-2 w-8"></th>
-                <th className="py-2 text-left font-medium">Conductor</th>
+                <th className="py-2 text-left font-medium">Destinatario</th>
                 <th className="py-2 text-left font-medium">Banco</th>
                 <th className="py-2 text-right font-medium">Liquidado</th>
                 <th className="py-2 text-right font-medium w-36">Monto a pagar</th>
@@ -114,21 +121,24 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
                       className="w-4 h-4 accent-primary-600" />
                   </td>
                   <td className="py-2">
-                    <span className="font-medium">{it.driver_nombre}</span>
-                    {!it.banco && <span className="ml-2 text-xs text-red-400 font-medium">sin datos bancarios</span>}
+                    <div className="flex items-center gap-1.5">
+                      {it.es_jefe && <Users size={13} className="text-primary-500 shrink-0" />}
+                      <span className="font-medium">{it.driver_nombre}</span>
+                      {it.es_jefe && it.subordinados.length > 0 && (
+                        <span className="text-xs text-gray-400">({it.subordinados.length} conductores)</span>
+                      )}
+                    </div>
+                    {!it.banco && <span className="text-xs text-red-400 font-medium">sin datos bancarios</span>}
                   </td>
                   <td className="py-2 text-xs text-gray-500">
                     {it.banco ? `${it.banco} · ${it.numero_cuenta || '—'}` : '—'}
                   </td>
                   <td className="py-2 text-right font-mono text-gray-600">{fmt(it.liquidado)}</td>
                   <td className="py-2 text-right">
-                    <input
-                      type="number" min="0"
+                    <input type="number" min="0"
                       className="input text-right text-sm w-32 font-mono"
-                      value={it.monto}
-                      disabled={!it.incluir}
-                      onChange={e => setMonto(it.driver_id, e.target.value)}
-                    />
+                      value={it.monto} disabled={!it.incluir}
+                      onChange={e => setMonto(it.driver_id, e.target.value)} />
                   </td>
                 </tr>
               ))}
@@ -236,7 +246,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
         {preview && (
           <>
             <div className="flex-1 overflow-auto px-6 py-2">
-              <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
+              <div className="mb-2 flex items-center gap-3 text-xs text-gray-500">
                 <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable</span>
                 <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto — revisa</span>
               </div>
@@ -256,8 +266,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                     <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
                       <td className="py-1.5">
                         <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)}
-                          disabled={!it.driver_id}
-                          className="w-3.5 h-3.5 accent-primary-600" />
+                          disabled={!it.driver_id} className="w-3.5 h-3.5 accent-primary-600" />
                       </td>
                       <td className="py-1.5 max-w-[200px]">
                         <span className="truncate block" title={it.descripcion}>{it.nombre_extraido}</span>
@@ -282,7 +291,6 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                 </tbody>
               </table>
             </div>
-
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
               <span className="text-sm text-gray-600">
                 {items.filter(it => it.incluir && it.driver_id).length} pagos · <span className="font-semibold text-gray-800">{fmt(totalConfirmar)}</span>
@@ -302,6 +310,112 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 }
 
 // ---------------------------------------------------------------------------
+// Fila de conductor en la tabla
+// ---------------------------------------------------------------------------
+function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
+  const [expandido, setExpandido] = useState(false)
+  const dPagados = pagados[String(d.driver_id)] || {}
+  const esJefe = d.es_jefe_flota
+
+  return (
+    <>
+      <tr className={`border-b border-gray-100 hover:bg-gray-50 ${esJefe ? 'bg-blue-50/40' : ''}`}>
+        <td className="py-2 px-4">
+          <div className="flex items-center gap-2">
+            {esJefe && d.subordinados?.length > 0 && (
+              <button onClick={() => setExpandido(v => !v)}
+                className="text-gray-400 hover:text-gray-600 p-0.5 rounded">
+                {expandido ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+            )}
+            {!esJefe && <span className="w-5" />}
+            <div>
+              <span className={`font-medium text-gray-800 ${esJefe ? 'text-primary-700' : ''}`}>
+                {d.driver_nombre}
+              </span>
+              {esJefe && (
+                <span className="ml-2 inline-flex items-center gap-1 text-[10px] bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded">
+                  <Users size={9} /> Jefe · {d.subordinados?.length || 0} conductores
+                </span>
+              )}
+              {d.rut && <span className="text-xs text-gray-400 ml-2">{d.rut}</span>}
+            </div>
+          </div>
+        </td>
+        <td className="py-2 px-4 text-center">
+          {d.banco ? (
+            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded"
+              title={`${d.tipo_cuenta || ''} ${d.numero_cuenta || ''}`}>{d.banco}</span>
+          ) : (
+            <span className="text-xs text-gray-300">{esJefe ? 'Configurar' : 'Sin datos'}</span>
+          )}
+        </td>
+        {semanas.map(sem => {
+          const semData = d.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE' }
+          const pagadoSem = dPagados[String(sem)] || 0
+          const completo = pagadoSem > 0 && pagadoSem >= semData.monto_neto
+          return (
+            <>
+              <td key={`${sem}-liq`} className="py-2 px-2 text-right">
+                <div className="flex flex-col items-end gap-1">
+                  <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
+                  {semData.monto_neto > 0 && (
+                    <select
+                      className={`text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer ${ESTADO_COLORS[semData.estado] || ESTADO_COLORS.PENDIENTE}`}
+                      value={semData.estado}
+                      onChange={e => onUpdateEstado(d.driver_id, sem, e.target.value)}
+                    >
+                      <option value="PENDIENTE">Pendiente</option>
+                      <option value="PAGADO">Pagado</option>
+                      <option value="INCOMPLETO">Incompleto</option>
+                    </select>
+                  )}
+                </div>
+              </td>
+              <td key={`${sem}-pag`} className="py-2 px-2 text-right">
+                {pagadoSem > 0 ? (
+                  <span className={`font-mono text-xs font-semibold ${completo ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    {fmt(pagadoSem)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-300">—</span>
+                )}
+              </td>
+            </>
+          )
+        })}
+        <td className="py-2 px-4 text-right font-semibold text-gray-800 font-mono">{fmt(d.subtotal_neto)}</td>
+      </tr>
+
+      {/* Detalle de subordinados del jefe (colapsable) */}
+      {esJefe && expandido && d.subordinados?.map(sub => (
+        <tr key={sub.driver_id} className="border-b border-gray-100 bg-gray-50/80">
+          <td className="py-1.5 px-4">
+            <div className="pl-10 flex items-center gap-1.5 text-xs text-gray-600">
+              <span className="text-gray-400">↳</span>
+              <span>{sub.driver_nombre}</span>
+            </div>
+          </td>
+          <td />
+          {semanas.map(sem => {
+            const semData = sub.semanas[String(sem)] || { monto_neto: 0 }
+            return (
+              <>
+                <td key={`${sem}-liq`} className="py-1.5 px-2 text-right">
+                  <span className="font-mono text-xs text-gray-500">{semData.monto_neto > 0 ? fmt(semData.monto_neto) : '—'}</span>
+                </td>
+                <td key={`${sem}-pag`} />
+              </>
+            )
+          })}
+          <td className="py-1.5 px-4 text-right font-mono text-xs text-gray-500">{fmt(sub.subtotal_neto)}</td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Página principal CPC
 // ---------------------------------------------------------------------------
 export default function CPC() {
@@ -312,7 +426,7 @@ export default function CPC() {
   const [pagados, setPagados] = useState({})
   const [loading, setLoading] = useState(true)
   const [filterText, setFilterText] = useState('')
-  const [modalTEF, setModalTEF] = useState(null)   // semana seleccionada
+  const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
   const reqId = useRef(0)
 
@@ -339,7 +453,10 @@ export default function CPC() {
     if (!data?.drivers) return []
     if (!filterText) return data.drivers
     const q = filterText.toLowerCase()
-    return data.drivers.filter(d => d.driver_nombre.toLowerCase().includes(q))
+    return data.drivers.filter(d =>
+      d.driver_nombre.toLowerCase().includes(q) ||
+      d.subordinados?.some(s => s.driver_nombre.toLowerCase().includes(q))
+    )
   }, [data, filterText])
 
   const updateEstado = async (driverId, semana, estado) => {
@@ -488,60 +605,15 @@ export default function CPC() {
                 </tr>
               </thead>
               <tbody>
-                {drivers.map(d => {
-                  const dPagados = pagados[String(d.driver_id)] || {}
-                  return (
-                    <tr key={d.driver_id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-2 px-4">
-                        <span className="font-medium text-gray-800">{d.driver_nombre}</span>
-                        {d.rut && <span className="text-xs text-gray-400 ml-2">{d.rut}</span>}
-                      </td>
-                      <td className="py-2 px-4 text-center">
-                        {d.banco ? (
-                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded"
-                            title={`${d.tipo_cuenta || ''} ${d.numero_cuenta || ''}`}>{d.banco}</span>
-                        ) : (
-                          <span className="text-xs text-gray-300">Sin datos</span>
-                        )}
-                      </td>
-                      {semanas.map(sem => {
-                        const semData = d.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE' }
-                        const pagadoSem = dPagados[String(sem)] || 0
-                        const completo = pagadoSem > 0 && pagadoSem >= semData.monto_neto
-                        return (
-                          <>
-                            <td key={`${sem}-liq`} className="py-2 px-2 text-right">
-                              <div className="flex flex-col items-end gap-1">
-                                <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
-                                {semData.monto_neto > 0 && (
-                                  <select
-                                    className={`text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer ${ESTADO_COLORS[semData.estado] || ESTADO_COLORS.PENDIENTE}`}
-                                    value={semData.estado}
-                                    onChange={e => updateEstado(d.driver_id, sem, e.target.value)}
-                                  >
-                                    <option value="PENDIENTE">Pendiente</option>
-                                    <option value="PAGADO">Pagado</option>
-                                    <option value="INCOMPLETO">Incompleto</option>
-                                  </select>
-                                )}
-                              </div>
-                            </td>
-                            <td key={`${sem}-pag`} className="py-2 px-2 text-right">
-                              {pagadoSem > 0 ? (
-                                <span className={`font-mono text-xs font-semibold ${completo ? 'text-emerald-600' : 'text-amber-600'}`}>
-                                  {fmt(pagadoSem)}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-300">—</span>
-                              )}
-                            </td>
-                          </>
-                        )
-                      })}
-                      <td className="py-2 px-4 text-right font-semibold text-gray-800 font-mono">{fmt(d.subtotal_neto)}</td>
-                    </tr>
-                  )
-                })}
+                {drivers.map(d => (
+                  <DriverRow
+                    key={d.driver_id}
+                    d={d}
+                    semanas={semanas}
+                    pagados={pagados}
+                    onUpdateEstado={updateEstado}
+                  />
+                ))}
               </tbody>
             </table>
           </div>

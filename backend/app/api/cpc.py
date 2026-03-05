@@ -107,22 +107,16 @@ def tabla_cpc(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Tabla mensual CPC: una fila por driver con monto neto por semana."""
+    """
+    Tabla mensual CPC agrupada por jefe de flota (Opción A).
+    - Drivers con jefe: se consolidan bajo el jefe → 1 pago TEF al jefe.
+    - Drivers sin jefe: aparecen individualmente.
+    """
     semanas = _semanas_del_mes(db, mes, anio)
     drivers = db.query(Driver).filter(Driver.activo == True).order_by(Driver.nombre).all()
 
-    result = []
-    for driver in drivers:
-        row = {
-            "driver_id": driver.id,
-            "driver_nombre": driver.nombre,
-            "rut": driver.rut,
-            "banco": driver.banco,
-            "tipo_cuenta": driver.tipo_cuenta,
-            "numero_cuenta": driver.numero_cuenta,
-            "semanas": {},
-        }
-
+    def _build_driver_semanas(driver: Driver) -> tuple[dict, int]:
+        semanas_data = {}
         subtotal = 0
         for sem in semanas:
             pago = db.query(PagoSemanaDriver).filter(
@@ -138,18 +132,104 @@ def tabla_cpc(
                 monto = _get_monto_semanal_driver(db, driver.id, sem, mes, anio)
 
             estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
-
-            row["semanas"][str(sem)] = {
+            semanas_data[str(sem)] = {
                 "monto_neto": monto,
                 "estado": estado,
                 "nota": pago.nota if pago else None,
             }
             subtotal += monto
+        return semanas_data, subtotal
 
-        row["subtotal_neto"] = subtotal
+    # Separar jefes y subordinados
+    jefes: dict[int, Driver] = {}
+    subordinados_por_jefe: dict[int, list[Driver]] = {}
+    independientes: list[Driver] = []
 
+    for driver in drivers:
+        if driver.jefe_flota_id:
+            jid = driver.jefe_flota_id
+            if jid not in subordinados_por_jefe:
+                subordinados_por_jefe[jid] = []
+            subordinados_por_jefe[jid].append(driver)
+        else:
+            # Es jefe o independiente — se determina si tiene subordinados después
+            pass
+
+    for driver in drivers:
+        if driver.id in subordinados_por_jefe:
+            jefes[driver.id] = driver
+        elif not driver.jefe_flota_id:
+            independientes.append(driver)
+
+    result = []
+
+    # Jefes de flota: consolidan el monto de su flota completa
+    for jefe_id, jefe in sorted(jefes.items(), key=lambda x: x[1].nombre):
+        subs = subordinados_por_jefe.get(jefe_id, [])
+
+        # Sumar semanas de todos los subordinados
+        semanas_consolidado: dict[str, dict] = {str(s): {"monto_neto": 0, "estado": EstadoPagoEnum.PENDIENTE.value, "nota": None} for s in semanas}
+        subtotal_consolidado = 0
+
+        detalle_subordinados = []
+        for sub in sorted(subs, key=lambda d: d.nombre):
+            sub_semanas, sub_subtotal = _build_driver_semanas(sub)
+            for sem in semanas:
+                semanas_consolidado[str(sem)]["monto_neto"] += sub_semanas[str(sem)]["monto_neto"]
+            subtotal_consolidado += sub_subtotal
+            if sub_subtotal > 0:
+                detalle_subordinados.append({
+                    "driver_id": sub.id,
+                    "driver_nombre": sub.nombre,
+                    "semanas": sub_semanas,
+                    "subtotal_neto": sub_subtotal,
+                })
+
+        # El estado consolidado usa el pago registrado al jefe (si existe)
+        for sem in semanas:
+            pago_jefe = db.query(PagoSemanaDriver).filter(
+                PagoSemanaDriver.driver_id == jefe.id,
+                PagoSemanaDriver.semana == sem,
+                PagoSemanaDriver.mes == mes,
+                PagoSemanaDriver.anio == anio,
+            ).first()
+            if pago_jefe:
+                semanas_consolidado[str(sem)]["estado"] = pago_jefe.estado
+                semanas_consolidado[str(sem)]["nota"] = pago_jefe.nota
+
+        if subtotal_consolidado > 0:
+            result.append({
+                "driver_id": jefe.id,
+                "driver_nombre": jefe.nombre,
+                "rut": jefe.rut,
+                "banco": jefe.banco,
+                "tipo_cuenta": jefe.tipo_cuenta,
+                "numero_cuenta": jefe.numero_cuenta,
+                "es_jefe_flota": True,
+                "semanas": semanas_consolidado,
+                "subtotal_neto": subtotal_consolidado,
+                "subordinados": detalle_subordinados,
+            })
+
+    # Drivers independientes (sin jefe ni subordinados)
+    for driver in independientes:
+        semanas_data, subtotal = _build_driver_semanas(driver)
         if subtotal > 0:
-            result.append(row)
+            result.append({
+                "driver_id": driver.id,
+                "driver_nombre": driver.nombre,
+                "rut": driver.rut,
+                "banco": driver.banco,
+                "tipo_cuenta": driver.tipo_cuenta,
+                "numero_cuenta": driver.numero_cuenta,
+                "es_jefe_flota": False,
+                "semanas": semanas_data,
+                "subtotal_neto": subtotal,
+                "subordinados": [],
+            })
+
+    # Ordenar por nombre
+    result.sort(key=lambda r: r["driver_nombre"])
 
     return {"semanas_disponibles": semanas, "drivers": result}
 
