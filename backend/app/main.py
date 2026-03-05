@@ -25,6 +25,24 @@ with engine.connect() as conn:
                 "WHERE lower(nombre) LIKE '%erick%' OR lower(nombre) LIKE '%edwyn%'"
             ))
             conn.commit()
+        if "jefe_flota_id" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN jefe_flota_id INTEGER REFERENCES drivers(id)"))
+            conn.commit()
+        if "email" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN email TEXT"))
+            conn.commit()
+        if "rut" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN rut TEXT"))
+            conn.commit()
+        if "banco" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN banco TEXT"))
+            conn.commit()
+        if "tipo_cuenta" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN tipo_cuenta TEXT"))
+            conn.commit()
+        if "numero_cuenta" not in cols:
+            conn.execute(text("ALTER TABLE drivers ADD COLUMN numero_cuenta TEXT"))
+            conn.commit()
     if "admin_users" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "permisos" not in cols:
