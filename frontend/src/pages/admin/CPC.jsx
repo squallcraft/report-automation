@@ -58,8 +58,18 @@ export default function CPC() {
     } catch { toast.error('Error actualizando estado') }
   }
 
-  const descargarPlantilla = () => {
-    window.open(`${api.defaults.baseURL}/drivers/plantilla/bancaria/descargar`, '_blank')
+  const descargarPlantilla = async () => {
+    try {
+      const { data } = await api.get('/drivers/plantilla/bancaria/descargar', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'plantilla_bancaria_drivers.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Error al descargar plantilla')
+    }
   }
 
   const totalesGenerales = useMemo(() => {
