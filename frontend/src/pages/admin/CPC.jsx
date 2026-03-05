@@ -460,10 +460,29 @@ export default function CPC() {
   }, [data, filterText])
 
   const updateEstado = async (driverId, semana, estado) => {
+    // Actualizar optimistamente en local antes de esperar la API
+    setData(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        drivers: prev.drivers.map(d => {
+          if (d.driver_id !== driverId) return d
+          return {
+            ...d,
+            semanas: {
+              ...d.semanas,
+              [String(semana)]: { ...d.semanas[String(semana)], estado },
+            },
+          }
+        }),
+      }
+    })
     try {
       await api.put(`/cpc/pago-semana/${driverId}`, { estado }, { params: { semana, mes, anio } })
-      cargar(true)
-    } catch { toast.error('Error actualizando estado') }
+    } catch {
+      toast.error('Error actualizando estado')
+      cargar(true) // revertir si falla
+    }
   }
 
   const descargarPlantilla = async () => {
@@ -481,10 +500,14 @@ export default function CPC() {
   const totalesGenerales = useMemo(() => {
     if (!drivers.length) return { neto: 0, pagado: 0 }
     return drivers.reduce((acc, d) => {
-      const pagadoDriver = Object.values(pagados[String(d.driver_id)] || {}).reduce((a, b) => a + b, 0)
+      // Total pagado = suma de montos de semanas marcadas como PAGADO
+      const pagadoDriver = Object.values(d.semanas || {}).reduce((a, s) => {
+        if (s.estado === 'PAGADO') return a + (s.monto_neto || 0)
+        return a
+      }, 0)
       return { neto: acc.neto + d.subtotal_neto, pagado: acc.pagado + pagadoDriver }
     }, { neto: 0, pagado: 0 })
-  }, [drivers, pagados])
+  }, [drivers])
 
   const estadoConteo = useMemo(() => {
     const counts = { PENDIENTE: 0, PAGADO: 0, INCOMPLETO: 0 }
