@@ -149,11 +149,11 @@ def _build_envio_from_row(
 
     costo_driver = 0
     if driver and empresa:
-        if empresa == EmpresaEnum.ECOURIER:
+        if empresa in (EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value):
             costo_driver = driver.tarifa_ecourier
-        elif empresa == EmpresaEnum.OVIEDO:
+        elif empresa in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value):
             costo_driver = driver.tarifa_oviedo
-        elif empresa == EmpresaEnum.TERCERIZADO:
+        elif empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
             costo_driver = driver.tarifa_tercerizado
 
     descripcion = str(row.get("descripcion", "")) if not pd.isna(row.get("descripcion")) else None
@@ -535,11 +535,12 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
             if envio.seller_id:
                 seller = db.query(Seller).get(envio.seller_id)
                 if seller:
-                    if seller.empresa == EmpresaEnum.ECOURIER:
+                    emp = seller.empresa
+                    if emp in (EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value):
                         envio.costo_driver = entidad.tarifa_ecourier
-                    elif seller.empresa == EmpresaEnum.OVIEDO:
+                    elif emp in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value):
                         envio.costo_driver = entidad.tarifa_oviedo
-                    elif seller.empresa == EmpresaEnum.TERCERIZADO:
+                    elif emp in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
                         envio.costo_driver = entidad.tarifa_tercerizado
             envio.homologado = envio.seller_id is not None
 

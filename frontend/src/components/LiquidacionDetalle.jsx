@@ -10,7 +10,7 @@ const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
-export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBack }) {
+export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBack, isPortal = false }) {
   const navigate = useNavigate()
   const [period, setPeriod] = useState(initialPeriod)
   const [data, setData] = useState(null)
@@ -20,11 +20,14 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
 
   useEffect(() => {
     setLoading(true)
-    api.get(`/liquidacion/detalle/${tipo}/${entityId}`, { params: period })
+    const url = isPortal && tipo === 'driver'
+      ? `/portal/driver/liquidacion`
+      : `/liquidacion/detalle/${tipo}/${entityId}`
+    api.get(url, { params: period })
       .then(({ data }) => setData(data))
       .catch(() => toast.error('Error al cargar detalle'))
       .finally(() => setLoading(false))
-  }, [tipo, entityId, period])
+  }, [tipo, entityId, period, isPortal])
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -93,9 +96,11 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
     <div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
-            <ArrowLeft size={20} />
-          </button>
+          {!isPortal && onBack && (
+            <button onClick={onBack} className="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <ArrowLeft size={20} />
+            </button>
+          )}
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{data.nombre}</h1>
             <p className="text-sm text-gray-500">

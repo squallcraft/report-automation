@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.services.liquidacion import calcular_liquidacion_sellers, calcular_liquidacion_drivers
 from app.services.pdf_generator import generar_pdf_seller, generar_pdf_driver
+from app.api.liquidacion import _driver_detail, _daily_breakdown, _productos_envios
 
 router = APIRouter(prefix="/portal", tags=["Portal"])
 
@@ -297,17 +298,24 @@ def driver_liquidacion(
             detail="Solo puedes ver información desde la semana 4 de febrero 2026 en adelante.",
         )
     driver_id = current_user["id"]
-    resultado = calcular_liquidacion_drivers(db, semana, mes, anio)
-    row = next((r for r in resultado if r["driver_id"] == driver_id), None)
-    if not row:
-        return {
-            "driver_id": driver_id, "semana": semana, "mes": mes, "anio": anio,
-            "cantidad_envios": 0, "total_envios": 0,
-            "total_extras_producto": 0, "total_extras_comuna": 0,
-            "total_retiros": 0, "total_ajustes": 0,
-            "subtotal": 0, "iva": 0, "total": 0,
-        }
-    return row
+    detail = _driver_detail(db, driver_id, mes, anio)
+    driver = db.get(Driver, driver_id)
+    es_contratado = getattr(driver, 'contratado', False) if driver else False
+    envios_semana = db.query(Envio).filter(
+        Envio.driver_id == driver_id, Envio.semana == semana,
+        Envio.mes == mes, Envio.anio == anio,
+    ).order_by(Envio.fecha_entrega).all()
+    retiros_semana = db.query(Retiro).filter(
+        Retiro.driver_id == driver_id, Retiro.semana == semana,
+        Retiro.mes == mes, Retiro.anio == anio,
+    ).all()
+    detail["daily"] = _daily_breakdown(
+        envios_semana, retiros_semana,
+        "extra_producto_driver", "extra_comuna_driver",
+        semana, mes, anio, is_seller=False, db=db, contratado=es_contratado,
+    )
+    detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
+    return detail
 
 
 @router.get("/driver/excel")
