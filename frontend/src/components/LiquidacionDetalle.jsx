@@ -220,7 +220,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
             columns={[
               { key: 'codigo_mlc', label: 'Código MLC' },
               { key: 'descripcion', label: 'Descripción', render: (v) => <span className="max-w-[300px] truncate block" title={v}>{v || '—'}</span> },
-              { key: 'extra_seller', label: 'Extra Seller', align: 'right', render: (v) => fmt(v) },
+              ...(!isSeller ? [] : [{ key: 'extra_seller', label: 'Extra Seller', align: 'right', render: (v) => fmt(v) }]),
               { key: 'extra_driver', label: 'Extra Driver', align: 'right', render: (v) => fmt(v) },
               { key: 'cantidad', label: 'Envíos', align: 'center' },
             ]}
