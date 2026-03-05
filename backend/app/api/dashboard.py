@@ -10,7 +10,8 @@ from sqlalchemy import func as sqlfunc, distinct
 from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
-    Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum, PagoCartola,
+    Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
+    PagoSemanaDriver, EstadoPagoEnum,
 )
 from app.schemas import DashboardStats
 
@@ -47,9 +48,11 @@ def obtener_stats(
         Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller
     ), 0)).filter(*base_filter).scalar()
 
-    total_pagado = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
-        PagoCartola.mes == mes,
-        PagoCartola.anio == anio,
+    # Total pagado = suma de monto_neto de semanas marcadas como PAGADO en PagoSemanaDriver
+    total_pagado = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0)).filter(
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
     ).scalar()
 
     # Costo calculado (liquidado) — usado para el margen
