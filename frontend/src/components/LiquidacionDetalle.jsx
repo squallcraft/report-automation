@@ -68,13 +68,14 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
       .catch(() => toast.error('Error al exportar'))
   }
 
-  const goToEnvios = (semana) => {
+  const goToEnvios = (semana, empresa = null) => {
     const params = new URLSearchParams()
     if (tipo === 'seller') params.set('seller_id', entityId)
     else params.set('driver_id', entityId)
     params.set('semana', semana)
     params.set('mes', period.mes)
     params.set('anio', period.anio)
+    if (empresa) params.set('empresa', empresa)
     navigate(`/admin/envios?${params.toString()}`)
   }
 
@@ -171,7 +172,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
                     <td key={s} className={`px-4 py-2 text-right ${s === period.semana ? 'bg-primary-50' : ''}`}>
                       {row.isCount && row.values[s] > 0 ? (
                         <button
-                          onClick={() => goToEnvios(s)}
+                          onClick={() => goToEnvios(s, row.empresa)}
                           className="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
                         >
                           {row.values[s]} <ExternalLink size={12} />
@@ -284,22 +285,22 @@ function buildSellerRows(data) {
 
 function buildDriverRows(data) {
   const w = data.weekly
-  const mkRow = (label, key, isMoney = true, isCount = false, bold = false) => {
+  const mkRow = (label, key, isMoney = true, isCount = false, bold = false, empresa = null) => {
     const values = {}
     let subtotal = 0
     for (let s = 1; s <= 5; s++) {
       values[s] = w[s]?.[key] || 0
       subtotal += values[s]
     }
-    return { label, values, subtotal, isMoney, isCount, bold }
+    return { label, values, subtotal, isMoney, isCount, bold, empresa }
   }
 
   const rows = [
-    mkRow('General', 'normal_count', false, true),
+    mkRow('General', 'normal_count', false, true, false, 'ECOURIER'),
     mkRow('Subtotal Normal', 'normal_total', true, false, true),
-    mkRow(`Oviedo (${fmt(data.tarifa_oviedo)})`, 'oviedo_count', false, true),
+    mkRow(`Oviedo (${fmt(data.tarifa_oviedo)})`, 'oviedo_count', false, true, false, 'OVIEDO'),
     mkRow('Subtotal Oviedo', 'oviedo_total', true, false, true),
-    mkRow(`Tercerizado (${fmt(data.tarifa_tercerizado)})`, 'tercerizado_count', false, true),
+    mkRow(`Tercerizado (${fmt(data.tarifa_tercerizado)})`, 'tercerizado_count', false, true, false, 'TERCERIZADO'),
     mkRow('Subtotal Tercerizado', 'tercerizado_total', true, false, true),
     mkRow('Comuna', 'comuna'),
     mkRow('Bultos Extra', 'bultos_extra'),

@@ -32,7 +32,7 @@ export default function Envios() {
     seller_nombre: searchParams.get('seller_id') || '',
     driver_nombre: searchParams.get('driver_id') || '',
     comuna: '',
-    empresa: '',
+    empresa: searchParams.get('empresa') || '',
     tracking_id: '',
   })
 
