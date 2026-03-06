@@ -69,7 +69,7 @@ with engine.connect() as conn:
             conn.execute(text("UPDATE envios SET driver_id = 54 WHERE driver_id = 27"))
             conn.execute(text("UPDATE retiros SET driver_id = 54 WHERE driver_id = 27"))
             conn.execute(text("DELETE FROM pagos_semana_drivers WHERE driver_id = 27"))
-            conn.execute(text("DELETE FROM pagos_cartola WHERE driver_id = 27"))
+            conn.execute(text("DELETE FROM pagos_cartola_drivers WHERE driver_id = 27"))
             conn.execute(text("""
                 UPDATE drivers
                 SET aliases = COALESCE(aliases, '[]'::json)::jsonb || '["Oscar Guzman", "Oscar"]'::jsonb
