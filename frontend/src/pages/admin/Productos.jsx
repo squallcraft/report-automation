@@ -61,7 +61,6 @@ export default function Productos() {
     formData.append('file', file)
     try {
       const { data } = await api.post('/productos/importar', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
       })
       toast.success(`${data.creados} creados, ${data.actualizados} actualizados`)
       fetchProductos()

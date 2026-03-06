@@ -92,7 +92,7 @@ export default function Sellers() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await api.post('/sellers/importar', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const { data } = await api.post('/sellers/importar', formData)
       toast.success(`${data.creados} creados, ${data.actualizados} actualizados`)
       if (data.errores?.length) toast.error(`${data.errores.length} errores`)
       fetchSellers()
@@ -120,7 +120,7 @@ export default function Sellers() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await api.post('/sellers/importar/rut-giro', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const { data } = await api.post('/sellers/importar/rut-giro', formData)
       toast.success(`${data.actualizados} seller(s) actualizados con RUT/Giro`)
       if (data.errores?.length) data.errores.forEach((err) => toast.error(err))
       fetchSellers()

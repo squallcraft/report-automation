@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users } from 'lucide-react'
@@ -33,7 +33,7 @@ const BANCOS_TEF_VALIDOS = new Set([
   'ripley', 'banco ripley',
   // Fintech / billeteras
   'coopeuch',
-  'prepago los heroes',
+  'prepago los heroes', 'prepago los héroes',
   'tenpo',
   'copec pay',
   'mach', 'machbank',
@@ -221,7 +221,6 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
       form.append('archivo', archivo)
       const { data } = await api.post('/cpc/cartola/preview', form, {
         params: { semana, mes, anio },
-        headers: { 'Content-Type': 'multipart/form-data' },
       })
       setPreview(data)
       setTodosDrivers(data.drivers || [])
@@ -445,8 +444,8 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
           const pagadoSem = dPagados[String(sem)] || 0
           const completo = pagadoSem > 0 && pagadoSem >= semData.monto_neto
           return (
-            <>
-              <td key={`${sem}-liq`} className="py-2 px-2 text-right">
+            <React.Fragment key={`${d.driver_id}-${sem}`}>
+              <td className="py-2 px-2 text-right">
                 <div className="flex flex-col items-end gap-1">
                   <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
                   {semData.monto_neto > 0 && (
@@ -462,7 +461,7 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
                   )}
                 </div>
               </td>
-              <td key={`${sem}-pag`} className="py-2 px-2 text-right">
+              <td className="py-2 px-2 text-right">
                 {pagadoSem > 0 ? (
                   <span className={`font-mono text-xs font-semibold ${completo ? 'text-emerald-600' : 'text-amber-600'}`}>
                     {fmt(pagadoSem)}
@@ -471,7 +470,7 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
                   <span className="text-xs text-gray-300">—</span>
                 )}
               </td>
-            </>
+            </React.Fragment>
           )
         })}
         <td className="py-2 px-4 text-right font-semibold text-gray-800 font-mono">{fmt(d.subtotal_neto)}</td>
@@ -490,12 +489,12 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
           {semanas.map(sem => {
             const semData = sub.semanas[String(sem)] || { monto_neto: 0 }
             return (
-              <>
-                <td key={`${sem}-liq`} className="py-1.5 px-2 text-right">
+              <React.Fragment key={`sub-${sub.driver_id}-${sem}`}>
+                <td className="py-1.5 px-2 text-right">
                   <span className="font-mono text-xs text-gray-500">{semData.monto_neto > 0 ? fmt(semData.monto_neto) : '—'}</span>
                 </td>
-                <td key={`${sem}-pag`} />
-              </>
+                <td />
+              </React.Fragment>
             )
           })}
           <td className="py-1.5 px-4 text-right font-mono text-xs text-gray-500">{fmt(sub.subtotal_neto)}</td>
@@ -727,10 +726,10 @@ export default function CPC() {
                 <tr className="text-[10px] text-gray-400 border-b border-gray-200 bg-gray-50">
                   <th /><th />
                   {semanas.map(s => (
-                    <>
-                      <th key={`${s}-liq`} className="pb-1 px-2 text-right font-normal">Liq.</th>
-                      <th key={`${s}-pag`} className="pb-1 px-2 text-right font-normal text-emerald-600">Pagado</th>
-                    </>
+                    <React.Fragment key={`h2-${s}`}>
+                      <th className="pb-1 px-2 text-right font-normal">Liq.</th>
+                      <th className="pb-1 px-2 text-right font-normal text-emerald-600">Pagado</th>
+                    </React.Fragment>
                   ))}
                   <th />
                 </tr>

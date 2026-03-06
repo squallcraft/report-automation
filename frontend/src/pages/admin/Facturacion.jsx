@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X } from 'lucide-react'
@@ -39,7 +39,6 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
       form.append('archivo', archivo)
       const { data } = await api.post('/facturacion/cartola/preview', form, {
         params: { semana, mes, anio },
-        headers: { 'Content-Type': 'multipart/form-data' },
       })
       setPreview(data)
       setTodosSellers(data.sellers || [])
@@ -586,10 +585,10 @@ export default function Facturacion() {
                 )}
                 <th className="pb-2 pt-3 px-3 font-medium">Vendedor</th>
                 {semanas.map(s => tab === 'pagos' ? (
-                  <>
-                    <th key={`${s}-liq`} className="pb-2 pt-3 px-2 font-medium text-right text-gray-700">Sem {s}</th>
-                    <th key={`${s}-cob`} className="pb-2 pt-3 px-2 font-medium text-right text-blue-600">Recibido</th>
-                  </>
+                  <React.Fragment key={`h-${s}`}>
+                    <th className="pb-2 pt-3 px-2 font-medium text-right text-gray-700">Sem {s}</th>
+                    <th className="pb-2 pt-3 px-2 font-medium text-right text-blue-600">Recibido</th>
+                  </React.Fragment>
                 ) : (
                   <th key={s} className="pb-2 pt-3 px-3 font-medium text-right">Sem {s}</th>
                 ))}
@@ -617,8 +616,8 @@ export default function Facturacion() {
                     const cobradoSem = pagosAcumulados[String(s.seller_id)]?.[String(sem)] || 0
                     const completo = cobradoSem > 0 && semData.monto_neto > 0 && cobradoSem >= semData.monto_neto
                     return tab === 'pagos' ? (
-                      <>
-                        <td key={`${sem}-liq`} className="py-2 px-2 text-right">
+                      <React.Fragment key={`${s.seller_id}-${sem}`}>
+                        <td className="py-2 px-2 text-right">
                           <div className="flex flex-col items-end gap-1">
                             <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
                             {semData.monto_neto > 0 && (
@@ -634,7 +633,7 @@ export default function Facturacion() {
                             )}
                           </div>
                         </td>
-                        <td key={`${sem}-cob`} className="py-2 px-2 text-right">
+                        <td className="py-2 px-2 text-right">
                           {cobradoSem > 0 ? (
                             <span className={`font-mono text-xs font-semibold ${completo ? 'text-emerald-600' : 'text-amber-600'}`}>
                               {fmt(cobradoSem)}
@@ -643,7 +642,7 @@ export default function Facturacion() {
                             <span className="text-xs text-gray-300">—</span>
                           )}
                         </td>
-                      </>
+                      </React.Fragment>
                     ) : (
                       <td key={sem} className="py-2 px-3 text-right">
                         {isEditing ? (

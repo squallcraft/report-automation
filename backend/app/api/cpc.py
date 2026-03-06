@@ -53,6 +53,7 @@ BANCO_CODIGOS = {
     "itaú": "031",
     "itaucorpbanca": "031",
     "itau corpbanca": "031",
+    "itaú corpbanca": "031",
     "corpbanca": "031",
     "security": "034",
     "banco security": "034",
@@ -68,7 +69,8 @@ BANCO_CODIGOS = {
     # Fintech / billeteras digitales
     "coopeuch": "672",
     "prepago los heroes": "729",
-    "tenpo": "028",        # Tenpo SpA — opera sobre infraestructura BCI (código 028)
+    "prepago los héroes": "729",
+    "tenpo": "730",        # Tenpo SpA — código TEF propio 730
     "copec pay": "741",    # CMPD S.A. — sponsor Banco Security
     "mercado pago": "875", # Mercado Pago Emisora S.A.
     "mercadopago": "875",
@@ -490,6 +492,7 @@ def _generar_linea_tef(seq: int, driver: Driver, monto: int) -> str:
         "403": "0979470002",  # Banco Ripley             97.947.000-2
         "672": "0855860000",  # Coopeuch                 85.586.000-0
         "729": "0762609309",  # Prepago Los Héroes       76.260.930-9
+        "730": "0769676929",  # Tenpo Payments S.A.      76.967.692-9
         "741": "0970530002",  # Copec Pay → RUT Banco Security (sponsor) 97.053.000-2
         "875": "0762838641",  # Mercado Pago Emisora S.A. 76.283.864-1
     }

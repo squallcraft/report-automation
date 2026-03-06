@@ -113,7 +113,7 @@ export default function DriverGanancias() {
 
       {loading ? (
         <div className="text-center py-16 text-gray-400">Cargando...</div>
-      ) : !data || data.semanas.length === 0 ? (
+      ) : !data || !data.semanas || data.semanas.length === 0 ? (
         <div className="card text-center py-16 text-gray-400">
           No hay datos para {MESES[mes - 1]} {anio}
         </div>

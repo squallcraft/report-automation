@@ -183,9 +183,7 @@ export default function Ingesta() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await api.post('/ingesta/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const { data } = await api.post('/ingesta/upload', formData)
       setTaskId(data.task_id)
       startPolling(data.task_id)
     } catch (err) {
@@ -211,9 +209,7 @@ export default function Ingesta() {
         reprocesar_mes: selectedPeriodo.mes,
         reprocesar_anio: selectedPeriodo.anio,
       })
-      const { data } = await api.post(`/ingesta/upload?${params}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const { data } = await api.post(`/ingesta/upload?${params}`, formData)
       setTaskId(data.task_id)
       startPolling(data.task_id)
     } catch (err) {

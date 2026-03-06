@@ -58,7 +58,7 @@ export default function Retiros() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await api.post('/retiros/importar', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const { data } = await api.post('/retiros/importar', formData)
       let msg = `${data.creados} retiros creados`
       if (data.ignorados_pickup) msg += `, ${data.ignorados_pickup} ignorados (pickup)`
       toast.success(msg)

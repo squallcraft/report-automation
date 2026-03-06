@@ -142,7 +142,7 @@ export default function Drivers() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await api.post('/drivers/importar/homologacion', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const { data } = await api.post('/drivers/importar/homologacion', formData)
       toast.success(`${data.aliases_agregados} aliases agregados, ${data.drivers_creados} drivers creados`)
       if (data.errores?.length) toast.error(`${data.errores.length} errores`)
       fetchDrivers()
@@ -157,7 +157,7 @@ export default function Drivers() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const { data } = await api.post('/drivers/importar/tarifas', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const { data } = await api.post('/drivers/importar/tarifas', formData)
       toast.success(`${data.creados} creados, ${data.actualizados} actualizados`)
       if (data.errores?.length) toast.error(`${data.errores.length} errores`)
       fetchDrivers()

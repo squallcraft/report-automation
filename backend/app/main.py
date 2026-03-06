@@ -62,23 +62,22 @@ with engine.connect() as conn:
     # pagos_cartola_drivers ya se crea via create_all si no existía (tabla nueva)
     # pagos_cartola_sellers ya se crea via create_all si no existía (tabla nueva)
 
-    # ── Corrección de homologación: Oscar (27) → Oscar Martínez (54) ──────────
-    # El homologador asignaba envíos de "Oscar Martínez" al driver incompleto "Oscar" (id=27)
-    # en lugar del correcto "Oscar Martínez" (id=54). Se reasignan todos sus envíos.
+    # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────
     with engine.connect() as conn:
-        conn.execute(text("""
-            UPDATE envios
-            SET driver_id = 54
-            WHERE driver_id = 27
-              AND driver_nombre_raw = 'Oscar Martínez'
-        """))
-        conn.execute(text("""
-            UPDATE drivers
-            SET aliases = COALESCE(aliases, '[]'::json)::jsonb || '["Oscar Martínez"]'::jsonb
-            WHERE id = 54
-              AND NOT (COALESCE(aliases, '[]'::json)::jsonb @> '["Oscar Martínez"]'::jsonb)
-        """))
-        conn.commit()
+        exists = conn.execute(text("SELECT 1 FROM drivers WHERE id = 27")).fetchone()
+        if exists:
+            conn.execute(text("UPDATE envios SET driver_id = 54 WHERE driver_id = 27"))
+            conn.execute(text("UPDATE retiros SET driver_id = 54 WHERE driver_id = 27"))
+            conn.execute(text("DELETE FROM pagos_semana_drivers WHERE driver_id = 27"))
+            conn.execute(text("DELETE FROM pagos_cartola WHERE driver_id = 27"))
+            conn.execute(text("""
+                UPDATE drivers
+                SET aliases = COALESCE(aliases, '[]'::json)::jsonb || '["Oscar Guzman", "Oscar"]'::jsonb
+                WHERE id = 54
+                  AND NOT (COALESCE(aliases, '[]'::json)::jsonb @> '["Oscar"]'::jsonb)
+            """))
+            conn.execute(text("DELETE FROM drivers WHERE id = 27"))
+            conn.commit()
 
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",
