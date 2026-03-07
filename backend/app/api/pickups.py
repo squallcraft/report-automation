@@ -79,12 +79,19 @@ def resumen_recepciones(
             pickups_map[pid] = {
                 "pickup_id": pid,
                 "pickup_nombre": pickup.nombre if pickup else "—",
+                "_seller_id": pickup.seller_id if pickup else None,
                 "total_paquetes": 0,
                 "total_comision": 0,
                 "vinculados": 0,
             }
         pickups_map[pid]["total_paquetes"] += 1
-        pickups_map[pid]["total_comision"] += r.comision
+        comision = r.comision
+        own_seller = pickups_map[pid]["_seller_id"]
+        if own_seller and r.envio_id:
+            envio = db.get(Envio, r.envio_id)
+            if envio and envio.seller_id == own_seller:
+                comision = 0
+        pickups_map[pid]["total_comision"] += comision
         if r.envio_id:
             pickups_map[pid]["vinculados"] += 1
 
@@ -122,11 +129,14 @@ def liquidacion_pickups(
         total_comision = 0
         auto_entregas = 0
         for r in recepciones:
-            if pickup.driver_id and r.envio_id:
+            if r.envio_id:
                 envio = db.get(Envio, r.envio_id)
-                if envio and envio.driver_id == pickup.driver_id:
-                    auto_entregas += 1
-                    continue
+                if envio:
+                    if pickup.driver_id and envio.driver_id == pickup.driver_id:
+                        auto_entregas += 1
+                        continue
+                    if pickup.seller_id and envio.seller_id == pickup.seller_id:
+                        continue
             total_comision += r.comision
         iva_comision = int(total_comision * 0.19)
 
@@ -346,6 +356,8 @@ async def importar_recepciones(
 
             pickup_obj = pickup_obj_cache.get(pickup_id)
             comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
+            if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                comision = 0
 
             rec = RecepcionPaquete(
                 pickup_id=pickup_id,
@@ -403,11 +415,14 @@ def _calcular_periodo_pickup(db: Session, pickup, mes: int, anio: int) -> dict:
     total_comision_neto = 0
     auto_entregas = 0
     for r in recepciones:
-        if pickup.driver_id and r.envio_id:
+        if r.envio_id:
             envio = db.get(Envio, r.envio_id)
-            if envio and envio.driver_id == pickup.driver_id:
-                auto_entregas += 1
-                continue
+            if envio:
+                if pickup.driver_id and envio.driver_id == pickup.driver_id:
+                    auto_entregas += 1
+                    continue
+                if pickup.seller_id and envio.seller_id == pickup.seller_id:
+                    continue
         total_comision_neto += r.comision
     total_comision_iva = int(total_comision_neto * 0.19)
 
@@ -468,12 +483,15 @@ def _calcular_periodo_pickup(db: Session, pickup, mes: int, anio: int) -> dict:
         comision_sem = 0
         paquetes_sem = len(recs_sem)
         for r in recs_sem:
-            es_auto = False
-            if pickup.driver_id and r.envio_id:
+            skip = False
+            if r.envio_id:
                 envio = db.get(Envio, r.envio_id)
-                if envio and envio.driver_id == pickup.driver_id:
-                    es_auto = True
-            if not es_auto:
+                if envio:
+                    if pickup.driver_id and envio.driver_id == pickup.driver_id:
+                        skip = True
+                    elif pickup.seller_id and envio.seller_id == pickup.seller_id:
+                        skip = True
+            if not skip:
                 comision_sem += r.comision
         if paquetes_sem > 0 or comision_sem > 0:
             by_semana[sem] = {"semana": sem, "paquetes": paquetes_sem, "comision": comision_sem}
@@ -612,12 +630,15 @@ def pickup_ganancias(
         ).all()
         comision_sem = 0
         for r in recs:
-            es_auto = False
-            if pickup.driver_id and r.envio_id:
+            skip = False
+            if r.envio_id:
                 envio = db.get(Envio, r.envio_id)
-                if envio and envio.driver_id == pickup.driver_id:
-                    es_auto = True
-            if not es_auto:
+                if envio:
+                    if pickup.driver_id and envio.driver_id == pickup.driver_id:
+                        skip = True
+                    elif pickup.seller_id and envio.seller_id == pickup.seller_id:
+                        skip = True
+            if not skip:
                 comision_sem += r.comision
 
         ganancia_driver_sem = 0

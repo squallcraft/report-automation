@@ -200,7 +200,11 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
     Ingreso = cobros al seller (envíos + extras + retiros).
     Costos  = entregas drivers + retiros drivers + comisiones pickup.
     """
-    from app.models import RecepcionPaquete
+    from app.models import Pickup, RecepcionPaquete
+
+    pickup_seller_map = {}
+    for p in db.query(Pickup).filter(Pickup.seller_id.isnot(None)).all():
+        pickup_seller_map[p.id] = p.seller_id
 
     sellers = db.query(Seller).filter(Seller.activo == True).all()
     resultados = []
@@ -250,7 +254,11 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
                 RecepcionPaquete.mes == mes,
                 RecepcionPaquete.anio == anio,
             ).all()
-            costo_pickup = sum(r.comision for r in recepciones)
+            for r in recepciones:
+                own_seller = pickup_seller_map.get(r.pickup_id)
+                if own_seller and own_seller == seller.id:
+                    continue
+                costo_pickup += r.comision
 
         costo_total = costo_drivers + costo_retiros + costo_pickup
         margen_bruto = ingreso - costo_total
