@@ -40,7 +40,10 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
   }, [showExcelMenu])
 
   const downloadPdf = () => {
-    api.get(`/liquidacion/pdf/${tipo}/${entityId}`, { params: period, responseType: 'blob' })
+    const pdfUrl = isPortal && tipo === 'driver'
+      ? '/liquidacion/mi-pdf'
+      : `/liquidacion/pdf/${tipo}/${entityId}`
+    api.get(pdfUrl, { params: period, responseType: 'blob' })
       .then(({ data: blob }) => {
         const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
         const a = document.createElement('a')
@@ -54,6 +57,22 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
 
   const downloadExcel = (semana = null) => {
     setShowExcelMenu(false)
+    if (isPortal && tipo === 'driver') {
+      const params = { mes: period.mes, anio: period.anio }
+      if (semana !== null) params.semana = semana
+      const suffix = semana !== null ? `_S${semana}` : `_M${period.mes}`
+      api.get('/portal/driver/excel', { params, responseType: 'blob' })
+        .then(({ data: blob }) => {
+          const url = URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `entregas_${entityId}${suffix}.xlsx`
+          a.click()
+          URL.revokeObjectURL(url)
+        })
+        .catch(() => toast.error('Error al exportar'))
+      return
+    }
     const params = { mes: period.mes, anio: period.anio }
     if (semana !== null) params.semana = semana
     if (tipo === 'seller') params.seller_id = entityId
@@ -72,6 +91,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
   }
 
   const goToEnvios = (semana, empresa = null) => {
+    if (isPortal) return
     const params = new URLSearchParams()
     if (tipo === 'seller') params.set('seller_id', entityId)
     else params.set('driver_id', entityId)
@@ -104,7 +124,13 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{data.nombre}</h1>
             <p className="text-sm text-gray-500">
-              {isSeller ? `Empresa: ${data.empresa}` : `Tarifas: EC ${fmt(data.tarifa_ecourier)} | OV ${fmt(data.tarifa_oviedo)} | TC ${fmt(data.tarifa_tercerizado)}${data.tarifa_valparaiso ? ` | VP ${fmt(data.tarifa_valparaiso)}` : ''}${data.tarifa_melipilla ? ` | ML ${fmt(data.tarifa_melipilla)}` : ''}`}
+              {isSeller ? `Empresa: ${data.empresa}` : `Tarifas: ${[
+                `EC ${fmt(data.tarifa_ecourier)}`,
+                data.tarifa_oviedo ? `OV ${fmt(data.tarifa_oviedo)}` : null,
+                data.tarifa_tercerizado ? `TC ${fmt(data.tarifa_tercerizado)}` : null,
+                data.tarifa_valparaiso ? `VP ${fmt(data.tarifa_valparaiso)}` : null,
+                data.tarifa_melipilla ? `ML ${fmt(data.tarifa_melipilla)}` : null,
+              ].filter(Boolean).join(' | ')}`}
             </p>
           </div>
         </div>
@@ -175,7 +201,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
                   <td className="px-4 py-2 text-left">{row.label}</td>
                   {[1,2,3,4,5].map((s) => (
                     <td key={s} className={`px-4 py-2 text-right ${s === period.semana ? 'bg-primary-50' : ''}`}>
-                      {row.isCount && row.values[s] > 0 ? (
+                      {row.isCount && row.values[s] > 0 && !isPortal ? (
                         <button
                           onClick={() => goToEnvios(s, row.empresa)}
                           className="text-primary-600 hover:text-primary-800 hover:underline inline-flex items-center gap-1"
@@ -202,8 +228,10 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
             columns={[
               { key: 'fecha', label: 'Día', render: (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString('es-CL') : '—' },
               { key: 'envios', label: 'Envíos', align: 'center' },
-              { key: 'bultos_extra', label: 'Bultos Extra', align: 'right', render: (v) => fmt(v) },
-              { key: 'peso_extra', label: isSeller ? 'Peso Extra' : 'Comuna', align: 'right', render: (v) => fmt(v) },
+              ...(!isSeller && data.contratado ? [] : [
+                { key: 'bultos_extra', label: 'Bultos Extra', align: 'right', render: (v) => fmt(v) },
+                { key: 'peso_extra', label: isSeller ? 'Peso Extra' : 'Comuna', align: 'right', render: (v) => fmt(v) },
+              ]),
               ...(!isSeller ? [{ key: 'retiros', label: 'Retiros', align: 'right', render: (v) => v > 0 ? fmt(v) : '—' }] : []),
               { key: 'monto', label: isSeller ? 'Cobro' : 'Pago', align: 'right', render: (v) => fmt(v) },
             ]}
@@ -300,33 +328,46 @@ function buildDriverRows(data) {
     return { label, values, subtotal, isMoney, isCount, bold, empresa }
   }
 
+  const hasData = (key) => [1,2,3,4,5].some(s => (w[s]?.[key] || 0) !== 0)
+
   const rows = [
     mkRow('General', 'normal_count', false, true, false, 'ECOURIER'),
     mkRow('Subtotal Normal', 'normal_total', true, false, true),
-    mkRow(`Oviedo (${fmt(data.tarifa_oviedo)})`, 'oviedo_count', false, true, false, 'OVIEDO'),
-    mkRow('Subtotal Oviedo', 'oviedo_total', true, false, true),
-    mkRow(`Tercerizado (${fmt(data.tarifa_tercerizado)})`, 'tercerizado_count', false, true, false, 'TERCERIZADO'),
-    mkRow('Subtotal Tercerizado', 'tercerizado_total', true, false, true),
-    ...(data.tarifa_valparaiso ? [
-      mkRow(`Valparaíso (${fmt(data.tarifa_valparaiso)})`, 'valparaiso_count', false, true, false, 'VALPARAISO'),
-      mkRow('Subtotal Valparaíso', 'valparaiso_total', true, false, true),
-    ] : []),
-    ...(data.tarifa_melipilla ? [
-      mkRow(`Melipilla (${fmt(data.tarifa_melipilla)})`, 'melipilla_count', false, true, false, 'MELIPILLA'),
-      mkRow('Subtotal Melipilla', 'melipilla_total', true, false, true),
-    ] : []),
-    mkRow('Comuna', 'comuna'),
-    mkRow('Bultos Extra', 'bultos_extra'),
-    mkRow('Retiros', 'retiros'),
-    mkRow('Bonificaciones', 'bonificaciones'),
-    mkRow('Descuentos', 'descuentos'),
   ]
+
+  if (data.tarifa_oviedo || hasData('oviedo_count')) {
+    rows.push(mkRow(`Oviedo (${fmt(data.tarifa_oviedo)})`, 'oviedo_count', false, true, false, 'OVIEDO'))
+    rows.push(mkRow('Subtotal Oviedo', 'oviedo_total', true, false, true))
+  }
+  if (data.tarifa_tercerizado || hasData('tercerizado_count')) {
+    rows.push(mkRow(`Tercerizado (${fmt(data.tarifa_tercerizado)})`, 'tercerizado_count', false, true, false, 'TERCERIZADO'))
+    rows.push(mkRow('Subtotal Tercerizado', 'tercerizado_total', true, false, true))
+  }
+  if (data.tarifa_valparaiso || hasData('valparaiso_count')) {
+    rows.push(mkRow(`Valparaíso (${fmt(data.tarifa_valparaiso)})`, 'valparaiso_count', false, true, false, 'VALPARAISO'))
+    rows.push(mkRow('Subtotal Valparaíso', 'valparaiso_total', true, false, true))
+  }
+  if (data.tarifa_melipilla || hasData('melipilla_count')) {
+    rows.push(mkRow(`Melipilla (${fmt(data.tarifa_melipilla)})`, 'melipilla_count', false, true, false, 'MELIPILLA'))
+    rows.push(mkRow('Subtotal Melipilla', 'melipilla_total', true, false, true))
+  }
+  if (!data.contratado && hasData('comuna'))
+    rows.push(mkRow('Comuna', 'comuna'))
+  if (!data.contratado && hasData('bultos_extra'))
+    rows.push(mkRow('Bultos Extra', 'bultos_extra'))
+  if (hasData('retiros'))
+    rows.push(mkRow('Retiros', 'retiros'))
+  if (hasData('bonificaciones'))
+    rows.push(mkRow('Bonificaciones', 'bonificaciones'))
+  if (hasData('descuentos'))
+    rows.push(mkRow('Descuentos', 'descuentos'))
 
   const totalValues = {}
   let totalSum = 0
   for (let s = 1; s <= 5; s++) {
     const ws = w[s] || {}
     totalValues[s] = (ws.normal_total || 0) + (ws.oviedo_total || 0) + (ws.tercerizado_total || 0)
+      + (ws.valparaiso_total || 0) + (ws.melipilla_total || 0)
       + (ws.comuna || 0) + (ws.bultos_extra || 0) + (ws.retiros || 0)
       + (ws.bonificaciones || 0) + (ws.descuentos || 0)
     totalSum += totalValues[s]
@@ -345,6 +386,7 @@ function calcSellerTotal(weekly, semana) {
 function calcDriverTotal(weekly, semana) {
   const w = weekly[semana] || {}
   return (w.normal_total || 0) + (w.oviedo_total || 0) + (w.tercerizado_total || 0)
+    + (w.valparaiso_total || 0) + (w.melipilla_total || 0)
     + (w.comuna || 0) + (w.bultos_extra || 0) + (w.retiros || 0)
     + (w.bonificaciones || 0) + (w.descuentos || 0)
 }

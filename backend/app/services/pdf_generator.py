@@ -555,30 +555,39 @@ def generar_pdf_driver(
         vals = [weekly[s][key] for s in range(1, 6)]
         return [label] + [_fmt(v) for v in vals] + [_fmt(sum(vals))]
 
+    def _has_data(key):
+        return any(weekly[s].get(key, 0) != 0 for s in range(1, 6))
+
     totals_vals = [_weekly_total(s) for s in range(1, 6)]
 
     es_contratado = getattr(driver, 'contratado', False)
     rows = [
         _count_row("General", "normal_count"),
         _money_row("Subtotal Normal", "normal_total"),
-        _count_row(f"Oviedo ({_fmt(tarifa_oviedo)})", "oviedo_count"),
-        _money_row("Subtotal Oviedo", "oviedo_total"),
-        _count_row(f"Tercerizado ({_fmt(tarifa_terc)})", "tercerizado_count"),
-        _money_row("Subtotal Tercerizado", "tercerizado_total"),
-        _count_row(f"Valparaíso ({_fmt(tarifa_valp)})", "valparaiso_count"),
-        _money_row("Subtotal Valparaíso", "valparaiso_total"),
-        _count_row(f"Melipilla ({_fmt(tarifa_meli)})", "melipilla_count"),
-        _money_row("Subtotal Melipilla", "melipilla_total"),
     ]
-    if not es_contratado:
+    if tarifa_oviedo or _has_data("oviedo_count"):
+        rows.append(_count_row(f"Oviedo ({_fmt(tarifa_oviedo)})", "oviedo_count"))
+        rows.append(_money_row("Subtotal Oviedo", "oviedo_total"))
+    if tarifa_terc or _has_data("tercerizado_count"):
+        rows.append(_count_row(f"Tercerizado ({_fmt(tarifa_terc)})", "tercerizado_count"))
+        rows.append(_money_row("Subtotal Tercerizado", "tercerizado_total"))
+    if tarifa_valp or _has_data("valparaiso_count"):
+        rows.append(_count_row(f"Valparaíso ({_fmt(tarifa_valp)})", "valparaiso_count"))
+        rows.append(_money_row("Subtotal Valparaíso", "valparaiso_total"))
+    if tarifa_meli or _has_data("melipilla_count"):
+        rows.append(_count_row(f"Melipilla ({_fmt(tarifa_meli)})", "melipilla_count"))
+        rows.append(_money_row("Subtotal Melipilla", "melipilla_total"))
+    if not es_contratado and _has_data("comuna"):
         rows.append(_money_row("Comuna", "comuna"))
+    if not es_contratado and _has_data("bultos_extra"):
         rows.append(_money_row("Bultos Extra", "bultos_extra"))
-    rows.extend([
-        _money_row("Retiros", "retiros"),
-        _money_row("Bonificaciones", "bonificaciones"),
-        _money_row("Descuentos", "descuentos"),
-        ["Total"] + [_fmt(v) for v in totals_vals] + [_fmt(sum(totals_vals))],
-    ])
+    if _has_data("retiros"):
+        rows.append(_money_row("Retiros", "retiros"))
+    if _has_data("bonificaciones"):
+        rows.append(_money_row("Bonificaciones", "bonificaciones"))
+    if _has_data("descuentos"):
+        rows.append(_money_row("Descuentos", "descuentos"))
+    rows.append(["Total"] + [_fmt(v) for v in totals_vals] + [_fmt(sum(totals_vals))])
 
     elements.append(_weekly_table(rows))
     elements.append(Spacer(1, 14))

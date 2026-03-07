@@ -642,6 +642,37 @@ def exportar_envios(
             c = ws.cell(row=idx, column=ci, value=v)
             c.border = thin
 
+    last_envio_row = len(envios) + 1
+
+    if seller_id or driver_id:
+        tipo_ajuste = TipoEntidadEnum.SELLER if seller_id else TipoEntidadEnum.DRIVER
+        entidad_ajuste_id = seller_id or driver_id
+        ajuste_query = db.query(AjusteLiquidacion).filter(
+            AjusteLiquidacion.tipo == tipo_ajuste,
+            AjusteLiquidacion.entidad_id == entidad_ajuste_id,
+            AjusteLiquidacion.mes == mes,
+            AjusteLiquidacion.anio == anio,
+        )
+        if semana is not None:
+            ajuste_query = ajuste_query.filter(AjusteLiquidacion.semana == semana)
+        ajustes_list = ajuste_query.order_by(AjusteLiquidacion.semana).all()
+
+        if ajustes_list:
+            ajuste_start = last_envio_row + 2
+            ajuste_hfill = PatternFill(start_color="F59E0B", end_color="F59E0B", fill_type="solid")
+            ajuste_headers_row = ["Semana", "Tipo", "Motivo", "Monto"]
+            for i, h in enumerate(ajuste_headers_row, 1):
+                c = ws.cell(row=ajuste_start, column=i, value=h)
+                c.font = hfont
+                c.fill = ajuste_hfill
+                c.border = thin
+
+            for ai, a in enumerate(ajustes_list, ajuste_start + 1):
+                tipo_label = "Bonificación" if a.monto > 0 else "Descuento"
+                for ci, v in enumerate([a.semana, tipo_label, a.motivo or "", a.monto], 1):
+                    c = ws.cell(row=ai, column=ci, value=v)
+                    c.border = thin
+
     ws.auto_filter.ref = f"A1:{chr(64 + len(headers))}1"
     ws.freeze_panes = "A2"
 

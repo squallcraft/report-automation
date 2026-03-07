@@ -410,13 +410,13 @@ def driver_liquidacion(
 
 @router.get("/driver/excel")
 def driver_excel(
-    semana: int = Query(...),
+    semana: Optional[int] = None,
     mes: int = Query(...),
     anio: int = Query(...),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_driver),
 ):
-    if not driver_period_allowed(anio, mes, semana):
+    if semana is not None and not driver_period_allowed(anio, mes, semana):
         raise HTTPException(
             status_code=403,
             detail="Solo puedes descargar información desde la semana 4 de febrero 2026 en adelante.",
@@ -429,10 +429,13 @@ def driver_excel(
     if not driver:
         raise HTTPException(status_code=404)
 
-    envios = db.query(Envio).filter(
+    query = db.query(Envio).filter(
         Envio.driver_id == driver_id,
-        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
-    ).order_by(Envio.fecha_entrega).all()
+        Envio.mes == mes, Envio.anio == anio,
+    )
+    if semana is not None:
+        query = query.filter(Envio.semana == semana)
+    envios = query.order_by(Envio.fecha_entrega).all()
 
     if not envios:
         raise HTTPException(status_code=404, detail="Sin entregas para este período")
@@ -504,6 +507,34 @@ def driver_excel(
             c = ws.cell(row=idx, column=ci, value=v)
             c.border = thin
 
+    last_envio_row = len(envios) + 1
+
+    ajuste_query = db.query(AjusteLiquidacion).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
+        AjusteLiquidacion.entidad_id == driver_id,
+        AjusteLiquidacion.mes == mes,
+        AjusteLiquidacion.anio == anio,
+    )
+    if semana is not None:
+        ajuste_query = ajuste_query.filter(AjusteLiquidacion.semana == semana)
+    ajustes = ajuste_query.order_by(AjusteLiquidacion.semana).all()
+
+    if ajustes:
+        ajuste_start = last_envio_row + 2
+        ajuste_hfill = PatternFill(start_color="F59E0B", end_color="F59E0B", fill_type="solid")
+        ajuste_headers = ["Semana", "Tipo", "Motivo", "Monto"]
+        for i, h in enumerate(ajuste_headers, 1):
+            c = ws.cell(row=ajuste_start, column=i, value=h)
+            c.font = hfont
+            c.fill = ajuste_hfill
+            c.border = thin
+
+        for ai, a in enumerate(ajustes, ajuste_start + 1):
+            tipo_label = "Bonificación" if a.monto > 0 else "Descuento"
+            for ci, v in enumerate([a.semana, tipo_label, a.motivo or "", a.monto], 1):
+                c = ws.cell(row=ai, column=ci, value=v)
+                c.border = thin
+
     ws.auto_filter.ref = f"A1:{chr(64 + len(headers))}1"
     ws.freeze_panes = "A2"
     for col in ws.columns:
@@ -516,7 +547,8 @@ def driver_excel(
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=entregas_{nombre}_S{semana}_M{mes}_{anio}.xlsx"},
+        period_suffix = f"_S{semana}_M{mes}_{anio}" if semana is not None else f"_M{mes}_{anio}"
+        headers={"Content-Disposition": f"attachment; filename=entregas_{nombre}{period_suffix}.xlsx"},
     )
 
 
