@@ -21,7 +21,7 @@ router = APIRouter(prefix="/sellers", tags=["Sellers"])
 
 @router.get("", response_model=List[SellerOut])
 def listar_sellers(
-    activo: Optional[bool] = None,
+    activo: Optional[bool] = True,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),

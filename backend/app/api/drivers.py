@@ -36,7 +36,7 @@ def _enrich_driver(d: Driver, db: Session) -> dict:
 
 @router.get("", response_model=List[DriverOut])
 def listar_drivers(
-    activo: Optional[bool] = None,
+    activo: Optional[bool] = True,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
