@@ -13,6 +13,7 @@ import Envios from './pages/admin/Envios'
 import Liquidacion from './pages/admin/Liquidacion'
 import Productos from './pages/admin/Productos'
 import Comunas from './pages/admin/Comunas'
+import PlanesTarifarios from './pages/admin/PlanesTarifarios'
 import Ajustes from './pages/admin/Ajustes'
 import Retiros from './pages/admin/Retiros'
 import Consultas from './pages/admin/Consultas'
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="liquidacion" element={<Liquidacion />} />
         <Route path="productos" element={<Productos />} />
         <Route path="comunas" element={<Comunas />} />
+        <Route path="planes-tarifarios" element={<PlanesTarifarios />} />
         <Route path="ajustes" element={<Ajustes />} />
         <Route path="retiros" element={<Retiros />} />
         <Route path="consultas" element={<Consultas />} />

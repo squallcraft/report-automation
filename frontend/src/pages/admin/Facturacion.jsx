@@ -226,6 +226,7 @@ export default function Facturacion() {
   const [historialLoading, setHistorialLoading] = useState(false)
   const [historialAnio, setHistorialAnio] = useState(new Date().getFullYear())
   const [modalCartola, setModalCartola] = useState(false)
+  const [grupoPagoModal, setGrupoPagoModal] = useState(null)
   const [pagosAcumulados, setPagosAcumulados] = useState({})
   const [historialMes, setHistorialMes] = useState(0)       // 0 = todos los meses
   const [historialSearch, setHistorialSearch] = useState('')
@@ -322,6 +323,30 @@ export default function Facturacion() {
       toast.error('Error actualizando estado')
       recargar()
     }
+  }
+
+  const handleEstadoChange = (sellerId, sellerNombre, semana, nuevoEstado) => {
+    if (nuevoEstado !== 'PAGADO') {
+      updateEstado(sellerId, semana, nuevoEstado)
+      return
+    }
+    const otrosSellers = (data?.sellers || [])
+      .filter(s => s.seller_id !== sellerId)
+      .filter(s => {
+        const sd = s.semanas[String(semana)]
+        return sd && sd.estado === 'PENDIENTE' && sd.monto_neto > 0
+      })
+      .map(s => ({
+        seller_id: s.seller_id,
+        seller_nombre: s.seller_nombre,
+        monto: s.semanas[String(semana)].monto_neto,
+        checked: false,
+      }))
+    if (otrosSellers.length === 0) {
+      updateEstado(sellerId, semana, 'PAGADO')
+      return
+    }
+    setGrupoPagoModal({ sellerId, sellerNombre, semana, otrosSellers })
   }
 
   const startEdit = (sellerId, semana, currentMonto) => {
@@ -662,7 +687,7 @@ export default function Facturacion() {
                               <select
                                 className={`text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer ${ESTADO_COLORS[semData.estado] || ESTADO_COLORS.PENDIENTE}`}
                                 value={semData.estado}
-                                onChange={e => updateEstado(s.seller_id, sem, e.target.value)}
+                                onChange={e => handleEstadoChange(s.seller_id, s.seller_nombre, sem, e.target.value)}
                               >
                                 <option value="PENDIENTE">Pendiente</option>
                                 <option value="PAGADO">Pagado</option>
@@ -815,6 +840,61 @@ export default function Facturacion() {
             )}
           </div>
         </Modal>
+      <Modal open={!!grupoPagoModal} title="Marcar como Pagado" onClose={() => setGrupoPagoModal(null)}>
+        {grupoPagoModal && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              <strong>{grupoPagoModal.sellerNombre}</strong> será marcado como pagado para la <strong>Semana {grupoPagoModal.semana}</strong>.
+            </p>
+            <p className="text-sm text-gray-700 font-medium">¿Este pago también cubre a otros sellers?</p>
+            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+              {grupoPagoModal.otrosSellers.map((os, idx) => (
+                <label key={os.seller_id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={os.checked}
+                    onChange={() => {
+                      setGrupoPagoModal(prev => ({
+                        ...prev,
+                        otrosSellers: prev.otrosSellers.map((o, i) =>
+                          i === idx ? { ...o, checked: !o.checked } : o
+                        ),
+                      }))
+                    }}
+                    className="w-4 h-4 rounded accent-primary-600"
+                  />
+                  <span className="text-sm text-gray-800 flex-1">{os.seller_nombre}</span>
+                  <span className="text-sm font-mono text-gray-500">{fmt(os.monto)}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => {
+                  updateEstado(grupoPagoModal.sellerId, grupoPagoModal.semana, 'PAGADO')
+                  setGrupoPagoModal(null)
+                }}
+                className="btn-secondary text-sm"
+              >
+                Solo este seller
+              </button>
+              <button
+                onClick={async () => {
+                  const { sellerId, semana, otrosSellers } = grupoPagoModal
+                  setGrupoPagoModal(null)
+                  updateEstado(sellerId, semana, 'PAGADO')
+                  for (const os of otrosSellers.filter(o => o.checked)) {
+                    await updateEstado(os.seller_id, semana, 'PAGADO')
+                  }
+                }}
+                className="btn-primary text-sm"
+              >
+                Confirmar selección
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
       {modalCartola && (
         <ModalCartolaSeller
           mes={mes} anio={anio}

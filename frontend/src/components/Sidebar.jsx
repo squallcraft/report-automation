@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield,
+  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -17,6 +17,7 @@ const adminLinks = [
   { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
   { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
   { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
+  { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes Tarifarios', permiso: 'comunas' },
   { to: '/admin/ajustes', icon: Settings, label: 'Ajustes', permiso: 'ajustes' },
   { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },

@@ -197,10 +197,10 @@ def _calcular_costo_retiro_para_seller(db: Session, seller_id: int, retiros_sell
 def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
     """
     Calcula la rentabilidad por seller para una semana.
-    Ingreso = cobros al seller por envíos + comisiones de pickup.
-    Costo   = pagos a drivers por entregas + pagos a drivers por retiros.
+    Ingreso = cobros al seller (envíos + extras + retiros).
+    Costos  = entregas drivers + retiros drivers + comisiones pickup.
     """
-    from app.models import Pickup, RecepcionPaquete
+    from app.models import RecepcionPaquete
 
     sellers = db.query(Seller).filter(Seller.activo == True).all()
     resultados = []
@@ -216,23 +216,15 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
         if not envios:
             continue
 
+        envio_ids = [e.id for e in envios]
+        envio_ids_cache[seller.id] = envio_ids
+
         user_nombres = sorted({e.user_nombre for e in envios if e.user_nombre})
         ingreso = sum(
             e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller
             for e in envios
         )
         ingreso += _calcular_retiro_seller(seller, envios)
-
-        pickup = db.query(Pickup).filter(Pickup.seller_id == seller.id).first()
-        ingreso_pickup = 0
-        if pickup:
-            recepciones = db.query(RecepcionPaquete).filter(
-                RecepcionPaquete.pickup_id == pickup.id,
-                RecepcionPaquete.semana == semana,
-                RecepcionPaquete.mes == mes,
-                RecepcionPaquete.anio == anio,
-            ).all()
-            ingreso_pickup = sum(r.comision for r in recepciones)
 
         def _costo_envio_driver(e):
             driver_e = db.get(Driver, e.driver_id) if e.driver_id else None
@@ -251,18 +243,29 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
         ).all()
         costo_retiros = _calcular_costo_retiro_para_seller(db, seller.id, retiros, semana, mes, anio)
 
-        ingreso_total = ingreso + ingreso_pickup
-        margen_bruto = ingreso_total - costo_drivers - costo_retiros
-        margen_porcentaje = (margen_bruto / ingreso_total * 100) if ingreso_total > 0 else 0
+        costo_pickup = 0
+        if envio_ids:
+            recepciones = db.query(RecepcionPaquete).filter(
+                RecepcionPaquete.envio_id.in_(envio_ids),
+                RecepcionPaquete.semana == semana,
+                RecepcionPaquete.mes == mes,
+                RecepcionPaquete.anio == anio,
+            ).all()
+            costo_pickup = sum(r.comision for r in recepciones)
+
+        costo_total = costo_drivers + costo_retiros + costo_pickup
+        margen_bruto = ingreso - costo_total
+        margen_porcentaje = (margen_bruto / ingreso * 100) if ingreso > 0 else 0
 
         resultados.append({
             "seller_id": seller.id,
             "seller_nombre": seller.nombre,
             "user_nombres": user_nombres,
             "ingreso": ingreso,
-            "ingreso_pickup": ingreso_pickup,
             "costo_drivers": costo_drivers,
             "costo_retiros": costo_retiros,
+            "costo_pickup": costo_pickup,
+            "costo_total": costo_total,
             "margen_bruto": margen_bruto,
             "margen_porcentaje": round(margen_porcentaje, 1),
         })

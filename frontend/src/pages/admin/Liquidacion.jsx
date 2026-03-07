@@ -213,7 +213,13 @@ export default function Liquidacion() {
     { key: 'seller_nombre', label: 'Seller' },
     { key: 'user_nombres', label: 'User', render: (v) => (v || []).join(', ') || '—' },
     { key: 'ingreso', label: 'Ingreso', align: 'right', render: (v) => fmt(v) },
-    { key: 'costo_drivers', label: 'Costo Drivers', align: 'right', render: (v) => fmt(v) },
+    { key: 'costo_total', label: 'Costos', align: 'right', render: (_, row) => {
+      const parts = []
+      if (row.costo_drivers) parts.push(`Entregas: ${fmt(row.costo_drivers)}`)
+      if (row.costo_retiros) parts.push(`Retiros: ${fmt(row.costo_retiros)}`)
+      if (row.costo_pickup) parts.push(`Pickup: ${fmt(row.costo_pickup)}`)
+      return <span title={parts.join('\n')}>{fmt(row.costo_total)}</span>
+    }},
     { key: 'margen_bruto', label: 'Margen', align: 'right', render: (v) => <span className={v >= 0 ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>{fmt(v)}</span> },
     { key: 'margen_porcentaje', label: '%', align: 'right', render: (v) => <span className={v >= 0 ? 'text-green-600' : 'text-red-600'}>{v}%</span> },
   ]
