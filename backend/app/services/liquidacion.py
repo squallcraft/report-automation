@@ -217,7 +217,6 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
             continue
 
         envio_ids = [e.id for e in envios]
-        envio_ids_cache[seller.id] = envio_ids
 
         user_nombres = sorted({e.user_nombre for e in envios if e.user_nombre})
         ingreso = sum(
