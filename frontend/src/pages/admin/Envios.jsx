@@ -4,7 +4,15 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { FileText, Search, ChevronLeft, ChevronRight, PackagePlus, Pencil, X } from 'lucide-react'
+import { FileText, Search, ChevronLeft, ChevronRight, PackagePlus, Pencil, X, Lock } from 'lucide-react'
+
+const ESTADO_BADGE = {
+  pendiente:     { label: 'Pendiente',  cls: 'bg-gray-100 text-gray-600' },
+  liquidado:     { label: 'Liquidado',  cls: 'bg-blue-100 text-blue-700' },
+  facturado:     { label: 'Facturado',  cls: 'bg-indigo-100 text-indigo-700' },
+  pagado_driver: { label: 'Pagado',     cls: 'bg-amber-100 text-amber-700' },
+  cerrado:       { label: 'Cerrado',    cls: 'bg-emerald-100 text-emerald-700' },
+}
 
 const fmtClp = (v) => `$${(v ?? 0).toLocaleString('es-CL')}`
 const PAGE_SIZE = 500
@@ -234,27 +242,40 @@ export default function Envios() {
     { key: 'extra_total_driver', label: 'Ex.D', align: 'right', className: sm, render: (v) => v ? fmtClp(v) : '—' },
     { key: 'extra_comuna_seller', label: 'Com.S', align: 'right', className: sm, render: (v) => v ? fmtClp(v) : '—' },
     { key: 'extra_comuna_driver', label: 'Com.D', align: 'right', className: sm, render: (v) => v ? fmtClp(v) : '—' },
+    { key: 'estado_financiero', label: 'Estado', align: 'center', className: sm, render: (v) => {
+      const cfg = ESTADO_BADGE[v] || ESTADO_BADGE.pendiente
+      return <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.cls}`}>{cfg.label}</span>
+    }},
     {
-      key: 'acciones', label: '', align: 'right', render: (_, row) => (
-        <div className="flex items-center justify-end gap-0">
-          <button
-            onClick={(e) => { e.stopPropagation(); openEdit(row) }}
-            className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
-            title="Editar extras manuales"
-          >
-            <Pencil size={12} />
-          </button>
-          {row.codigo_producto && (
-            <button
-              onClick={(e) => { e.stopPropagation(); openProductoModal(row) }}
-              className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-green-600 transition-colors"
-              title="Crear producto extra"
-            >
-              <PackagePlus size={12} />
-            </button>
-          )}
-        </div>
-      ),
+      key: 'acciones', label: '', align: 'right', render: (_, row) => {
+        const bloqueado = row.estado_financiero && row.estado_financiero !== 'pendiente'
+        return (
+          <div className="flex items-center justify-end gap-0">
+            {bloqueado ? (
+              <span className="p-1 text-gray-300" title={`Bloqueado (${row.estado_financiero})`}>
+                <Lock size={12} />
+              </span>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); openEdit(row) }}
+                className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
+                title="Editar extras manuales"
+              >
+                <Pencil size={12} />
+              </button>
+            )}
+            {row.codigo_producto && !bloqueado && (
+              <button
+                onClick={(e) => { e.stopPropagation(); openProductoModal(row) }}
+                className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-green-600 transition-colors"
+                title="Crear producto extra"
+              >
+                <PackagePlus size={12} />
+              </button>
+            )}
+          </div>
+        )
+      },
     },
   ]
 

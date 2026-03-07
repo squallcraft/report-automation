@@ -5,7 +5,7 @@ from collections import defaultdict
 import io
 import zipfile
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -26,6 +26,7 @@ from app.models import (
     TipoEntidadEnum, EmpresaEnum, ProductoConExtra,
 )
 from app.services.calendario import get_dates_for_week
+from app.services.audit import registrar as audit
 from app.schemas import (
     LiquidacionSellerOut, LiquidacionDriverOut, RentabilidadSellerOut,
     PeriodoOut, PeriodoUpdate,
@@ -644,16 +645,44 @@ def crear_periodo(
 def actualizar_periodo(
     periodo_id: int,
     data: PeriodoUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
 ):
     periodo = db.query(PeriodoLiquidacion).get(periodo_id)
     if not periodo:
         raise HTTPException(status_code=404, detail="Período no encontrado")
+
+    estado_anterior = periodo.estado
     periodo.estado = data.estado
+
     if data.estado == EstadoLiquidacionEnum.APROBADO:
         periodo.aprobado_por = admin["nombre"]
         periodo.aprobado_en = datetime.now(timezone.utc)
+
+    # Fase 3: al aprobar un período, marcar envíos como liquidados
+    if data.estado in (EstadoLiquidacionEnum.APROBADO, EstadoLiquidacionEnum.PAGADO):
+        envios_afectados = db.query(Envio).filter(
+            Envio.semana == periodo.semana,
+            Envio.mes == periodo.mes,
+            Envio.anio == periodo.anio,
+            Envio.is_liquidado == False,
+        ).all()
+        for e in envios_afectados:
+            e.is_liquidado = True
+            e.sync_estado_financiero()
+
+        audit(
+            db, "cerrar_semana",
+            usuario=admin, request=request,
+            entidad="periodo_liquidacion", entidad_id=periodo_id,
+            cambios={"estado": {"antes": estado_anterior, "despues": data.estado}},
+            metadata={
+                "semana": periodo.semana, "mes": periodo.mes, "anio": periodo.anio,
+                "envios_bloqueados": len(envios_afectados),
+            },
+        )
+
     db.commit()
     db.refresh(periodo)
     return periodo

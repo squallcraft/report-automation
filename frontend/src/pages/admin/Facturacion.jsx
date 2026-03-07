@@ -300,10 +300,28 @@ export default function Facturacion() {
   }
 
   const updateEstado = async (sellerId, semana, estado) => {
+    setData(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        sellers: prev.sellers.map(s => {
+          if (s.seller_id !== sellerId) return s
+          return {
+            ...s,
+            semanas: {
+              ...s.semanas,
+              [String(semana)]: { ...s.semanas[String(semana)], estado },
+            },
+          }
+        }),
+      }
+    })
     try {
       await api.put(`/facturacion/pago-semana/${sellerId}`, { estado }, { params: { semana, mes, anio } })
+    } catch {
+      toast.error('Error actualizando estado')
       recargar()
-    } catch { toast.error('Error actualizando estado') }
+    }
   }
 
   const startEdit = (sellerId, semana, currentMonto) => {
@@ -313,14 +331,34 @@ export default function Facturacion() {
 
   const saveEdit = async () => {
     if (!editCell) return
+    const { sellerId, semana } = editCell
+    const nuevoMonto = parseInt(editValue) || 0
+    setData(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        sellers: prev.sellers.map(s => {
+          if (s.seller_id !== sellerId) return s
+          return {
+            ...s,
+            semanas: {
+              ...s.semanas,
+              [String(semana)]: { ...s.semanas[String(semana)], monto_neto: nuevoMonto },
+            },
+          }
+        }),
+      }
+    })
+    setEditCell(null)
     try {
-      await api.put(`/facturacion/pago-semana/${editCell.sellerId}`, {
-        monto_override: parseInt(editValue) || 0,
-      }, { params: { semana: editCell.semana, mes, anio } })
+      await api.put(`/facturacion/pago-semana/${sellerId}`, {
+        monto_override: nuevoMonto,
+      }, { params: { semana, mes, anio } })
       toast.success('Monto actualizado')
-      setEditCell(null)
+    } catch {
+      toast.error('Error guardando monto')
       recargar()
-    } catch { toast.error('Error guardando monto') }
+    }
   }
 
   const abrirModalFacturar = async () => {

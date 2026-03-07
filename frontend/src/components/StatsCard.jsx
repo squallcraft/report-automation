@@ -1,4 +1,4 @@
-export default function StatsCard({ icon: Icon, label, value, color = 'primary', sub }) {
+export default function StatsCard({ icon: Icon, label, value, color = 'primary', sub, extra }) {
   const colorMap = {
     primary: 'bg-primary-50 text-primary-600',
     green: 'bg-emerald-50 text-emerald-600',
@@ -14,7 +14,10 @@ export default function StatsCard({ icon: Icon, label, value, color = 'primary',
       </div>
       <div className="min-w-0">
         <p className="text-xs sm:text-sm text-gray-500 font-medium">{label}</p>
-        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <p className="text-lg sm:text-2xl font-bold text-gray-900">{value}</p>
+          {extra}
+        </div>
         {sub && <p className="text-[10px] sm:text-xs text-gray-400 mt-1">{sub}</p>}
       </div>
     </div>

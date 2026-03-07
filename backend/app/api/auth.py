@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver
+from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup
 from app.schemas import LoginRequest, TokenResponse
 from app.auth import verify_password, create_access_token, hash_password
 from app.config import get_settings
@@ -58,7 +58,11 @@ def _client_ip(request: Request) -> str:
 # ---------------------------------------------------------------------------
 def _audit(db: Session, action: str, username: Optional[str], ip: str, detail: Optional[str] = None) -> None:
     try:
-        db.add(AuditLog(action=action, username=username, ip=ip, detail=detail))
+        db.add(AuditLog(
+            action=action, username=username, ip=ip, detail=detail,
+            accion=action, usuario_nombre=username, ip_address=ip,
+            entidad="auth", metadata_={"detail": detail} if detail else None,
+        ))
         db.commit()
     except Exception as exc:
         logger.error("Error guardando audit log: %s", exc)
@@ -100,7 +104,10 @@ def _find_entity_by_email(db: Session, email: str):
     if driver:
         return "driver", driver
 
-    # AdminUser usa 'username' como identificador de login, pero puede tener email en username
+    pickup = db.query(Pickup).filter(Pickup.email == email, Pickup.activo == True).first()
+    if pickup:
+        return "pickup", pickup
+
     admin = db.query(AdminUser).filter(AdminUser.username == email, AdminUser.activo == True).first()
     if admin:
         return "admin", admin
@@ -148,6 +155,17 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             rol=RolEnum.DRIVER,
             nombre=driver.nombre,
             entidad_id=driver.id,
+        )
+
+    pickup = db.query(Pickup).filter(Pickup.email == data.username, Pickup.activo == True).first()
+    if pickup and pickup.password_hash and verify_password(data.password, pickup.password_hash):
+        token = create_access_token({"sub": str(pickup.id), "rol": RolEnum.PICKUP})
+        _audit(db, "LOGIN_SUCCESS", pickup.email, ip)
+        return TokenResponse(
+            access_token=token,
+            rol=RolEnum.PICKUP,
+            nombre=pickup.nombre,
+            entidad_id=pickup.id,
         )
 
     _audit(db, "LOGIN_FAIL", data.username, ip)
@@ -220,6 +238,8 @@ def reset_password(body: ResetPasswordBody, request: Request, db: Session = Depe
         entity = db.query(Seller).filter(Seller.id == record.entity_id).first()
     elif record.entity_type == "driver":
         entity = db.query(Driver).filter(Driver.id == record.entity_id).first()
+    elif record.entity_type == "pickup":
+        entity = db.query(Pickup).filter(Pickup.id == record.entity_id).first()
     else:
         entity = db.query(AdminUser).filter(AdminUser.id == record.entity_id).first()
 

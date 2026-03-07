@@ -2,7 +2,7 @@ from typing import Optional, List
 
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from openpyxl import Workbook, load_workbook
@@ -13,6 +13,8 @@ from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, hash_password
 from app.models import Seller
 from app.schemas import SellerCreate, SellerUpdate, SellerOut
+from app.services.audit import registrar as audit
+from app.services.audit import diff_campos
 
 router = APIRouter(prefix="/sellers", tags=["Sellers"])
 
@@ -116,9 +118,10 @@ def descargar_plantilla_sellers():
 
 @router.post("/importar")
 async def importar_sellers(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """Importa sellers desde un archivo Excel."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -213,6 +216,11 @@ async def importar_sellers(
             errores.append(f"Fila {idx + 2}: {str(e)}")
 
     db.commit()
+
+    audit(db, "importar_sellers", usuario=current_user, request=request,
+          entidad="seller",
+          metadata={"archivo": file.filename, "creados": creados, "actualizados": actualizados})
+
     return {"creados": creados, "actualizados": actualizados, "errores": errores}
 
 
@@ -265,9 +273,10 @@ def descargar_plantilla_rut_giro(db: Session = Depends(get_db), _=Depends(requir
 
 @router.post("/importar/rut-giro")
 async def importar_rut_giro(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """Importa RUT y Giro de sellers desde Excel."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -314,6 +323,11 @@ async def importar_rut_giro(
             errores.append(f"Fila {idx + 2}: {str(e)}")
 
     db.commit()
+
+    audit(db, "importar_rut_giro", usuario=current_user, request=request,
+          entidad="seller",
+          metadata={"archivo": file.filename, "actualizados": actualizados})
+
     return {"actualizados": actualizados, "errores": errores}
 
 
@@ -326,7 +340,7 @@ def obtener_seller(seller_id: int, db: Session = Depends(get_db), _=Depends(requ
 
 
 @router.post("", response_model=SellerOut, status_code=201)
-def crear_seller(data: SellerCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def crear_seller(data: SellerCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     existing = db.query(Seller).filter(Seller.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un seller con ese nombre")
@@ -339,17 +353,31 @@ def crear_seller(data: SellerCreate, db: Session = Depends(get_db), _=Depends(re
     db.add(seller)
     db.commit()
     db.refresh(seller)
+
+    audit(db, "crear_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller.id,
+          metadata={"nombre": seller.nombre, "precio_base": seller.precio_base,
+                    "plan_tarifario": seller.plan_tarifario, "empresa": seller.empresa})
+
     return seller
 
 
 @router.put("/{seller_id}", response_model=SellerOut)
 def actualizar_seller(
-    seller_id: int, data: SellerUpdate,
-    db: Session = Depends(get_db), _=Depends(require_admin),
+    seller_id: int, data: SellerUpdate, request: Request,
+    db: Session = Depends(get_db), current_user=Depends(require_admin),
 ):
     seller = db.query(Seller).get(seller_id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
+
+    campos_audit = [
+        "nombre", "precio_base", "tarifa_retiro", "aliases", "plan_tarifario",
+        "usa_pickup", "tiene_retiro", "rut", "giro", "zona", "empresa",
+        "tarifa_retiro_driver", "min_paquetes_retiro_gratis", "email",
+    ]
+    old_values = {c: getattr(seller, c, None) for c in campos_audit}
+
     update_data = data.model_dump(exclude_unset=True, exclude={"password"})
     if update_data.get("email") == "":
         update_data["email"] = None
@@ -357,16 +385,30 @@ def actualizar_seller(
         setattr(seller, key, value)
     if data.password:
         seller.password_hash = hash_password(data.password)
+    db.flush()
+
+    new_values = {c: getattr(seller, c, None) for c in campos_audit}
+    cambios = diff_campos(old_values, new_values, campos_audit)
+    if cambios:
+        audit(db, "editar_seller", usuario=current_user, request=request,
+              entidad="seller", entidad_id=seller.id, cambios=cambios,
+              metadata={"nombre": seller.nombre})
+
     db.commit()
     db.refresh(seller)
     return seller
 
 
 @router.delete("/{seller_id}")
-def eliminar_seller(seller_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def eliminar_seller(seller_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     seller = db.query(Seller).get(seller_id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
     seller.activo = False
     db.commit()
+
+    audit(db, "eliminar_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller.id,
+          metadata={"nombre": seller.nombre})
+
     return {"message": "Seller desactivado"}

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Upload } from 'lucide-react'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -43,7 +43,6 @@ const TIPOS_CUENTA = [
   { valor: 'ahorro', label: 'Cuenta de Ahorro' },
 ]
 
-// Nombre canónico para el backend a partir del código selector
 const bancoNombreCanonicoDesde = (codigo) => {
   const map = {
     '001': 'Banco de Chile', '009': 'Banco Internacional', '012': 'Scotiabank',
@@ -51,13 +50,11 @@ const bancoNombreCanonicoDesde = (codigo) => {
     '034': 'Banco Security', '037': 'Banco Santander', '039': 'Banco Consorcio',
     '402': 'Banco Falabella', '403': 'Banco Ripley', '672': 'Coopeuch',
     '729': 'Prepago Los Héroes', '028-tenpo': 'Tenpo', '028-mach': 'MACH',
-    '741': 'Copec Pay',
-    '875': 'Mercado Pago',
+    '741': 'Copec Pay', '875': 'Mercado Pago',
   }
   return map[codigo] || codigo
 }
 
-// Inferir código selector desde el nombre almacenado en el driver
 const bancoCodigoDesdeNombre = (nombre) => {
   if (!nombre) return ''
   const n = nombre.toLowerCase().trim()
@@ -85,12 +82,10 @@ const bancoCodigoDesdeNombre = (nombre) => {
 const initialForm = {
   nombre: '',
   aliases: '',
-  tarifa_ecourier: 1700,
-  tarifa_oviedo: 1800,
-  tarifa_tercerizado: 1500,
-  tarifa_retiro_fija: 0,
-  jefe_flota_id: '',
-  contratado: false,
+  tarifa_driver: 0,
+  comision_paquete: 200,
+  seller_id: '',
+  driver_id: '',
   email: '',
   password: '',
   rut: '',
@@ -99,9 +94,11 @@ const initialForm = {
   numero_cuenta: '',
 }
 
-export default function Drivers() {
+export default function Pickups() {
   const { user } = useAuth()
   const canEdit = user?.rol === 'ADMIN'
+  const [pickups, setPickups] = useState([])
+  const [sellers, setSellers] = useState([])
   const [drivers, setDrivers] = useState([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -110,61 +107,24 @@ export default function Drivers() {
   const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
   const [toDelete, setToDelete] = useState(null)
+  const [importing, setImporting] = useState(false)
 
-  const [importingHomolog, setImportingHomolog] = useState(false)
-  const [importingTarifas, setImportingTarifas] = useState(false)
-
-  const fetchDrivers = () => {
-    api.get('/drivers')
-      .then(({ data }) => setDrivers(data))
-      .catch(() => toast.error('Error al cargar drivers'))
+  const fetchData = () => {
+    Promise.all([
+      api.get('/pickups'),
+      api.get('/sellers'),
+      api.get('/drivers'),
+    ])
+      .then(([pRes, sRes, dRes]) => {
+        setPickups(pRes.data)
+        setSellers(sRes.data)
+        setDrivers(dRes.data)
+      })
+      .catch(() => toast.error('Error al cargar datos'))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => {
-    fetchDrivers()
-  }, [])
-
-  const downloadFile = async (url, filename) => {
-    try {
-      const { data } = await api.get(url, { responseType: 'blob' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([data]))
-      a.download = filename
-      a.click()
-      URL.revokeObjectURL(a.href)
-    } catch { toast.error('Error al descargar plantilla') }
-  }
-
-  const handleImportHomologacion = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setImportingHomolog(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const { data } = await api.post('/drivers/importar/homologacion', formData)
-      toast.success(`${data.aliases_agregados} aliases agregados, ${data.drivers_creados} drivers creados`)
-      if (data.errores?.length) toast.error(`${data.errores.length} errores`)
-      fetchDrivers()
-    } catch (err) { toast.error(err.response?.data?.detail || 'Error al importar') }
-    finally { setImportingHomolog(false); e.target.value = '' }
-  }
-
-  const handleImportTarifas = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setImportingTarifas(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const { data } = await api.post('/drivers/importar/tarifas', formData)
-      toast.success(`${data.creados} creados, ${data.actualizados} actualizados`)
-      if (data.errores?.length) toast.error(`${data.errores.length} errores`)
-      fetchDrivers()
-    } catch (err) { toast.error(err.response?.data?.detail || 'Error al importar') }
-    finally { setImportingTarifas(false); e.target.value = '' }
-  }
+  useEffect(() => { fetchData() }, [])
 
   const openCreate = () => {
     setEditing(null)
@@ -172,43 +132,37 @@ export default function Drivers() {
     setModalOpen(true)
   }
 
-  const openEdit = (driver) => {
-    setEditing(driver)
+  const openEdit = (pickup) => {
+    setEditing(pickup)
     setForm({
-      nombre: driver.nombre,
-      aliases: (driver.aliases || []).join(', '),
-      tarifa_ecourier: driver.tarifa_ecourier ?? 1700,
-      tarifa_oviedo: driver.tarifa_oviedo ?? 1800,
-      tarifa_tercerizado: driver.tarifa_tercerizado ?? 1500,
-      tarifa_retiro_fija: driver.tarifa_retiro_fija ?? 0,
-      jefe_flota_id: driver.jefe_flota_id ?? '',
-      contratado: driver.contratado ?? false,
-      email: driver.email || '',
+      nombre: pickup.nombre,
+      aliases: (pickup.aliases || []).join(', '),
+      tarifa_driver: pickup.tarifa_driver ?? 0,
+      comision_paquete: pickup.comision_paquete ?? 200,
+      seller_id: pickup.seller_id ?? '',
+      driver_id: pickup.driver_id ?? '',
+      email: pickup.email || '',
       password: '',
-      rut: driver.rut || '',
-      banco_codigo: bancoCodigoDesdeNombre(driver.banco),
-      tipo_cuenta: driver.tipo_cuenta || '',
-      numero_cuenta: driver.numero_cuenta || '',
+      rut: pickup.rut || '',
+      banco_codigo: bancoCodigoDesdeNombre(pickup.banco),
+      tipo_cuenta: pickup.tipo_cuenta || '',
+      numero_cuenta: pickup.numero_cuenta || '',
     })
     setModalOpen(true)
   }
 
-  const handleRowClick = (row) => {
-    openEdit(row)
-  }
-
-  const handleDeleteClick = (e, driver) => {
+  const handleDeleteClick = (e, pickup) => {
     e.stopPropagation()
-    setToDelete(driver)
+    setToDelete(pickup)
     setDeleteModalOpen(true)
   }
 
   const confirmDelete = () => {
     if (!toDelete) return
-    api.delete(`/drivers/${toDelete.id}`)
+    api.delete(`/pickups/${toDelete.id}`)
       .then(() => {
-        toast.success('Driver desactivado')
-        fetchDrivers()
+        toast.success('Pickup desactivado')
+        fetchData()
         setDeleteModalOpen(false)
         setToDelete(null)
       })
@@ -221,11 +175,10 @@ export default function Drivers() {
     const payload = {
       ...form,
       aliases: form.aliases ? form.aliases.split(',').map((a) => a.trim()).filter(Boolean) : [],
-      tarifa_ecourier: parseInt(form.tarifa_ecourier, 10) || 1700,
-      tarifa_oviedo: parseInt(form.tarifa_oviedo, 10) || 1800,
-      tarifa_tercerizado: parseInt(form.tarifa_tercerizado, 10) || 1500,
-      tarifa_retiro_fija: parseInt(form.tarifa_retiro_fija, 10) || 0,
-      jefe_flota_id: form.jefe_flota_id ? parseInt(form.jefe_flota_id, 10) : null,
+      tarifa_driver: parseInt(form.tarifa_driver, 10) || 0,
+      comision_paquete: parseInt(form.comision_paquete, 10) || 200,
+      seller_id: form.seller_id ? parseInt(form.seller_id, 10) : null,
+      driver_id: form.driver_id ? parseInt(form.driver_id, 10) : null,
       email: form.email?.trim() || null,
       rut: form.rut?.trim() || null,
       banco: form.banco_codigo ? bancoNombreCanonicoDesde(form.banco_codigo) : null,
@@ -236,39 +189,55 @@ export default function Drivers() {
     if (!payload.password) delete payload.password
 
     const promise = editing
-      ? api.put(`/drivers/${editing.id}`, payload)
-      : api.post('/drivers', payload)
+      ? api.put(`/pickups/${editing.id}`, payload)
+      : api.post('/pickups', payload)
 
     promise
       .then(() => {
-        toast.success(editing ? 'Driver actualizado' : 'Driver creado')
+        toast.success(editing ? 'Pickup actualizado' : 'Pickup creado')
         setModalOpen(false)
-        fetchDrivers()
+        fetchData()
       })
       .catch((err) => toast.error(err.response?.data?.detail || 'Error al guardar'))
       .finally(() => setSaving(false))
+  }
+
+  const handleImportRecepciones = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const { data } = await api.post('/pickups/recepciones/importar', formData)
+      let msg = `${data.creados} recepciones creadas`
+      if (data.vinculados) msg += `, ${data.vinculados} vinculadas a envíos`
+      toast.success(msg)
+      if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar: ${data.sin_homologar.join(', ')}`)
+      if (data.errores?.length) toast.error(`${data.errores.length} errores`)
+    } catch (err) { toast.error(err.response?.data?.detail || 'Error al importar') }
+    finally { setImporting(false); e.target.value = '' }
   }
 
   const columns = [
     { key: 'nombre', label: 'Nombre', render: (v, row) => (
       <div className="flex items-center gap-1.5 flex-wrap">
         <span>{v}</span>
-        {row.subordinados_count > 0 && (
-          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700">
-            Jefe ({row.subordinados_count})
+        {row.seller_nombre && (
+          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+            Seller: {row.seller_nombre}
           </span>
         )}
-        {row.contratado && (
-          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700">
-            Contratado
+        {row.driver_nombre && (
+          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700">
+            Driver: {row.driver_nombre}
           </span>
         )}
       </div>
     )},
-    { key: 'jefe_flota_nombre', label: 'Jefe de Flota', render: (v) => v || '—' },
-    { key: 'tarifa_ecourier', label: 'Tarifa ECourier', align: 'right', render: (v) => fmtClp(v) },
-    { key: 'tarifa_oviedo', label: 'Tarifa Oviedo', align: 'right', render: (v) => fmtClp(v) },
-    { key: 'tarifa_tercerizado', label: 'Tarifa Tercerizado', align: 'right', render: (v) => fmtClp(v) },
+    { key: 'tarifa_driver', label: 'Tarifa Driver', align: 'right', render: (v) => fmtClp(v) },
+    { key: 'comision_paquete', label: 'Comisión/paquete', align: 'right', render: (v) => fmtClp(v ?? 200) },
+    { key: 'aliases', label: 'Aliases', render: (v) => (v || []).length > 0 ? v.join(', ') : '—' },
     { key: 'activo', label: 'Estado', align: 'center', render: (v) => <EstadoBadge activo={v} /> },
     {
       key: 'acciones',
@@ -301,50 +270,36 @@ export default function Drivers() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Drivers</h1>
-          <p className="text-sm text-gray-500 mt-1">Gestiona los conductores del sistema</p>
+          <h1 className="text-2xl font-bold text-gray-900">Pickup Points</h1>
+          <p className="text-sm text-gray-500 mt-1">Centros de recepción de paquetes — comisión configurable + IVA por paquete</p>
         </div>
         {canEdit && (
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-1 bg-gray-50">
-              <button onClick={() => downloadFile('/drivers/plantilla/homologacion/descargar', 'plantilla_homologacion_drivers.xlsx')} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5" title="Descargar plantilla de homologación">
-                <Download size={14} /> Homologar
-              </button>
-              <label className={`btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5 cursor-pointer ${importingHomolog ? 'opacity-50' : ''}`} title="Importar plantilla de homologación">
-                <Upload size={14} /> {importingHomolog ? 'Importando…' : 'Importar'}
-                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportHomologacion} disabled={importingHomolog} />
-              </label>
-            </div>
-            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-1 bg-gray-50">
-              <button onClick={() => downloadFile('/drivers/plantilla/tarifas/descargar', 'plantilla_tarifas_drivers.xlsx')} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5" title="Descargar plantilla de tarifas">
-                <Download size={14} /> Tarifas
-              </button>
-              <label className={`btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5 cursor-pointer ${importingTarifas ? 'opacity-50' : ''}`} title="Importar plantilla de tarifas">
-                <Upload size={14} /> {importingTarifas ? 'Importando…' : 'Importar'}
-                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportTarifas} disabled={importingTarifas} />
-              </label>
-            </div>
+            <label className={`btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5 cursor-pointer ${importing ? 'opacity-50' : ''}`} title="Importar recepciones desde Excel">
+              <Upload size={14} /> {importing ? 'Importando…' : 'Importar Recepciones'}
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportRecepciones} disabled={importing} />
+            </label>
             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-              <Plus size={18} /> Nuevo Driver
+              <Plus size={18} /> Nuevo Pickup
             </button>
           </div>
         )}
       </div>
 
       <div className="flex-1 min-h-0">
-      <DataTable
-        columns={columns}
-        data={drivers}
-        onRowClick={handleRowClick}
-        emptyMessage="No hay drivers"
-      />
+        <DataTable
+          columns={columns}
+          data={pickups}
+          onRowClick={openEdit}
+          emptyMessage="No hay pickups registrados"
+        />
       </div>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Driver' : 'Nuevo Driver'} wide>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Pickup' : 'Nuevo Pickup'} wide>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
               <input
@@ -353,6 +308,16 @@ export default function Drivers() {
                 value={form.nombre}
                 onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
                 required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">RUT (facturación)</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="12.345.678-9"
+                value={form.rut}
+                onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))}
               />
             </div>
             <div>
@@ -365,105 +330,74 @@ export default function Drivers() {
               />
             </div>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Aliases (separados por coma)</label>
             <textarea
-              className="input-field min-h-[80px] resize-y"
-              placeholder="Alias 1, Alias 2, Alias 3"
+              className="input-field min-h-[60px] resize-y"
+              placeholder="Pickup Riel, PU Riel, ..."
               value={form.aliases}
               onChange={(e) => setForm((f) => ({ ...f, aliases: e.target.value }))}
-              rows={3}
+              rows={2}
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa ECourier (CLP)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa Driver (CLP)</label>
               <input
                 type="number"
                 className="input-field"
                 min={0}
-                value={form.tarifa_ecourier}
-                onChange={(e) => setForm((f) => ({ ...f, tarifa_ecourier: e.target.value }))}
+                value={form.tarifa_driver}
+                onChange={(e) => setForm((f) => ({ ...f, tarifa_driver: e.target.value }))}
               />
+              <p className="text-xs text-gray-500 mt-1">Monto fijo que cobra el conductor por visita</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa Oviedo (CLP)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Comisión por paquete (CLP)</label>
               <input
                 type="number"
                 className="input-field"
                 min={0}
-                value={form.tarifa_oviedo}
-                onChange={(e) => setForm((f) => ({ ...f, tarifa_oviedo: e.target.value }))}
+                value={form.comision_paquete}
+                onChange={(e) => setForm((f) => ({ ...f, comision_paquete: e.target.value }))}
               />
+              <p className="text-xs text-gray-500 mt-1">Comisión neta por paquete recibido</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa Tercerizado (CLP)</label>
-              <input
-                type="number"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Seller vinculado</label>
+              <select
                 className="input-field"
-                min={0}
-                value={form.tarifa_tercerizado}
-                onChange={(e) => setForm((f) => ({ ...f, tarifa_tercerizado: e.target.value }))}
-              />
+                value={form.seller_id}
+                onChange={(e) => setForm((f) => ({ ...f, seller_id: e.target.value }))}
+              >
+                <option value="">— No emite envíos —</option>
+                {sellers.filter(s => s.activo).map((s) => (
+                  <option key={s.id} value={s.id}>{s.nombre}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Si también emite envíos</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa fija retiro/día (CLP)</label>
-              <input
-                type="number"
+              <label className="block text-sm font-medium text-gray-700 mb-1">Driver vinculado</label>
+              <select
                 className="input-field"
-                min={0}
-                value={form.tarifa_retiro_fija}
-                onChange={(e) => setForm((f) => ({ ...f, tarifa_retiro_fija: e.target.value }))}
-              />
-              <p className="text-xs text-gray-500 mt-1">Si &gt; 0, cobra este monto por cada día con retiros</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Jefe de Flota</label>
-            <select
-              className="input-field"
-              value={form.jefe_flota_id}
-              onChange={(e) => setForm((f) => ({ ...f, jefe_flota_id: e.target.value }))}
-            >
-              <option value="">Sin jefe de flota</option>
-              {drivers
-                .filter((d) => d.activo && (!editing || d.id !== editing.id))
-                .map((d) => (
+                value={form.driver_id}
+                onChange={(e) => setForm((f) => ({ ...f, driver_id: e.target.value }))}
+              >
+                <option value="">— No entrega —</option>
+                {drivers.filter(d => d.activo).map((d) => (
                   <option key={d.id} value={d.id}>{d.nombre}</option>
                 ))}
-            </select>
-          </div>
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-orange-50 border border-orange-200">
-            <input
-              id="contratado"
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-              checked={form.contratado}
-              onChange={(e) => setForm((f) => ({ ...f, contratado: e.target.checked }))}
-            />
-            <div>
-              <label htmlFor="contratado" className="text-sm font-medium text-orange-800 cursor-pointer">
-                Conductor Contratado
-              </label>
-              <p className="text-xs text-orange-600 mt-0.5">
-                No recibe pago por extras de bultos (producto) ni por extras de comuna.
-              </p>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Si también entrega como conductor</p>
             </div>
           </div>
-          {/* ── Datos bancarios ── */}
+
           <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
             <p className="text-sm font-semibold text-gray-700">Datos Bancarios</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">RUT</label>
-                <input
-                  type="text"
-                  className="input-field"
-                  placeholder="12.345.678-9"
-                  value={form.rut}
-                  onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))}
-                />
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Banco</label>
                 <select
@@ -499,11 +433,6 @@ export default function Drivers() {
                   value={form.numero_cuenta}
                   onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))}
                 />
-                {form.banco_codigo === '016' && form.tipo_cuenta === 'vista' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Cuenta RUT Banco Estado: ingresa el RUT completo con dígito verificador (ej. 123456789).
-                  </p>
-                )}
               </div>
             </div>
           </div>
@@ -520,6 +449,7 @@ export default function Drivers() {
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             />
           </div>
+
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
             <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
               Cancelar
@@ -531,11 +461,11 @@ export default function Drivers() {
         </form>
       </Modal>
 
-      <Modal open={deleteModalOpen} onClose={() => { setDeleteModalOpen(false); setToDelete(null) }} title="Desactivar Driver">
+      <Modal open={deleteModalOpen} onClose={() => { setDeleteModalOpen(false); setToDelete(null) }} title="Desactivar Pickup">
         {toDelete && (
           <div>
             <p className="text-gray-600 mb-4">
-              ¿Desactivar al driver <strong>{toDelete.nombre}</strong>? Esta acción es reversible.
+              ¿Desactivar el pickup <strong>{toDelete.nombre}</strong>? Esta acción es reversible.
             </p>
             <div className="flex justify-end gap-3">
               <button onClick={() => { setDeleteModalOpen(false); setToDelete(null) }} className="btn-secondary">

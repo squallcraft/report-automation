@@ -1,7 +1,7 @@
 from typing import Optional, List
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -14,6 +14,8 @@ from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, require_driver, get_current_user, hash_password
 from app.models import Driver, RolEnum
 from app.schemas import DriverCreate, DriverUpdate, DriverOut
+from app.services.audit import registrar as audit
+from app.services.audit import diff_campos
 
 router = APIRouter(prefix="/drivers", tags=["Drivers"])
 
@@ -228,9 +230,10 @@ def descargar_plantilla_tarifas(db: Session = Depends(get_db)):
 
 @router.post("/importar/homologacion")
 async def importar_homologacion(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """
     Importa plantilla de homologación.
@@ -295,6 +298,13 @@ async def importar_homologacion(
             errores.append(f"Fila {idx + 2}: {str(e)}")
 
     db.commit()
+    audit(
+        db, "importar_homologacion_driver",
+        usuario=current_user, request=request,
+        entidad="driver",
+        metadata={"archivo": file.filename, "aliases_agregados": aliases_added,
+                   "drivers_creados": drivers_created},
+    )
     return {
         "aliases_agregados": aliases_added,
         "drivers_creados": drivers_created,
@@ -304,9 +314,10 @@ async def importar_homologacion(
 
 @router.post("/importar/tarifas")
 async def importar_tarifas(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """
     Importa plantilla de tarifas.
@@ -375,6 +386,13 @@ async def importar_tarifas(
             errores.append(f"Fila {idx + 2}: {str(e)}")
 
     db.commit()
+    audit(
+        db, "importar_tarifas_driver",
+        usuario=current_user, request=request,
+        entidad="driver",
+        metadata={"archivo": file.filename, "creados": creados,
+                   "actualizados": actualizados},
+    )
     return {"creados": creados, "actualizados": actualizados, "errores": errores}
 
 
@@ -429,9 +447,10 @@ def descargar_plantilla_bancaria(db: Session = Depends(get_db), _=Depends(requir
 
 @router.post("/importar/bancaria")
 async def importar_bancaria(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """Importa datos bancarios de drivers desde Excel."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -481,6 +500,12 @@ async def importar_bancaria(
             errores.append(f"Fila {idx + 2}: {str(e)}")
 
     db.commit()
+    audit(
+        db, "importar_bancaria_driver",
+        usuario=current_user, request=request,
+        entidad="driver",
+        metadata={"archivo": file.filename, "actualizados": actualizados},
+    )
     return {"actualizados": actualizados, "errores": errores}
 
 
@@ -493,7 +518,7 @@ def obtener_driver(driver_id: int, db: Session = Depends(get_db), _=Depends(requ
 
 
 @router.post("", response_model=DriverOut, status_code=201)
-def crear_driver(data: DriverCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def crear_driver(data: DriverCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     existing = db.query(Driver).filter(Driver.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un driver con ese nombre")
@@ -503,19 +528,33 @@ def crear_driver(data: DriverCreate, db: Session = Depends(get_db), _=Depends(re
     db.add(driver)
     db.commit()
     db.refresh(driver)
+    audit(
+        db, "crear_driver",
+        usuario=current_user, request=request,
+        entidad="driver", entidad_id=driver.id,
+        metadata={"nombre": driver.nombre, "contratado": driver.contratado,
+                   "tarifa_ecourier": driver.tarifa_ecourier,
+                   "tarifa_oviedo": driver.tarifa_oviedo,
+                   "tarifa_tercerizado": driver.tarifa_tercerizado},
+    )
     return _enrich_driver(driver, db)
 
 
 @router.put("/{driver_id}", response_model=DriverOut)
 def actualizar_driver(
-    driver_id: int, data: DriverUpdate,
-    db: Session = Depends(get_db), _=Depends(require_admin),
+    driver_id: int, data: DriverUpdate, request: Request,
+    db: Session = Depends(get_db), current_user=Depends(require_admin),
 ):
     driver = db.query(Driver).get(driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
+    campos_audit = [
+        "nombre", "tarifa_ecourier", "tarifa_oviedo", "tarifa_tercerizado",
+        "tarifa_retiro_fija", "aliases", "contratado", "jefe_flota_id",
+        "rut", "banco", "tipo_cuenta", "numero_cuenta", "email",
+    ]
+    antes = {c: getattr(driver, c, None) for c in campos_audit}
     update_data = data.model_dump(exclude_unset=True, exclude={"password"})
-    # Convertir strings vacíos en campos únicos nullable a None
     for nullable_unique in ("email", "rut"):
         if nullable_unique in update_data and update_data[nullable_unique] == "":
             update_data[nullable_unique] = None
@@ -523,18 +562,35 @@ def actualizar_driver(
         setattr(driver, key, value)
     if data.password:
         driver.password_hash = hash_password(data.password)
+    db.flush()
+    despues = {c: getattr(driver, c, None) for c in campos_audit}
+    cambios = diff_campos(antes, despues, campos_audit)
+    if cambios:
+        audit(
+            db, "editar_driver",
+            usuario=current_user, request=request,
+            entidad="driver", entidad_id=driver.id,
+            cambios=cambios,
+            metadata={"nombre": driver.nombre},
+        )
     db.commit()
     db.refresh(driver)
     return _enrich_driver(driver, db)
 
 
 @router.delete("/{driver_id}")
-def eliminar_driver(driver_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def eliminar_driver(driver_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     driver = db.query(Driver).get(driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
     driver.activo = False
     db.commit()
+    audit(
+        db, "eliminar_driver",
+        usuario=current_user, request=request,
+        entidad="driver", entidad_id=driver.id,
+        metadata={"nombre": driver.nombre},
+    )
     return {"message": "Driver desactivado"}
 
 

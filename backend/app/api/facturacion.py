@@ -5,7 +5,7 @@ import json
 from typing import Optional, List
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,8 +19,10 @@ from app.models import (
     PagoSemanaSeller, FacturaMensualSeller,
     CalendarioSemanas, TipoEntidadEnum,
     EstadoPagoEnum, EstadoFacturaEnum,
+    CartolaCarga, PagoCartolaSeller,
 )
 from app.services.liquidacion import calcular_liquidacion_sellers
+from app.services.audit import registrar as audit
 from app.services.haulmer import emitir_factura, _formatear_rut as _fmt_rut
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
@@ -181,8 +183,9 @@ def actualizar_pago_semana(
     mes: int = Query(...),
     anio: int = Query(...),
     body: PagoSemanaUpdate = ...,
+    request: Request = None,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """Actualiza estado y/o monto override de una semana para un seller."""
     seller = db.get(Seller, seller_id)
@@ -195,6 +198,7 @@ def actualizar_pago_semana(
         monto_override=body.monto_override,
         nota=body.nota,
     )
+    audit(db, "pago_manual_seller", usuario=current_user, request=request, entidad="pago_semana_seller", entidad_id=seller_id, metadata={"nombre": seller.nombre, "semana": semana, "mes": mes, "anio": anio, "estado": body.estado, "monto": body.monto_override})
     db.commit()
     return {"ok": True, "monto_neto": pago.monto_override if pago.monto_override is not None else pago.monto_neto}
 
@@ -204,8 +208,9 @@ def actualizar_pagos_batch(
     mes: int = Query(...),
     anio: int = Query(...),
     body: List[dict] = ...,
+    request: Request = None,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """Actualiza múltiples pagos semanales. Body: [{seller_id, semana, monto_override?, estado?}, ...]"""
     updated = 0
@@ -223,6 +228,7 @@ def actualizar_pagos_batch(
         )
         updated += 1
 
+    audit(db, "pago_batch_seller", usuario=current_user, request=request, entidad="pago_semana_seller", metadata={"mes": mes, "anio": anio, "cambios": len(body)})
     db.commit()
     return {"ok": True, "updated": updated}
 
@@ -267,6 +273,7 @@ def generar_facturas(
     mes: int = Query(...),
     anio: int = Query(...),
     seller_ids: List[int] = ...,
+    request: Request = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_admin_or_administracion),
 ):
@@ -362,6 +369,18 @@ def generar_facturas(
                     if isinstance(resp, dict):
                         factura_obj.respuesta_api = {k: v for k, v in resp.items() if k in ("FOLIO", "folio", "RESOLUCION")}
 
+    # Fase 4: marcar envíos de sellers facturados como is_facturado
+    for sid in seller_ids:
+        envios_seller = db.query(Envio).filter(
+            Envio.seller_id == sid,
+            Envio.mes == mes, Envio.anio == anio,
+            Envio.is_facturado == False,
+        ).all()
+        for e in envios_seller:
+            e.is_facturado = True
+            e.sync_estado_financiero()
+
+    audit(db, "generar_facturas", usuario=current_user, request=request, entidad="factura", metadata={"mes": mes, "anio": anio, "seller_ids": seller_ids})
     db.commit()
     return {"creadas": creadas, "errores": errores}
 
@@ -503,6 +522,13 @@ def generar_facturas_stream(
                 if adv_msg:
                     advertencias.append(adv_msg)
                 yield f"event: progress\ndata: {json.dumps({'current': i + 1, 'total': total, 'seller_nombre': seller_nombre or '—'})}\n\n"
+            # Fase 4: marcar envíos de sellers facturados
+            for sid in seller_ids:
+                for e in db.query(Envio).filter(
+                    Envio.seller_id == sid, Envio.mes == mes, Envio.anio == anio, Envio.is_facturado == False,
+                ).all():
+                    e.is_facturado = True
+                    e.sync_estado_financiero()
             db.commit()
             yield f"event: done\ndata: {json.dumps({'creadas': creadas, 'errores': errores, 'advertencias': advertencias})}\n\n"
         except Exception as e:
@@ -623,7 +649,6 @@ def _upsert_pago_semana_seller(
     Si vuelve a PENDIENTE/INCOMPLETO → elimina el registro manual automático.
     """
     from datetime import date
-    from app.models import PagoCartolaSeller
 
     pago = db.query(PagoSemanaSeller).filter(
         PagoSemanaSeller.seller_id == seller_id,
@@ -695,7 +720,6 @@ def pagos_acumulados_sellers(
     _=Depends(require_admin_or_administracion),
 ):
     """Suma de PagoCartolaSeller por seller y semana para el mes."""
-    from app.models import PagoCartolaSeller
     from sqlalchemy import func
 
     rows = db.query(
@@ -811,8 +835,6 @@ async def cartola_seller_preview(
     _=Depends(require_admin_or_administracion),
 ):
     """Parsea cartola bancaria y retorna preview de abonos recibidos de sellers."""
-    from app.models import PagoCartolaSeller
-
     contenido = await archivo.read()
     movimientos = _parsear_cartola_seller(contenido)
 
@@ -881,11 +903,22 @@ class ConfirmarCartolaSellerRequest(BaseModel):
 @router.post("/cartola/confirmar")
 def cartola_seller_confirmar(
     body: ConfirmarCartolaSellerRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """Graba pagos recibidos de sellers desde cartola. Guarda alias automáticamente."""
-    from app.models import PagoCartolaSeller
+
+    carga = CartolaCarga(
+        tipo="seller", archivo_nombre="cartola_bancaria",
+        usuario_id=current_user.get("id"), usuario_nombre=current_user.get("nombre"),
+        mes=body.mes, anio=body.anio,
+        total_transacciones=len(body.items),
+        matcheadas=len(body.items), no_matcheadas=0,
+        monto_total=sum(it.monto for it in body.items),
+    )
+    db.add(carga)
+    db.flush()
 
     grabados = 0
     for item in body.items:
@@ -900,10 +933,10 @@ def cartola_seller_confirmar(
             fecha_pago=item.fecha,
             descripcion=item.descripcion,
             fuente="cartola",
+            carga_id=carga.id,
         ))
         grabados += 1
 
-        # Guardar alias si es nuevo
         if item.nombre_extraido:
             seller = db.get(Seller, item.seller_id)
             if seller:
@@ -912,5 +945,6 @@ def cartola_seller_confirmar(
                 if alias_nuevo.lower() != seller.nombre.lower() and alias_nuevo.lower() not in aliases_actuales:
                     seller.aliases = list(seller.aliases or []) + [alias_nuevo]
 
+    audit(db, "carga_cartola_seller", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
     db.commit()
     return {"ok": True, "grabados": grabados}

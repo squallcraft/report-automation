@@ -99,6 +99,7 @@ class DriverBase(BaseModel):
     tarifa_ecourier: int = 1700
     tarifa_oviedo: int = 1800
     tarifa_tercerizado: int = 1500
+    tarifa_retiro_fija: int = 0
     jefe_flota_id: Optional[int] = None
     rut: Optional[str] = None
     banco: Optional[str] = None
@@ -119,6 +120,7 @@ class DriverUpdate(BaseModel):
     tarifa_ecourier: Optional[int] = None
     tarifa_oviedo: Optional[int] = None
     tarifa_tercerizado: Optional[int] = None
+    tarifa_retiro_fija: Optional[int] = None
     jefe_flota_id: Optional[int] = None
     rut: Optional[str] = None
     banco: Optional[str] = None
@@ -173,6 +175,13 @@ class EnvioOut(BaseModel):
     ruta_nombre: Optional[str] = None
     direccion: Optional[str] = None
     homologado: bool = True
+    estado_entrega: Optional[str] = "delivered"
+    estado_financiero: Optional[str] = "pendiente"
+    is_liquidado: Optional[bool] = False
+    is_facturado: Optional[bool] = False
+    is_pagado_driver: Optional[bool] = False
+    origen: Optional[str] = "ingesta"
+    external_id: Optional[str] = None
     seller_nombre: Optional[str] = None
     driver_nombre: Optional[str] = None
 
@@ -390,6 +399,72 @@ class ConsultaOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Pickups ──
+
+class PickupBase(BaseModel):
+    nombre: str
+    aliases: List[str] = []
+    tarifa_driver: int = 0
+    comision_paquete: int = 200
+    seller_id: Optional[int] = None
+    driver_id: Optional[int] = None
+    activo: bool = True
+    email: Optional[str] = None
+    rut: Optional[str] = None
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+
+
+class PickupCreate(PickupBase):
+    password: Optional[str] = None
+
+
+class PickupUpdate(BaseModel):
+    nombre: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    tarifa_driver: Optional[int] = None
+    comision_paquete: Optional[int] = None
+    seller_id: Optional[int] = None
+    driver_id: Optional[int] = None
+    activo: Optional[bool] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    rut: Optional[str] = None
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+
+
+class PickupOut(PickupBase):
+    id: int
+    seller_nombre: Optional[str] = None
+    driver_nombre: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── Recepciones Paquete ──
+
+class RecepcionPaqueteOut(BaseModel):
+    id: int
+    pickup_id: int
+    envio_id: Optional[int] = None
+    fecha_recepcion: date
+    semana: int
+    mes: int
+    anio: int
+    pedido: str
+    tipo: Optional[str] = None
+    comision: int = 200
+    procesado: bool = True
+    error_msg: Optional[str] = None
+    pickup_nombre: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ── Retiros ──
 
 class RetiroBase(BaseModel):
@@ -399,6 +474,7 @@ class RetiroBase(BaseModel):
     anio: int
     seller_id: Optional[int] = None
     driver_id: Optional[int] = None
+    pickup_id: Optional[int] = None
     tarifa_seller: int = 0
     tarifa_driver: int = 0
 
@@ -418,6 +494,7 @@ class RetiroOut(RetiroBase):
     id: int
     seller_nombre: Optional[str] = None
     driver_nombre: Optional[str] = None
+    pickup_nombre: Optional[str] = None
     seller_nombre_raw: Optional[str] = None
     driver_nombre_raw: Optional[str] = None
     homologado: bool = True

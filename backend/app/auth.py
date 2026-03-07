@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import AdminUser, Seller, Driver, RolEnum
+from app.models import AdminUser, Seller, Driver, Pickup, RolEnum
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -22,7 +22,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 PERMISOS_DISPONIBLES: list[str] = [
     "sellers", "drivers", "ingesta", "envios", "liquidacion",
     "productos", "comunas", "ajustes", "retiros", "consultas",
-    "facturacion", "cpc", "logs", "calendario", "asistente",
+    "facturacion", "cpc", "logs", "calendario", "asistente", "pickups",
 ]
 
 PERMISOS_DEFAULT_ADMINISTRACION: list[str] = [
@@ -108,6 +108,13 @@ def get_current_user(
         if not driver.activo:
             raise HTTPException(status_code=401, detail="Cuenta desactivada")
         return {"rol": RolEnum.DRIVER, "id": driver.id, "nombre": driver.nombre, "permisos": []}
+    elif rol == RolEnum.PICKUP:
+        pickup = db.query(Pickup).filter(Pickup.id == uid).first()
+        if not pickup:
+            raise HTTPException(status_code=401, detail="Pickup no encontrado")
+        if not pickup.activo:
+            raise HTTPException(status_code=401, detail="Cuenta desactivada")
+        return {"rol": RolEnum.PICKUP, "id": pickup.id, "nombre": pickup.nombre, "permisos": []}
 
     raise HTTPException(status_code=401, detail="Rol no reconocido")
 
@@ -154,6 +161,12 @@ def driver_period_allowed(anio: int, mes: int, semana: int) -> bool:
 def require_driver(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["rol"] != RolEnum.DRIVER:
         raise HTTPException(status_code=403, detail="Acceso solo para drivers")
+    return current_user
+
+
+def require_pickup(current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["rol"] != RolEnum.PICKUP:
+        raise HTTPException(status_code=403, detail="Acceso solo para pickups")
     return current_user
 
 

@@ -314,6 +314,20 @@ def procesar_reporte_excel(
     reprocesando = all(v is not None for v in [reprocesar_semana, reprocesar_mes, reprocesar_anio])
     eliminados = 0
     if reprocesando:
+        bloqueados = db.query(Envio).filter(
+            Envio.semana == reprocesar_semana,
+            Envio.mes == reprocesar_mes,
+            Envio.anio == reprocesar_anio,
+            Envio.estado_financiero != "pendiente",
+        ).count()
+        if bloqueados > 0:
+            error_msg = (
+                f"No se puede reprocesar: {bloqueados} envíos de semana {reprocesar_semana} "
+                f"({reprocesar_mes}/{reprocesar_anio}) ya están liquidados/facturados/pagados."
+            )
+            if task_id:
+                update_task(task_id, status="error", message=error_msg)
+            return {"error": error_msg, "envios_creados": 0}
         if task_id:
             update_task(
                 task_id,

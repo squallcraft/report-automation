@@ -6,7 +6,7 @@ import shutil
 import uuid
 import threading
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
@@ -18,6 +18,7 @@ from app.auth import require_admin, require_admin_or_administracion
 from app.config import get_settings
 from app.models import Envio, Seller, Driver, LogIngesta
 from app.schemas import IngestaResult, HomologacionPendiente, ResolverHomologacion
+from app.services.audit import registrar as audit
 from app.services.ingesta import procesar_reporte_excel, resolver_homologacion
 from app.services.task_progress import create_task, get_task, update_task, cleanup_old_tasks
 
@@ -28,6 +29,7 @@ def _run_ingesta_in_background(
     filepath: str,
     task_id: str,
     usuario: str,
+    usuario_dict: dict,
     reprocesar_semana: int = None,
     reprocesar_mes: int = None,
     reprocesar_anio: int = None,
@@ -42,6 +44,21 @@ def _run_ingesta_in_background(
             reprocesar_semana=reprocesar_semana,
             reprocesar_mes=reprocesar_mes,
             reprocesar_anio=reprocesar_anio,
+        )
+        log = db.query(LogIngesta).filter(LogIngesta.ingesta_id == task_id).first()
+        audit(
+            db, "ingesta_batch",
+            usuario=usuario_dict,
+            entidad="envio_batch",
+            metadata={
+                "archivo": os.path.basename(filepath),
+                "task_id": task_id,
+                "total_filas": log.total_filas if log else 0,
+                "procesados": log.procesados if log else 0,
+                "errores": log.errores_count if log else 0,
+                "reprocesar": {"semana": reprocesar_semana, "mes": reprocesar_mes, "anio": reprocesar_anio}
+                if reprocesar_semana else None,
+            },
         )
     except Exception as e:
         update_task(task_id, status="error", message=f"Error fatal: {str(e)}")
@@ -211,7 +228,7 @@ async def subir_reporte(
 
     thread = threading.Thread(
         target=_run_ingesta_in_background,
-        args=(filepath, task_id, usuario, reprocesar_semana, reprocesar_mes, reprocesar_anio),
+        args=(filepath, task_id, usuario, dict(current_user), reprocesar_semana, reprocesar_mes, reprocesar_anio),
         daemon=True,
     )
     thread.start()
@@ -286,11 +303,18 @@ def listar_logs(
 @router.post("/resolver")
 def resolver(
     data: ResolverHomologacion,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     try:
         actualizados = resolver_homologacion(db, data.nombre_raw, data.tipo, data.entidad_id)
+        audit(
+            db, "resolver_homologacion",
+            usuario=current_user, request=request,
+            entidad=data.tipo.lower(), entidad_id=data.entidad_id,
+            metadata={"nombre_raw": data.nombre_raw, "actualizados": actualizados},
+        )
         return {"message": f"{actualizados} envíos actualizados", "actualizados": actualizados}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

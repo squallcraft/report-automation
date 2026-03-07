@@ -3,9 +3,10 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp,
+  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import api from '../api'
 
 const adminLinks = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
@@ -23,7 +24,9 @@ const adminLinks = [
   { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
   { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
   { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
-  { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },   // solo ADMIN (sin permiso slug)
+  { to: '/admin/pickups', icon: Store, label: 'Pickups', permiso: 'pickups' },
+  { to: '/admin/auditoria', icon: Shield, label: 'Auditoría' },
+  { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
   { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
 ]
 
@@ -49,11 +52,28 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
+  const [pickupProfile, setPickupProfile] = useState(null)
+
+  useEffect(() => {
+    if (user?.rol === 'PICKUP') {
+      api.get('/pickups/portal/dashboard')
+        .then(({ data }) => setPickupProfile(data))
+        .catch(() => {})
+    }
+  }, [user?.rol])
 
   // Cerrar drawer al cambiar de ruta (móvil)
   useEffect(() => {
     if (onClose && mobileOpen) onClose()
   }, [location.pathname])
+
+  const pickupLinks = [
+    { to: '/pickup', icon: LayoutDashboard, label: 'Mi Panel' },
+    { to: '/pickup/recepciones', icon: Package, label: 'Mis Recepciones' },
+    ...(pickupProfile?.seller_id ? [{ to: '/pickup/envios', icon: FileText, label: 'Mis Envíos' }] : []),
+    ...(pickupProfile?.driver_id ? [{ to: '/pickup/entregas', icon: Truck, label: 'Mis Entregas' }] : []),
+    { to: '/pickup/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
+  ]
 
   let links = adminLinks
   if (user?.rol === 'ADMINISTRACION') {
@@ -69,6 +89,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   }
   if (user?.rol === 'SELLER') links = sellerLinks
   if (user?.rol === 'DRIVER') links = driverLinks
+  if (user?.rol === 'PICKUP') links = pickupLinks
 
   const handleLogout = () => {
     logout()
@@ -108,7 +129,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
           <NavLink
             key={to}
             to={to}
-            end={to === '/admin' || to === '/seller' || to === '/driver'}
+            end={to === '/admin' || to === '/seller' || to === '/driver' || to === '/pickup'}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-2.5 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors touch-manipulation
               ${isActive ? 'bg-primary-700 text-white' : 'text-primary-200 hover:bg-primary-800 hover:text-white'}`

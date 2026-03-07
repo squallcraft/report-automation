@@ -36,6 +36,14 @@ import DriverConsultas from './pages/driver/DriverConsultas'
 import DriverGanancias from './pages/driver/DriverGanancias'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
+import Auditoria from './pages/admin/Auditoria'
+import Pickups from './pages/admin/Pickups'
+import PickupDashboard from './pages/pickup/PickupDashboard'
+import PickupRecepciones from './pages/pickup/PickupRecepciones'
+import PickupEnvios from './pages/pickup/PickupEnvios'
+import PickupEntregas from './pages/pickup/PickupEntregas'
+import PickupGanancias from './pages/pickup/PickupGanancias'
+
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
@@ -48,6 +56,7 @@ function getDefaultRoute(rol) {
   if (rol === 'ADMIN' || rol === 'ADMINISTRACION') return '/admin'
   if (rol === 'SELLER') return '/seller'
   if (rol === 'DRIVER') return '/driver'
+  if (rol === 'PICKUP') return '/pickup'
   return '/login'
 }
 
@@ -80,6 +89,8 @@ export default function App() {
         <Route path="cpc" element={<CPC />} />
         <Route path="usuarios" element={<Usuarios />} />
         <Route path="asistente" element={<Asistente />} />
+        <Route path="pickups" element={<Pickups />} />
+        <Route path="auditoria" element={<Auditoria />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>
@@ -89,6 +100,14 @@ export default function App() {
         <Route path="facturacion" element={<SellerFacturacion />} />
         <Route path="mis-pagos" element={<SellerGanancias />} />
         <Route path="consultas" element={<SellerConsultas />} />
+      </Route>
+
+      <Route path="/pickup" element={<ProtectedRoute roles={['PICKUP']}><Layout /></ProtectedRoute>}>
+        <Route index element={<PickupDashboard />} />
+        <Route path="recepciones" element={<PickupRecepciones />} />
+        <Route path="envios" element={<PickupEnvios />} />
+        <Route path="entregas" element={<PickupEntregas />} />
+        <Route path="ganancias" element={<PickupGanancias />} />
       </Route>
 
       <Route path="/driver" element={<ProtectedRoute roles={['DRIVER']}><Layout /></ProtectedRoute>}>

@@ -1,6 +1,6 @@
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func as sqlfunc
 
@@ -9,8 +9,9 @@ from app.auth import (
     require_admin, require_admin_or_administracion, get_current_user,
     DRIVER_CUTOFF_ANIO, DRIVER_CUTOFF_MES, DRIVER_CUTOFF_SEMANA,
 )
-from app.models import Envio, Seller, Driver, RolEnum
+from app.models import Envio, Seller, Driver, Pickup, RolEnum
 from app.schemas import EnvioOut, EnvioUpdate
+from app.services.audit import registrar as audit
 
 router = APIRouter(prefix="/envios", tags=["Envíos"])
 
@@ -136,6 +137,12 @@ def listar_envios(
             (Envio.anio == DRIVER_CUTOFF_ANIO) & (Envio.mes > DRIVER_CUTOFF_MES),
             (Envio.anio == DRIVER_CUTOFF_ANIO) & (Envio.mes == DRIVER_CUTOFF_MES) & (Envio.semana >= DRIVER_CUTOFF_SEMANA),
         ))
+    elif user["rol"] == RolEnum.PICKUP:
+        pickup = db.query(Pickup).get(user["id"])
+        if pickup and pickup.seller_id:
+            query = query.filter(Envio.seller_id == pickup.seller_id)
+        else:
+            query = query.filter(Envio.id < 0)
 
     is_admin = user["rol"] in (RolEnum.ADMIN, RolEnum.ADMINISTRACION)
     query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin, meses=meses_list)
@@ -185,6 +192,10 @@ def obtener_envio(envio_id: int, db: Session = Depends(get_db), user=Depends(get
         allowed = [user["id"]] + sub_ids
         if envio.driver_id not in allowed:
             raise HTTPException(status_code=403, detail="No autorizado")
+    if user["rol"] == RolEnum.PICKUP:
+        pickup = db.query(Pickup).get(user["id"])
+        if not pickup or not pickup.seller_id or envio.seller_id != pickup.seller_id:
+            raise HTTPException(status_code=403, detail="No autorizado")
     return _enrich_envio(envio, db, rol=user["rol"])
 
 
@@ -192,14 +203,35 @@ def obtener_envio(envio_id: int, db: Session = Depends(get_db), user=Depends(get
 def actualizar_envio(
     envio_id: int,
     data: EnvioUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     envio = db.get(Envio, envio_id)
     if not envio:
         raise HTTPException(status_code=404, detail="Envío no encontrado")
+
+    if envio.estado_financiero != "pendiente":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Envío en estado '{envio.estado_financiero}'. "
+                   "Los campos financieros no pueden modificarse. "
+                   "Use Ajustes de Liquidación para correcciones.",
+        )
+
+    campos = list(data.model_dump(exclude_unset=True).keys())
+    antes = {c: getattr(envio, c) for c in campos}
+
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(envio, key, value)
     db.commit()
     db.refresh(envio)
+
+    despues = {c: getattr(envio, c) for c in campos}
+    cambios = {c: {"antes": antes[c], "despues": despues[c]} for c in campos if antes[c] != despues[c]}
+    if cambios:
+        audit(db, "editar_envio", usuario=current_user, request=request,
+              entidad="envio", entidad_id=envio_id, cambios=cambios,
+              metadata={"tracking": envio.tracking_id})
+
     return _enrich_envio(envio, db)

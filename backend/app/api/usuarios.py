@@ -1,11 +1,12 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.auth import require_admin, hash_password, resolver_permisos, PERMISOS_DISPONIBLES
 from app.models import AdminUser, Seller, Driver, RolEnum
+from app.services.audit import registrar as audit
 
 router = APIRouter(prefix="/usuarios", tags=["Usuarios"])
 
@@ -58,7 +59,7 @@ def listar_usuarios(db: Session = Depends(get_db), _=Depends(require_admin)):
 
 
 @router.post("", response_model=UsuarioOut, status_code=201)
-def crear_usuario(data: UsuarioCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def crear_usuario(data: UsuarioCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     if data.rol not in (RolEnum.ADMIN.value, RolEnum.ADMINISTRACION.value):
         raise HTTPException(status_code=400, detail="Rol debe ser ADMIN o ADMINISTRACION")
     existing = db.query(AdminUser).filter(AdminUser.username == data.username).first()
@@ -73,14 +74,20 @@ def crear_usuario(data: UsuarioCreate, db: Session = Depends(get_db), _=Depends(
     db.add(user)
     db.commit()
     db.refresh(user)
+    audit(db, "crear_usuario", usuario=current_user, request=request,
+          entidad="usuario", entidad_id=user.id,
+          metadata={"username": user.username, "rol": user.rol, "nombre": user.nombre})
     return _to_out(user)
 
 
 @router.put("/{user_id}", response_model=UsuarioOut)
-def actualizar_usuario(user_id: int, data: UsuarioUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def actualizar_usuario(user_id: int, data: UsuarioUpdate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     user = db.get(AdminUser, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    antes = {"username": user.username, "nombre": user.nombre, "rol": user.rol, "activo": user.activo}
+
     if data.username is not None:
         dup = db.query(AdminUser).filter(AdminUser.username == data.username, AdminUser.id != user_id).first()
         if dup:
@@ -98,6 +105,15 @@ def actualizar_usuario(user_id: int, data: UsuarioUpdate, db: Session = Depends(
         user.activo = data.activo
     db.commit()
     db.refresh(user)
+
+    despues = {"username": user.username, "nombre": user.nombre, "rol": user.rol, "activo": user.activo}
+    cambios = {k: {"antes": antes[k], "despues": despues[k]} for k in antes if antes[k] != despues[k]}
+    if data.password:
+        cambios["password"] = {"antes": "***", "despues": "***"}
+    if cambios:
+        audit(db, "editar_usuario", usuario=current_user, request=request,
+              entidad="usuario", entidad_id=user_id, cambios=cambios)
+
     return _to_out(user)
 
 
@@ -105,8 +121,9 @@ def actualizar_usuario(user_id: int, data: UsuarioUpdate, db: Session = Depends(
 def actualizar_permisos(
     user_id: int,
     data: PermisosUpdate,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """Establece la lista de permisos custom para un usuario ADMINISTRACION."""
     user = db.get(AdminUser, user_id)
@@ -119,17 +136,24 @@ def actualizar_permisos(
     if invalidos:
         raise HTTPException(status_code=400, detail=f"Permisos inválidos: {', '.join(invalidos)}")
 
+    permisos_antes = list(user.permisos) if user.permisos else []
     user.permisos = data.permisos
     db.commit()
     db.refresh(user)
+
+    audit(db, "editar_permisos", usuario=current_user, request=request,
+          entidad="usuario", entidad_id=user_id,
+          cambios={"permisos": {"antes": permisos_antes, "despues": data.permisos}})
+
     return _to_out(user)
 
 
 @router.delete("/{user_id}/permisos", response_model=UsuarioOut)
 def resetear_permisos(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """Elimina permisos custom — el usuario vuelve a usar los defaults del rol."""
     user = db.get(AdminUser, user_id)
@@ -138,11 +162,13 @@ def resetear_permisos(
     user.permisos = None
     db.commit()
     db.refresh(user)
+    audit(db, "resetear_permisos", usuario=current_user, request=request,
+          entidad="usuario", entidad_id=user_id)
     return _to_out(user)
 
 
 @router.delete("/{user_id}")
-def desactivar_usuario(user_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def desactivar_usuario(user_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     user = db.get(AdminUser, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -150,6 +176,9 @@ def desactivar_usuario(user_id: int, db: Session = Depends(get_db), current_user
         raise HTTPException(status_code=400, detail="No puedes desactivarte a ti mismo")
     user.activo = False
     db.commit()
+    audit(db, "desactivar_usuario", usuario=current_user, request=request,
+          entidad="usuario", entidad_id=user_id,
+          metadata={"username": user.username, "nombre": user.nombre})
     return {"message": "Usuario desactivado"}
 
 
@@ -206,14 +235,14 @@ def listar_accesos_drivers(db: Session = Depends(get_db), _=Depends(require_admi
 def upsert_acceso_seller(
     seller_id: int,
     data: AccesoPortalUpsert,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     seller = db.get(Seller, seller_id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
 
-    # Verificar email único (excluyendo este seller)
     dup = db.query(Seller).filter(Seller.email == data.email, Seller.id != seller_id).first()
     if dup:
         raise HTTPException(status_code=400, detail="Ese email ya está en uso por otro seller")
@@ -226,6 +255,11 @@ def upsert_acceso_seller(
 
     db.commit()
     db.refresh(seller)
+
+    audit(db, "editar_acceso_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller_id,
+          metadata={"nombre": seller.nombre, "email": data.email})
+
     return AccesoPortalOut(
         id=seller.id,
         nombre=seller.nombre,
@@ -239,8 +273,9 @@ def upsert_acceso_seller(
 def upsert_acceso_driver(
     driver_id: int,
     data: AccesoPortalUpsert,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     driver = db.get(Driver, driver_id)
     if not driver:
@@ -258,6 +293,11 @@ def upsert_acceso_driver(
 
     db.commit()
     db.refresh(driver)
+
+    audit(db, "editar_acceso_driver", usuario=current_user, request=request,
+          entidad="driver", entidad_id=driver_id,
+          metadata={"nombre": driver.nombre, "email": data.email})
+
     return AccesoPortalOut(
         id=driver.id,
         nombre=driver.nombre,
@@ -270,8 +310,9 @@ def upsert_acceso_driver(
 @router.delete("/accesos/sellers/{seller_id}", response_model=AccesoPortalOut)
 def revocar_acceso_seller(
     seller_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     seller = db.get(Seller, seller_id)
     if not seller:
@@ -280,6 +321,9 @@ def revocar_acceso_seller(
     seller.password_hash = None
     db.commit()
     db.refresh(seller)
+    audit(db, "revocar_acceso_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller_id,
+          metadata={"nombre": seller.nombre})
     return AccesoPortalOut(
         id=seller.id, nombre=seller.nombre, email=None, tiene_acceso=False, activo=seller.activo
     )
@@ -288,8 +332,9 @@ def revocar_acceso_seller(
 @router.delete("/accesos/drivers/{driver_id}", response_model=AccesoPortalOut)
 def revocar_acceso_driver(
     driver_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     driver = db.get(Driver, driver_id)
     if not driver:
@@ -298,6 +343,9 @@ def revocar_acceso_driver(
     driver.password_hash = None
     db.commit()
     db.refresh(driver)
+    audit(db, "revocar_acceso_driver", usuario=current_user, request=request,
+          entidad="driver", entidad_id=driver_id,
+          metadata={"nombre": driver.nombre})
     return AccesoPortalOut(
         id=driver.id, nombre=driver.nombre, email=None, tiene_acceso=False, activo=driver.activo
     )

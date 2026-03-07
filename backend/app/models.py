@@ -38,6 +38,7 @@ class RolEnum(str, enum.Enum):
     ADMINISTRACION = "ADMINISTRACION"
     SELLER = "SELLER"
     DRIVER = "DRIVER"
+    PICKUP = "PICKUP"
 
 
 class Seller(Base):
@@ -77,6 +78,7 @@ class Driver(Base):
     tarifa_ecourier = Column(Integer, nullable=False, default=1700)
     tarifa_oviedo = Column(Integer, nullable=False, default=1800)
     tarifa_tercerizado = Column(Integer, nullable=False, default=1500)
+    tarifa_retiro_fija = Column(Integer, nullable=False, default=0)
     jefe_flota_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
     rut = Column(String, nullable=True)
     banco = Column(String, nullable=True)
@@ -131,11 +133,82 @@ class Envio(Base):
     direccion = Column(Text, nullable=True)
     homologado = Column(Boolean, default=True)
     ingesta_id = Column(String, nullable=True)
+
+    # Auditoría / estados (Fase 2)
+    estado_entrega = Column(String, nullable=False, default="delivered")
+    estado_financiero = Column(String, nullable=False, default="pendiente", index=True)
+    is_liquidado = Column(Boolean, nullable=False, default=False)
+    is_facturado = Column(Boolean, nullable=False, default=False)
+    is_pagado_driver = Column(Boolean, nullable=False, default=False)
+    origen = Column(String, nullable=False, default="ingesta")
+    external_id = Column(String, nullable=True)
+
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     seller = relationship("Seller", back_populates="envios")
     driver = relationship("Driver", back_populates="envios")
+
+    def sync_estado_financiero(self):
+        """Recalcula estado_financiero a partir de los flags booleanos."""
+        if self.is_facturado and self.is_pagado_driver:
+            self.estado_financiero = "cerrado"
+        elif self.is_facturado:
+            self.estado_financiero = "facturado"
+        elif self.is_pagado_driver:
+            self.estado_financiero = "pagado_driver"
+        elif self.is_liquidado:
+            self.estado_financiero = "liquidado"
+        else:
+            self.estado_financiero = "pendiente"
+
+
+class Pickup(Base):
+    __tablename__ = "pickups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False, unique=True)
+    aliases = Column(JSON, default=list)
+    tarifa_driver = Column(Integer, default=0)
+    comision_paquete = Column(Integer, default=200)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
+    activo = Column(Boolean, default=True)
+    email = Column(String, unique=True, nullable=True)
+    password_hash = Column(String, nullable=True)
+    rut = Column(String, nullable=True)
+    banco = Column(String, nullable=True)
+    tipo_cuenta = Column(String, nullable=True)
+    numero_cuenta = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    seller = relationship("Seller", foreign_keys=[seller_id])
+    driver = relationship("Driver", foreign_keys=[driver_id])
+    recepciones = relationship("RecepcionPaquete", back_populates="pickup")
+    retiros = relationship("Retiro", back_populates="pickup")
+
+
+class RecepcionPaquete(Base):
+    __tablename__ = "recepciones_paquetes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=False)
+    envio_id = Column(Integer, ForeignKey("envios.id"), nullable=True)
+    fecha_recepcion = Column(Date, nullable=False)
+    semana = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    pedido = Column(String, nullable=False)
+    tipo = Column(String, nullable=True)
+    comision = Column(Integer, default=200)
+    procesado = Column(Boolean, default=True)
+    error_msg = Column(String, nullable=True)
+    ingesta_id = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    pickup = relationship("Pickup", back_populates="recepciones")
+    envio = relationship("Envio")
 
 
 class Retiro(Base):
@@ -148,6 +221,7 @@ class Retiro(Base):
     anio = Column(Integer, nullable=False)
     seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
     driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
+    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=True)
     tarifa_seller = Column(Integer, nullable=False, default=0)
     tarifa_driver = Column(Integer, nullable=False, default=0)
     seller_nombre_raw = Column(String, nullable=True)
@@ -158,6 +232,7 @@ class Retiro(Base):
 
     seller = relationship("Seller", back_populates="retiros")
     driver = relationship("Driver", back_populates="retiros")
+    pickup = relationship("Pickup", back_populates="retiros")
 
 
 class ProductoConExtra(Base):
@@ -329,10 +404,12 @@ class PagoCartola(Base):
     monto = Column(Integer, nullable=False)
     fecha_pago = Column(String, nullable=True)
     descripcion = Column(String, nullable=True)
-    fuente = Column(String, nullable=False, default="cartola")  # "cartola" | "manual"
+    fuente = Column(String, nullable=False, default="cartola")
+    carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     driver = relationship("Driver")
+    carga = relationship("CartolaCarga", foreign_keys=[carga_id])
 
 
 class PagoCartolaSeller(Base):
@@ -347,10 +424,12 @@ class PagoCartolaSeller(Base):
     monto = Column(Integer, nullable=False)
     fecha_pago = Column(String, nullable=True)
     descripcion = Column(String, nullable=True)
-    fuente = Column(String, nullable=False, default="cartola")  # "cartola" | "manual"
+    fuente = Column(String, nullable=False, default="cartola")
+    carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     seller = relationship("Seller")
+    carga = relationship("CartolaCarga", foreign_keys=[carga_id])
 
 
 class FacturaMensualSeller(Base):
@@ -449,12 +528,42 @@ class PasswordResetToken(Base):
 
 
 class AuditLog(Base):
-    """Registro de eventos de seguridad."""
+    """Registro centralizado de auditoría para todas las acciones del sistema."""
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, server_default=func.now(), index=True)
+    usuario_id = Column(Integer, nullable=True)
+    usuario_nombre = Column(String, nullable=True)
+    usuario_rol = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True)
+    accion = Column(String, nullable=False, index=True)
+    entidad = Column(String, nullable=True, index=True)
+    entidad_id = Column(Integer, nullable=True)
+    cambios = Column(JSON, nullable=True)
+    metadata_ = Column("metadata", JSON, nullable=True)
+
+    # Legacy columns kept for backward compatibility with existing auth audit entries
     username = Column(String, nullable=True)
-    action = Column(String, nullable=False)   # LOGIN_SUCCESS, LOGIN_FAIL, RESET_REQUEST, RESET_SUCCESS
+    action = Column(String, nullable=True)
     ip = Column(String, nullable=True)
     detail = Column(String, nullable=True)
-    timestamp = Column(DateTime, server_default=func.now(), index=True)
+
+
+class CartolaCarga(Base):
+    """Historial de cada archivo de cartola subido al sistema."""
+    __tablename__ = "cartola_cargas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tipo = Column(String, nullable=False)
+    archivo_nombre = Column(String, nullable=True)
+    usuario_id = Column(Integer, nullable=True)
+    usuario_nombre = Column(String, nullable=True)
+    fecha_carga = Column(DateTime, server_default=func.now())
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    total_transacciones = Column(Integer, default=0)
+    matcheadas = Column(Integer, default=0)
+    no_matcheadas = Column(Integer, default=0)
+    monto_total = Column(Integer, default=0)
+    detalle = Column(JSON, nullable=True)

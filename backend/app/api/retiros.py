@@ -1,20 +1,44 @@
 from typing import Optional, List
+from difflib import SequenceMatcher
 
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from pydantic import BaseModel
 import pandas as pd
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion
-from app.models import Retiro, Seller, Driver
+from app.models import Retiro, Seller, Driver, Pickup
 from app.schemas import RetiroCreate, RetiroOut
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
+from app.services.audit import registrar as audit
+
+
+def _similaridad(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def _mejor_match(nombre_raw: str, entidades) -> tuple:
+    """Busca la mejor coincidencia entre nombre_raw y una lista de entidades (con .nombre y .aliases)."""
+    mejor, mejor_score = None, 0.0
+    nombre_norm = nombre_raw.lower().strip()
+    for ent in entidades:
+        score = _similaridad(nombre_norm, ent.nombre.lower())
+        for alias in (ent.aliases or []):
+            s = _similaridad(nombre_norm, alias.lower())
+            if s > score:
+                score = s
+        if score > mejor_score:
+            mejor_score = score
+            mejor = ent
+    return mejor, round(mejor_score, 2)
 
 router = APIRouter(prefix="/retiros", tags=["Retiros"])
 
@@ -23,8 +47,10 @@ def _enrich_retiro(r, db) -> dict:
     data = {col.name: getattr(r, col.name) for col in r.__table__.columns}
     seller = db.get(Seller, r.seller_id) if r.seller_id else None
     driver = db.get(Driver, r.driver_id) if r.driver_id else None
+    pickup = db.get(Pickup, r.pickup_id) if r.pickup_id else None
     data["seller_nombre"] = seller.nombre if seller else r.seller_nombre_raw or "—"
     data["driver_nombre"] = driver.nombre if driver else r.driver_nombre_raw or "—"
+    data["pickup_nombre"] = pickup.nombre if pickup else None
     return data
 
 
@@ -128,20 +154,19 @@ def descargar_plantilla_retiros():
                              headers={"Content-Disposition": "attachment; filename=plantilla_retiros.xlsx"})
 
 
-@router.post("/importar")
-async def importar_retiros(
+@router.post("/importar/preview")
+async def preview_retiros(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    """Importa retiros desde un archivo Excel. Homologa conductores y sellers automáticamente."""
+    """Parsea Excel de retiros y retorna un preview con matches propuestos. No graba nada."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(status_code=400, detail="Solo se aceptan archivos Excel (.xlsx)")
+        raise HTTPException(status_code=400, detail="Solo se aceptan archivos Excel (.xlsx / .xls)")
 
     content = await file.read()
     df = pd.read_excel(io.BytesIO(content))
 
-    # Map columns flexibly
     col_map = {}
     for col in df.columns:
         cl = col.lower().strip()
@@ -155,13 +180,9 @@ async def importar_retiros(
 
     sellers = db.query(Seller).filter(Seller.activo == True).all()
     drivers = db.query(Driver).filter(Driver.activo == True).all()
-    seller_cache = {}
-    driver_cache = {}
-    ingesta_id = str(uuid.uuid4())[:8]
+    pickups_list = db.query(Pickup).filter(Pickup.activo == True).all()
 
-    creados = 0
-    ignorados_pickup = 0
-    sin_homologar = []
+    items = []
     errores = []
 
     for idx, row in df.iterrows():
@@ -170,7 +191,6 @@ async def importar_retiros(
             if pd.isna(fecha_raw):
                 errores.append(f"Fila {idx + 2}: sin fecha")
                 continue
-
             if isinstance(fecha_raw, str):
                 fecha = pd.to_datetime(fecha_raw).date()
             else:
@@ -183,63 +203,182 @@ async def importar_retiros(
                 errores.append(f"Fila {idx + 2}: faltan conductor o seller")
                 continue
 
-            driver_id = homologar_nombre(conductor_raw, drivers, driver_cache)
-            seller_id = homologar_nombre(seller_raw, sellers, seller_cache)
+            driver_match, driver_score = _mejor_match(conductor_raw, drivers)
+            pickup_match, pickup_score = _mejor_match(seller_raw, pickups_list)
+            seller_match, seller_score = _mejor_match(seller_raw, sellers)
 
-            homologado = driver_id is not None and seller_id is not None
+            # Determine if it's a pickup or seller
+            es_pickup = pickup_match is not None and pickup_score >= seller_score and pickup_score >= 0.45
+            if es_pickup:
+                punto = pickup_match
+                items.append({
+                    "fila": idx + 2,
+                    "fecha": str(fecha),
+                    "conductor_raw": conductor_raw,
+                    "seller_raw": seller_raw,
+                    "tipo": "pickup",
+                    "driver_id": driver_match.id if driver_match else None,
+                    "driver_nombre": driver_match.nombre if driver_match else None,
+                    "driver_score": driver_score,
+                    "seller_id": None,
+                    "seller_nombre": None,
+                    "seller_score": 0,
+                    "pickup_id": punto.id,
+                    "pickup_nombre": punto.nombre,
+                    "pickup_score": pickup_score,
+                    "tarifa_seller": 0,
+                    "tarifa_driver": punto.tarifa_driver or 0,
+                })
+            else:
+                seller_obj = seller_match
+                skip = seller_obj and seller_obj.usa_pickup
+                items.append({
+                    "fila": idx + 2,
+                    "fecha": str(fecha),
+                    "conductor_raw": conductor_raw,
+                    "seller_raw": seller_raw,
+                    "tipo": "seller",
+                    "driver_id": driver_match.id if driver_match else None,
+                    "driver_nombre": driver_match.nombre if driver_match else None,
+                    "driver_score": driver_score,
+                    "seller_id": seller_obj.id if seller_obj and not skip else None,
+                    "seller_nombre": seller_obj.nombre if seller_obj and not skip else None,
+                    "seller_score": seller_score if not skip else 0,
+                    "pickup_id": None,
+                    "pickup_nombre": None,
+                    "pickup_score": 0,
+                    "tarifa_seller": (seller_obj.tarifa_retiro or 0) if seller_obj and not skip else 0,
+                    "tarifa_driver": (seller_obj.tarifa_retiro_driver or 0) if seller_obj and not skip else 0,
+                    "skip_pickup": bool(skip),
+                })
+        except Exception as e:
+            errores.append(f"Fila {idx + 2}: {str(e)}")
 
-            seller = db.get(Seller, seller_id) if seller_id else None
+    todos_drivers = [{"id": d.id, "nombre": d.nombre} for d in sorted(drivers, key=lambda x: x.nombre)]
+    todos_sellers = [{"id": s.id, "nombre": s.nombre} for s in sorted(sellers, key=lambda x: x.nombre) if not s.usa_pickup]
+    todos_pickups = [{"id": p.id, "nombre": p.nombre} for p in sorted(pickups_list, key=lambda x: x.nombre)]
 
-            # Skip pickup sellers
-            if seller and seller.usa_pickup:
-                ignorados_pickup += 1
-                continue
+    return {
+        "items": items,
+        "errores": errores,
+        "drivers": todos_drivers,
+        "sellers": todos_sellers,
+        "pickups": todos_pickups,
+        "archivo": file.filename,
+    }
 
-            tarifa_seller = 0
-            tarifa_driver = 0
-            if seller:
-                tarifa_seller = seller.tarifa_retiro or 0
-                tarifa_driver = seller.tarifa_retiro_driver or 0
 
-            semana = calcular_semana_del_mes(fecha)
+class ItemConfirmarRetiro(BaseModel):
+    fila: int
+    fecha: str
+    conductor_raw: str
+    seller_raw: str
+    tipo: str  # "seller" | "pickup"
+    driver_id: Optional[int] = None
+    seller_id: Optional[int] = None
+    pickup_id: Optional[int] = None
 
+
+class ConfirmarRetirosRequest(BaseModel):
+    items: List[ItemConfirmarRetiro]
+    archivo: Optional[str] = None
+
+
+@router.post("/importar/confirmar")
+def confirmar_retiros(
+    body: ConfirmarRetirosRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Crea retiros confirmados y guarda aliases de homologación."""
+    ingesta_id = str(uuid.uuid4())[:8]
+    creados = 0
+    creados_pickup = 0
+
+    for item in body.items:
+        fecha = pd.to_datetime(item.fecha).date()
+        semana = calcular_semana_del_mes(fecha)
+
+        if item.tipo == "pickup" and item.pickup_id:
+            pickup = db.get(Pickup, item.pickup_id)
             retiro = Retiro(
-                fecha=fecha,
-                semana=semana,
-                mes=fecha.month,
-                anio=fecha.year,
-                seller_id=seller_id,
-                driver_id=driver_id,
-                tarifa_seller=tarifa_seller,
-                tarifa_driver=tarifa_driver,
-                seller_nombre_raw=seller_raw,
-                driver_nombre_raw=conductor_raw,
-                homologado=homologado,
+                fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
+                seller_id=None, driver_id=item.driver_id, pickup_id=item.pickup_id,
+                tarifa_seller=0,
+                tarifa_driver=pickup.tarifa_driver if pickup else 0,
+                seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
+                homologado=item.driver_id is not None,
+                ingesta_id=ingesta_id,
+            )
+            db.add(retiro)
+            creados_pickup += 1
+        elif item.tipo == "seller":
+            seller = db.get(Seller, item.seller_id) if item.seller_id else None
+            tarifa_seller = (seller.tarifa_retiro or 0) if seller else 0
+            tarifa_driver = (seller.tarifa_retiro_driver or 0) if seller else 0
+            retiro = Retiro(
+                fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
+                seller_id=item.seller_id, driver_id=item.driver_id,
+                tarifa_seller=tarifa_seller, tarifa_driver=tarifa_driver,
+                seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
+                homologado=item.driver_id is not None and item.seller_id is not None,
                 ingesta_id=ingesta_id,
             )
             db.add(retiro)
             creados += 1
 
-            if not homologado:
-                if not driver_id:
-                    sin_homologar.append(f"Driver: {conductor_raw}")
-                if not seller_id:
-                    sin_homologar.append(f"Seller: {seller_raw}")
+        # Guardar alias para driver
+        if item.driver_id and item.conductor_raw:
+            driver = db.get(Driver, item.driver_id)
+            if driver:
+                alias = item.conductor_raw.strip()
+                aliases_lower = [a.lower() for a in (driver.aliases or [])]
+                if alias.lower() != driver.nombre.lower() and alias.lower() not in aliases_lower:
+                    driver.aliases = list(driver.aliases or []) + [alias]
+                    flag_modified(driver, "aliases")
 
-        except Exception as e:
-            errores.append(f"Fila {idx + 2}: {str(e)}")
+        # Guardar alias para seller
+        if item.seller_id and item.seller_raw and item.tipo == "seller":
+            seller = db.get(Seller, item.seller_id)
+            if seller:
+                alias = item.seller_raw.strip()
+                aliases_lower = [a.lower() for a in (seller.aliases or [])]
+                if alias.lower() != seller.nombre.lower() and alias.lower() not in aliases_lower:
+                    seller.aliases = list(seller.aliases or []) + [alias]
+                    flag_modified(seller, "aliases")
+
+        # Guardar alias para pickup
+        if item.pickup_id and item.seller_raw and item.tipo == "pickup":
+            pickup = db.get(Pickup, item.pickup_id)
+            if pickup:
+                alias = item.seller_raw.strip()
+                aliases_lower = [a.lower() for a in (pickup.aliases or [])]
+                if alias.lower() != pickup.nombre.lower() and alias.lower() not in aliases_lower:
+                    pickup.aliases = list(pickup.aliases or []) + [alias]
+                    flag_modified(pickup, "aliases")
 
     db.commit()
-    return {
-        "creados": creados,
-        "ignorados_pickup": ignorados_pickup,
-        "sin_homologar": list(set(sin_homologar)),
-        "errores": errores,
-    }
+    audit(db, "importar_retiros", usuario=current_user, request=request,
+          entidad="retiro_batch",
+          metadata={"archivo": body.archivo, "creados": creados, "creados_pickup": creados_pickup})
+
+    return {"ok": True, "creados": creados, "creados_pickup": creados_pickup}
+
+
+@router.post("/importar")
+async def importar_retiros(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Legacy: importa retiros directamente sin preview."""
+    raise HTTPException(status_code=410, detail="Use /importar/preview + /importar/confirmar")
 
 
 @router.post("", response_model=RetiroOut, status_code=201)
-def crear_retiro(data: RetiroCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
+def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     seller = db.get(Seller, data.seller_id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
@@ -250,14 +389,17 @@ def crear_retiro(data: RetiroCreate, db: Session = Depends(get_db), _=Depends(re
     db.add(retiro)
     db.commit()
     db.refresh(retiro)
+    audit(db, "crear_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro.id, metadata={"seller_id": data.seller_id, "driver_id": data.driver_id, "fecha": str(data.fecha)})
     return _enrich_retiro(retiro, db)
 
 
 @router.delete("/{retiro_id}")
-def eliminar_retiro(retiro_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     retiro = db.get(Retiro, retiro_id)
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
+    meta = {"seller_id": retiro.seller_id, "driver_id": retiro.driver_id, "fecha": str(retiro.fecha)}
     db.delete(retiro)
     db.commit()
+    audit(db, "eliminar_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro_id, metadata=meta)
     return {"message": "Retiro eliminado"}

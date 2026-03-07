@@ -8,7 +8,7 @@ from difflib import SequenceMatcher
 from typing import Optional, List
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,8 +19,9 @@ from app.auth import require_admin_or_administracion
 from app.models import (
     Driver, Envio, Retiro, AjusteLiquidacion,
     PagoSemanaDriver, PagoCartola, CalendarioSemanas,
-    TipoEntidadEnum, EstadoPagoEnum,
+    CartolaCarga, TipoEntidadEnum, EstadoPagoEnum,
 )
+from app.services.audit import registrar as audit
 
 # ---------------------------------------------------------------------------
 # Datos fijos del emisor (E-Courier)
@@ -334,12 +335,13 @@ def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio
 @router.put("/pago-semana/{driver_id}")
 def actualizar_pago_semana_driver(
     driver_id: int,
+    request: Request,
     semana: int = Query(...),
     mes: int = Query(...),
     anio: int = Query(...),
     body: PagoDriverUpdate = ...,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     driver = db.get(Driver, driver_id)
     if not driver:
@@ -361,17 +363,36 @@ def actualizar_pago_semana_driver(
         for sub in subordinados:
             _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=body.estado)
 
+    if body.estado == EstadoPagoEnum.PAGADO.value:
+        # Fase 4: marcar envíos del driver como pagados
+        driver_ids = [driver_id] + [s.id for s in db.query(Driver).filter(
+            Driver.jefe_flota_id == driver_id, Driver.activo == True).all()]
+        for did in driver_ids:
+            for e in db.query(Envio).filter(
+                Envio.driver_id == did, Envio.semana == semana,
+                Envio.mes == mes, Envio.anio == anio, Envio.is_pagado_driver == False,
+            ).all():
+                e.is_pagado_driver = True
+                e.sync_estado_financiero()
+
+    if body.estado is not None:
+        audit(db, "pago_manual_driver", usuario=current_user, request=request,
+              entidad="pago_semana_driver", entidad_id=driver_id,
+              cambios={"estado": {"antes": "—", "despues": body.estado}},
+              metadata={"nombre": driver.nombre, "semana": semana, "mes": mes, "anio": anio, "monto": body.monto_override})
+
     db.commit()
     return {"ok": True}
 
 
 @router.put("/pago-semana-batch")
 def actualizar_pagos_batch_driver(
+    request: Request,
     mes: int = Query(...),
     anio: int = Query(...),
     body: List[dict] = ...,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """Batch update: [{driver_id, semana, estado?, monto_override?, nota?}, ...]"""
     updated = 0
@@ -398,7 +419,21 @@ def actualizar_pagos_batch_driver(
             for sub in subordinados:
                 _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=estado)
 
+        # Fase 4: marcar envíos como pagados
+        if estado == EstadoPagoEnum.PAGADO.value:
+            all_driver_ids = [driver_id] + [s.id for s in db.query(Driver).filter(
+                Driver.jefe_flota_id == driver_id, Driver.activo == True).all()]
+            for did in all_driver_ids:
+                for e in db.query(Envio).filter(
+                    Envio.driver_id == did, Envio.semana == semana,
+                    Envio.mes == mes, Envio.anio == anio, Envio.is_pagado_driver == False,
+                ).all():
+                    e.is_pagado_driver = True
+                    e.sync_estado_financiero()
+
         updated += 1
+
+    audit(db, "pago_batch_driver", usuario=current_user, request=request, entidad="pago_semana_driver", metadata={"mes": mes, "anio": anio, "cambios": len(body)})
 
     db.commit()
     return {"ok": True, "updated": updated}
@@ -560,8 +595,9 @@ class GenerarTEFRequest(BaseModel):
 @router.post("/generar-tef")
 def generar_tef(
     body: GenerarTEFRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """Genera el archivo .TXT TEF Banco de Chile para los drivers seleccionados."""
     lineas = []
@@ -576,6 +612,9 @@ def generar_tef(
     contenido = "".join(lineas)
     hoy = date.today().strftime("%Y%m%d")
     filename = f"TEF_ECourier_{hoy}_S{body.semana}.txt"
+
+    audit(db, "generar_tef", usuario=current_user, request=request, entidad="tef", metadata={"semana": body.semana, "mes": body.mes, "anio": body.anio, "drivers": len(body.items), "monto_total": sum(it.monto for it in body.items)})
+    db.commit()
 
     return StreamingResponse(
         io.BytesIO(contenido.encode("latin-1", errors="replace")),
@@ -763,13 +802,26 @@ class ConfirmarCartolaRequest(BaseModel):
 @router.post("/cartola/confirmar")
 def cartola_confirmar(
     body: ConfirmarCartolaRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    current_user=Depends(require_admin_or_administracion),
 ):
     """
     Graba los pagos confirmados desde la cartola en BD.
     Guarda nombre_extraido como alias del driver si no existe ya.
     """
+    carga = CartolaCarga(
+        tipo="driver", archivo_nombre="cartola_bancaria",
+        usuario_id=current_user.get("id"), usuario_nombre=current_user.get("nombre"),
+        mes=body.mes, anio=body.anio,
+        total_transacciones=len(body.items),
+        matcheadas=len(body.items),
+        no_matcheadas=0,
+        monto_total=sum(it.monto for it in body.items),
+    )
+    db.add(carga)
+    db.flush()
+
     grabados = 0
     for item in body.items:
         if item.driver_id <= 0 or item.monto <= 0:
@@ -783,6 +835,7 @@ def cartola_confirmar(
             fecha_pago=item.fecha,
             descripcion=item.descripcion,
             fuente="cartola",
+            carga_id=carga.id,
         )
         db.add(pago)
         grabados += 1
@@ -798,6 +851,8 @@ def cartola_confirmar(
                 # Solo agregar si no es el nombre principal ni ya existe como alias
                 if alias_lower != nombre_lower and alias_lower not in aliases_actuales:
                     driver.aliases = list(driver.aliases or []) + [alias_nuevo]
+
+    audit(db, "carga_cartola_driver", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
 
     db.commit()
     return {"ok": True, "grabados": grabados}
