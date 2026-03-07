@@ -14,69 +14,61 @@ except Exception:
 
 with engine.connect() as conn:
     insp = inspect(engine)
+    def safe_exec(sql, multi=False):
+        """Ejecuta SQL de migración protegido contra race conditions entre workers."""
+        try:
+            if multi:
+                for s in sql:
+                    conn.execute(text(s))
+            else:
+                conn.execute(text(sql))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
     if "admin_users" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "rol" not in cols:
-            conn.execute(text("ALTER TABLE admin_users ADD COLUMN rol TEXT NOT NULL DEFAULT 'ADMIN'"))
-            conn.commit()
+            safe_exec("ALTER TABLE admin_users ADD COLUMN rol TEXT NOT NULL DEFAULT 'ADMIN'")
     if "drivers" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("drivers")]
         if "contratado" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN contratado BOOLEAN NOT NULL DEFAULT FALSE"))
-            conn.execute(text(
-                "UPDATE drivers SET contratado = TRUE "
-                "WHERE lower(nombre) LIKE '%erick%' OR lower(nombre) LIKE '%edwyn%'"
-            ))
-            conn.commit()
+            safe_exec([
+                "ALTER TABLE drivers ADD COLUMN contratado BOOLEAN NOT NULL DEFAULT FALSE",
+                "UPDATE drivers SET contratado = TRUE WHERE lower(nombre) LIKE '%erick%' OR lower(nombre) LIKE '%edwyn%'",
+            ], multi=True)
         if "jefe_flota_id" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN jefe_flota_id INTEGER REFERENCES drivers(id)"))
-            conn.commit()
+            safe_exec("ALTER TABLE drivers ADD COLUMN jefe_flota_id INTEGER REFERENCES drivers(id)")
         if "email" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN email TEXT"))
-            conn.commit()
+            safe_exec("ALTER TABLE drivers ADD COLUMN email TEXT")
         if "rut" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN rut TEXT"))
-            conn.commit()
+            safe_exec("ALTER TABLE drivers ADD COLUMN rut TEXT")
         if "banco" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN banco TEXT"))
-            conn.commit()
+            safe_exec("ALTER TABLE drivers ADD COLUMN banco TEXT")
         if "tipo_cuenta" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN tipo_cuenta TEXT"))
-            conn.commit()
+            safe_exec("ALTER TABLE drivers ADD COLUMN tipo_cuenta TEXT")
         if "numero_cuenta" not in cols:
-            conn.execute(text("ALTER TABLE drivers ADD COLUMN numero_cuenta TEXT"))
-            conn.commit()
+            safe_exec("ALTER TABLE drivers ADD COLUMN numero_cuenta TEXT")
         if "tarifa_retiro_fija" not in cols:
-            try:
-                conn.execute(text("ALTER TABLE drivers ADD COLUMN tarifa_retiro_fija INTEGER NOT NULL DEFAULT 0"))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            safe_exec("ALTER TABLE drivers ADD COLUMN tarifa_retiro_fija INTEGER NOT NULL DEFAULT 0")
     if "admin_users" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "permisos" not in cols:
-            conn.execute(text("ALTER TABLE admin_users ADD COLUMN permisos JSON"))
-            conn.commit()
+            safe_exec("ALTER TABLE admin_users ADD COLUMN permisos JSON")
     if "retiros" in insp.get_table_names() and engine.dialect.name == "postgresql":
         retiro_cols = {c["name"]: c for c in insp.get_columns("retiros")}
         if retiro_cols.get("seller_id", {}).get("nullable") is False:
-            conn.execute(text("ALTER TABLE retiros ALTER COLUMN seller_id DROP NOT NULL"))
-            conn.commit()
+            safe_exec("ALTER TABLE retiros ALTER COLUMN seller_id DROP NOT NULL")
         if retiro_cols.get("driver_id", {}).get("nullable") is False:
-            conn.execute(text("ALTER TABLE retiros ALTER COLUMN driver_id DROP NOT NULL"))
-            conn.commit()
-    # pickups y recepciones_paquetes se crean via create_all
+            safe_exec("ALTER TABLE retiros ALTER COLUMN driver_id DROP NOT NULL")
     if "pickups" in insp.get_table_names():
         pickup_cols = [c["name"] for c in insp.get_columns("pickups")]
         if "comision_paquete" not in pickup_cols:
-            conn.execute(text("ALTER TABLE pickups ADD COLUMN comision_paquete INTEGER NOT NULL DEFAULT 200"))
-            conn.commit()
-    # Agregar pickup_id a retiros si no existe
+            safe_exec("ALTER TABLE pickups ADD COLUMN comision_paquete INTEGER NOT NULL DEFAULT 200")
     if "retiros" in insp.get_table_names():
         retiro_cols_names = [c["name"] for c in insp.get_columns("retiros")]
         if "pickup_id" not in retiro_cols_names:
-            conn.execute(text("ALTER TABLE retiros ADD COLUMN pickup_id INTEGER REFERENCES pickups(id)"))
-            conn.commit()
+            safe_exec("ALTER TABLE retiros ADD COLUMN pickup_id INTEGER REFERENCES pickups(id)")
 
     # Pickups se crean manualmente desde el admin — no se migran desde sellers
 
@@ -161,20 +153,23 @@ with engine.connect() as conn:
 
     # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────
     with engine.connect() as conn:
-        exists = conn.execute(text("SELECT 1 FROM drivers WHERE id = 27")).fetchone()
-        if exists:
-            conn.execute(text("UPDATE envios SET driver_id = 54 WHERE driver_id = 27"))
-            conn.execute(text("UPDATE retiros SET driver_id = 54 WHERE driver_id = 27"))
-            conn.execute(text("DELETE FROM pagos_semana_drivers WHERE driver_id = 27"))
-            conn.execute(text("DELETE FROM pagos_cartola_drivers WHERE driver_id = 27"))
-            conn.execute(text("""
-                UPDATE drivers
-                SET aliases = COALESCE(aliases, '[]'::json)::jsonb || '["Oscar Guzman", "Oscar"]'::jsonb
-                WHERE id = 54
-                  AND NOT (COALESCE(aliases, '[]'::json)::jsonb @> '["Oscar"]'::jsonb)
-            """))
-            conn.execute(text("DELETE FROM drivers WHERE id = 27"))
-            conn.commit()
+        try:
+            exists = conn.execute(text("SELECT 1 FROM drivers WHERE id = 27")).fetchone()
+            if exists:
+                conn.execute(text("UPDATE envios SET driver_id = 54 WHERE driver_id = 27"))
+                conn.execute(text("UPDATE retiros SET driver_id = 54 WHERE driver_id = 27"))
+                conn.execute(text("DELETE FROM pagos_semana_drivers WHERE driver_id = 27"))
+                conn.execute(text("DELETE FROM pagos_cartola_drivers WHERE driver_id = 27"))
+                conn.execute(text("""
+                    UPDATE drivers
+                    SET aliases = COALESCE(aliases, '[]'::json)::jsonb || '["Oscar Guzman", "Oscar"]'::jsonb
+                    WHERE id = 54
+                      AND NOT (COALESCE(aliases, '[]'::json)::jsonb @> '["Oscar"]'::jsonb)
+                """))
+                conn.execute(text("DELETE FROM drivers WHERE id = 27"))
+                conn.commit()
+        except Exception:
+            conn.rollback()
 
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",

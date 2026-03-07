@@ -654,7 +654,7 @@ export default function CPC() {
                   <button key={s} onClick={() => setModalTEF(s)}
                     className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50">
                     Semana {s}
-                  </button>
+        </button>
                 ))}
               </div>
             </div>
@@ -711,18 +711,18 @@ export default function CPC() {
       ) : (
         <div className="card overflow-hidden p-0 flex-1 min-h-0">
           <div className="overflow-auto h-full">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-gray-50">
-                <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
-                  <th className="pb-2 pt-3 px-4 font-medium">Conductor</th>
-                  <th className="pb-2 pt-3 px-4 font-medium text-center">Banco</th>
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-gray-50">
+              <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                <th className="pb-2 pt-3 px-4 font-medium">Conductor</th>
+                <th className="pb-2 pt-3 px-4 font-medium text-center">Banco</th>
                   {semanas.map(s => (
                     <th key={s} className="pb-2 pt-3 px-2 font-medium text-right" colSpan={2}>
                       Sem {s}
                     </th>
                   ))}
-                  <th className="pb-2 pt-3 px-4 font-medium text-right">Subtotal</th>
-                </tr>
+                <th className="pb-2 pt-3 px-4 font-medium text-right">Subtotal</th>
+              </tr>
                 <tr className="text-[10px] text-gray-400 border-b border-gray-200 bg-gray-50">
                   <th /><th />
                   {semanas.map(s => (
@@ -733,9 +733,9 @@ export default function CPC() {
                   ))}
                   <th />
                 </tr>
-              </thead>
-              <tbody>
-                {drivers.map(d => (
+            </thead>
+            <tbody>
+              {drivers.map(d => (
                   <DriverRow
                     key={d.driver_id}
                     d={d}
@@ -743,9 +743,9 @@ export default function CPC() {
                     pagados={pagados}
                     onUpdateEstado={updateEstado}
                   />
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </tbody>
+          </table>
           </div>
         </div>
       )}
