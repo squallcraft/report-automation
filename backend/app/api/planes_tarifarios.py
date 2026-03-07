@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -105,7 +106,7 @@ def upsert_comuna(
     comuna_norm = data.comuna.strip().lower()
     row = db.query(TarifaPlanComuna).filter(
         TarifaPlanComuna.plan_tarifario == plan_name,
-        TarifaPlanComuna.comuna == comuna_norm,
+        func.lower(TarifaPlanComuna.comuna) == comuna_norm,
     ).first()
 
     if row:
@@ -201,7 +202,7 @@ def recalcular_plan(
         .filter(TarifaPlanComuna.plan_tarifario == plan_name)
         .all()
     )
-    precio_por_comuna = {t.comuna: t.precio for t in tarifas}
+    precio_por_comuna = {t.comuna.lower(): t.precio for t in tarifas}
 
     seller_ids = [
         s.id for s in
