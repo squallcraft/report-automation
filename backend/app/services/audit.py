@@ -2,12 +2,13 @@
 Servicio centralizado de auditoría.
 Registra todas las acciones relevantes del sistema en audit_logs.
 """
-import json
 import logging
+import traceback
 from typing import Optional
 
 from fastapi import Request
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.models import AuditLog
 
@@ -27,53 +28,51 @@ def registrar(
 ) -> None:
     """
     Registra una entrada de auditoría.
-
-    Args:
-        db: Sesión de base de datos.
-        accion: Identificador de la acción (ej: "ingesta_batch", "pago_manual").
-        usuario: Dict con id, nombre, rol del usuario autenticado.
-        request: FastAPI Request para extraer IP.
-        entidad: Tipo de entidad afectada (ej: "envio", "driver").
-        entidad_id: ID de la entidad afectada (nullable para acciones batch).
-        cambios: Dict con {campo: {antes, despues}} o datos relevantes.
-        metadata: Dict con info adicional (archivo, cantidades, etc).
+    Usa INSERT directo por SQL para no interferir con la sesión del endpoint.
     """
     try:
         ip = None
         if request:
             forwarded = request.headers.get("x-forwarded-for")
-            ip = forwarded.split(",")[0].strip() if forwarded else request.client.host if request.client else None
+            ip = forwarded.split(",")[0].strip() if forwarded else (
+                request.client.host if request.client else None
+            )
 
-        entry = AuditLog(
-            usuario_id=usuario.get("id") if usuario else None,
-            usuario_nombre=usuario.get("nombre") if usuario else None,
-            usuario_rol=str(usuario.get("rol", "")) if usuario else None,
-            ip_address=ip,
-            accion=accion,
-            entidad=entidad,
-            entidad_id=entidad_id,
-            cambios=cambios,
-            metadata_=metadata,
-        )
+        usuario_id = usuario.get("id") if usuario else None
+        usuario_nombre = usuario.get("nombre") if usuario else None
+        usuario_rol = str(usuario.get("rol", "")) if usuario else None
 
-        in_transaction = db.is_active and db.in_transaction()
-        if in_transaction:
-            nested = db.begin_nested()
-            try:
-                db.add(entry)
-                nested.commit()
-            except Exception as inner:
-                nested.rollback()
-                logger.error("Error registrando auditoría (savepoint) [%s]: %s", accion, inner)
-        else:
-            try:
-                db.add(entry)
-                db.commit()
-            except Exception as inner:
-                db.rollback()
-                logger.error("Error registrando auditoría (commit) [%s]: %s", accion, inner)
+        import json
+        cambios_json = json.dumps(cambios) if cambios else None
+        metadata_json = json.dumps(metadata) if metadata else None
+
+        conn = db.get_bind().connect()
+        try:
+            conn.execute(
+                text("""
+                    INSERT INTO audit_logs
+                        (usuario_id, usuario_nombre, usuario_rol, ip_address,
+                         accion, entidad, entidad_id, cambios, metadata)
+                    VALUES
+                        (:uid, :uname, :urol, :ip,
+                         :accion, :entidad, :eid, :cambios::jsonb, :meta::jsonb)
+                """),
+                {
+                    "uid": usuario_id, "uname": usuario_nombre, "urol": usuario_rol,
+                    "ip": ip, "accion": accion, "entidad": entidad, "eid": entidad_id,
+                    "cambios": cambios_json, "meta": metadata_json,
+                },
+            )
+            conn.commit()
+        except Exception as inner:
+            conn.rollback()
+            print(f"[AUDIT ERROR commit] [{accion}]: {inner}", flush=True)
+        finally:
+            conn.close()
+
     except Exception as exc:
-        logger.error("Error preparando auditoría [%s]: %s", accion, exc)
+        print(f"[AUDIT ERROR] [{accion}]: {exc}", flush=True)
+        traceback.print_exc()
 
 
 def diff_campos(antes: dict, despues: dict, campos: list[str]) -> dict:
