@@ -28,6 +28,7 @@ from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     EmpresaEnum, TipoEntidadEnum,
 )
+from app.services.liquidacion import _calcular_retiro_driver
 from app.services.calendario import get_dates_for_week as _cal_get_dates
 
 # Registrar Roboto (usa font-roboto si está instalado)
@@ -522,7 +523,7 @@ def generar_pdf_driver(
             "melipilla_total": sum(e.costo_driver for e in melipilla),
             "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
             "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
-            "retiros": sum(r.tarifa_driver for r in retiros_q),
+            "retiros": _calcular_retiro_driver(driver, retiros_q),
             "bonificaciones": bonif,
             "descuentos": desc,
         }
@@ -619,10 +620,17 @@ def generar_pdf_driver(
         Retiro.driver_id == driver_id, Retiro.semana == semana,
         Retiro.mes == mes, Retiro.anio == anio,
     ).all()
-    for r in retiros_semana:
-        d = r.fecha
-        if d in daily_map:
-            daily_map[d]["retiros"] += r.tarifa_driver
+    usa_fija = driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0
+    if usa_fija:
+        dias_con_retiro = {r.fecha for r in retiros_semana if r.fecha}
+        for d in dias_con_retiro:
+            if d in daily_map:
+                daily_map[d]["retiros"] = driver.tarifa_retiro_fija
+    else:
+        for r in retiros_semana:
+            d = r.fecha
+            if d in daily_map:
+                daily_map[d]["retiros"] += r.tarifa_driver
 
     # cobro = pago envíos + retiro del día
     for info in daily_map.values():

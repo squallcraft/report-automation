@@ -34,6 +34,7 @@ from app.schemas import (
 )
 from app.services.liquidacion import (
     calcular_liquidacion_sellers, calcular_liquidacion_drivers, calcular_rentabilidad,
+    _calcular_retiro_driver,
 )
 from app.services.pdf_generator import generar_pdf_seller, generar_pdf_driver
 
@@ -409,7 +410,7 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
             "melipilla_total": sum(e.costo_driver for e in melipilla),
             "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
             "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
-            "retiros": sum(r.tarifa_driver for r in retiros_q),
+            "retiros": _calcular_retiro_driver(driver, retiros_q),
             "bonificaciones": bonif,
             "descuentos": desc,
             "envios": len(envios),
@@ -428,7 +429,7 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
     }
 
 
-def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False, seller=None):
+def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False, seller=None, driver=None):
     all_dates = get_dates_for_week(db, semana, mes, anio) if db else []
 
     daily_map = {}
@@ -457,11 +458,18 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["bultos_extra"] += getattr(e, field_extra, 0) + (e.pago_extra_manual or 0)
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
-    # Retiros solo aplican al desglose de drivers (tarifa_driver por parada)
+    # Retiros solo aplican al desglose de drivers
     if not is_seller and retiros_list:
-        for r in retiros_list:
-            if r.fecha in daily_map:
-                daily_map[r.fecha]["retiros"] += r.tarifa_driver
+        usa_fija = driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0
+        if usa_fija:
+            dias_con_retiro = {r.fecha for r in retiros_list if r.fecha}
+            for d in dias_con_retiro:
+                if d in daily_map:
+                    daily_map[d]["retiros"] = driver.tarifa_retiro_fija
+        else:
+            for r in retiros_list:
+                if r.fecha in daily_map:
+                    daily_map[r.fecha]["retiros"] += r.tarifa_driver
 
     # monto diario = cobro/pago base + retiro del día (solo drivers)
     for info in daily_map.values():
@@ -562,7 +570,7 @@ def detalle_driver(
     detail["daily"] = _daily_breakdown(
         envios_semana, retiros_semana,
         "extra_producto_driver", "extra_comuna_driver",
-        semana, mes, anio, is_seller=False, db=db, contratado=es_contratado,
+        semana, mes, anio, is_seller=False, db=db, contratado=es_contratado, driver=driver,
     )
     detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
     return detail

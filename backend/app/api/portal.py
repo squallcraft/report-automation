@@ -402,7 +402,7 @@ def driver_liquidacion(
     detail["daily"] = _daily_breakdown(
         envios_semana, retiros_semana,
         "extra_producto_driver", "extra_comuna_driver",
-        semana, mes, anio, is_seller=False, db=db, contratado=es_contratado,
+        semana, mes, anio, is_seller=False, db=db, contratado=es_contratado, driver=driver,
     )
     detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
     return detail

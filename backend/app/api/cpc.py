@@ -21,6 +21,7 @@ from app.models import (
     PagoSemanaDriver, PagoCartola, CalendarioSemanas,
     CartolaCarga, TipoEntidadEnum, EstadoPagoEnum,
 )
+from app.services.liquidacion import _calcular_retiro_driver
 from app.services.audit import registrar as audit
 
 # ---------------------------------------------------------------------------
@@ -117,7 +118,8 @@ def _get_monto_semanal_driver(db: Session, driver_id: int, semana: int, mes: int
         Retiro.driver_id == driver_id,
         Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
     ).all()
-    total_retiros = sum(r.tarifa_driver for r in retiros)
+    driver = db.get(Driver, driver_id)
+    total_retiros = _calcular_retiro_driver(driver, retiros) if driver else sum(r.tarifa_driver for r in retiros)
 
     ajustes = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
