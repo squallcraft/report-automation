@@ -35,7 +35,7 @@ export default function DriverEntregas() {
 
   useEffect(() => {
     setLoading(true)
-    api.get('/envios', { params: period })
+    api.get('/envios', { params: { ...period, limit: 5000 } })
       .then(({ data }) => setEnvios(data))
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -150,7 +150,7 @@ export default function DriverEntregas() {
         <div className="text-center py-12 text-gray-400">Cargando...</div>
       ) : (
         <>
-          <DataTable columns={columns} data={filtered} emptyMessage="No hay entregas para este período" />
+          <DataTable columns={columns} data={filtered} emptyMessage="No hay entregas para este período" sortable />
           {filtered.length > 0 && (
             <div className="mt-4 card bg-emerald-50 border-emerald-200">
               <div className="flex justify-between items-center">

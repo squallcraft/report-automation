@@ -24,6 +24,7 @@ from app.models import (
     PeriodoLiquidacion, EstadoLiquidacionEnum,
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     TipoEntidadEnum, EmpresaEnum, ProductoConExtra, TarifaPlanComuna,
+    TarifaComuna,
 )
 from app.services.calendario import get_dates_for_week
 from app.services.audit import registrar as audit
@@ -153,7 +154,7 @@ def recalcular_liquidacion(
 
 
 def _reaplicar_tarifas(db: Session, semana: int, mes: int, anio: int) -> int:
-    """Reaplicar tarifas actuales de sellers y drivers a envíos pendientes del período."""
+    """Reaplicar tarifas actuales de sellers, drivers, comunas y productos a envíos pendientes."""
     envios = db.query(Envio).filter(
         Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
         Envio.estado_financiero == "pendiente",
@@ -170,9 +171,17 @@ def _reaplicar_tarifas(db: Session, semana: int, mes: int, anio: int) -> int:
     tarifas_plan = db.query(TarifaPlanComuna).all()
     plan_comuna_map = {(t.plan_tarifario.lower(), t.comuna.lower()): t.precio for t in tarifas_plan}
 
+    comunas_extra = db.query(TarifaComuna).all()
+    comunas_map = {t.comuna.lower(): t for t in comunas_extra}
+
+    productos_extra = db.query(ProductoConExtra).filter(ProductoConExtra.activo == True).all()
+    productos_map = {p.codigo_mlc.upper(): p for p in productos_extra}
+
     actualizados = 0
     for envio in envios:
         cambio = False
+
+        # Tarifa base seller
         seller = sellers_map.get(envio.seller_id)
         if seller:
             if seller.plan_tarifario and envio.comuna:
@@ -184,6 +193,7 @@ def _reaplicar_tarifas(db: Session, semana: int, mes: int, anio: int) -> int:
                 envio.cobro_seller = nuevo_cobro
                 cambio = True
 
+        # Tarifa base driver
         driver = drivers_map.get(envio.driver_id)
         if driver and envio.empresa:
             emp = envio.empresa
@@ -198,6 +208,48 @@ def _reaplicar_tarifas(db: Session, semana: int, mes: int, anio: int) -> int:
             if nuevo_costo is not None and envio.costo_driver != nuevo_costo:
                 envio.costo_driver = nuevo_costo
                 cambio = True
+
+        # Extra por comuna
+        new_extra_comuna_seller = 0
+        new_extra_comuna_driver = 0
+        if envio.comuna:
+            tc = comunas_map.get(envio.comuna.lower())
+            if tc:
+                new_extra_comuna_seller = tc.extra_seller
+                new_extra_comuna_driver = tc.extra_driver
+        if envio.extra_comuna_seller != new_extra_comuna_seller:
+            envio.extra_comuna_seller = new_extra_comuna_seller
+            cambio = True
+        if envio.extra_comuna_driver != new_extra_comuna_driver:
+            envio.extra_comuna_driver = new_extra_comuna_driver
+            cambio = True
+
+        # Extra por producto
+        new_extra_prod_seller = 0
+        new_extra_prod_driver = 0
+        if envio.codigo_producto:
+            prod = productos_map.get(envio.codigo_producto.upper())
+            if prod:
+                new_extra_prod_seller = prod.extra_seller
+                new_extra_prod_driver = prod.extra_driver
+        if envio.extra_producto_seller != new_extra_prod_seller:
+            envio.extra_producto_seller = new_extra_prod_seller
+            cambio = True
+        if envio.extra_producto_driver != new_extra_prod_driver:
+            envio.extra_producto_driver = new_extra_prod_driver
+            cambio = True
+
+        # Regla: si driver tiene extra por producto Y por comuna, solo el mayor
+        if envio.extra_producto_driver > 0 and envio.extra_comuna_driver > 0:
+            if envio.extra_producto_driver >= envio.extra_comuna_driver:
+                envio.extra_comuna_driver = 0
+            else:
+                envio.extra_producto_driver = 0
+
+        # Conductores contratados no reciben extras
+        if driver and getattr(driver, 'contratado', False):
+            envio.extra_producto_driver = 0
+            envio.extra_comuna_driver = 0
 
         if cambio:
             actualizados += 1

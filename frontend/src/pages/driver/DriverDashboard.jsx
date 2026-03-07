@@ -32,7 +32,7 @@ export default function DriverDashboard() {
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      api.get('/envios', { params: period }),
+      api.get('/envios', { params: { ...period, limit: 5000 } }),
       api.get('/portal/driver/liquidacion', { params: period }).catch(() => null),
       api.get('/portal/driver/pagos-recibidos', { params: { mes: period.mes, anio: period.anio } }).catch(() => null),
     ])
