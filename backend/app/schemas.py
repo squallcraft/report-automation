@@ -351,7 +351,7 @@ class RentabilidadSellerOut(BaseModel):
     costo_drivers: int
     costo_retiros: int
     costo_pickup: int = 0
-    costo_total: int
+    costo_total: int = 0
     margen_bruto: int
     margen_porcentaje: float
 
