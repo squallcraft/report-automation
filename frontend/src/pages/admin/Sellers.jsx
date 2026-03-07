@@ -6,7 +6,7 @@ import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, Trash2, Download, Upload } from 'lucide-react'
 
-const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO']
+const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO', 'VALPARAISO', 'MELIPILLA']
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -15,6 +15,8 @@ function EmpresaBadge({ empresa }) {
     ECOURIER: 'bg-primary-100 text-primary-700',
     TERCERIZADO: 'bg-amber-100 text-amber-700',
     OVIEDO: 'bg-indigo-100 text-indigo-700',
+    VALPARAISO: 'bg-teal-100 text-teal-700',
+    MELIPILLA: 'bg-rose-100 text-rose-700',
   }
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${styles[empresa] || 'bg-gray-100 text-gray-700'}`}>

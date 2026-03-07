@@ -155,6 +155,10 @@ def _build_envio_from_row(
             costo_driver = driver.tarifa_oviedo
         elif empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
             costo_driver = driver.tarifa_tercerizado
+        elif empresa in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value):
+            costo_driver = driver.tarifa_valparaiso
+        elif empresa in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value):
+            costo_driver = driver.tarifa_melipilla
 
     descripcion = str(row.get("descripcion", "")) if not pd.isna(row.get("descripcion")) else None
     codigo_mlc = extraer_codigo_mlc(descripcion)
@@ -556,6 +560,10 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
                         envio.costo_driver = entidad.tarifa_oviedo
                     elif emp in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
                         envio.costo_driver = entidad.tarifa_tercerizado
+                    elif emp in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value):
+                        envio.costo_driver = entidad.tarifa_valparaiso
+                    elif emp in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value):
+                        envio.costo_driver = entidad.tarifa_melipilla
             envio.homologado = envio.seller_id is not None
 
     db.commit()

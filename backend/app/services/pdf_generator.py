@@ -494,6 +494,8 @@ def generar_pdf_driver(
         normal = [e for e in envios if e.empresa in (None, "", EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value)]
         oviedo = [e for e in envios if e.empresa in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value)]
         tercerizado = [e for e in envios if e.empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value)]
+        valparaiso = [e for e in envios if e.empresa in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value)]
+        melipilla = [e for e in envios if e.empresa in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value)]
 
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
@@ -514,6 +516,10 @@ def generar_pdf_driver(
             "oviedo_total": sum(e.costo_driver for e in oviedo),
             "tercerizado_count": len(tercerizado),
             "tercerizado_total": sum(e.costo_driver for e in tercerizado),
+            "valparaiso_count": len(valparaiso),
+            "valparaiso_total": sum(e.costo_driver for e in valparaiso),
+            "melipilla_count": len(melipilla),
+            "melipilla_total": sum(e.costo_driver for e in melipilla),
             "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
             "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
             "retiros": sum(r.tarifa_driver for r in retiros_q),
@@ -524,6 +530,7 @@ def generar_pdf_driver(
     def _weekly_total(s):
         w = weekly[s]
         return (w["normal_total"] + w["oviedo_total"] + w["tercerizado_total"]
+                + w["valparaiso_total"] + w["melipilla_total"]
                 + w["comuna"] + w["bultos_extra"] + w["retiros"]
                 + w["bonificaciones"] + w["descuentos"])
 
@@ -537,6 +544,8 @@ def generar_pdf_driver(
 
     tarifa_oviedo = driver.tarifa_oviedo
     tarifa_terc = driver.tarifa_tercerizado
+    tarifa_valp = getattr(driver, 'tarifa_valparaiso', 0)
+    tarifa_meli = getattr(driver, 'tarifa_melipilla', 0)
 
     def _count_row(label, key):
         vals = [weekly[s][key] for s in range(1, 6)]
@@ -556,6 +565,10 @@ def generar_pdf_driver(
         _money_row("Subtotal Oviedo", "oviedo_total"),
         _count_row(f"Tercerizado ({_fmt(tarifa_terc)})", "tercerizado_count"),
         _money_row("Subtotal Tercerizado", "tercerizado_total"),
+        _count_row(f"Valparaíso ({_fmt(tarifa_valp)})", "valparaiso_count"),
+        _money_row("Subtotal Valparaíso", "valparaiso_total"),
+        _count_row(f"Melipilla ({_fmt(tarifa_meli)})", "melipilla_count"),
+        _money_row("Subtotal Melipilla", "melipilla_total"),
     ]
     if not es_contratado:
         rows.append(_money_row("Comuna", "comuna"))

@@ -51,6 +51,12 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE drivers ADD COLUMN numero_cuenta TEXT")
         if "tarifa_retiro_fija" not in cols:
             safe_exec("ALTER TABLE drivers ADD COLUMN tarifa_retiro_fija INTEGER NOT NULL DEFAULT 0")
+        if "tarifa_valparaiso" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN tarifa_valparaiso INTEGER NOT NULL DEFAULT 0")
+        if "tarifa_melipilla" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN tarifa_melipilla INTEGER NOT NULL DEFAULT 0")
+        if "zona" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN zona TEXT")
     if "admin_users" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "permisos" not in cols:

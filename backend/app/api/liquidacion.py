@@ -203,6 +203,10 @@ def _reaplicar_tarifas(db: Session, semana: int, mes: int, anio: int) -> int:
                 nuevo_costo = driver.tarifa_oviedo
             elif emp in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
                 nuevo_costo = driver.tarifa_tercerizado
+            elif emp in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value):
+                nuevo_costo = driver.tarifa_valparaiso
+            elif emp in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value):
+                nuevo_costo = driver.tarifa_melipilla
             else:
                 nuevo_costo = None
             if nuevo_costo is not None and envio.costo_driver != nuevo_costo:
@@ -368,6 +372,8 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
         normal = [e for e in envios if e.empresa in (None, "", EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value)]
         oviedo = [e for e in envios if e.empresa in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value)]
         tercerizado = [e for e in envios if e.empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value)]
+        valparaiso = [e for e in envios if e.empresa in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value)]
+        melipilla = [e for e in envios if e.empresa in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value)]
 
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
@@ -388,6 +394,10 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
             "oviedo_total": sum(e.costo_driver for e in oviedo),
             "tercerizado_count": len(tercerizado),
             "tercerizado_total": sum(e.costo_driver for e in tercerizado),
+            "valparaiso_count": len(valparaiso),
+            "valparaiso_total": sum(e.costo_driver for e in valparaiso),
+            "melipilla_count": len(melipilla),
+            "melipilla_total": sum(e.costo_driver for e in melipilla),
             "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
             "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
             "retiros": sum(r.tarifa_driver for r in retiros_q),
@@ -401,6 +411,9 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
         "tarifa_ecourier": driver.tarifa_ecourier,
         "tarifa_oviedo": driver.tarifa_oviedo,
         "tarifa_tercerizado": driver.tarifa_tercerizado,
+        "tarifa_valparaiso": driver.tarifa_valparaiso,
+        "tarifa_melipilla": driver.tarifa_melipilla,
+        "zona": driver.zona,
         "contratado": getattr(driver, 'contratado', False),
         "weekly": weekly,
     }

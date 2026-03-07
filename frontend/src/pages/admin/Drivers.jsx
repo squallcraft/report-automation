@@ -88,6 +88,9 @@ const initialForm = {
   tarifa_ecourier: 1700,
   tarifa_oviedo: 1800,
   tarifa_tercerizado: 1500,
+  tarifa_valparaiso: 0,
+  tarifa_melipilla: 0,
+  zona: '',
   tarifa_retiro_fija: 0,
   jefe_flota_id: '',
   contratado: false,
@@ -180,6 +183,9 @@ export default function Drivers() {
       tarifa_ecourier: driver.tarifa_ecourier ?? 1700,
       tarifa_oviedo: driver.tarifa_oviedo ?? 1800,
       tarifa_tercerizado: driver.tarifa_tercerizado ?? 1500,
+      tarifa_valparaiso: driver.tarifa_valparaiso ?? 0,
+      tarifa_melipilla: driver.tarifa_melipilla ?? 0,
+      zona: driver.zona || '',
       tarifa_retiro_fija: driver.tarifa_retiro_fija ?? 0,
       jefe_flota_id: driver.jefe_flota_id ?? '',
       contratado: driver.contratado ?? false,
@@ -224,6 +230,9 @@ export default function Drivers() {
       tarifa_ecourier: parseInt(form.tarifa_ecourier, 10) || 1700,
       tarifa_oviedo: parseInt(form.tarifa_oviedo, 10) || 1800,
       tarifa_tercerizado: parseInt(form.tarifa_tercerizado, 10) || 1500,
+      tarifa_valparaiso: parseInt(form.tarifa_valparaiso, 10) || 0,
+      tarifa_melipilla: parseInt(form.tarifa_melipilla, 10) || 0,
+      zona: form.zona || null,
       tarifa_retiro_fija: parseInt(form.tarifa_retiro_fija, 10) || 0,
       jefe_flota_id: form.jefe_flota_id ? parseInt(form.jefe_flota_id, 10) : null,
       email: form.email?.trim() || null,
@@ -266,9 +275,12 @@ export default function Drivers() {
       </div>
     )},
     { key: 'jefe_flota_nombre', label: 'Jefe de Flota', render: (v) => v || '—' },
-    { key: 'tarifa_ecourier', label: 'Tarifa ECourier', align: 'right', render: (v) => fmtClp(v) },
-    { key: 'tarifa_oviedo', label: 'Tarifa Oviedo', align: 'right', render: (v) => fmtClp(v) },
-    { key: 'tarifa_tercerizado', label: 'Tarifa Tercerizado', align: 'right', render: (v) => fmtClp(v) },
+    { key: 'zona', label: 'Zona', render: (v) => v || '—' },
+    { key: 'tarifa_ecourier', label: 'T. ECourier', align: 'right', render: (v) => fmtClp(v) },
+    { key: 'tarifa_oviedo', label: 'T. Oviedo', align: 'right', render: (v) => fmtClp(v) },
+    { key: 'tarifa_tercerizado', label: 'T. Tercerizado', align: 'right', render: (v) => fmtClp(v) },
+    { key: 'tarifa_valparaiso', label: 'T. Valparaíso', align: 'right', render: (v) => v ? fmtClp(v) : '—' },
+    { key: 'tarifa_melipilla', label: 'T. Melipilla', align: 'right', render: (v) => v ? fmtClp(v) : '—' },
     { key: 'activo', label: 'Estado', align: 'center', render: (v) => <EstadoBadge activo={v} /> },
     {
       key: 'acciones',
@@ -405,6 +417,39 @@ export default function Drivers() {
                 value={form.tarifa_tercerizado}
                 onChange={(e) => setForm((f) => ({ ...f, tarifa_tercerizado: e.target.value }))}
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa Valparaíso (CLP)</label>
+              <input
+                type="number"
+                className="input-field"
+                min={0}
+                value={form.tarifa_valparaiso}
+                onChange={(e) => setForm((f) => ({ ...f, tarifa_valparaiso: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa Melipilla (CLP)</label>
+              <input
+                type="number"
+                className="input-field"
+                min={0}
+                value={form.tarifa_melipilla}
+                onChange={(e) => setForm((f) => ({ ...f, tarifa_melipilla: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Zona</label>
+              <select
+                className="input-field"
+                value={form.zona}
+                onChange={(e) => setForm((f) => ({ ...f, zona: e.target.value }))}
+              >
+                <option value="">Sin zona</option>
+                <option value="SANTIAGO">Santiago</option>
+                <option value="VALPARAISO">Valparaíso</option>
+                <option value="MELIPILLA">Melipilla</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Tarifa fija retiro/día (CLP)</label>

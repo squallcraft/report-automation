@@ -13,6 +13,8 @@ class EmpresaEnum(str, enum.Enum):
     ECOURIER = "ECOURIER"
     TERCERIZADO = "TERCERIZADO"
     OVIEDO = "OVIEDO"
+    VALPARAISO = "VALPARAISO"
+    MELIPILLA = "MELIPILLA"
 
 
 class TipoEntidadEnum(str, enum.Enum):
@@ -78,6 +80,9 @@ class Driver(Base):
     tarifa_ecourier = Column(Integer, nullable=False, default=1700)
     tarifa_oviedo = Column(Integer, nullable=False, default=1800)
     tarifa_tercerizado = Column(Integer, nullable=False, default=1500)
+    tarifa_valparaiso = Column(Integer, nullable=False, default=0)
+    tarifa_melipilla = Column(Integer, nullable=False, default=0)
+    zona = Column(String, nullable=True)
     tarifa_retiro_fija = Column(Integer, nullable=False, default=0)
     jefe_flota_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
     rut = Column(String, nullable=True)

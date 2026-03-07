@@ -104,7 +104,7 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{data.nombre}</h1>
             <p className="text-sm text-gray-500">
-              {isSeller ? `Empresa: ${data.empresa}` : `Tarifas: EC ${fmt(data.tarifa_ecourier)} | OV ${fmt(data.tarifa_oviedo)} | TC ${fmt(data.tarifa_tercerizado)}`}
+              {isSeller ? `Empresa: ${data.empresa}` : `Tarifas: EC ${fmt(data.tarifa_ecourier)} | OV ${fmt(data.tarifa_oviedo)} | TC ${fmt(data.tarifa_tercerizado)}${data.tarifa_valparaiso ? ` | VP ${fmt(data.tarifa_valparaiso)}` : ''}${data.tarifa_melipilla ? ` | ML ${fmt(data.tarifa_melipilla)}` : ''}`}
             </p>
           </div>
         </div>
@@ -307,6 +307,14 @@ function buildDriverRows(data) {
     mkRow('Subtotal Oviedo', 'oviedo_total', true, false, true),
     mkRow(`Tercerizado (${fmt(data.tarifa_tercerizado)})`, 'tercerizado_count', false, true, false, 'TERCERIZADO'),
     mkRow('Subtotal Tercerizado', 'tercerizado_total', true, false, true),
+    ...(data.tarifa_valparaiso ? [
+      mkRow(`Valparaíso (${fmt(data.tarifa_valparaiso)})`, 'valparaiso_count', false, true, false, 'VALPARAISO'),
+      mkRow('Subtotal Valparaíso', 'valparaiso_total', true, false, true),
+    ] : []),
+    ...(data.tarifa_melipilla ? [
+      mkRow(`Melipilla (${fmt(data.tarifa_melipilla)})`, 'melipilla_count', false, true, false, 'MELIPILLA'),
+      mkRow('Subtotal Melipilla', 'melipilla_total', true, false, true),
+    ] : []),
     mkRow('Comuna', 'comuna'),
     mkRow('Bultos Extra', 'bultos_extra'),
     mkRow('Retiros', 'retiros'),
