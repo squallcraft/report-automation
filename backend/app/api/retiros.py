@@ -15,7 +15,7 @@ import pandas as pd
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion
-from app.models import Retiro, Seller, Driver, Pickup
+from app.models import Retiro, Seller, Driver, Pickup, Sucursal
 from app.schemas import RetiroCreate, RetiroOut
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
 from app.services.audit import registrar as audit
@@ -48,9 +48,11 @@ def _enrich_retiro(r, db) -> dict:
     seller = db.get(Seller, r.seller_id) if r.seller_id else None
     driver = db.get(Driver, r.driver_id) if r.driver_id else None
     pickup = db.get(Pickup, r.pickup_id) if r.pickup_id else None
+    sucursal = db.get(Sucursal, r.sucursal_id) if r.sucursal_id else None
     data["seller_nombre"] = seller.nombre if seller else r.seller_nombre_raw or "—"
     data["driver_nombre"] = driver.nombre if driver else r.driver_nombre_raw or "—"
     data["pickup_nombre"] = pickup.nombre if pickup else None
+    data["sucursal_nombre"] = sucursal.nombre if sucursal else None
     return data
 
 
@@ -181,6 +183,7 @@ async def preview_retiros(
     sellers = db.query(Seller).filter(Seller.activo == True).all()
     drivers = db.query(Driver).filter(Driver.activo == True).all()
     pickups_list = db.query(Pickup).filter(Pickup.activo == True).all()
+    sucursales_list = db.query(Sucursal).filter(Sucursal.activo == True).all()
 
     items = []
     errores = []
@@ -206,9 +209,12 @@ async def preview_retiros(
             driver_match, driver_score = _mejor_match(conductor_raw, drivers)
             pickup_match, pickup_score = _mejor_match(seller_raw, pickups_list)
             seller_match, seller_score = _mejor_match(seller_raw, sellers)
+            suc_match, suc_score = _mejor_match(seller_raw, sucursales_list)
 
-            # Determine if it's a pickup or seller
-            es_pickup = pickup_match is not None and pickup_score >= seller_score and pickup_score >= 0.45
+            # Priority: Pickup > Sucursal > Seller (prefer more specific match)
+            es_pickup = pickup_match is not None and pickup_score >= max(seller_score, suc_score) and pickup_score >= 0.45
+            es_sucursal = not es_pickup and suc_match is not None and suc_score > seller_score and suc_score >= 0.45
+
             if es_pickup:
                 punto = pickup_match
                 items.append({
@@ -226,8 +232,34 @@ async def preview_retiros(
                     "pickup_id": punto.id,
                     "pickup_nombre": punto.nombre,
                     "pickup_score": pickup_score,
+                    "sucursal_id": None,
+                    "sucursal_nombre": None,
+                    "sucursal_score": 0,
                     "tarifa_seller": 0,
                     "tarifa_driver": punto.tarifa_driver or 0,
+                })
+            elif es_sucursal:
+                suc_obj = suc_match
+                items.append({
+                    "fila": idx + 2,
+                    "fecha": str(fecha),
+                    "conductor_raw": conductor_raw,
+                    "seller_raw": seller_raw,
+                    "tipo": "sucursal",
+                    "driver_id": driver_match.id if driver_match else None,
+                    "driver_nombre": driver_match.nombre if driver_match else None,
+                    "driver_score": driver_score,
+                    "seller_id": suc_obj.seller_id,
+                    "seller_nombre": None,
+                    "seller_score": 0,
+                    "pickup_id": None,
+                    "pickup_nombre": None,
+                    "pickup_score": 0,
+                    "sucursal_id": suc_obj.id,
+                    "sucursal_nombre": suc_obj.nombre,
+                    "sucursal_score": suc_score,
+                    "tarifa_seller": suc_obj.tarifa_retiro or 0,
+                    "tarifa_driver": suc_obj.tarifa_retiro_driver or 0,
                 })
             else:
                 seller_obj = seller_match
@@ -247,6 +279,9 @@ async def preview_retiros(
                     "pickup_id": None,
                     "pickup_nombre": None,
                     "pickup_score": 0,
+                    "sucursal_id": None,
+                    "sucursal_nombre": None,
+                    "sucursal_score": 0,
                     "tarifa_seller": (seller_obj.tarifa_retiro or 0) if seller_obj and not skip else 0,
                     "tarifa_driver": (seller_obj.tarifa_retiro_driver or 0) if seller_obj and not skip else 0,
                     "skip_pickup": bool(skip),
@@ -258,12 +293,20 @@ async def preview_retiros(
     todos_sellers = [{"id": s.id, "nombre": s.nombre} for s in sorted(sellers, key=lambda x: x.nombre) if not s.usa_pickup]
     todos_pickups = [{"id": p.id, "nombre": p.nombre} for p in sorted(pickups_list, key=lambda x: x.nombre)]
 
+    sellers_by_id = {s.id: s.nombre for s in sellers}
+    todos_sucursales = [
+        {"id": s.id, "nombre": s.nombre, "seller_id": s.seller_id,
+         "seller_nombre": sellers_by_id.get(s.seller_id, "?")}
+        for s in sorted(sucursales_list, key=lambda x: x.nombre)
+    ]
+
     return {
         "items": items,
         "errores": errores,
         "drivers": todos_drivers,
         "sellers": todos_sellers,
         "pickups": todos_pickups,
+        "sucursales": todos_sucursales,
         "archivo": file.filename,
     }
 
@@ -273,10 +316,11 @@ class ItemConfirmarRetiro(BaseModel):
     fecha: str
     conductor_raw: str
     seller_raw: str
-    tipo: str  # "seller" | "pickup"
+    tipo: str  # "seller" | "pickup" | "sucursal"
     driver_id: Optional[int] = None
     seller_id: Optional[int] = None
     pickup_id: Optional[int] = None
+    sucursal_id: Optional[int] = None
 
 
 class ConfirmarRetirosRequest(BaseModel):
@@ -295,6 +339,7 @@ def confirmar_retiros(
     ingesta_id = str(uuid.uuid4())[:8]
     creados = 0
     creados_pickup = 0
+    creados_sucursal = 0
 
     for item in body.items:
         fecha = pd.to_datetime(item.fecha).date()
@@ -313,6 +358,21 @@ def confirmar_retiros(
             )
             db.add(retiro)
             creados_pickup += 1
+        elif item.tipo == "sucursal" and item.sucursal_id:
+            suc = db.get(Sucursal, item.sucursal_id)
+            retiro = Retiro(
+                fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
+                seller_id=suc.seller_id if suc else item.seller_id,
+                driver_id=item.driver_id,
+                sucursal_id=item.sucursal_id,
+                tarifa_seller=suc.tarifa_retiro if suc else 0,
+                tarifa_driver=suc.tarifa_retiro_driver if suc else 0,
+                seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
+                homologado=item.driver_id is not None,
+                ingesta_id=ingesta_id,
+            )
+            db.add(retiro)
+            creados_sucursal += 1
         elif item.tipo == "seller":
             seller = db.get(Seller, item.seller_id) if item.seller_id else None
             tarifa_seller = (seller.tarifa_retiro or 0) if seller else 0
@@ -358,12 +418,23 @@ def confirmar_retiros(
                     pickup.aliases = list(pickup.aliases or []) + [alias]
                     flag_modified(pickup, "aliases")
 
+        # Guardar alias para sucursal
+        if item.sucursal_id and item.seller_raw and item.tipo == "sucursal":
+            suc = db.get(Sucursal, item.sucursal_id)
+            if suc:
+                alias = item.seller_raw.strip()
+                aliases_lower = [a.lower() for a in (suc.aliases or [])]
+                if alias.lower() != suc.nombre.lower() and alias.lower() not in aliases_lower:
+                    suc.aliases = list(suc.aliases or []) + [alias]
+                    flag_modified(suc, "aliases")
+
     db.commit()
     audit(db, "importar_retiros", usuario=current_user, request=request,
           entidad="retiro_batch",
-          metadata={"archivo": body.archivo, "creados": creados, "creados_pickup": creados_pickup})
+          metadata={"archivo": body.archivo, "creados": creados,
+                    "creados_pickup": creados_pickup, "creados_sucursal": creados_sucursal})
 
-    return {"ok": True, "creados": creados, "creados_pickup": creados_pickup}
+    return {"ok": True, "creados": creados, "creados_pickup": creados_pickup, "creados_sucursal": creados_sucursal}
 
 
 @router.post("/importar")

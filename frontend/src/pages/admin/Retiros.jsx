@@ -17,6 +17,7 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
   const [todosDrivers, setTodosDrivers] = useState([])
   const [todosSellers, setTodosSellers] = useState([])
   const [todosPickups, setTodosPickups] = useState([])
+  const [todosSucursales, setTodosSucursales] = useState([])
   const inputRef = useRef()
 
   const analizar = async () => {
@@ -30,15 +31,18 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
       setTodosDrivers(data.drivers || [])
       setTodosSellers(data.sellers || [])
       setTodosPickups(data.pickups || [])
+      setTodosSucursales(data.sucursales || [])
       setItems(data.items.map(it => ({
         ...it,
-        incluir: (it.driver_id != null) && (it.seller_id != null || it.pickup_id != null),
+        incluir: (it.driver_id != null) && (it.seller_id != null || it.pickup_id != null || it.sucursal_id != null),
         driver_id_sel: it.driver_id,
         driver_nombre_sel: it.driver_nombre,
         seller_id_sel: it.seller_id,
         seller_nombre_sel: it.seller_nombre,
         pickup_id_sel: it.pickup_id,
         pickup_nombre_sel: it.pickup_nombre,
+        sucursal_id_sel: it.sucursal_id,
+        sucursal_nombre_sel: it.sucursal_nombre,
       })))
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error procesando archivo')
@@ -54,7 +58,7 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
       ...it,
       driver_id_sel: d ? d.id : null,
       driver_nombre_sel: d ? d.nombre : null,
-      incluir: d != null && (it.seller_id_sel != null || it.pickup_id_sel != null),
+      incluir: d != null && (it.seller_id_sel != null || it.pickup_id_sel != null || it.sucursal_id_sel != null),
     } : it))
   }
 
@@ -67,6 +71,8 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
       seller_nombre_sel: s ? s.nombre : null,
       pickup_id_sel: null,
       pickup_nombre_sel: null,
+      sucursal_id_sel: null,
+      sucursal_nombre_sel: null,
       incluir: s != null && it.driver_id_sel != null,
     } : it))
   }
@@ -80,12 +86,29 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
       pickup_nombre_sel: p ? p.nombre : null,
       seller_id_sel: null,
       seller_nombre_sel: null,
+      sucursal_id_sel: null,
+      sucursal_nombre_sel: null,
       incluir: p != null && it.driver_id_sel != null,
     } : it))
   }
 
+  const cambiarSucursal = (idx, sucursalId) => {
+    const suc = todosSucursales.find(x => x.id === Number(sucursalId))
+    setItems(prev => prev.map((it, i) => i === idx ? {
+      ...it,
+      tipo: 'sucursal',
+      sucursal_id_sel: suc ? suc.id : null,
+      sucursal_nombre_sel: suc ? suc.nombre : null,
+      seller_id_sel: suc ? suc.seller_id : null,
+      seller_nombre_sel: null,
+      pickup_id_sel: null,
+      pickup_nombre_sel: null,
+      incluir: suc != null && it.driver_id_sel != null,
+    } : it))
+  }
+
   const confirmar = async () => {
-    const seleccionados = items.filter(it => it.incluir && it.driver_id_sel && (it.seller_id_sel || it.pickup_id_sel))
+    const seleccionados = items.filter(it => it.incluir && it.driver_id_sel && (it.seller_id_sel || it.pickup_id_sel || it.sucursal_id_sel))
     if (!seleccionados.length) return toast.error('No hay items válidos para confirmar')
     setConfirmando(true)
     try {
@@ -100,17 +123,22 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
           driver_id: it.driver_id_sel,
           seller_id: it.seller_id_sel,
           pickup_id: it.pickup_id_sel,
+          sucursal_id: it.sucursal_id_sel,
         })),
       })
-      toast.success(`${data.creados} retiros + ${data.creados_pickup} pickups creados. Aliases guardados.`)
+      const parts = []
+      if (data.creados) parts.push(`${data.creados} sellers`)
+      if (data.creados_pickup) parts.push(`${data.creados_pickup} pickups`)
+      if (data.creados_sucursal) parts.push(`${data.creados_sucursal} sucursales`)
+      toast.success(`${parts.join(' + ')} creados. Aliases guardados.`)
       onConfirmado()
       onClose()
     } catch { toast.error('Error confirmando retiros') }
     finally { setConfirmando(false) }
   }
 
-  const totalValidos = items.filter(it => it.incluir && it.driver_id_sel && (it.seller_id_sel || it.pickup_id_sel)).length
-  const sinMatch = items.filter(it => !it.driver_id_sel || (!it.seller_id_sel && !it.pickup_id_sel)).length
+  const totalValidos = items.filter(it => it.incluir && it.driver_id_sel && (it.seller_id_sel || it.pickup_id_sel || it.sucursal_id_sel)).length
+  const sinMatch = items.filter(it => !it.driver_id_sel || (!it.seller_id_sel && !it.pickup_id_sel && !it.sucursal_id_sel)).length
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -175,7 +203,7 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
                 <tbody>
                   {items.map((it, idx) => {
                     const driverOk = it.driver_id_sel != null
-                    const puntoOk = it.seller_id_sel != null || it.pickup_id_sel != null
+                    const puntoOk = it.seller_id_sel != null || it.pickup_id_sel != null || it.sucursal_id_sel != null
                     return (
                       <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
                         <td className="py-1.5">
@@ -213,22 +241,29 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
                         <td className="py-1.5 min-w-[180px]">
                           <div className="flex items-center gap-1.5">
                             {puntoOk
-                              ? ((it.seller_score >= 0.55 || it.pickup_score >= 0.55)
+                              ? ((it.seller_score >= 0.55 || it.pickup_score >= 0.55 || it.sucursal_score >= 0.55)
                                 ? <Check size={11} className="text-green-600 flex-shrink-0" />
                                 : <AlertCircle size={11} className="text-amber-500 flex-shrink-0" />)
                               : <AlertCircle size={11} className="text-red-400 flex-shrink-0" />
                             }
                             <select
                               className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white flex-1 min-w-0"
-                              value={it.pickup_id_sel ? `p-${it.pickup_id_sel}` : (it.seller_id_sel ? `s-${it.seller_id_sel}` : '')}
+                              value={
+                                it.pickup_id_sel ? `p-${it.pickup_id_sel}`
+                                : it.sucursal_id_sel ? `u-${it.sucursal_id_sel}`
+                                : it.seller_id_sel ? `s-${it.seller_id_sel}`
+                                : ''
+                              }
                               onChange={e => {
                                 const val = e.target.value
                                 if (val.startsWith('p-')) cambiarPickup(idx, val.slice(2))
+                                else if (val.startsWith('u-')) cambiarSucursal(idx, val.slice(2))
                                 else if (val.startsWith('s-')) cambiarSeller(idx, val.slice(2))
                                 else {
                                   setItems(prev => prev.map((x, i) => i === idx ? {
                                     ...x, seller_id_sel: null, seller_nombre_sel: null,
-                                    pickup_id_sel: null, pickup_nombre_sel: null, incluir: false,
+                                    pickup_id_sel: null, pickup_nombre_sel: null,
+                                    sucursal_id_sel: null, sucursal_nombre_sel: null, incluir: false,
                                   } : x))
                                 }
                               }}
@@ -239,6 +274,13 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
                                   {todosPickups.map(p => <option key={`p-${p.id}`} value={`p-${p.id}`}>{p.nombre}</option>)}
                                 </optgroup>
                               )}
+                              {todosSucursales.length > 0 && (
+                                <optgroup label="Sucursales">
+                                  {todosSucursales.map(su => (
+                                    <option key={`u-${su.id}`} value={`u-${su.id}`}>{su.nombre} ({su.seller_nombre})</option>
+                                  ))}
+                                </optgroup>
+                              )}
                               <optgroup label="Sellers">
                                 {todosSellers.map(s => <option key={`s-${s.id}`} value={`s-${s.id}`}>{s.nombre}</option>)}
                               </optgroup>
@@ -247,9 +289,11 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
                         </td>
                         <td className="py-1.5 text-center">
                           <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            it.pickup_id_sel ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                            it.pickup_id_sel ? 'bg-purple-100 text-purple-700'
+                            : it.sucursal_id_sel ? 'bg-teal-100 text-teal-700'
+                            : 'bg-blue-100 text-blue-700'
                           }`}>
-                            {it.pickup_id_sel ? 'Pickup' : 'Seller'}
+                            {it.pickup_id_sel ? 'Pickup' : it.sucursal_id_sel ? 'Sucursal' : 'Seller'}
                           </span>
                         </td>
                       </tr>

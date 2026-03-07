@@ -49,6 +49,8 @@ const initialForm = {
   giro: '',
   email: '',
   password: '',
+  tiene_sucursales: false,
+  sucursales: [],
 }
 
 export default function Sellers() {
@@ -154,6 +156,12 @@ export default function Sellers() {
 
   const openEdit = (seller) => {
     setEditing(seller)
+    const sucs = (seller.sucursales || []).map((s) => ({
+      id: s.id,
+      nombre: s.nombre,
+      tarifa_retiro: s.tarifa_retiro ?? 0,
+      tarifa_retiro_driver: s.tarifa_retiro_driver ?? 0,
+    }))
     setForm({
       nombre: seller.nombre,
       aliases: (seller.aliases || []).join(', '),
@@ -170,6 +178,8 @@ export default function Sellers() {
       giro: seller.giro || '',
       email: seller.email || '',
       password: '',
+      tiene_sucursales: sucs.length > 0,
+      sucursales: sucs,
     })
     setModalOpen(true)
   }
@@ -196,7 +206,31 @@ export default function Sellers() {
       .catch(() => toast.error('Error al desactivar'))
   }
 
-  const handleSubmit = (e) => {
+  const syncSucursales = async (sellerId, existingSucs) => {
+    const wanted = form.tiene_sucursales ? form.sucursales : []
+    const existingIds = new Set((existingSucs || []).map((s) => s.id))
+    const wantedIds = new Set(wanted.filter((s) => s.id).map((s) => s.id))
+
+    for (const ex of (existingSucs || [])) {
+      if (!wantedIds.has(ex.id)) {
+        await api.delete(`/sellers/${sellerId}/sucursales/${ex.id}`)
+      }
+    }
+    for (const s of wanted) {
+      const body = {
+        nombre: s.nombre,
+        tarifa_retiro: parseInt(s.tarifa_retiro, 10) || 0,
+        tarifa_retiro_driver: parseInt(s.tarifa_retiro_driver, 10) || 0,
+      }
+      if (s.id && existingIds.has(s.id)) {
+        await api.put(`/sellers/${sellerId}/sucursales/${s.id}`, body)
+      } else {
+        await api.post(`/sellers/${sellerId}/sucursales`, body)
+      }
+    }
+  }
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
     const payload = {
@@ -212,19 +246,30 @@ export default function Sellers() {
       email: (form.email || '').trim() || null,
     }
     if (!payload.password) delete payload.password
+    delete payload.tiene_sucursales
+    delete payload.sucursales
 
-    const promise = editing
-      ? api.put(`/sellers/${editing.id}`, payload)
-      : api.post('/sellers', payload)
-
-    promise
-      .then(() => {
-        toast.success(editing ? 'Seller actualizado' : 'Seller creado')
-        setModalOpen(false)
-        fetchSellers()
-      })
-      .catch((err) => toast.error(err.response?.data?.detail || 'Error al guardar'))
-      .finally(() => setSaving(false))
+    try {
+      let sellerId
+      let existingSucs
+      if (editing) {
+        await api.put(`/sellers/${editing.id}`, payload)
+        sellerId = editing.id
+        existingSucs = editing.sucursales || []
+      } else {
+        const { data } = await api.post('/sellers', payload)
+        sellerId = data.id
+        existingSucs = []
+      }
+      await syncSucursales(sellerId, existingSucs)
+      toast.success(editing ? 'Seller actualizado' : 'Seller creado')
+      setModalOpen(false)
+      fetchSellers()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const columns = [
@@ -460,6 +505,97 @@ export default function Sellers() {
               <label htmlFor="usa_pickup" className="text-sm font-medium text-gray-700">Usa pickup</label>
             </div>
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="tiene_sucursales"
+                checked={form.tiene_sucursales}
+                onChange={(e) => {
+                  const checked = e.target.checked
+                  setForm((f) => ({
+                    ...f,
+                    tiene_sucursales: checked,
+                    sucursales: checked ? (f.sucursales.length ? f.sucursales : [{ nombre: '', tarifa_retiro: 0, tarifa_retiro_driver: 0 }]) : f.sucursales,
+                  }))
+                }}
+                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <label htmlFor="tiene_sucursales" className="text-sm font-medium text-gray-700">Tiene sucursales</label>
+            </div>
+          </div>
+          {form.tiene_sucursales && (
+            <div className="bg-teal-50/50 p-3 rounded-lg border border-teal-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-teal-800">Sucursales</p>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, sucursales: [...f.sucursales, { nombre: '', tarifa_retiro: 0, tarifa_retiro_driver: 0 }] }))}
+                  className="text-xs text-teal-700 hover:text-teal-900 flex items-center gap-1"
+                >
+                  <Plus size={14} /> Agregar
+                </button>
+              </div>
+              {form.sucursales.map((suc, idx) => (
+                <div key={suc.id || `new-${idx}`} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-0.5">Nombre</label>
+                    <input
+                      type="text"
+                      className="input-field text-sm"
+                      placeholder="Nombre sucursal"
+                      value={suc.nombre}
+                      onChange={(e) => {
+                        const updated = [...form.sucursales]
+                        updated[idx] = { ...updated[idx], nombre: e.target.value }
+                        setForm((f) => ({ ...f, sucursales: updated }))
+                      }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-0.5">Cobro retiro</label>
+                    <input
+                      type="number"
+                      className="input-field text-sm w-28"
+                      min={0}
+                      value={suc.tarifa_retiro}
+                      onChange={(e) => {
+                        const updated = [...form.sucursales]
+                        updated[idx] = { ...updated[idx], tarifa_retiro: e.target.value }
+                        setForm((f) => ({ ...f, sucursales: updated }))
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-0.5">Pago driver</label>
+                    <input
+                      type="number"
+                      className="input-field text-sm w-28"
+                      min={0}
+                      value={suc.tarifa_retiro_driver}
+                      onChange={(e) => {
+                        const updated = [...form.sucursales]
+                        updated[idx] = { ...updated[idx], tarifa_retiro_driver: e.target.value }
+                        setForm((f) => ({ ...f, sucursales: updated }))
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, sucursales: f.sucursales.filter((_, i) => i !== idx) }))}
+                    className="p-1.5 rounded text-red-500 hover:bg-red-50 mb-0.5"
+                    title="Eliminar sucursal"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+              {form.sucursales.length === 0 && (
+                <p className="text-xs text-gray-500">Sin sucursales. Presiona "Agregar" para crear una.</p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email (opcional)</label>

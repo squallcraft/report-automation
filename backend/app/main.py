@@ -75,6 +75,8 @@ with engine.connect() as conn:
         retiro_cols_names = [c["name"] for c in insp.get_columns("retiros")]
         if "pickup_id" not in retiro_cols_names:
             safe_exec("ALTER TABLE retiros ADD COLUMN pickup_id INTEGER REFERENCES pickups(id)")
+        if "sucursal_id" not in retiro_cols_names:
+            safe_exec("ALTER TABLE retiros ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)")
 
     # Pickups se crean manualmente desde el admin — no se migran desde sellers
 

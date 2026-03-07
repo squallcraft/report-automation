@@ -84,9 +84,29 @@ class SellerUpdate(BaseModel):
     password: Optional[str] = None
 
 
+class SucursalBase(BaseModel):
+    nombre: str
+    tarifa_retiro: int = 0
+    tarifa_retiro_driver: int = 0
+    activo: bool = True
+
+
+class SucursalCreate(SucursalBase):
+    pass
+
+
+class SucursalOut(SucursalBase):
+    id: int
+    seller_id: int
+    aliases: List[str] = []
+
+    model_config = {"from_attributes": True}
+
+
 class SellerOut(SellerBase):
     id: int
     created_at: Optional[datetime] = None
+    sucursales: List[SucursalOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -494,9 +514,11 @@ class RetiroCreate(BaseModel):
 
 class RetiroOut(RetiroBase):
     id: int
+    sucursal_id: Optional[int] = None
     seller_nombre: Optional[str] = None
     driver_nombre: Optional[str] = None
     pickup_nombre: Optional[str] = None
+    sucursal_nombre: Optional[str] = None
     seller_nombre_raw: Optional[str] = None
     driver_nombre_raw: Optional[str] = None
     homologado: bool = True

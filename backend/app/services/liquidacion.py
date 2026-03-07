@@ -56,6 +56,16 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
         total_extras_comuna = sum(e.extra_comuna_seller for e in envios)
         total_retiros = _calcular_retiro_seller(seller, envios)
 
+        # Sumar retiros de sucursales del seller
+        retiros_sucursal = db.query(Retiro).filter(
+            Retiro.seller_id == seller.id,
+            Retiro.sucursal_id.isnot(None),
+            Retiro.semana == semana,
+            Retiro.mes == mes,
+            Retiro.anio == anio,
+        ).all()
+        total_retiros += sum(r.tarifa_seller for r in retiros_sucursal)
+
         ajustes = db.query(AjusteLiquidacion).filter(
             AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
             AjusteLiquidacion.entidad_id == seller.id,
@@ -228,6 +238,15 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
             for e in envios
         )
         ingreso += _calcular_retiro_seller(seller, envios)
+
+        retiros_sucursal = db.query(Retiro).filter(
+            Retiro.seller_id == seller.id,
+            Retiro.sucursal_id.isnot(None),
+            Retiro.semana == semana,
+            Retiro.mes == mes,
+            Retiro.anio == anio,
+        ).all()
+        ingreso += sum(r.tarifa_seller for r in retiros_sucursal)
 
         def _costo_envio_driver(e):
             driver_e = db.get(Driver, e.driver_id) if e.driver_id else None

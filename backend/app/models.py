@@ -69,6 +69,23 @@ class Seller(Base):
 
     envios = relationship("Envio", back_populates="seller")
     retiros = relationship("Retiro", back_populates="seller")
+    sucursales = relationship("Sucursal", back_populates="seller", cascade="all, delete-orphan")
+
+
+class Sucursal(Base):
+    __tablename__ = "sucursales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=False)
+    nombre = Column(String, nullable=False)
+    aliases = Column(JSON, default=list)
+    tarifa_retiro = Column(Integer, default=0)
+    tarifa_retiro_driver = Column(Integer, default=0)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    seller = relationship("Seller", back_populates="sucursales")
+    retiros = relationship("Retiro", back_populates="sucursal")
 
 
 class Driver(Base):
@@ -227,6 +244,7 @@ class Retiro(Base):
     seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
     driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
     pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=True)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=True)
     tarifa_seller = Column(Integer, nullable=False, default=0)
     tarifa_driver = Column(Integer, nullable=False, default=0)
     seller_nombre_raw = Column(String, nullable=True)
@@ -238,6 +256,7 @@ class Retiro(Base):
     seller = relationship("Seller", back_populates="retiros")
     driver = relationship("Driver", back_populates="retiros")
     pickup = relationship("Pickup", back_populates="retiros")
+    sucursal = relationship("Sucursal", back_populates="retiros")
 
 
 class ProductoConExtra(Base):

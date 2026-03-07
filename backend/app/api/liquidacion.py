@@ -337,6 +337,15 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
                 dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
                 total_retiros = seller.tarifa_retiro * dias_con_envios
 
+        retiros_sucursal = db.query(Retiro).filter(
+            Retiro.seller_id == seller_id,
+            Retiro.sucursal_id.isnot(None),
+            Retiro.semana == s,
+            Retiro.mes == mes,
+            Retiro.anio == anio,
+        ).all()
+        total_retiros += sum(r.tarifa_seller for r in retiros_sucursal)
+
         weekly[s] = {
             "monto": sum(e.cobro_seller for e in envios),
             "envios": len(envios),

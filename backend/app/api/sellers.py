@@ -4,15 +4,15 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import pandas as pd
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, hash_password
-from app.models import Seller
-from app.schemas import SellerCreate, SellerUpdate, SellerOut
+from app.models import Seller, Sucursal
+from app.schemas import SellerCreate, SellerUpdate, SellerOut, SucursalCreate, SucursalOut
 from app.services.audit import registrar as audit
 from app.services.audit import diff_campos
 
@@ -26,7 +26,7 @@ def listar_sellers(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    query = db.query(Seller)
+    query = db.query(Seller).options(joinedload(Seller.sucursales))
     if activo is not None:
         query = query.filter(Seller.activo == activo)
     if q:
@@ -333,7 +333,7 @@ async def importar_rut_giro(
 
 @router.get("/{seller_id}", response_model=SellerOut)
 def obtener_seller(seller_id: int, db: Session = Depends(get_db), _=Depends(require_admin_or_administracion)):
-    seller = db.query(Seller).get(seller_id)
+    seller = db.query(Seller).options(joinedload(Seller.sucursales)).filter(Seller.id == seller_id).first()
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
     return seller
@@ -412,3 +412,71 @@ def eliminar_seller(seller_id: int, request: Request, db: Session = Depends(get_
           metadata={"nombre": seller.nombre})
 
     return {"message": "Seller desactivado"}
+
+
+# ── Sucursales ──
+
+@router.get("/{seller_id}/sucursales", response_model=List[SucursalOut])
+def listar_sucursales(seller_id: int, db: Session = Depends(get_db), _=Depends(require_admin_or_administracion)):
+    seller = db.query(Seller).get(seller_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller no encontrado")
+    return db.query(Sucursal).filter(Sucursal.seller_id == seller_id).order_by(Sucursal.nombre).all()
+
+
+@router.post("/{seller_id}/sucursales", response_model=SucursalOut, status_code=201)
+def crear_sucursal(
+    seller_id: int, data: SucursalCreate, request: Request,
+    db: Session = Depends(get_db), current_user=Depends(require_admin),
+):
+    seller = db.query(Seller).get(seller_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller no encontrado")
+    suc = Sucursal(seller_id=seller_id, **data.model_dump())
+    db.add(suc)
+    db.commit()
+    db.refresh(suc)
+
+    audit(db, "crear_sucursal", usuario=current_user, request=request,
+          entidad="sucursal", entidad_id=suc.id,
+          metadata={"seller_id": seller_id, "nombre": suc.nombre})
+
+    return suc
+
+
+@router.put("/{seller_id}/sucursales/{suc_id}", response_model=SucursalOut)
+def actualizar_sucursal(
+    seller_id: int, suc_id: int, data: SucursalCreate, request: Request,
+    db: Session = Depends(get_db), current_user=Depends(require_admin),
+):
+    suc = db.query(Sucursal).filter(Sucursal.id == suc_id, Sucursal.seller_id == seller_id).first()
+    if not suc:
+        raise HTTPException(status_code=404, detail="Sucursal no encontrada")
+    for key, value in data.model_dump().items():
+        setattr(suc, key, value)
+    db.commit()
+    db.refresh(suc)
+
+    audit(db, "editar_sucursal", usuario=current_user, request=request,
+          entidad="sucursal", entidad_id=suc.id,
+          metadata={"seller_id": seller_id, "nombre": suc.nombre})
+
+    return suc
+
+
+@router.delete("/{seller_id}/sucursales/{suc_id}")
+def eliminar_sucursal(
+    seller_id: int, suc_id: int, request: Request,
+    db: Session = Depends(get_db), current_user=Depends(require_admin),
+):
+    suc = db.query(Sucursal).filter(Sucursal.id == suc_id, Sucursal.seller_id == seller_id).first()
+    if not suc:
+        raise HTTPException(status_code=404, detail="Sucursal no encontrada")
+    db.delete(suc)
+    db.commit()
+
+    audit(db, "eliminar_sucursal", usuario=current_user, request=request,
+          entidad="sucursal", entidad_id=suc_id,
+          metadata={"seller_id": seller_id, "nombre": suc.nombre})
+
+    return {"message": "Sucursal eliminada"}
