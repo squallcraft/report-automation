@@ -114,8 +114,9 @@ def recalcular_liquidacion(
     semana: int = Query(...),
     mes: int = Query(...),
     anio: int = Query(...),
+    request: Request = None,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    current_user=Depends(require_admin),
 ):
     """Fuerza recálculo de la liquidación y actualiza los snapshots."""
     periodo = _get_or_create_periodo(db, semana, mes, anio)
@@ -127,6 +128,17 @@ def recalcular_liquidacion(
     flag_modified(periodo, "snapshot_drivers")
     flag_modified(periodo, "snapshot_rentabilidad")
     db.commit()
+
+    audit(
+        db, "recalcular_liquidacion",
+        usuario=current_user, request=request,
+        entidad="periodo_liquidacion", entidad_id=periodo.id,
+        metadata={
+            "semana": semana, "mes": mes, "anio": anio,
+            "sellers": len(periodo.snapshot_sellers),
+            "drivers": len(periodo.snapshot_drivers),
+        },
+    )
 
     return {
         "message": "Liquidación recalculada",

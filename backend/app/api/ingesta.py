@@ -46,6 +46,7 @@ def _run_ingesta_in_background(
             reprocesar_anio=reprocesar_anio,
         )
         log = db.query(LogIngesta).filter(LogIngesta.ingesta_id == task_id).first()
+        print(f"[INGESTA] Completada task={task_id}, registrando auditoría...", flush=True)
         audit(
             db, "ingesta_batch",
             usuario=usuario_dict,
@@ -60,7 +61,11 @@ def _run_ingesta_in_background(
                 if reprocesar_semana else None,
             },
         )
+        print(f"[INGESTA] Auditoría registrada para task={task_id}", flush=True)
     except Exception as e:
+        import traceback
+        print(f"[INGESTA ERROR] task={task_id}: {e}", flush=True)
+        traceback.print_exc()
         update_task(task_id, status="error", message=f"Error fatal: {str(e)}")
     finally:
         db.close()

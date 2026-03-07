@@ -2,7 +2,7 @@
 Servicio centralizado de auditoría.
 Registra todas las acciones relevantes del sistema en audit_logs.
 """
-import logging
+import json
 import traceback
 from typing import Optional
 
@@ -10,9 +10,16 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from app.models import AuditLog
+from app.database import engine
 
-logger = logging.getLogger(__name__)
+_INSERT_SQL = text("""
+    INSERT INTO audit_logs
+        (usuario_id, usuario_nombre, usuario_rol, ip_address,
+         accion, entidad, entidad_id, cambios, metadata)
+    VALUES
+        (:uid, :uname, :urol, :ip,
+         :accion, :entidad, :eid, :cambios::jsonb, :meta::jsonb)
+""")
 
 
 def registrar(
@@ -28,7 +35,7 @@ def registrar(
 ) -> None:
     """
     Registra una entrada de auditoría.
-    Usa INSERT directo por SQL para no interferir con la sesión del endpoint.
+    Usa conexión independiente del engine para no interferir con la sesión del endpoint.
     """
     try:
         ip = None
@@ -42,21 +49,12 @@ def registrar(
         usuario_nombre = usuario.get("nombre") if usuario else None
         usuario_rol = str(usuario.get("rol", "")) if usuario else None
 
-        import json
-        cambios_json = json.dumps(cambios) if cambios else None
-        metadata_json = json.dumps(metadata) if metadata else None
+        cambios_json = json.dumps(cambios, default=str) if cambios else None
+        metadata_json = json.dumps(metadata, default=str) if metadata else None
 
-        conn = db.get_bind().connect()
-        try:
+        with engine.connect() as conn:
             conn.execute(
-                text("""
-                    INSERT INTO audit_logs
-                        (usuario_id, usuario_nombre, usuario_rol, ip_address,
-                         accion, entidad, entidad_id, cambios, metadata)
-                    VALUES
-                        (:uid, :uname, :urol, :ip,
-                         :accion, :entidad, :eid, :cambios::jsonb, :meta::jsonb)
-                """),
+                _INSERT_SQL,
                 {
                     "uid": usuario_id, "uname": usuario_nombre, "urol": usuario_rol,
                     "ip": ip, "accion": accion, "entidad": entidad, "eid": entidad_id,
@@ -64,11 +62,6 @@ def registrar(
                 },
             )
             conn.commit()
-        except Exception as inner:
-            conn.rollback()
-            print(f"[AUDIT ERROR commit] [{accion}]: {inner}", flush=True)
-        finally:
-            conn.close()
 
     except Exception as exc:
         print(f"[AUDIT ERROR] [{accion}]: {exc}", flush=True)
