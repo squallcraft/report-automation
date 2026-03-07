@@ -119,6 +119,8 @@ class DriverBase(BaseModel):
     tarifa_ecourier: int = 1700
     tarifa_oviedo: int = 1800
     tarifa_tercerizado: int = 1500
+    tarifa_valparaiso: int = 0
+    tarifa_melipilla: int = 0
     tarifa_retiro_fija: int = 0
     jefe_flota_id: Optional[int] = None
     rut: Optional[str] = None
@@ -140,6 +142,8 @@ class DriverUpdate(BaseModel):
     tarifa_ecourier: Optional[int] = None
     tarifa_oviedo: Optional[int] = None
     tarifa_tercerizado: Optional[int] = None
+    tarifa_valparaiso: Optional[int] = None
+    tarifa_melipilla: Optional[int] = None
     tarifa_retiro_fija: Optional[int] = None
     jefe_flota_id: Optional[int] = None
     rut: Optional[str] = None
