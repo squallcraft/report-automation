@@ -18,7 +18,8 @@ _INSERT_SQL = text("""
          accion, entidad, entidad_id, cambios, metadata)
     VALUES
         (:uid, :uname, :urol, :ip,
-         :accion, :entidad, :eid, :cambios::jsonb, :meta::jsonb)
+         :accion, :entidad, :eid,
+         CAST(:cambios AS jsonb), CAST(:meta AS jsonb))
 """)
 
 
