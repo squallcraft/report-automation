@@ -544,10 +544,10 @@ def driver_excel(
     wb.save(buf)
     buf.seek(0)
     nombre = driver.nombre.replace("/", "-").replace("\\", "-")
+    period_suffix = f"_S{semana}_M{mes}_{anio}" if semana is not None else f"_M{mes}_{anio}"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        period_suffix = f"_S{semana}_M{mes}_{anio}" if semana is not None else f"_M{mes}_{anio}"
         headers={"Content-Disposition": f"attachment; filename=entregas_{nombre}{period_suffix}.xlsx"},
     )
 
