@@ -23,7 +23,7 @@ from app.auth import (
 from app.models import (
     PeriodoLiquidacion, EstadoLiquidacionEnum,
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
-    TipoEntidadEnum, EmpresaEnum, ProductoConExtra,
+    TipoEntidadEnum, EmpresaEnum, ProductoConExtra, TarifaPlanComuna,
 )
 from app.services.calendario import get_dates_for_week
 from app.services.audit import registrar as audit
@@ -118,7 +118,10 @@ def recalcular_liquidacion(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    """Fuerza recálculo de la liquidación y actualiza los snapshots."""
+    """Fuerza recálculo de la liquidación: reaplicar tarifas actuales y recalcular snapshots."""
+    # Reaplicar tarifas actuales de sellers y drivers a los envíos del período
+    envios_actualizados = _reaplicar_tarifas(db, semana, mes, anio)
+
     periodo = _get_or_create_periodo(db, semana, mes, anio)
 
     periodo.snapshot_sellers = calcular_liquidacion_sellers(db, semana, mes, anio)
@@ -137,6 +140,7 @@ def recalcular_liquidacion(
             "semana": semana, "mes": mes, "anio": anio,
             "sellers": len(periodo.snapshot_sellers),
             "drivers": len(periodo.snapshot_drivers),
+            "envios_tarifas_actualizadas": envios_actualizados,
         },
     )
 
@@ -144,7 +148,64 @@ def recalcular_liquidacion(
         "message": "Liquidación recalculada",
         "sellers": len(periodo.snapshot_sellers),
         "drivers": len(periodo.snapshot_drivers),
+        "envios_tarifas_actualizadas": envios_actualizados,
     }
+
+
+def _reaplicar_tarifas(db: Session, semana: int, mes: int, anio: int) -> int:
+    """Reaplicar tarifas actuales de sellers y drivers a envíos pendientes del período."""
+    envios = db.query(Envio).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+        Envio.estado_financiero == "pendiente",
+    ).all()
+
+    if not envios:
+        return 0
+
+    seller_ids = {e.seller_id for e in envios if e.seller_id}
+    driver_ids = {e.driver_id for e in envios if e.driver_id}
+    sellers_map = {s.id: s for s in db.query(Seller).filter(Seller.id.in_(seller_ids)).all()}
+    drivers_map = {d.id: d for d in db.query(Driver).filter(Driver.id.in_(driver_ids)).all()}
+
+    tarifas_plan = db.query(TarifaPlanComuna).all()
+    plan_comuna_map = {(t.plan_tarifario.lower(), t.comuna.lower()): t.precio for t in tarifas_plan}
+
+    actualizados = 0
+    for envio in envios:
+        cambio = False
+        seller = sellers_map.get(envio.seller_id)
+        if seller:
+            if seller.plan_tarifario and envio.comuna:
+                key = (seller.plan_tarifario.lower(), envio.comuna.lower())
+                nuevo_cobro = plan_comuna_map.get(key, seller.precio_base)
+            else:
+                nuevo_cobro = seller.precio_base
+            if envio.cobro_seller != nuevo_cobro:
+                envio.cobro_seller = nuevo_cobro
+                cambio = True
+
+        driver = drivers_map.get(envio.driver_id)
+        if driver and envio.empresa:
+            emp = envio.empresa
+            if emp in (EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value):
+                nuevo_costo = driver.tarifa_ecourier
+            elif emp in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value):
+                nuevo_costo = driver.tarifa_oviedo
+            elif emp in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
+                nuevo_costo = driver.tarifa_tercerizado
+            else:
+                nuevo_costo = None
+            if nuevo_costo is not None and envio.costo_driver != nuevo_costo:
+                envio.costo_driver = nuevo_costo
+                cambio = True
+
+        if cambio:
+            actualizados += 1
+
+    if actualizados:
+        db.flush()
+
+    return actualizados
 
 
 @router.get("/pdf/seller/{seller_id}")
