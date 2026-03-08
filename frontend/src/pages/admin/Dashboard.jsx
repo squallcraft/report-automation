@@ -21,6 +21,7 @@ const COST_ROWS = [
   { key: 'costo_comuna', label: 'Costo Comuna', isMoney: true },
   { key: 'costo_bulto_extra_driver', label: 'Costo Bulto Extra Driver', isMoney: true },
   { key: 'costo_retiro_driver', label: 'Costo Retiro Driver', isMoney: true },
+  { key: 'costo_comision_pickup', label: 'Costo Comisión Pickup', isMoney: true },
 ]
 
 function calcIngresoNeto(row) {
@@ -28,7 +29,7 @@ function calcIngresoNeto(row) {
 }
 
 function calcCostos(row) {
-  return (row.costo_paquete_driver || 0) + (row.costo_comuna || 0) + (row.costo_bulto_extra_driver || 0) + (row.costo_retiro_driver || 0)
+  return (row.costo_paquete_driver || 0) + (row.costo_comuna || 0) + (row.costo_bulto_extra_driver || 0) + (row.costo_retiro_driver || 0) + (row.costo_comision_pickup || 0)
 }
 
 function perfColor(ms) {

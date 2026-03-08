@@ -11,7 +11,7 @@ from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
     Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
-    PagoSemanaDriver, EstadoPagoEnum,
+    PagoSemanaDriver, EstadoPagoEnum, RecepcionPaquete,
 )
 from app.schemas import DashboardStats
 
@@ -93,6 +93,7 @@ def _empty_row():
         "costo_comuna": 0,
         "costo_bulto_extra_driver": 0,
         "costo_retiro_driver": 0,
+        "costo_comision_pickup": 0,
     }
 
 
@@ -141,6 +142,19 @@ def resumen_financiero(
             semanas[r.semana] = _empty_row()
         semanas[r.semana]["ingreso_retiro"] = int(r.ingreso_retiro or 0)
         semanas[r.semana]["costo_retiro_driver"] = int(r.costo_retiro_driver or 0)
+
+    pickup_rows = db.query(
+        RecepcionPaquete.semana,
+        sqlfunc.sum(RecepcionPaquete.comision).label("costo_comision_pickup"),
+    ).filter(
+        RecepcionPaquete.mes == mes, RecepcionPaquete.anio == anio,
+        RecepcionPaquete.pickup_id.isnot(None),
+    ).group_by(RecepcionPaquete.semana).all()
+
+    for r in pickup_rows:
+        if r.semana not in semanas:
+            semanas[r.semana] = _empty_row()
+        semanas[r.semana]["costo_comision_pickup"] = int(r.costo_comision_pickup or 0)
 
     for w in range(1, 6):
         if w not in semanas:

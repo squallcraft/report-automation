@@ -4,9 +4,10 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Upload, Download, AlertTriangle, Link } from 'lucide-react'
+import { Plus, Pencil, Trash2, Upload, Download, AlertTriangle, Link, Search, Package } from 'lucide-react'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
+const now = new Date()
 
 function EstadoBadge({ activo }) {
   return (
@@ -118,6 +119,14 @@ export default function Pickups() {
   const [resolveModal, setResolveModal] = useState(null)
   const [resolvePickupId, setResolvePickupId] = useState('')
   const [resolving, setResolving] = useState(false)
+  const [mainTab, setMainTab] = useState('pickups')
+  const [recepciones, setRecepciones] = useState([])
+  const [recTotal, setRecTotal] = useState(0)
+  const [recLoading, setRecLoading] = useState(false)
+  const [recPage, setRecPage] = useState(0)
+  const [recSearch, setRecSearch] = useState('')
+  const [recFilterPickup, setRecFilterPickup] = useState('')
+  const [recPeriod, setRecPeriod] = useState({ semana: '', mes: now.getMonth() + 1, anio: now.getFullYear() })
 
   const fetchData = () => {
     Promise.all([
@@ -140,7 +149,32 @@ export default function Pickups() {
       .catch(() => {})
   }
 
+  const REC_LIMIT = 500
+  const loadRecepciones = () => {
+    setRecLoading(true)
+    const params = {
+      mes: recPeriod.mes,
+      anio: recPeriod.anio,
+      limit: REC_LIMIT,
+      offset: recPage * REC_LIMIT,
+    }
+    if (recPeriod.semana) params.semana = recPeriod.semana
+    if (recFilterPickup) params.pickup_id = recFilterPickup
+    if (recSearch) params.search = recSearch
+    api.get('/pickups/recepciones/all', { params })
+      .then(({ data }) => {
+        setRecepciones(data.data)
+        setRecTotal(data.total)
+      })
+      .catch(() => {})
+      .finally(() => setRecLoading(false))
+  }
+
   useEffect(() => { fetchData(); loadPendientes() }, [])
+
+  useEffect(() => {
+    if (mainTab === 'recepciones') loadRecepciones()
+  }, [mainTab, recPeriod, recFilterPickup, recSearch, recPage])
 
   const openCreate = () => {
     setEditing(null)
@@ -329,6 +363,9 @@ export default function Pickups() {
     return <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
   }
 
+  const recTotalPages = Math.ceil(recTotal / REC_LIMIT)
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('es-CL') : '—'
+
   return (
     <div className="flex flex-col h-full gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -336,7 +373,7 @@ export default function Pickups() {
           <h1 className="text-2xl font-bold text-gray-900">Pickup Points</h1>
           <p className="text-sm text-gray-500 mt-1">Centros de recepción de paquetes — comisión configurable + IVA por paquete</p>
         </div>
-        {canEdit && (
+        {canEdit && mainTab === 'pickups' && (
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => { setImportResult(null); setImportModalOpen(true) }}
@@ -351,38 +388,186 @@ export default function Pickups() {
         )}
       </div>
 
-      <div className="flex-1 min-h-0">
-        <DataTable
-          columns={columns}
-          data={pickups}
-          onRowClick={openEdit}
-          emptyMessage="No hay pickups registrados"
-        />
+      <div className="flex border-b border-gray-200 mb-1">
+        <button
+          onClick={() => setMainTab('pickups')}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${mainTab === 'pickups' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          Pickup Points
+        </button>
+        <button
+          onClick={() => setMainTab('recepciones')}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${mainTab === 'recepciones' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <Package size={14} /> Recepciones
+        </button>
       </div>
 
-      {pendientes.length > 0 && (
-        <div className="card border-amber-200 bg-amber-50/50">
-          <h2 className="text-base font-semibold text-amber-800 flex items-center gap-2 mb-3">
-            <AlertTriangle size={18} /> Pickups sin Homologar ({pendientes.length})
-          </h2>
-          <p className="text-xs text-amber-700 mb-3">
-            Estos nombres llegaron desde las importaciones y no coinciden con ningún pickup registrado. Asígnalos para que sus recepciones se contabilicen correctamente.
-          </p>
-          <div className="space-y-2">
-            {pendientes.map((p, i) => (
-              <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-4 py-2.5">
-                <div>
-                  <span className="font-medium text-gray-800">{p.nombre_raw}</span>
-                  <span className="ml-2 text-xs text-gray-400">{p.cantidad} recepciones</span>
-                </div>
-                <button
-                  onClick={() => { setResolveModal(p); setResolvePickupId('') }}
-                  className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"
-                >
-                  <Link size={14} /> Asignar Pickup
-                </button>
+      {mainTab === 'pickups' && (
+        <>
+          <div className="flex-1 min-h-0">
+            <DataTable
+              columns={columns}
+              data={pickups}
+              onRowClick={openEdit}
+              emptyMessage="No hay pickups registrados"
+            />
+          </div>
+
+          {pendientes.length > 0 && (
+            <div className="card border-amber-200 bg-amber-50/50">
+              <h2 className="text-base font-semibold text-amber-800 flex items-center gap-2 mb-3">
+                <AlertTriangle size={18} /> Pickups sin Homologar ({pendientes.length})
+              </h2>
+              <p className="text-xs text-amber-700 mb-3">
+                Estos nombres llegaron desde las importaciones y no coinciden con ningún pickup registrado. Asígnalos para que sus recepciones se contabilicen correctamente.
+              </p>
+              <div className="space-y-2">
+                {pendientes.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-4 py-2.5">
+                    <div>
+                      <span className="font-medium text-gray-800">{p.nombre_raw}</span>
+                      <span className="ml-2 text-xs text-gray-400">{p.cantidad} recepciones</span>
+                    </div>
+                    <button
+                      onClick={() => { setResolveModal(p); setResolvePickupId('') }}
+                      className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"
+                    >
+                      <Link size={14} /> Asignar Pickup
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {mainTab === 'recepciones' && (
+        <div className="flex flex-col gap-4">
+          <div className="card">
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Semana</label>
+                <select
+                  value={recPeriod.semana}
+                  onChange={(e) => { setRecPeriod(p => ({ ...p, semana: e.target.value ? Number(e.target.value) : '' })); setRecPage(0) }}
+                  className="input-field w-28"
+                >
+                  <option value="">Todas</option>
+                  {[1,2,3,4,5].map(s => <option key={s} value={s}>Sem {s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+                <select
+                  value={recPeriod.mes}
+                  onChange={(e) => { setRecPeriod(p => ({ ...p, mes: Number(e.target.value) })); setRecPage(0) }}
+                  className="input-field w-36"
+                >
+                  {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i) => (
+                    <option key={i+1} value={i+1}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
+                <select
+                  value={recPeriod.anio}
+                  onChange={(e) => { setRecPeriod(p => ({ ...p, anio: Number(e.target.value) })); setRecPage(0) }}
+                  className="input-field w-24"
+                >
+                  {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i).map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Pickup</label>
+                <select
+                  value={recFilterPickup}
+                  onChange={(e) => { setRecFilterPickup(e.target.value); setRecPage(0) }}
+                  className="input-field w-48"
+                >
+                  <option value="">Todos</option>
+                  {pickups.filter(p => p.activo).map(p => (
+                    <option key={p.id} value={p.id}>{p.nombre}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Pedido, pickup..."
+                    className="input-field pl-9"
+                    value={recSearch}
+                    onChange={(e) => { setRecSearch(e.target.value); setRecPage(0) }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card overflow-hidden p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#1e3a5f]">
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Fecha</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Pickup</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Pedido</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Tracking</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Seller</th>
+                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Tipo</th>
+                    <th className="px-4 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wider">Sem</th>
+                    <th className="px-4 py-3 text-right text-[11px] font-semibold text-white uppercase tracking-wider">Comisión</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recLoading ? (
+                    <tr><td colSpan={8} className="text-center py-12 text-gray-400">Cargando...</td></tr>
+                  ) : recepciones.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-12 text-gray-400">No hay recepciones para el período seleccionado</td></tr>
+                  ) : recepciones.map((r, idx) => (
+                    <tr key={r.id} className={idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100'}>
+                      <td className="px-4 py-2.5 text-xs text-gray-700 whitespace-nowrap">{fmtDate(r.fecha_recepcion)}</td>
+                      <td className="px-4 py-2.5 text-xs font-medium text-gray-800">{r.pickup_nombre}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-700 font-mono">{r.pedido}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-500 font-mono">{r.tracking_id || '—'}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-700">{r.seller_nombre || '—'}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-500">{r.tipo || '—'}</td>
+                      <td className="px-4 py-2.5 text-xs text-center text-gray-700">{r.semana}</td>
+                      <td className="px-4 py-2.5 text-xs text-right font-medium text-gray-800">{fmtClp(r.comision)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {recTotal > 0 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
+                <span className="text-xs text-gray-500">{recTotal.toLocaleString('es-CL')} recepciones</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setRecPage(p => Math.max(0, p - 1))}
+                    disabled={recPage === 0}
+                    className="btn-secondary text-xs px-3 py-1"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs text-gray-600">Pág {recPage + 1} de {recTotalPages || 1}</span>
+                  <button
+                    onClick={() => setRecPage(p => p + 1)}
+                    disabled={recPage + 1 >= recTotalPages}
+                    className="btn-secondary text-xs px-3 py-1"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

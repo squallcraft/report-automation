@@ -253,6 +253,93 @@ def eliminar_pickup(pickup_id: int, request: Request, db: Session = Depends(get_
 
 # ── Recepciones ──
 
+@router.get("/recepciones/all")
+def listar_todas_recepciones(
+    semana: Optional[int] = None,
+    mes: Optional[int] = None,
+    anio: Optional[int] = None,
+    pickup_id: Optional[int] = None,
+    search: Optional[str] = None,
+    sort_by: str = "fecha_recepcion",
+    sort_dir: str = "desc",
+    limit: int = 500,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    query = db.query(RecepcionPaquete)
+    if semana is not None:
+        query = query.filter(RecepcionPaquete.semana == semana)
+    if mes is not None:
+        query = query.filter(RecepcionPaquete.mes == mes)
+    if anio is not None:
+        query = query.filter(RecepcionPaquete.anio == anio)
+    if pickup_id is not None:
+        query = query.filter(RecepcionPaquete.pickup_id == pickup_id)
+    if search:
+        s = f"%{search}%"
+        query = query.filter(
+            (RecepcionPaquete.pedido.ilike(s))
+            | (RecepcionPaquete.pickup_nombre_raw.ilike(s))
+        )
+
+    total = query.count()
+
+    allowed_sorts = {"fecha_recepcion", "pedido", "comision", "pickup_nombre_raw", "semana"}
+    col = getattr(RecepcionPaquete, sort_by if sort_by in allowed_sorts else "fecha_recepcion")
+    order = col.desc() if sort_dir == "desc" else col.asc()
+    recs = query.order_by(order).offset(offset).limit(limit).all()
+
+    pickup_cache = {}
+    result = []
+    for r in recs:
+        d = {c.name: getattr(r, c.name) for c in r.__table__.columns}
+        if r.pickup_id and r.pickup_id not in pickup_cache:
+            p = db.get(Pickup, r.pickup_id)
+            pickup_cache[r.pickup_id] = p.nombre if p else "—"
+        d["pickup_nombre"] = pickup_cache.get(r.pickup_id, r.pickup_nombre_raw or "Sin asignar")
+        if r.envio_id:
+            envio = db.get(Envio, r.envio_id)
+            d["tracking_id"] = envio.tracking_id if envio else None
+            d["seller_nombre"] = None
+            if envio and envio.seller_id:
+                seller = db.get(Seller, envio.seller_id)
+                d["seller_nombre"] = seller.nombre if seller else None
+        else:
+            d["tracking_id"] = None
+            d["seller_nombre"] = None
+        result.append(d)
+    return {"data": result, "total": total}
+
+
+@router.get("/recepciones/count")
+def contar_recepciones(
+    semana: Optional[int] = None,
+    mes: Optional[int] = None,
+    anio: Optional[int] = None,
+    pickup_id: Optional[int] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    query = db.query(RecepcionPaquete)
+    if semana is not None:
+        query = query.filter(RecepcionPaquete.semana == semana)
+    if mes is not None:
+        query = query.filter(RecepcionPaquete.mes == mes)
+    if anio is not None:
+        query = query.filter(RecepcionPaquete.anio == anio)
+    if pickup_id is not None:
+        query = query.filter(RecepcionPaquete.pickup_id == pickup_id)
+    if search:
+        s = f"%{search}%"
+        query = query.filter(
+            (RecepcionPaquete.pedido.ilike(s))
+            | (RecepcionPaquete.pickup_nombre_raw.ilike(s))
+        )
+    return {"total": query.count()}
+
+
 @router.get("/{pickup_id}/recepciones", response_model=List[RecepcionPaqueteOut])
 def listar_recepciones(
     pickup_id: int,
