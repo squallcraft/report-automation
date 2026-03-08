@@ -30,8 +30,8 @@ export default function PickupEntregas() {
   return (
     <div className="flex flex-col h-full gap-4">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Mis Entregas</h1>
-        <p className="text-sm text-gray-500 mt-1">Entregas realizadas con tu perfil de conductor</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Entregas</h1>
+        <p className="text-xs sm:text-sm text-gray-500 mt-1">Entregas realizadas con tu perfil de conductor</p>
       </div>
 
       <div className="card">

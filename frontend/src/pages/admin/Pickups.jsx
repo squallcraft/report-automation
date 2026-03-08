@@ -388,16 +388,16 @@ export default function Pickups() {
         )}
       </div>
 
-      <div className="flex border-b border-gray-200 mb-1">
+      <div className="flex border-b border-gray-200 mb-1 overflow-x-auto">
         <button
           onClick={() => setMainTab('pickups')}
-          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${mainTab === 'pickups' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${mainTab === 'pickups' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           Pickup Points
         </button>
         <button
           onClick={() => setMainTab('recepciones')}
-          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${mainTab === 'recepciones' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${mainTab === 'recepciones' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           <Package size={14} /> Recepciones
         </button>
@@ -424,14 +424,14 @@ export default function Pickups() {
               </p>
               <div className="space-y-2">
                 {pendientes.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-4 py-2.5">
-                    <div>
-                      <span className="font-medium text-gray-800">{p.nombre_raw}</span>
+                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white rounded-lg border border-amber-200 px-3 sm:px-4 py-2.5">
+                    <div className="min-w-0">
+                      <span className="font-medium text-gray-800 break-words">{p.nombre_raw}</span>
                       <span className="ml-2 text-xs text-gray-400">{p.cantidad} recepciones</span>
                     </div>
                     <button
                       onClick={() => { setResolveModal(p); setResolvePickupId('') }}
-                      className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"
+                      className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1 shrink-0 self-end sm:self-auto"
                     >
                       <Link size={14} /> Asignar Pickup
                     </button>
@@ -446,24 +446,24 @@ export default function Pickups() {
       {mainTab === 'recepciones' && (
         <div className="flex flex-col gap-4">
           <div className="card">
-            <div className="flex flex-wrap items-end gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap items-end gap-3 sm:gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Semana</label>
+                <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Semana</label>
                 <select
                   value={recPeriod.semana}
                   onChange={(e) => { setRecPeriod(p => ({ ...p, semana: e.target.value ? Number(e.target.value) : '' })); setRecPage(0) }}
-                  className="input-field w-28"
+                  className="input-field w-full lg:w-28 text-sm"
                 >
                   <option value="">Todas</option>
                   {[1,2,3,4,5].map(s => <option key={s} value={s}>Sem {s}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+                <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Mes</label>
                 <select
                   value={recPeriod.mes}
                   onChange={(e) => { setRecPeriod(p => ({ ...p, mes: Number(e.target.value) })); setRecPage(0) }}
-                  className="input-field w-36"
+                  className="input-field w-full lg:w-36 text-sm"
                 >
                   {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i) => (
                     <option key={i+1} value={i+1}>{m}</option>
@@ -471,11 +471,11 @@ export default function Pickups() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
+                <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Año</label>
                 <select
                   value={recPeriod.anio}
                   onChange={(e) => { setRecPeriod(p => ({ ...p, anio: Number(e.target.value) })); setRecPage(0) }}
-                  className="input-field w-24"
+                  className="input-field w-full lg:w-24 text-sm"
                 >
                   {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i).map(y => (
                     <option key={y} value={y}>{y}</option>
@@ -483,11 +483,11 @@ export default function Pickups() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Pickup</label>
+                <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Pickup</label>
                 <select
                   value={recFilterPickup}
                   onChange={(e) => { setRecFilterPickup(e.target.value); setRecPage(0) }}
-                  className="input-field w-48"
+                  className="input-field w-full lg:w-48 text-sm"
                 >
                   <option value="">Todos</option>
                   {pickups.filter(p => p.activo).map(p => (
@@ -495,14 +495,14 @@ export default function Pickups() {
                   ))}
                 </select>
               </div>
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
+              <div className="col-span-2 sm:col-span-3 lg:col-span-1 lg:flex-1 lg:min-w-[200px]">
+                <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Buscar</label>
                 <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Pedido, pickup..."
-                    className="input-field pl-9"
+                    className="input-field pl-9 text-sm"
                     value={recSearch}
                     onChange={(e) => { setRecSearch(e.target.value); setRecPage(0) }}
                   />
@@ -513,17 +513,17 @@ export default function Pickups() {
 
           <div className="card overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs sm:text-sm min-w-[600px]">
                 <thead>
                   <tr className="bg-[#1e3a5f]">
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Fecha</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Pickup</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Pedido</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Tracking</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Seller</th>
-                    <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider">Tipo</th>
-                    <th className="px-4 py-3 text-center text-[11px] font-semibold text-white uppercase tracking-wider">Sem</th>
-                    <th className="px-4 py-3 text-right text-[11px] font-semibold text-white uppercase tracking-wider">Comisión</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-left text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Fecha</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-left text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Pickup</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-left text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Pedido</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-left text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Tracking</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-left text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Seller</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-left text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Tipo</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-center text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Sem</th>
+                    <th className="px-2 sm:px-4 py-2.5 text-right text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">Comisión</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -533,35 +533,35 @@ export default function Pickups() {
                     <tr><td colSpan={8} className="text-center py-12 text-gray-400">No hay recepciones para el período seleccionado</td></tr>
                   ) : recepciones.map((r, idx) => (
                     <tr key={r.id} className={idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100'}>
-                      <td className="px-4 py-2.5 text-xs text-gray-700 whitespace-nowrap">{fmtDate(r.fecha_recepcion)}</td>
-                      <td className="px-4 py-2.5 text-xs font-medium text-gray-800">{r.pickup_nombre}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-700 font-mono">{r.pedido}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500 font-mono">{r.tracking_id || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-700">{r.seller_nombre || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-gray-500">{r.tipo || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-center text-gray-700">{r.semana}</td>
-                      <td className="px-4 py-2.5 text-xs text-right font-medium text-gray-800">{fmtClp(r.comision)}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-gray-700 whitespace-nowrap">{fmtDate(r.fecha_recepcion)}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs font-medium text-gray-800">{r.pickup_nombre}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-gray-700 font-mono">{r.pedido}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-gray-500 font-mono">{r.tracking_id || '—'}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-gray-700">{r.seller_nombre || '—'}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-gray-500">{r.tipo || '—'}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-center text-gray-700">{r.semana}</td>
+                      <td className="px-2 sm:px-4 py-2 text-xs text-right font-medium text-gray-800">{fmtClp(r.comision)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             {recTotal > 0 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
-                <span className="text-xs text-gray-500">{recTotal.toLocaleString('es-CL')} recepciones</span>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-gray-200 bg-gray-50">
+                <span className="text-[10px] sm:text-xs text-gray-500">{recTotal.toLocaleString('es-CL')} recepciones</span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setRecPage(p => Math.max(0, p - 1))}
                     disabled={recPage === 0}
-                    className="btn-secondary text-xs px-3 py-1"
+                    className="btn-secondary text-[10px] sm:text-xs px-2 sm:px-3 py-1"
                   >
                     Anterior
                   </button>
-                  <span className="text-xs text-gray-600">Pág {recPage + 1} de {recTotalPages || 1}</span>
+                  <span className="text-[10px] sm:text-xs text-gray-600">{recPage + 1}/{recTotalPages || 1}</span>
                   <button
                     onClick={() => setRecPage(p => p + 1)}
                     disabled={recPage + 1 >= recTotalPages}
-                    className="btn-secondary text-xs px-3 py-1"
+                    className="btn-secondary text-[10px] sm:text-xs px-2 sm:px-3 py-1"
                   >
                     Siguiente
                   </button>

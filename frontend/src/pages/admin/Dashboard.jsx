@@ -114,15 +114,15 @@ export default function Dashboard() {
         <p className="text-sm text-gray-500 mt-1">Resumen del período seleccionado</p>
       </div>
 
-      <div className="card mb-6">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex items-end gap-3">
+      <div className="card mb-4 sm:mb-6">
+        <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+          <div className="flex items-end gap-2 sm:gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+              <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Mes</label>
               <select
                 value={period.mes}
                 onChange={(e) => setPeriod((p) => ({ ...p, mes: Number(e.target.value) }))}
-                className="input-field w-40"
+                className="input-field w-28 sm:w-40 text-sm"
               >
                 {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
                   <option key={i + 1} value={i + 1}>{m}</option>
@@ -130,11 +130,11 @@ export default function Dashboard() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
+              <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Año</label>
               <select
                 value={period.anio}
                 onChange={(e) => setPeriod((p) => ({ ...p, anio: Number(e.target.value) }))}
-                className="input-field w-28"
+                className="input-field w-20 sm:w-28 text-sm"
               >
                 {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i).map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -294,31 +294,31 @@ export default function Dashboard() {
             </div>
           )}
           {/* ── Panel de rendimiento API ── */}
-          <div className="mt-6 border border-gray-200 rounded-xl overflow-hidden">
+          <div className="mt-4 sm:mt-6 border border-gray-200 rounded-xl overflow-hidden">
             <button
               onClick={() => setPerfOpen(o => !o)}
-              className="w-full flex items-center justify-between px-5 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
+              className="w-full flex items-center justify-between px-3 sm:px-5 py-3 sm:py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-xs sm:text-sm font-medium text-gray-700"
             >
-              <span className="flex items-center gap-2">
-                <Activity size={16} className="text-primary-500" />
-                Rendimiento de la API
-                <span className="text-xs text-gray-400 font-normal">(últimas 500 llamadas por endpoint)</span>
+              <span className="flex items-center gap-2 min-w-0">
+                <Activity size={16} className="text-primary-500 shrink-0" />
+                <span className="truncate">Rendimiento API</span>
+                <span className="text-[10px] sm:text-xs text-gray-400 font-normal hidden sm:inline">(últimas 500 llamadas)</span>
               </span>
-              {perfOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {perfOpen ? <ChevronUp size={16} className="shrink-0" /> : <ChevronDown size={16} className="shrink-0" />}
             </button>
 
             {perfOpen && (
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs text-gray-500">
-                    Verde &lt;300ms · Amarillo &lt;1s · Rojo ≥1s — Los datos se acumulan desde el último reinicio del servidor.
+              <div className="p-3 sm:p-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <p className="text-[10px] sm:text-xs text-gray-500">
+                    Verde &lt;300ms · Amarillo &lt;1s · Rojo ≥1s
                   </p>
-                  <div className="flex gap-2">
-                    <button onClick={loadPerf} disabled={perfLoading} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-600">
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={loadPerf} disabled={perfLoading} className="flex items-center gap-1.5 text-[10px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-600">
                       <RefreshCw size={12} className={perfLoading ? 'animate-spin' : ''} />
                       Actualizar
                     </button>
-                    <button onClick={resetPerf} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 text-red-600">
+                    <button onClick={resetPerf} className="flex items-center gap-1.5 text-[10px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 text-red-600">
                       <Trash2 size={12} />
                       Resetear
                     </button>

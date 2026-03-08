@@ -43,20 +43,20 @@ export default function PickupDashboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+      <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Hola, {user?.nombre}</h1>
-          <p className="text-sm text-gray-500 mt-1">Resumen financiero del pickup</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Hola, {user?.nombre}</h1>
+          <p className="text-xs sm:text-sm text-gray-500 mt-1">Resumen financiero del pickup</p>
         </div>
         <div className="flex items-center gap-2">
-          <select className="input-field text-sm py-1.5" value={mes} onChange={e => setMes(+e.target.value)}>
+          <select className="input-field text-xs sm:text-sm py-1.5 w-28 sm:w-auto" value={mes} onChange={e => setMes(+e.target.value)}>
             {Array.from({ length: 12 }, (_, i) => (
               <option key={i + 1} value={i + 1}>
                 {new Date(2026, i).toLocaleString('es-CL', { month: 'long' })}
               </option>
             ))}
           </select>
-          <select className="input-field text-sm py-1.5" value={anio} onChange={e => setAnio(+e.target.value)}>
+          <select className="input-field text-xs sm:text-sm py-1.5 w-20 sm:w-auto" value={anio} onChange={e => setAnio(+e.target.value)}>
             {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
@@ -98,65 +98,65 @@ export default function PickupDashboard() {
           </div>
 
           {/* Balance financiero completo */}
-          <div className="card mb-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">Balance financiero — {mesNombre}</h2>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between py-1.5">
-                <span className="text-gray-600">Comisiones por recepción ({data.total_paquetes} paquetes)</span>
-                <span className="font-medium text-emerald-700">+{fmt(data.total_comision_neto)}</span>
+          <div className="card mb-4 sm:mb-6">
+            <h2 className="text-xs sm:text-sm font-semibold text-gray-700 mb-3 sm:mb-4">Balance financiero — {mesNombre}</h2>
+            <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
+              <div className="flex justify-between gap-2 py-1.5">
+                <span className="text-gray-600 min-w-0">Comisiones ({data.total_paquetes} paq.)</span>
+                <span className="font-medium text-emerald-700 shrink-0">+{fmt(data.total_comision_neto)}</span>
               </div>
               {data.auto_entregas > 0 && (
-                <div className="flex justify-between py-1.5 text-gray-400">
-                  <span>Auto-entregas (sin comisión)</span>
-                  <span>{data.auto_entregas} paquetes</span>
+                <div className="flex justify-between gap-2 py-1.5 text-gray-400">
+                  <span className="min-w-0">Auto-entregas (sin comisión)</span>
+                  <span className="shrink-0">{data.auto_entregas} paq.</span>
                 </div>
               )}
               {data.driver_id && data.ganancias_driver > 0 && (
-                <div className="flex justify-between py-1.5">
-                  <span className="text-gray-600">Ganancias por entregas ({data.cantidad_entregas} envíos)</span>
-                  <span className="font-medium text-emerald-700">+{fmt(data.ganancias_driver)}</span>
+                <div className="flex justify-between gap-2 py-1.5">
+                  <span className="text-gray-600 min-w-0">Entregas ({data.cantidad_entregas} envíos)</span>
+                  <span className="font-medium text-emerald-700 shrink-0">+{fmt(data.ganancias_driver)}</span>
                 </div>
               )}
               {data.cargo_envios > 0 && (
                 <>
                   <div className="border-t border-gray-100 pt-2 mt-2">
-                    <div className="flex justify-between py-1.5">
-                      <span className="text-gray-600">Cargos por envíos emitidos ({data.cantidad_envios_seller})</span>
-                      <span className="font-medium text-red-600">-{fmt(data.cargo_envios)}</span>
+                    <div className="flex justify-between gap-2 py-1.5">
+                      <span className="text-gray-600 min-w-0">Cargos envíos ({data.cantidad_envios_seller})</span>
+                      <span className="font-medium text-red-600 shrink-0">-{fmt(data.cargo_envios)}</span>
                     </div>
                     {data.cargo_extras_producto > 0 && (
-                      <div className="flex justify-between py-1 pl-4 text-xs text-gray-400">
-                        <span>Extra producto</span><span>-{fmt(data.cargo_extras_producto)}</span>
+                      <div className="flex justify-between gap-2 py-1 pl-3 sm:pl-4 text-[10px] sm:text-xs text-gray-400">
+                        <span>Extra producto</span><span className="shrink-0">-{fmt(data.cargo_extras_producto)}</span>
                       </div>
                     )}
                     {data.cargo_extras_comuna > 0 && (
-                      <div className="flex justify-between py-1 pl-4 text-xs text-gray-400">
-                        <span>Extra comuna</span><span>-{fmt(data.cargo_extras_comuna)}</span>
+                      <div className="flex justify-between gap-2 py-1 pl-3 sm:pl-4 text-[10px] sm:text-xs text-gray-400">
+                        <span>Extra comuna</span><span className="shrink-0">-{fmt(data.cargo_extras_comuna)}</span>
                       </div>
                     )}
                     {data.cargo_extras_manual > 0 && (
-                      <div className="flex justify-between py-1 pl-4 text-xs text-gray-400">
-                        <span>Extra manual</span><span>-{fmt(data.cargo_extras_manual)}</span>
+                      <div className="flex justify-between gap-2 py-1 pl-3 sm:pl-4 text-[10px] sm:text-xs text-gray-400">
+                        <span>Extra manual</span><span className="shrink-0">-{fmt(data.cargo_extras_manual)}</span>
                       </div>
                     )}
                     {data.cargo_retiros_seller > 0 && (
-                      <div className="flex justify-between py-1 pl-4 text-xs text-gray-400">
-                        <span>Retiros seller</span><span>-{fmt(data.cargo_retiros_seller)}</span>
+                      <div className="flex justify-between gap-2 py-1 pl-3 sm:pl-4 text-[10px] sm:text-xs text-gray-400">
+                        <span>Retiros seller</span><span className="shrink-0">-{fmt(data.cargo_retiros_seller)}</span>
                       </div>
                     )}
                   </div>
                 </>
               )}
-              <div className="border-t-2 border-gray-200 pt-3 mt-3 flex justify-between">
+              <div className="border-t-2 border-gray-200 pt-3 mt-3 flex justify-between gap-2">
                 <span className="font-semibold text-gray-900">Balance neto</span>
-                <span className={`text-lg font-bold ${data.balance_neto >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                <span className={`text-base sm:text-lg font-bold shrink-0 ${data.balance_neto >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
                   {fmt(data.balance_neto)}
                 </span>
               </div>
               {data.total_comision_iva > 0 && (
-                <div className="flex justify-between py-1 text-xs text-gray-400">
+                <div className="flex justify-between gap-2 py-1 text-[10px] sm:text-xs text-gray-400">
                   <span>IVA comisiones (referencial)</span>
-                  <span>+{fmt(data.total_comision_iva)}</span>
+                  <span className="shrink-0">+{fmt(data.total_comision_iva)}</span>
                 </div>
               )}
             </div>
@@ -164,17 +164,17 @@ export default function PickupDashboard() {
 
           {/* Desglose semanal */}
           {data.semanas?.length > 0 && (
-            <div className="card mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Recepciones por semana — {mesNombre}</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+            <div className="card mb-4 sm:mb-6">
+              <h2 className="text-sm sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Recepciones por semana — {mesNombre}</h2>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-xs sm:text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Semana</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Paquetes</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Comisión neta</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">IVA</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
+                      <th className="text-left px-3 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Semana</th>
+                      <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Paq</th>
+                      <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Neta</th>
+                      <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">IVA</th>
+                      <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -182,22 +182,22 @@ export default function PickupDashboard() {
                       const iva = Math.round(s.comision * 0.19)
                       return (
                         <tr key={s.semana} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium">Semana {s.semana}</td>
-                          <td className="px-4 py-3 text-right">{s.paquetes}</td>
-                          <td className="px-4 py-3 text-right">{fmt(s.comision)}</td>
-                          <td className="px-4 py-3 text-right text-gray-500">{fmt(iva)}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-700">{fmt(s.comision + iva)}</td>
+                          <td className="px-3 sm:px-4 py-2 sm:py-3 font-medium whitespace-nowrap">Sem {s.semana}</td>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-right">{s.paquetes}</td>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-right">{fmt(s.comision)}</td>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-gray-500">{fmt(iva)}</td>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-emerald-700">{fmt(s.comision + iva)}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                   <tfoot>
                     <tr className="bg-gray-50 font-semibold">
-                      <td className="px-4 py-3">Total</td>
-                      <td className="px-4 py-3 text-right">{data.total_paquetes}</td>
-                      <td className="px-4 py-3 text-right">{fmt(data.total_comision_neto)}</td>
-                      <td className="px-4 py-3 text-right text-gray-500">{fmt(data.total_comision_iva)}</td>
-                      <td className="px-4 py-3 text-right text-emerald-700">{fmt(data.total_comision)}</td>
+                      <td className="px-3 sm:px-4 py-2 sm:py-3">Total</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-right">{data.total_paquetes}</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-right">{fmt(data.total_comision_neto)}</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-gray-500">{fmt(data.total_comision_iva)}</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-emerald-700">{fmt(data.total_comision)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -208,16 +208,16 @@ export default function PickupDashboard() {
           {/* Historial de pagos */}
           {(data.pagos_recibidos?.length > 0 || data.pagos_emitidos?.length > 0) && (
             <div className="card">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Historial de pagos — {mesNombre}</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <h2 className="text-sm sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">Historial de pagos — {mesNombre}</h2>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-xs sm:text-sm min-w-[480px]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Fecha</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Descripción</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Fuente</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Monto</th>
+                      <th className="text-left px-3 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Fecha</th>
+                      <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Tipo</th>
+                      <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600 hidden sm:table-cell">Descripción</th>
+                      <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600 hidden sm:table-cell">Fuente</th>
+                      <th className="text-right px-3 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Monto</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -225,17 +225,17 @@ export default function PickupDashboard() {
                       .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
                       .map((p, i) => (
                         <tr key={`${p.tipo}-${p.id}`} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-3">{p.fecha || '—'}</td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                          <td className="px-3 sm:px-4 py-2 sm:py-3 whitespace-nowrap">{p.fecha || '—'}</td>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3">
+                            <span className={`inline-flex px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${
                               p.tipo === 'recibido' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                             }`}>
-                              {p.tipo === 'recibido' ? 'Pago recibido' : 'Cobro emitido'}
+                              {p.tipo === 'recibido' ? 'Recibido' : 'Cobro'}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-gray-600">{p.descripcion || '—'}</td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">{p.fuente}</td>
-                          <td className={`px-4 py-3 text-right font-medium ${p.tipo === 'recibido' ? 'text-emerald-700' : 'text-red-600'}`}>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-600 hidden sm:table-cell">{p.descripcion || '—'}</td>
+                          <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-500 text-xs hidden sm:table-cell">{p.fuente}</td>
+                          <td className={`px-3 sm:px-4 py-2 sm:py-3 text-right font-medium whitespace-nowrap ${p.tipo === 'recibido' ? 'text-emerald-700' : 'text-red-600'}`}>
                             {p.tipo === 'recibido' ? '+' : '-'}{fmt(p.monto)}
                           </td>
                         </tr>
