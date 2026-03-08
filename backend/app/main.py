@@ -78,7 +78,14 @@ with engine.connect() as conn:
         if "sucursal_id" not in retiro_cols_names:
             safe_exec("ALTER TABLE retiros ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)")
 
-    # Pickups se crean manualmente desde el admin — no se migran desde sellers
+    if "recepciones_paquetes" in insp.get_table_names():
+        rp_cols = [c["name"] for c in insp.get_columns("recepciones_paquetes")]
+        if "pickup_nombre_raw" not in rp_cols:
+            safe_exec("ALTER TABLE recepciones_paquetes ADD COLUMN pickup_nombre_raw TEXT")
+        if engine.dialect.name == "postgresql":
+            rp_col_info = {c["name"]: c for c in insp.get_columns("recepciones_paquetes")}
+            if rp_col_info.get("pickup_id", {}).get("nullable") is False:
+                safe_exec("ALTER TABLE recepciones_paquetes ALTER COLUMN pickup_id DROP NOT NULL")
 
     # ── Migración audit_logs: agregar nuevas columnas si faltan ──
     if "audit_logs" in insp.get_table_names():

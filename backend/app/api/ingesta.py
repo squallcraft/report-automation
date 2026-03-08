@@ -16,7 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from app.database import get_db, SessionLocal
 from app.auth import require_admin, require_admin_or_administracion
 from app.config import get_settings
-from app.models import Envio, Seller, Driver, LogIngesta
+from app.models import Envio, Seller, Driver, LogIngesta, RecepcionPaquete, Pickup
 from app.schemas import IngestaResult, HomologacionPendiente, ResolverHomologacion
 from app.services.audit import registrar as audit
 from app.services.ingesta import procesar_reporte_excel, resolver_homologacion
@@ -276,6 +276,17 @@ def listar_pendientes(db: Session = Depends(get_db), _=Depends(require_admin)):
     for nombre, cantidad in drivers_pendientes:
         pendientes.append(HomologacionPendiente(
             nombre_raw=nombre, tipo="DRIVER", cantidad=cantidad
+        ))
+
+    pickups_pendientes = (
+        db.query(RecepcionPaquete.pickup_nombre_raw, sqlfunc.count(RecepcionPaquete.id))
+        .filter(RecepcionPaquete.pickup_id.is_(None), RecepcionPaquete.pickup_nombre_raw.isnot(None))
+        .group_by(RecepcionPaquete.pickup_nombre_raw)
+        .all()
+    )
+    for nombre, cantidad in pickups_pendientes:
+        pendientes.append(HomologacionPendiente(
+            nombre_raw=nombre, tipo="PICKUP", cantidad=cantidad
         ))
 
     return pendientes

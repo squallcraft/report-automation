@@ -292,7 +292,21 @@ def descargar_pdf_seller(
     _=Depends(require_admin_or_administracion),
 ):
     try:
-        pdf_bytes = generar_pdf_seller(db, seller_id, semana, mes, anio)
+        detail = _seller_detail(db, seller_id, mes, anio)
+        seller = db.get(Seller, seller_id)
+        envios_semana = db.query(Envio).filter(
+            Envio.seller_id == seller_id, Envio.semana == semana,
+            Envio.mes == mes, Envio.anio == anio,
+        ).order_by(Envio.fecha_entrega).all()
+        daily = _daily_breakdown(
+            envios_semana, [],
+            "extra_producto_seller", "extra_comuna_seller",
+            semana, mes, anio, is_seller=True, db=db, seller=seller,
+        )
+        pdf_bytes = generar_pdf_seller(
+            db, seller_id, semana, mes, anio,
+            weekly_data=detail["weekly"], daily_data=daily,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return StreamingResponse(
@@ -317,7 +331,27 @@ def descargar_pdf_driver(
             detail="Para drivers solo se muestra información desde la semana 4 de febrero 2026.",
         )
     try:
-        pdf_bytes = generar_pdf_driver(db, driver_id, semana, mes, anio)
+        detail = _driver_detail(db, driver_id, mes, anio)
+        driver = db.get(Driver, driver_id)
+        es_contratado = getattr(driver, 'contratado', False) if driver else False
+        envios_semana = db.query(Envio).filter(
+            Envio.driver_id == driver_id, Envio.semana == semana,
+            Envio.mes == mes, Envio.anio == anio,
+        ).order_by(Envio.fecha_entrega).all()
+        retiros_semana = db.query(Retiro).filter(
+            Retiro.driver_id == driver_id, Retiro.semana == semana,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        daily = _daily_breakdown(
+            envios_semana, retiros_semana,
+            "extra_producto_driver", "extra_comuna_driver",
+            semana, mes, anio, is_seller=False, db=db,
+            contratado=es_contratado, driver=driver,
+        )
+        pdf_bytes = generar_pdf_driver(
+            db, driver_id, semana, mes, anio,
+            weekly_data=detail["weekly"], daily_data=daily,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return StreamingResponse(
@@ -748,7 +782,22 @@ def descargar_zip_sellers(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for item in resultado:
             try:
-                pdf = generar_pdf_seller(db, item["seller_id"], semana, mes, anio)
+                sid = item["seller_id"]
+                detail = _seller_detail(db, sid, mes, anio)
+                seller = db.get(Seller, sid)
+                ev = db.query(Envio).filter(
+                    Envio.seller_id == sid, Envio.semana == semana,
+                    Envio.mes == mes, Envio.anio == anio,
+                ).order_by(Envio.fecha_entrega).all()
+                daily = _daily_breakdown(
+                    ev, [],
+                    "extra_producto_seller", "extra_comuna_seller",
+                    semana, mes, anio, is_seller=True, db=db, seller=seller,
+                )
+                pdf = generar_pdf_seller(
+                    db, sid, semana, mes, anio,
+                    weekly_data=detail["weekly"], daily_data=daily,
+                )
                 nombre = item["seller_nombre"].replace("/", "-").replace("\\", "-")
                 zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
             except Exception:
@@ -787,7 +836,28 @@ def descargar_zip_drivers(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for item in resultado:
             try:
-                pdf = generar_pdf_driver(db, item["driver_id"], semana, mes, anio)
+                did = item["driver_id"]
+                detail = _driver_detail(db, did, mes, anio)
+                driver = db.get(Driver, did)
+                es_c = getattr(driver, 'contratado', False) if driver else False
+                ev = db.query(Envio).filter(
+                    Envio.driver_id == did, Envio.semana == semana,
+                    Envio.mes == mes, Envio.anio == anio,
+                ).order_by(Envio.fecha_entrega).all()
+                rv = db.query(Retiro).filter(
+                    Retiro.driver_id == did, Retiro.semana == semana,
+                    Retiro.mes == mes, Retiro.anio == anio,
+                ).all()
+                daily = _daily_breakdown(
+                    ev, rv,
+                    "extra_producto_driver", "extra_comuna_driver",
+                    semana, mes, anio, is_seller=False, db=db,
+                    contratado=es_c, driver=driver,
+                )
+                pdf = generar_pdf_driver(
+                    db, did, semana, mes, anio,
+                    weekly_data=detail["weekly"], daily_data=daily,
+                )
                 nombre = item["driver_nombre"].replace("/", "-").replace("\\", "-")
                 zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
             except Exception:
@@ -909,7 +979,28 @@ def descargar_mi_pdf_driver(
             detail="Solo puedes descargar información desde la semana 4 de febrero 2026 en adelante.",
         )
     try:
-        pdf_bytes = generar_pdf_driver(db, user["id"], semana, mes, anio)
+        driver_id = user["id"]
+        detail = _driver_detail(db, driver_id, mes, anio)
+        driver = db.get(Driver, driver_id)
+        es_contratado = getattr(driver, 'contratado', False) if driver else False
+        envios_semana = db.query(Envio).filter(
+            Envio.driver_id == driver_id, Envio.semana == semana,
+            Envio.mes == mes, Envio.anio == anio,
+        ).order_by(Envio.fecha_entrega).all()
+        retiros_semana = db.query(Retiro).filter(
+            Retiro.driver_id == driver_id, Retiro.semana == semana,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        daily = _daily_breakdown(
+            envios_semana, retiros_semana,
+            "extra_producto_driver", "extra_comuna_driver",
+            semana, mes, anio, is_seller=False, db=db,
+            contratado=es_contratado, driver=driver,
+        )
+        pdf_bytes = generar_pdf_driver(
+            db, driver_id, semana, mes, anio,
+            weekly_data=detail["weekly"], daily_data=daily,
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return StreamingResponse(

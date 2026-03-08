@@ -215,7 +215,8 @@ class RecepcionPaquete(Base):
     __tablename__ = "recepciones_paquetes"
 
     id = Column(Integer, primary_key=True, index=True)
-    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=False)
+    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=True)
+    pickup_nombre_raw = Column(String, nullable=True)
     envio_id = Column(Integer, ForeignKey("envios.id"), nullable=True)
     fecha_recepcion = Column(Date, nullable=False)
     semana = Column(Integer, nullable=False)

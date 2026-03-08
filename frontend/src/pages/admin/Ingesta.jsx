@@ -115,6 +115,7 @@ export default function Ingesta() {
   const [pendientes, setPendientes] = useState([])
   const [sellers, setSellers] = useState([])
   const [drivers, setDrivers] = useState([])
+  const [pickups, setPickups] = useState([])
   const [resolveModal, setResolveModal] = useState(null)
   const [selectedEntity, setSelectedEntity] = useState('')
 
@@ -129,6 +130,7 @@ export default function Ingesta() {
     loadPendientes()
     api.get('/sellers').then(({ data }) => setSellers(Array.isArray(data) ? data : [])).catch(() => {})
     api.get('/drivers').then(({ data }) => setDrivers(Array.isArray(data) ? data : [])).catch(() => {})
+    api.get('/pickups').then(({ data }) => setPickups(Array.isArray(data) ? data : [])).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -256,12 +258,17 @@ export default function Ingesta() {
     setShowReprocess(true)
   }
 
+  const tipoBadge = (v) => {
+    const cls = v === 'SELLER' ? 'bg-blue-100 text-blue-700'
+      : v === 'PICKUP' ? 'bg-purple-100 text-purple-700'
+      : 'bg-green-100 text-green-700'
+    return <span className={`text-xs font-medium px-2 py-1 rounded-full ${cls}`}>{v}</span>
+  }
+
   const pendientesColumns = [
-    { key: 'tipo', label: 'Tipo', render: (v) => (
-      <span className={`text-xs font-medium px-2 py-1 rounded-full ${v === 'SELLER' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{v}</span>
-    )},
+    { key: 'tipo', label: 'Tipo', render: tipoBadge },
     { key: 'nombre_raw', label: 'Nombre en Reporte' },
-    { key: 'cantidad', label: 'Envíos', align: 'center' },
+    { key: 'cantidad', label: 'Registros', align: 'center' },
   ]
 
   return (
@@ -378,15 +385,17 @@ export default function Ingesta() {
             <div className="bg-gray-50 rounded-lg p-3">
               <p className="text-sm text-gray-500">Nombre en reporte:</p>
               <p className="font-semibold">{resolveModal.nombre_raw}</p>
-              <p className="text-xs text-gray-400 mt-1">Tipo: {resolveModal.tipo} — {resolveModal.cantidad} envíos</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Tipo: {resolveModal.tipo} — {resolveModal.cantidad} {resolveModal.tipo === 'PICKUP' ? 'recepciones' : 'envíos'}
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Asignar a {resolveModal.tipo === 'SELLER' ? 'Seller' : 'Driver'}:
+                Asignar a {resolveModal.tipo === 'SELLER' ? 'Seller' : resolveModal.tipo === 'PICKUP' ? 'Pickup' : 'Driver'}:
               </label>
               <select value={selectedEntity} onChange={(e) => setSelectedEntity(e.target.value)} className="input-field">
                 <option value="">Seleccionar...</option>
-                {(resolveModal.tipo === 'SELLER' ? sellers : drivers).map((e) => (
+                {(resolveModal.tipo === 'SELLER' ? sellers : resolveModal.tipo === 'PICKUP' ? pickups : drivers).map((e) => (
                   <option key={e.id} value={e.id}>{e.nombre}</option>
                 ))}
               </select>

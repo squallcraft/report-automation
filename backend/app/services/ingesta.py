@@ -18,6 +18,7 @@ from sqlalchemy import func as sqlfunc
 from app.models import (
     Seller, Driver, Envio, ProductoConExtra, TarifaComuna, TarifaPlanComuna,
     EmpresaEnum, LogIngesta, PeriodoLiquidacion, TarifaEscalonadaSeller,
+    Pickup, RecepcionPaquete,
 )
 from app.services.task_progress import update_task
 from app.services.calendario import build_fecha_semana_lookup
@@ -535,7 +536,10 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
             else:
                 envio.cobro_seller = entidad.precio_base
             envio.homologado = envio.driver_id is not None
-    else:
+        db.commit()
+        return len(envios)
+
+    elif tipo == "DRIVER":
         entidad = db.query(Driver).get(entidad_id)
         if not entidad:
             raise ValueError("Driver no encontrado")
@@ -565,6 +569,32 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
                     elif emp in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value):
                         envio.costo_driver = entidad.tarifa_melipilla
             envio.homologado = envio.seller_id is not None
+        db.commit()
+        return len(envios)
 
-    db.commit()
-    return len(envios)
+    elif tipo == "PICKUP":
+        pickup = db.query(Pickup).get(entidad_id)
+        if not pickup:
+            raise ValueError("Pickup no encontrado")
+        current_aliases = list(pickup.aliases or [])
+        if nombre_raw not in current_aliases:
+            current_aliases.append(nombre_raw)
+            pickup.aliases = current_aliases
+            flag_modified(pickup, "aliases")
+
+        recepciones = db.query(RecepcionPaquete).filter(
+            RecepcionPaquete.pickup_nombre_raw == nombre_raw,
+            RecepcionPaquete.pickup_id.is_(None),
+        ).all()
+        for rec in recepciones:
+            rec.pickup_id = pickup.id
+            rec.comision = pickup.comision_paquete
+            if pickup.seller_id and rec.envio_id:
+                envio = db.query(Envio).get(rec.envio_id)
+                if envio and envio.seller_id == pickup.seller_id:
+                    rec.comision = 0
+        db.commit()
+        return len(recepciones)
+
+    else:
+        raise ValueError(f"Tipo no soportado: {tipo}")

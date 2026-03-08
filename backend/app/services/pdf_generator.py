@@ -5,15 +5,11 @@ gráfico mensual de envíos, footer motivacional.
 """
 import io
 import os
-import calendar
-from typing import List, Dict
 from datetime import datetime, date
-from collections import defaultdict
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import mm
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -24,12 +20,7 @@ from reportlab.platypus import (
 from reportlab.graphics.shapes import Drawing, Rect, String as GString
 from sqlalchemy.orm import Session
 
-from app.models import (
-    Envio, Seller, Driver, Retiro, AjusteLiquidacion,
-    EmpresaEnum, TipoEntidadEnum,
-)
-from app.services.liquidacion import _calcular_retiro_driver
-from app.services.calendario import get_dates_for_week as _cal_get_dates
+from app.models import Envio, Seller, Driver, Retiro
 
 # Registrar Roboto (usa font-roboto si está instalado)
 try:
@@ -74,16 +65,6 @@ def _fmt(valor: int) -> str:
     if valor < 0:
         return f"-${abs(valor):,.0f}".replace(",", ".")
     return f"${valor:,.0f}".replace(",", ".")
-
-
-def _get_dates_for_week(semana: int, mes: int, anio: int, db=None):
-    if db is not None:
-        return _cal_get_dates(db, semana, mes, anio)
-    # Fallback sin DB
-    _, days_in_month = calendar.monthrange(anio, mes)
-    start_day = (semana - 1) * 7 + 1
-    end_day = min(semana * 7, days_in_month)
-    return [date(anio, mes, d) for d in range(start_day, end_day + 1)]
 
 
 
@@ -369,35 +350,29 @@ def _company_footer():
 # ──────────────────────────────────────────────────────────
 
 def generar_pdf_seller(
-    db: Session, seller_id: int, semana: int, mes: int, anio: int
+    db: Session, seller_id: int, semana: int, mes: int, anio: int,
+    weekly_data: dict = None, daily_data: list = None,
 ) -> bytes:
+    """
+    Genera PDF de liquidación de un seller.
+    Si weekly_data y daily_data se pasan, los usa directamente (misma fuente
+    que la vista web). Si no, los calcula internamente como fallback.
+    """
     seller = db.get(Seller, seller_id)
     if not seller:
         raise ValueError("Seller no encontrado")
 
-    weekly = {}
-    for s in range(1, 6):
-        envios = db.query(Envio).filter(
-            Envio.seller_id == seller_id, Envio.semana == s,
-            Envio.mes == mes, Envio.anio == anio,
-        ).all()
-        total_retiros = 0
-        if seller.tiene_retiro and not seller.usa_pickup and envios and seller.tarifa_retiro:
-            if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-                dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
-                total_retiros = seller.tarifa_retiro * dias_con_envios
+    if weekly_data is None:
+        from app.api.liquidacion import _seller_detail
+        detail = _seller_detail(db, seller_id, mes, anio)
+        weekly_data = detail["weekly"]
 
-        weekly[s] = {
-            "monto": sum(e.cobro_seller + e.cobro_extra_manual for e in envios),
-            "envios": len(envios),
-            "bultos_extra": sum(e.extra_producto_seller for e in envios),
-            "retiros": total_retiros,
-            "peso_extra": sum(e.extra_comuna_seller for e in envios),
-        }
+    weekly = weekly_data
 
     def sub(s):
-        w = weekly[s]
-        return w["monto"] + w["bultos_extra"] + w["retiros"] + w["peso_extra"]
+        w = weekly.get(s, {})
+        return (w.get("monto", 0) + w.get("bultos_extra", 0) + w.get("cobro_extra_manual", 0)
+                + w.get("retiros", 0) + w.get("peso_extra", 0) + w.get("ajustes", 0))
 
     subtotals = [sub(s) for s in range(1, 6)]
     ivas = [int(v * 0.19) for v in subtotals]
@@ -411,7 +386,7 @@ def generar_pdf_seller(
     elements.extend(_build_header(seller.nombre, mes, anio, total_semana, is_seller=True))
 
     def _row(label, key, is_clp=True):
-        vals = [weekly[s][key] for s in range(1, 6)]
+        vals = [weekly.get(s, {}).get(key, 0) for s in range(1, 6)]
         total = sum(vals)
         if is_clp:
             return [label] + [_fmt(v) for v in vals] + [_fmt(total)]
@@ -421,8 +396,10 @@ def generar_pdf_seller(
         _row("Monto", "monto"),
         _row("Envíos", "envios", False),
         _row("Bultos Extra", "bultos_extra"),
+        _row("Extra Manual", "cobro_extra_manual"),
         _row("Retiros", "retiros"),
         _row("Peso Extra", "peso_extra"),
+        _row("Ajustes", "ajustes"),
         ["Subtotal"] + [_fmt(v) for v in subtotals] + [_fmt(sum(subtotals))],
         ["IVA"] + [_fmt(v) for v in ivas] + [_fmt(sum(ivas))],
         ["Total"] + [_fmt(v) for v in totals] + [_fmt(sum(totals))],
@@ -433,24 +410,17 @@ def generar_pdf_seller(
     elements.append(_footer_message())
     elements.append(Spacer(1, 10))
 
-    # Desglose diario — sin retiros en sellers
-    all_dates = _get_dates_for_week(semana, mes, anio, db=db)
-    envios_semana = db.query(Envio).filter(
-        Envio.seller_id == seller_id, Envio.semana == semana,
-        Envio.mes == mes, Envio.anio == anio,
-    ).order_by(Envio.fecha_entrega).all()
-
-    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "peso_extra": 0, "cobro": 0} for d in all_dates}
-    for e in envios_semana:
-        d = e.fecha_entrega
-        if d not in daily_map:
-            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "peso_extra": 0, "cobro": 0}
-        daily_map[d]["envios"] += 1
-        daily_map[d]["cobro"] += e.cobro_seller + (e.cobro_extra_manual or 0)
-        daily_map[d]["bultos_extra"] += e.extra_producto_seller
-        daily_map[d]["peso_extra"] += e.extra_comuna_seller
-
-    daily_data = sorted(daily_map.values(), key=lambda x: x["fecha"])
+    if daily_data is None:
+        from app.api.liquidacion import _daily_breakdown
+        envios_semana = db.query(Envio).filter(
+            Envio.seller_id == seller_id, Envio.semana == semana,
+            Envio.mes == mes, Envio.anio == anio,
+        ).order_by(Envio.fecha_entrega).all()
+        daily_data = _daily_breakdown(
+            envios_semana, [],
+            "extra_producto_seller", "extra_comuna_seller",
+            semana, mes, anio, is_seller=True, db=db, seller=seller,
+        )
 
     if daily_data:
         daily_cols = [
@@ -458,7 +428,7 @@ def generar_pdf_seller(
             ("Envíos", "envios", "int"),
             ("Bultos Extra", "bultos_extra", "clp"),
             ("Peso Extra", "peso_extra", "clp"),
-            ("Cobro", "cobro", "clp"),
+            ("Cobro", "monto", "clp"),
         ]
         elements.append(_daily_table(daily_data, daily_cols))
         elements.append(Spacer(1, 10))
@@ -476,64 +446,33 @@ def generar_pdf_seller(
 # ──────────────────────────────────────────────────────────
 
 def generar_pdf_driver(
-    db: Session, driver_id: int, semana: int, mes: int, anio: int
+    db: Session, driver_id: int, semana: int, mes: int, anio: int,
+    weekly_data: dict = None, daily_data: list = None,
 ) -> bytes:
+    """
+    Genera PDF de liquidación de un driver.
+    Si weekly_data y daily_data se pasan, los usa directamente (misma fuente
+    que la vista web). Si no, los calcula internamente como fallback.
+    """
     driver = db.get(Driver, driver_id)
     if not driver:
         raise ValueError("Driver no encontrado")
 
-    weekly = {}
-    for s in range(1, 6):
-        envios = db.query(Envio).filter(
-            Envio.driver_id == driver_id, Envio.semana == s,
-            Envio.mes == mes, Envio.anio == anio,
-        ).all()
-        retiros_q = db.query(Retiro).filter(
-            Retiro.driver_id == driver_id, Retiro.semana == s,
-            Retiro.mes == mes, Retiro.anio == anio,
-        ).all()
-        normal = [e for e in envios if e.empresa in (None, "", EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value)]
-        oviedo = [e for e in envios if e.empresa in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value)]
-        tercerizado = [e for e in envios if e.empresa in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value)]
-        valparaiso = [e for e in envios if e.empresa in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value)]
-        melipilla = [e for e in envios if e.empresa in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value)]
+    if weekly_data is None:
+        from app.api.liquidacion import _driver_detail
+        detail = _driver_detail(db, driver_id, mes, anio)
+        weekly_data = detail["weekly"]
 
-        ajustes = db.query(AjusteLiquidacion).filter(
-            AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
-            AjusteLiquidacion.entidad_id == driver_id,
-            AjusteLiquidacion.semana == s,
-            AjusteLiquidacion.mes == mes,
-            AjusteLiquidacion.anio == anio,
-        ).all()
-        bonif = sum(a.monto for a in ajustes if a.monto > 0)
-        desc = sum(a.monto for a in ajustes if a.monto < 0)
-
-        es_contratado = getattr(driver, 'contratado', False)
-        pago_extra_envios = sum(e.pago_extra_manual for e in envios)
-        weekly[s] = {
-            "normal_count": len(normal),
-            "normal_total": sum(e.costo_driver for e in normal),
-            "oviedo_count": len(oviedo),
-            "oviedo_total": sum(e.costo_driver for e in oviedo),
-            "tercerizado_count": len(tercerizado),
-            "tercerizado_total": sum(e.costo_driver for e in tercerizado),
-            "valparaiso_count": len(valparaiso),
-            "valparaiso_total": sum(e.costo_driver for e in valparaiso),
-            "melipilla_count": len(melipilla),
-            "melipilla_total": sum(e.costo_driver for e in melipilla),
-            "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
-            "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
-            "retiros": _calcular_retiro_driver(driver, retiros_q),
-            "bonificaciones": bonif,
-            "descuentos": desc,
-        }
+    weekly = weekly_data
 
     def _weekly_total(s):
-        w = weekly[s]
-        return (w["normal_total"] + w["oviedo_total"] + w["tercerizado_total"]
-                + w["valparaiso_total"] + w["melipilla_total"]
-                + w["comuna"] + w["bultos_extra"] + w["retiros"]
-                + w["bonificaciones"] + w["descuentos"])
+        w = weekly.get(s, {})
+        return (
+            (w.get("normal_total", 0)) + (w.get("oviedo_total", 0)) + (w.get("tercerizado_total", 0))
+            + (w.get("valparaiso_total", 0)) + (w.get("melipilla_total", 0))
+            + (w.get("comuna", 0)) + (w.get("bultos_extra", 0)) + (w.get("retiros", 0))
+            + (w.get("bonificaciones", 0)) + (w.get("descuentos", 0))
+        )
 
     total_semana = _weekly_total(semana)
 
@@ -549,15 +488,15 @@ def generar_pdf_driver(
     tarifa_meli = getattr(driver, 'tarifa_melipilla', 0)
 
     def _count_row(label, key):
-        vals = [weekly[s][key] for s in range(1, 6)]
+        vals = [weekly.get(s, {}).get(key, 0) for s in range(1, 6)]
         return [label] + [str(v) for v in vals] + [str(sum(vals))]
 
     def _money_row(label, key):
-        vals = [weekly[s][key] for s in range(1, 6)]
+        vals = [weekly.get(s, {}).get(key, 0) for s in range(1, 6)]
         return [label] + [_fmt(v) for v in vals] + [_fmt(sum(vals))]
 
     def _has_data(key):
-        return any(weekly[s].get(key, 0) != 0 for s in range(1, 6))
+        return any(weekly.get(s, {}).get(key, 0) != 0 for s in range(1, 6))
 
     totals_vals = [_weekly_total(s) for s in range(1, 6)]
 
@@ -597,58 +536,33 @@ def generar_pdf_driver(
     elements.append(_driver_note())
     elements.append(Spacer(1, 10))
 
-    # Daily breakdown with all dates for the week (Mon-Sun via calendario)
-    all_dates = _get_dates_for_week(semana, mes, anio, db=db)
-    envios_semana = db.query(Envio).filter(
-        Envio.driver_id == driver_id, Envio.semana == semana,
-        Envio.mes == mes, Envio.anio == anio,
-    ).order_by(Envio.fecha_entrega).all()
-
-    es_contratado = getattr(driver, 'contratado', False)
-    daily_map = {d: {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0, "cobro": 0} for d in all_dates}
-    for e in envios_semana:
-        d = e.fecha_entrega
-        if d not in daily_map:
-            daily_map[d] = {"fecha": d, "envios": 0, "bultos_extra": 0, "retiros": 0, "comuna": 0, "cobro": 0}
-        daily_map[d]["envios"] += 1
-        daily_map[d]["cobro"] += e.costo_driver
-        if not es_contratado:
-            daily_map[d]["bultos_extra"] += e.extra_producto_driver + (e.pago_extra_manual or 0)
-            daily_map[d]["comuna"] += e.extra_comuna_driver
-
-    retiros_semana = db.query(Retiro).filter(
-        Retiro.driver_id == driver_id, Retiro.semana == semana,
-        Retiro.mes == mes, Retiro.anio == anio,
-    ).all()
-    usa_fija = driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0
-    if usa_fija:
-        dias_con_retiro = {r.fecha for r in retiros_semana if r.fecha}
-        for d in dias_con_retiro:
-            if d in daily_map:
-                daily_map[d]["retiros"] = driver.tarifa_retiro_fija
-    else:
-        for r in retiros_semana:
-            d = r.fecha
-            if d in daily_map:
-                daily_map[d]["retiros"] += r.tarifa_driver
-
-    # cobro = pago envíos + retiro del día
-    for info in daily_map.values():
-        info["cobro"] = info["cobro"] + info["retiros"]
-
-    daily_data = sorted(daily_map.values(), key=lambda x: x["fecha"])
+    if daily_data is None:
+        from app.api.liquidacion import _daily_breakdown
+        envios_semana = db.query(Envio).filter(
+            Envio.driver_id == driver_id, Envio.semana == semana,
+            Envio.mes == mes, Envio.anio == anio,
+        ).order_by(Envio.fecha_entrega).all()
+        retiros_semana = db.query(Retiro).filter(
+            Retiro.driver_id == driver_id, Retiro.semana == semana,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        daily_data = _daily_breakdown(
+            envios_semana, retiros_semana,
+            "extra_producto_driver", "extra_comuna_driver",
+            semana, mes, anio, is_seller=False, db=db,
+            contratado=es_contratado, driver=driver,
+        )
 
     if daily_data:
         daily_cols = [
             ("Día", "fecha", "date"),
             ("Envíos", "envios", "int"),
-            ("Cobro", "cobro", "clp"),
         ]
         if not es_contratado:
             daily_cols.append(("Bultos Extra", "bultos_extra", "clp"))
+            daily_cols.append(("Comuna", "peso_extra", "clp"))
         daily_cols.append(("Retiros", "retiros", "clp"))
-        if not es_contratado:
-            daily_cols.append(("Comuna", "comuna", "clp"))
+        daily_cols.append(("Pago", "monto", "clp"))
         elements.append(_daily_table(daily_data, daily_cols))
         elements.append(Spacer(1, 10))
         elements.append(_weekly_chart(daily_data, "envios"))

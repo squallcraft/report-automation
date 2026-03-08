@@ -10,6 +10,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import pandas as pd
@@ -32,6 +33,15 @@ from app.services.trackingtech import fetch_pickups_by_date
 router = APIRouter(prefix="/pickups", tags=["Pickups"])
 
 COMISION_PAQUETE = 200
+
+
+def _persist_pickup_alias(pickup: Pickup, raw_name: str):
+    """Agrega raw_name como alias del pickup si es distinto al nombre y no existe."""
+    alias = raw_name.strip()
+    aliases_lower = [a.lower() for a in (pickup.aliases or [])]
+    if alias.lower() != pickup.nombre.lower() and alias.lower() not in aliases_lower:
+        pickup.aliases = list(pickup.aliases or []) + [alias]
+        flag_modified(pickup, "aliases")
 
 
 def _enrich_pickup(p: Pickup) -> dict:
@@ -335,9 +345,13 @@ async def importar_recepciones(
                 continue
 
             pickup_id = homologar_nombre(pickup_raw, pickups, pickup_cache)
-            if not pickup_id:
+
+            if pickup_id:
+                pickup_obj = pickup_obj_cache.get(pickup_id)
+                if pickup_obj:
+                    _persist_pickup_alias(pickup_obj, pickup_raw)
+            else:
                 sin_homologar.append(pickup_raw)
-                continue
 
             tipo = str(row.get("tipo", "")).strip() if not pd.isna(row.get("tipo")) else None
             procesado_raw = row.get("procesado")
@@ -357,13 +371,16 @@ async def importar_recepciones(
 
             semana = calcular_semana_del_mes(fecha)
 
-            pickup_obj = pickup_obj_cache.get(pickup_id)
-            comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
-            if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
-                comision = 0
+            comision = 0
+            if pickup_id:
+                pickup_obj = pickup_obj_cache.get(pickup_id)
+                comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
+                if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                    comision = 0
 
             rec = RecepcionPaquete(
                 pickup_id=pickup_id,
+                pickup_nombre_raw=pickup_raw,
                 envio_id=envio_id,
                 fecha_recepcion=fecha,
                 semana=semana,
@@ -470,16 +487,26 @@ def importar_desde_trackingtech(
                 continue
 
             pickup_id = homologar_nombre(pickup_raw, pickups, pickup_cache)
-            if not pickup_id:
-                sin_homologar.append(pickup_raw)
-                continue
 
-            existing = db.query(RecepcionPaquete).filter(
-                RecepcionPaquete.pickup_id == pickup_id,
-                RecepcionPaquete.pedido == pedido,
-                RecepcionPaquete.fecha_recepcion == fecha,
-            ).first()
-            if existing:
+            if pickup_id:
+                pickup_obj = pickup_obj_cache.get(pickup_id)
+                if pickup_obj:
+                    _persist_pickup_alias(pickup_obj, pickup_raw)
+            else:
+                sin_homologar.append(pickup_raw)
+
+            dup_filter = (
+                db.query(RecepcionPaquete)
+                .filter(
+                    RecepcionPaquete.pedido == pedido,
+                    RecepcionPaquete.fecha_recepcion == fecha,
+                )
+            )
+            if pickup_id:
+                dup_filter = dup_filter.filter(RecepcionPaquete.pickup_id == pickup_id)
+            else:
+                dup_filter = dup_filter.filter(RecepcionPaquete.pickup_nombre_raw == pickup_raw)
+            if dup_filter.first():
                 duplicados += 1
                 continue
 
@@ -493,13 +520,16 @@ def importar_desde_trackingtech(
 
             semana = calcular_semana_del_mes(fecha)
 
-            pickup_obj = pickup_obj_cache.get(pickup_id)
-            comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
-            if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
-                comision = 0
+            comision = 0
+            if pickup_id:
+                pickup_obj = pickup_obj_cache.get(pickup_id)
+                comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
+                if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                    comision = 0
 
             new_rec = RecepcionPaquete(
                 pickup_id=pickup_id,
+                pickup_nombre_raw=pickup_raw,
                 envio_id=envio_id,
                 fecha_recepcion=fecha,
                 semana=semana,
