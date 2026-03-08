@@ -54,6 +54,23 @@ def _get_or_create_periodo(db: Session, semana: int, mes: int, anio: int) -> Per
     return periodo
 
 
+def invalidar_snapshots(db: Session, semana: int, mes: int, anio: int):
+    """Limpia snapshots cacheados para que la próxima consulta recalcule."""
+    periodo = db.query(PeriodoLiquidacion).filter(
+        PeriodoLiquidacion.semana == semana,
+        PeriodoLiquidacion.mes == mes,
+        PeriodoLiquidacion.anio == anio,
+    ).first()
+    if periodo:
+        periodo.snapshot_sellers = None
+        periodo.snapshot_drivers = None
+        periodo.snapshot_rentabilidad = None
+        flag_modified(periodo, "snapshot_sellers")
+        flag_modified(periodo, "snapshot_drivers")
+        flag_modified(periodo, "snapshot_rentabilidad")
+        db.flush()
+
+
 @router.get("/sellers", response_model=List[LiquidacionSellerOut])
 def liquidacion_sellers(
     semana: int = Query(...),

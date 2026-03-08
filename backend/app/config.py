@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASS: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
+    # TrackingTech (escaneos pickup)
+    TRACKINGTECH_API_URL: str = "https://api-app.trackingtech.cl/api"
+    TRACKINGTECH_EMAIL: str = ""
+    TRACKINGTECH_PASSWORD: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

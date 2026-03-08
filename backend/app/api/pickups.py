@@ -2,11 +2,12 @@
 CRUD y gestión de Pickup Points + importación de recepciones de paquetes.
 """
 from typing import Optional, List
+from datetime import datetime
 
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from openpyxl import Workbook
@@ -18,6 +19,7 @@ from app.auth import (
     require_admin, require_admin_or_administracion, require_pickup,
     hash_password, get_current_user,
 )
+from app.config import get_settings
 from app.models import (
     Pickup, RecepcionPaquete, Envio, Seller, Driver, RolEnum,
     PagoCartola, PagoCartolaSeller, Retiro, CalendarioSemanas,
@@ -25,6 +27,7 @@ from app.models import (
 from app.schemas import PickupCreate, PickupUpdate, PickupOut, RecepcionPaqueteOut
 from app.services.audit import registrar as audit
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
+from app.services.trackingtech import fetch_pickups_by_date
 
 router = APIRouter(prefix="/pickups", tags=["Pickups"])
 
@@ -394,6 +397,154 @@ async def importar_recepciones(
         "sin_homologar": resultado["sin_homologar"],
         "ingesta_id": ingesta_id,
     })
+    return resultado
+
+
+@router.post("/recepciones/importar-trackingtech")
+def importar_desde_trackingtech(
+    request: Request,
+    fecha_inicio: str = Query(..., description="Fecha inicio YYYYMMDD"),
+    fecha_fin: str = Query(..., description="Fecha fin YYYYMMDD"),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Importa recepciones de paquetes desde la API TrackingTech.
+    Consulta todos los escaneos en el rango de fechas y los crea como RecepcionPaquete.
+    """
+    if len(fecha_inicio) != 8 or len(fecha_fin) != 8:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYYMMDD")
+
+    settings = get_settings()
+    records, api_error = fetch_pickups_by_date(
+        api_url=settings.TRACKINGTECH_API_URL,
+        email=settings.TRACKINGTECH_EMAIL,
+        password=settings.TRACKINGTECH_PASSWORD,
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+    )
+
+    if api_error and not records:
+        raise HTTPException(status_code=502, detail=f"Error API TrackingTech: {api_error}")
+
+    pickups = db.query(Pickup).filter(Pickup.activo == True).all()
+    pickup_cache: dict = {}
+    pickup_obj_cache = {p.id: p for p in pickups}
+    ingesta_id = f"tt-{uuid.uuid4().hex[:8]}"
+
+    creados = 0
+    duplicados = 0
+    vinculados = 0
+    descartados = 0
+    sin_homologar: list[str] = []
+    errores: list[str] = []
+
+    for idx, rec in enumerate(records):
+        try:
+            pending = rec.get("pending", False)
+            error_msg_api = rec.get("error_msg") or None
+
+            if pending or error_msg_api:
+                descartados += 1
+                continue
+
+            created_at_raw = rec.get("created_at")
+            if not created_at_raw:
+                errores.append(f"Registro {idx + 1}: sin fecha")
+                continue
+
+            fecha = datetime.strptime(created_at_raw, "%Y-%m-%d %H:%M:%S").date()
+
+            pickup_raw = (rec.get("Pickup") or "").strip()
+            seller_code = (rec.get("seller_code") or "").strip()
+            id_interno = (rec.get("id_interno") or "").strip()
+            tipo = (rec.get("tipo") or "").strip() or None
+
+            pedido = id_interno or seller_code
+            if not pedido:
+                errores.append(f"Registro {idx + 1}: sin seller_code ni id_interno")
+                continue
+
+            if not pickup_raw:
+                errores.append(f"Registro {idx + 1}: sin nombre de pickup")
+                continue
+
+            pickup_id = homologar_nombre(pickup_raw, pickups, pickup_cache)
+            if not pickup_id:
+                sin_homologar.append(pickup_raw)
+                continue
+
+            existing = db.query(RecepcionPaquete).filter(
+                RecepcionPaquete.pickup_id == pickup_id,
+                RecepcionPaquete.pedido == pedido,
+                RecepcionPaquete.fecha_recepcion == fecha,
+            ).first()
+            if existing:
+                duplicados += 1
+                continue
+
+            envio_id = None
+            envio = db.query(Envio).filter(
+                (Envio.tracking_id == pedido) | (Envio.venta_id == pedido)
+            ).first()
+            if envio:
+                envio_id = envio.id
+                vinculados += 1
+
+            semana = calcular_semana_del_mes(fecha)
+
+            pickup_obj = pickup_obj_cache.get(pickup_id)
+            comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
+            if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                comision = 0
+
+            new_rec = RecepcionPaquete(
+                pickup_id=pickup_id,
+                envio_id=envio_id,
+                fecha_recepcion=fecha,
+                semana=semana,
+                mes=fecha.month,
+                anio=fecha.year,
+                pedido=pedido,
+                tipo=tipo,
+                comision=comision,
+                procesado=True,
+                error_msg=None,
+                ingesta_id=ingesta_id,
+            )
+            db.add(new_rec)
+            creados += 1
+
+        except Exception as e:
+            errores.append(f"Registro {idx + 1}: {str(e)}")
+
+    db.commit()
+
+    resultado = {
+        "creados": creados,
+        "duplicados": duplicados,
+        "descartados": descartados,
+        "vinculados": vinculados,
+        "total_api": len(records),
+        "sin_homologar": list(set(sin_homologar)),
+        "errores": errores,
+        "advertencia_api": api_error,
+        "ingesta_id": ingesta_id,
+    }
+
+    audit(db, "importar_recepciones_trackingtech", usuario=current_user, request=request, entidad="recepcion_paquete", metadata={
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
+        "total_api": len(records),
+        "creados": creados,
+        "duplicados": duplicados,
+        "descartados": descartados,
+        "vinculados": vinculados,
+        "errores_count": len(errores),
+        "sin_homologar": resultado["sin_homologar"],
+        "ingesta_id": ingesta_id,
+    })
+
     return resultado
 
 

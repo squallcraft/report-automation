@@ -19,6 +19,7 @@ from app.models import Retiro, Seller, Driver, Pickup, Sucursal
 from app.schemas import RetiroCreate, RetiroOut
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
 from app.services.audit import registrar as audit
+from app.api.liquidacion import invalidar_snapshots
 
 
 def _similaridad(a: str, b: str) -> float:
@@ -428,6 +429,14 @@ def confirmar_retiros(
                     suc.aliases = list(suc.aliases or []) + [alias]
                     flag_modified(suc, "aliases")
 
+    periodos_afectados = set()
+    for item in body.items:
+        fecha = pd.to_datetime(item.fecha).date()
+        semana = calcular_semana_del_mes(fecha)
+        periodos_afectados.add((semana, fecha.month, fecha.year))
+    for s, m, a in periodos_afectados:
+        invalidar_snapshots(db, s, m, a)
+
     db.commit()
     audit(db, "importar_retiros", usuario=current_user, request=request,
           entidad="retiro_batch",
@@ -458,6 +467,7 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Driver no encontrado")
     retiro = Retiro(**data.model_dump())
     db.add(retiro)
+    invalidar_snapshots(db, data.semana, data.mes, data.anio)
     db.commit()
     db.refresh(retiro)
     audit(db, "crear_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro.id, metadata={"seller_id": data.seller_id, "driver_id": data.driver_id, "fecha": str(data.fecha)})
@@ -470,7 +480,9 @@ def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
     meta = {"seller_id": retiro.seller_id, "driver_id": retiro.driver_id, "fecha": str(retiro.fecha)}
+    semana, mes, anio = retiro.semana, retiro.mes, retiro.anio
     db.delete(retiro)
+    invalidar_snapshots(db, semana, mes, anio)
     db.commit()
     audit(db, "eliminar_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro_id, metadata=meta)
     return {"message": "Retiro eliminado"}

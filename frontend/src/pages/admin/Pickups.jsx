@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Upload, Download } from 'lucide-react'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -107,7 +107,13 @@ export default function Pickups() {
   const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
   const [toDelete, setToDelete] = useState(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importTab, setImportTab] = useState('api')
   const [importing, setImporting] = useState(false)
+  const [ttLoading, setTtLoading] = useState(false)
+  const [ttFechaInicio, setTtFechaInicio] = useState('')
+  const [ttFechaFin, setTtFechaFin] = useState('')
+  const [importResult, setImportResult] = useState(null)
 
   const fetchData = () => {
     Promise.all([
@@ -202,21 +208,44 @@ export default function Pickups() {
       .finally(() => setSaving(false))
   }
 
-  const handleImportRecepciones = async (e) => {
+  const handleImportExcel = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setImporting(true)
+    setImportResult(null)
     try {
       const formData = new FormData()
       formData.append('file', file)
       const { data } = await api.post('/pickups/recepciones/importar', formData)
-      let msg = `${data.creados} recepciones creadas`
-      if (data.vinculados) msg += `, ${data.vinculados} vinculadas a envíos`
-      toast.success(msg)
-      if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar: ${data.sin_homologar.join(', ')}`)
-      if (data.errores?.length) toast.error(`${data.errores.length} errores`)
+      setImportResult({ ...data, fuente: 'excel' })
+      if (data.creados > 0) toast.success(`${data.creados} recepciones importadas desde Excel`)
+      if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar`)
     } catch (err) { toast.error(err.response?.data?.detail || 'Error al importar') }
     finally { setImporting(false); e.target.value = '' }
+  }
+
+  const handleImportTrackingTech = async () => {
+    if (!ttFechaInicio || !ttFechaFin) return toast.error('Selecciona ambas fechas')
+    setTtLoading(true)
+    setImportResult(null)
+    try {
+      const fi = ttFechaInicio.replace(/-/g, '')
+      const ff = ttFechaFin.replace(/-/g, '')
+      const { data } = await api.post(`/pickups/recepciones/importar-trackingtech?fecha_inicio=${fi}&fecha_fin=${ff}`)
+      setImportResult({ ...data, fuente: 'api' })
+      if (data.creados > 0) {
+        toast.success(`${data.creados} recepciones importadas desde TrackingTech`)
+      } else if (data.duplicados > 0) {
+        toast(`${data.duplicados} registros ya existían, 0 nuevos`, { icon: 'ℹ️' })
+      } else {
+        toast('No se encontraron registros nuevos', { icon: 'ℹ️' })
+      }
+      if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar`)
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error al importar desde TrackingTech')
+    } finally {
+      setTtLoading(false)
+    }
   }
 
   const columns = [
@@ -277,10 +306,12 @@ export default function Pickups() {
         </div>
         {canEdit && (
           <div className="flex items-center gap-2 flex-wrap">
-            <label className={`btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5 cursor-pointer ${importing ? 'opacity-50' : ''}`} title="Importar recepciones desde Excel">
-              <Upload size={14} /> {importing ? 'Importando…' : 'Importar Recepciones'}
-              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportRecepciones} disabled={importing} />
-            </label>
+            <button
+              onClick={() => { setImportResult(null); setImportModalOpen(true) }}
+              className="btn-secondary flex items-center gap-1.5"
+            >
+              <Upload size={16} /> Importar Recepciones
+            </button>
             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
               <Plus size={18} /> Nuevo Pickup
             </button>
@@ -477,6 +508,128 @@ export default function Pickups() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal open={importModalOpen} onClose={() => setImportModalOpen(false)} title="Importar Recepciones" wide>
+        <div className="space-y-4">
+          <div className="flex border-b border-gray-200">
+            <button
+              onClick={() => { setImportTab('api'); setImportResult(null) }}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${importTab === 'api' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            >
+              <span className="flex items-center gap-1.5"><Download size={14} /> API TrackingTech</span>
+            </button>
+            <button
+              onClick={() => { setImportTab('excel'); setImportResult(null) }}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${importTab === 'excel' ? 'border-primary-600 text-primary-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            >
+              <span className="flex items-center gap-1.5"><Upload size={14} /> Archivo Excel</span>
+            </button>
+          </div>
+
+          {importTab === 'api' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Importa los escaneos de pickup procesados en TrackingTech para el rango de fechas seleccionado. Solo se importan registros sin errores.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha inicio</label>
+                  <input type="date" className="input-field" value={ttFechaInicio} onChange={(e) => setTtFechaInicio(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha fin</label>
+                  <input type="date" className="input-field" value={ttFechaFin} onChange={(e) => setTtFechaFin(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={handleImportTrackingTech}
+                  disabled={ttLoading || !ttFechaInicio || !ttFechaFin}
+                  className="btn-primary flex items-center gap-2"
+                >
+                  {ttLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                      Importando…
+                    </>
+                  ) : (
+                    <>
+                      <Download size={16} /> Importar desde API
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {importTab === 'excel' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Sube un archivo Excel con las columnas: Fecha, Pickup, Pedido/Tracking, Tipo.
+              </p>
+              <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${importing ? 'border-gray-300 bg-gray-50' : 'border-gray-300 hover:border-primary-400 hover:bg-primary-50/30'}`}>
+                <div className="flex flex-col items-center gap-2 text-gray-500">
+                  <Upload size={24} />
+                  <span className="text-sm font-medium">{importing ? 'Importando…' : 'Seleccionar archivo Excel'}</span>
+                  <span className="text-xs text-gray-400">.xlsx o .xls</span>
+                </div>
+                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportExcel} disabled={importing} />
+              </label>
+            </div>
+          )}
+
+          {importResult && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-1 text-sm">
+              <p className="font-semibold text-gray-800">Resultado de importación</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+                {importResult.total_api != null && (
+                  <>
+                    <span className="text-gray-500">Total desde API:</span>
+                    <span className="font-medium">{importResult.total_api}</span>
+                  </>
+                )}
+                <span className="text-gray-500">Creados:</span>
+                <span className="font-medium text-green-700">{importResult.creados}</span>
+                {importResult.descartados != null && (
+                  <>
+                    <span className="text-gray-500">Descartados (con error):</span>
+                    <span className="font-medium text-gray-500">{importResult.descartados}</span>
+                  </>
+                )}
+                {importResult.duplicados != null && (
+                  <>
+                    <span className="text-gray-500">Duplicados omitidos:</span>
+                    <span className="font-medium text-amber-600">{importResult.duplicados}</span>
+                  </>
+                )}
+                <span className="text-gray-500">Vinculados a envíos:</span>
+                <span className="font-medium text-blue-700">{importResult.vinculados}</span>
+              </div>
+              {importResult.sin_homologar?.length > 0 && (
+                <div className="mt-2 p-2 bg-red-50 rounded text-red-700 text-xs">
+                  <p className="font-medium">Pickups sin homologar:</p>
+                  <p>{importResult.sin_homologar.join(', ')}</p>
+                </div>
+              )}
+              {importResult.errores?.length > 0 && (
+                <div className="mt-2 p-2 bg-red-50 rounded text-red-700 text-xs max-h-32 overflow-y-auto">
+                  <p className="font-medium">{importResult.errores.length} errores:</p>
+                  {importResult.errores.slice(0, 10).map((e, i) => <p key={i}>{e}</p>)}
+                  {importResult.errores.length > 10 && <p>...y {importResult.errores.length - 10} más</p>}
+                </div>
+              )}
+              {importResult.advertencia_api && (
+                <div className="mt-2 p-2 bg-amber-50 rounded text-amber-700 text-xs">
+                  {importResult.advertencia_api}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   )

@@ -7,6 +7,7 @@ from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion
 from app.models import AjusteLiquidacion, Seller, Driver, TipoEntidadEnum
 from app.schemas import AjusteCreate, AjusteOut
+from app.api.liquidacion import invalidar_snapshots
 
 router = APIRouter(prefix="/ajustes", tags=["Ajustes de Liquidación"])
 
@@ -61,6 +62,7 @@ def crear_ajuste(
 
     ajuste = AjusteLiquidacion(**data.model_dump(), creado_por=admin["nombre"])
     db.add(ajuste)
+    invalidar_snapshots(db, data.semana, data.mes, data.anio)
     db.commit()
     db.refresh(ajuste)
     return ajuste
@@ -71,6 +73,8 @@ def eliminar_ajuste(ajuste_id: int, db: Session = Depends(get_db), _=Depends(req
     ajuste = db.query(AjusteLiquidacion).get(ajuste_id)
     if not ajuste:
         raise HTTPException(status_code=404, detail="Ajuste no encontrado")
+    semana, mes, anio = ajuste.semana, ajuste.mes, ajuste.anio
     db.delete(ajuste)
+    invalidar_snapshots(db, semana, mes, anio)
     db.commit()
     return {"message": "Ajuste eliminado"}
