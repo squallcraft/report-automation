@@ -340,6 +340,45 @@ def contar_recepciones(
     return {"total": query.count()}
 
 
+@router.get("/portal/recepciones")
+def pickup_recepciones(
+    semana: Optional[int] = None,
+    mes: Optional[int] = None,
+    anio: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_pickup),
+):
+    """Recepciones del pickup autenticado agrupadas por día."""
+    from sqlalchemy import func as sqlfunc
+
+    pickup_id = current_user["id"]
+    query = db.query(
+        RecepcionPaquete.fecha_recepcion,
+        sqlfunc.count(RecepcionPaquete.id).label("paquetes"),
+        sqlfunc.sum(RecepcionPaquete.comision).label("comision"),
+    ).filter(RecepcionPaquete.pickup_id == pickup_id)
+
+    if semana is not None:
+        query = query.filter(RecepcionPaquete.semana == semana)
+    if mes is not None:
+        query = query.filter(RecepcionPaquete.mes == mes)
+    if anio is not None:
+        query = query.filter(RecepcionPaquete.anio == anio)
+
+    rows = query.group_by(RecepcionPaquete.fecha_recepcion).order_by(
+        RecepcionPaquete.fecha_recepcion.desc()
+    ).all()
+
+    return [
+        {
+            "fecha": str(r.fecha_recepcion) if r.fecha_recepcion else None,
+            "paquetes": int(r.paquetes or 0),
+            "comision": int(r.comision or 0),
+        }
+        for r in rows
+    ]
+
+
 @router.get("/{pickup_id}/recepciones", response_model=List[RecepcionPaqueteOut])
 def listar_recepciones(
     pickup_id: int,
@@ -1000,45 +1039,6 @@ def pickup_ganancias(
         "semanas": semanas,
         "pagos": pagos,
     }
-
-
-@router.get("/portal/recepciones")
-def pickup_recepciones(
-    semana: Optional[int] = None,
-    mes: Optional[int] = None,
-    anio: Optional[int] = None,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(require_pickup),
-):
-    """Recepciones del pickup autenticado agrupadas por día."""
-    from sqlalchemy import func as sqlfunc
-
-    pickup_id = current_user["id"]
-    query = db.query(
-        RecepcionPaquete.fecha_recepcion,
-        sqlfunc.count(RecepcionPaquete.id).label("paquetes"),
-        sqlfunc.sum(RecepcionPaquete.comision).label("comision"),
-    ).filter(RecepcionPaquete.pickup_id == pickup_id)
-
-    if semana is not None:
-        query = query.filter(RecepcionPaquete.semana == semana)
-    if mes is not None:
-        query = query.filter(RecepcionPaquete.mes == mes)
-    if anio is not None:
-        query = query.filter(RecepcionPaquete.anio == anio)
-
-    rows = query.group_by(RecepcionPaquete.fecha_recepcion).order_by(
-        RecepcionPaquete.fecha_recepcion.desc()
-    ).all()
-
-    return [
-        {
-            "fecha": str(r.fecha_recepcion) if r.fecha_recepcion else None,
-            "paquetes": int(r.paquetes or 0),
-            "comision": int(r.comision or 0),
-        }
-        for r in rows
-    ]
 
 
 @router.get("/portal/entregas")
