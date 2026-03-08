@@ -45,7 +45,7 @@ def obtener_stats(
     total_envios_mes = db.query(Envio).filter(*base_filter).count()
 
     total_cobrado = db.query(sqlfunc.coalesce(sqlfunc.sum(
-        Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller
+        Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual
     ), 0)).filter(*base_filter).scalar()
 
     # Total pagado = suma de monto_neto de semanas marcadas como PAGADO en PagoSemanaDriver
@@ -61,7 +61,7 @@ def obtener_stats(
 
     # Costo calculado (liquidado) — usado para el margen
     costo_calculado = db.query(sqlfunc.coalesce(sqlfunc.sum(
-        Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver
+        Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual
     ), 0)).filter(*base_filter).scalar()
 
     envios_sin_homologar = db.query(Envio).filter(Envio.homologado == False).count()
@@ -88,10 +88,12 @@ def _empty_row():
         "paquetes_totales": 0,
         "ingreso_bulto_extra": 0,
         "ingreso_peso_extra": 0,
+        "ingreso_extra_manual": 0,
         "ingreso_retiro": 0,
         "costo_paquete_driver": 0,
         "costo_comuna": 0,
         "costo_bulto_extra_driver": 0,
+        "costo_extra_manual_driver": 0,
         "costo_retiro_driver": 0,
         "costo_comision_pickup": 0,
     }
@@ -110,9 +112,11 @@ def resumen_financiero(
         sqlfunc.count(Envio.id).label("paquetes_totales"),
         sqlfunc.sum(Envio.extra_producto_seller).label("ingreso_bulto_extra"),
         sqlfunc.sum(Envio.extra_comuna_seller).label("ingreso_peso_extra"),
+        sqlfunc.sum(Envio.cobro_extra_manual).label("ingreso_extra_manual"),
         sqlfunc.sum(Envio.costo_driver).label("costo_paquete_driver"),
         sqlfunc.sum(Envio.extra_comuna_driver).label("costo_comuna"),
         sqlfunc.sum(Envio.extra_producto_driver).label("costo_bulto_extra_driver"),
+        sqlfunc.sum(Envio.pago_extra_manual).label("costo_extra_manual_driver"),
     ).filter(
         Envio.mes == mes, Envio.anio == anio,
     ).group_by(Envio.semana).all()
@@ -132,9 +136,11 @@ def resumen_financiero(
         s["paquetes_totales"] = int(r.paquetes_totales or 0)
         s["ingreso_bulto_extra"] = int(r.ingreso_bulto_extra or 0)
         s["ingreso_peso_extra"] = int(r.ingreso_peso_extra or 0)
+        s["ingreso_extra_manual"] = int(r.ingreso_extra_manual or 0)
         s["costo_paquete_driver"] = int(r.costo_paquete_driver or 0)
         s["costo_comuna"] = int(r.costo_comuna or 0)
         s["costo_bulto_extra_driver"] = int(r.costo_bulto_extra_driver or 0)
+        s["costo_extra_manual_driver"] = int(r.costo_extra_manual_driver or 0)
         semanas[r.semana] = s
 
     for r in retiro_rows:

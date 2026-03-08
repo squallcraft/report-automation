@@ -13,6 +13,7 @@ const INCOME_ROWS = [
   { key: 'paquetes_totales', label: 'Paquetes Totales', isMoney: false },
   { key: 'ingreso_bulto_extra', label: 'Ingreso Bulto Extra', isMoney: true },
   { key: 'ingreso_peso_extra', label: 'Ingreso Peso Extra', isMoney: true },
+  { key: 'ingreso_extra_manual', label: 'Ingreso Extra Manual', isMoney: true },
   { key: 'ingreso_retiro', label: 'Ingreso Retiro', isMoney: true },
 ]
 
@@ -20,16 +21,19 @@ const COST_ROWS = [
   { key: 'costo_paquete_driver', label: 'Costo Paquete Driver', isMoney: true },
   { key: 'costo_comuna', label: 'Costo Comuna', isMoney: true },
   { key: 'costo_bulto_extra_driver', label: 'Costo Bulto Extra Driver', isMoney: true },
+  { key: 'costo_extra_manual_driver', label: 'Costo Extra Manual Driver', isMoney: true },
   { key: 'costo_retiro_driver', label: 'Costo Retiro Driver', isMoney: true },
   { key: 'costo_comision_pickup', label: 'Costo Comisión Pickup', isMoney: true },
 ]
 
 function calcIngresoNeto(row) {
-  return (row.ingreso_paquete || 0) + (row.ingreso_bulto_extra || 0) + (row.ingreso_peso_extra || 0) + (row.ingreso_retiro || 0)
+  return (row.ingreso_paquete || 0) + (row.ingreso_bulto_extra || 0) + (row.ingreso_peso_extra || 0)
+    + (row.ingreso_extra_manual || 0) + (row.ingreso_retiro || 0)
 }
 
 function calcCostos(row) {
-  return (row.costo_paquete_driver || 0) + (row.costo_comuna || 0) + (row.costo_bulto_extra_driver || 0) + (row.costo_retiro_driver || 0) + (row.costo_comision_pickup || 0)
+  return (row.costo_paquete_driver || 0) + (row.costo_comuna || 0) + (row.costo_bulto_extra_driver || 0)
+    + (row.costo_extra_manual_driver || 0) + (row.costo_retiro_driver || 0) + (row.costo_comision_pickup || 0)
 }
 
 function perfColor(ms) {

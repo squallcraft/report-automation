@@ -3,7 +3,10 @@ from typing import Optional, List
 from datetime import datetime, timezone, date
 from collections import defaultdict
 import io
+import logging
 import zipfile
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -366,7 +369,7 @@ def descargar_pdf_driver(
 def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
     seller = db.get(Seller, seller_id)
     if not seller:
-        raise HTTPException(status_code=404, detail="Seller no encontrado")
+        raise ValueError("Seller no encontrado")
 
     weekly = {}
     for s in range(1, 6):
@@ -418,7 +421,7 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
 def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
     driver = db.get(Driver, driver_id)
     if not driver:
-        raise HTTPException(status_code=404, detail="Driver no encontrado")
+        raise ValueError("Driver no encontrado")
 
     weekly = {}
     for s in range(1, 6):
@@ -583,7 +586,10 @@ def detalle_seller(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    detail = _seller_detail(db, seller_id, mes, anio)
+    try:
+        detail = _seller_detail(db, seller_id, mes, anio)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     seller = db.get(Seller, seller_id)
     envios_semana = db.query(Envio).filter(
         Envio.seller_id == seller_id, Envio.semana == semana,
@@ -607,7 +613,10 @@ def detalle_driver(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    detail = _driver_detail(db, driver_id, mes, anio)
+    try:
+        detail = _driver_detail(db, driver_id, mes, anio)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     driver = db.get(Driver, driver_id)
     es_contratado = getattr(driver, 'contratado', False) if driver else False
     envios_semana = db.query(Envio).filter(
@@ -800,8 +809,8 @@ def descargar_zip_sellers(
                 )
                 nombre = item["seller_nombre"].replace("/", "-").replace("\\", "-")
                 zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("Error generando PDF seller %s: %s", item.get("seller_id"), exc)
     size = buf.tell()
     buf.seek(0)
 
@@ -860,8 +869,8 @@ def descargar_zip_drivers(
                 )
                 nombre = item["driver_nombre"].replace("/", "-").replace("\\", "-")
                 zf.writestr(f"{nombre}_S{semana}.pdf", pdf)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.error("Error generando PDF driver %s: %s", item.get("driver_id"), exc)
     size = buf.tell()
     buf.seek(0)
 

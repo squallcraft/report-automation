@@ -3,8 +3,8 @@ import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
 import { Package, DollarSign, TrendingUp, Truck, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import { fmt } from '../../utils/format'
 
-const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
 
 function TrendBadge({ value }) {
@@ -52,7 +52,7 @@ export default function PickupDashboard() {
           <select className="input-field text-xs sm:text-sm py-1.5 w-28 sm:w-auto" value={mes} onChange={e => setMes(+e.target.value)}>
             {Array.from({ length: 12 }, (_, i) => (
               <option key={i + 1} value={i + 1}>
-                {new Date(2026, i).toLocaleString('es-CL', { month: 'long' })}
+                {new Date(anio, i).toLocaleString('es-CL', { month: 'long' })}
               </option>
             ))}
           </select>
@@ -221,7 +221,7 @@ export default function PickupDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...data.pagos_recibidos, ...data.pagos_emitidos]
+                    {[...(data.pagos_recibidos || []), ...(data.pagos_emitidos || [])]
                       .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
                       .map((p, i) => (
                         <tr key={`${p.tipo}-${p.id}`} className="border-b border-gray-100 hover:bg-gray-50">

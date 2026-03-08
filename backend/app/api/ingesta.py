@@ -216,12 +216,13 @@ async def subir_reporte(
     Sube un reporte Excel y lo procesa en segundo plano.
     Retorna un task_id para consultar el progreso via GET /ingesta/progress/{task_id}.
     """
-    if not file.filename.endswith((".xlsx", ".xls")):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos Excel (.xlsx, .xls)")
 
+    safe_name = os.path.basename(file.filename)
     settings = get_settings()
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    filepath = os.path.join(settings.UPLOAD_DIR, file.filename)
+    filepath = os.path.join(settings.UPLOAD_DIR, safe_name)
 
     with open(filepath, "wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -229,7 +230,7 @@ async def subir_reporte(
     task_id = str(uuid.uuid4())[:12]
     usuario = current_user.get("nombre", current_user.get("username", "desconocido"))
 
-    create_task(task_id, total=0, archivo=file.filename)
+    create_task(task_id, total=0, archivo=safe_name)
 
     thread = threading.Thread(
         target=_run_ingesta_in_background,

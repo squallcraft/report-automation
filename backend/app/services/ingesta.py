@@ -509,16 +509,35 @@ def procesar_reporte_excel(
     return stats
 
 
+def _persist_alias(entidad, nombre_raw: str):
+    """Agrega nombre_raw como alias de la entidad si no existe."""
+    current = list(entidad.aliases or [])
+    if nombre_raw not in current:
+        current.append(nombre_raw)
+        entidad.aliases = current
+        flag_modified(entidad, "aliases")
+
+
+TARIFA_MAP_DRIVER = {
+    EmpresaEnum.ECOURIER.value: "tarifa_ecourier",
+    EmpresaEnum.OVIEDO.value: "tarifa_oviedo",
+    EmpresaEnum.TERCERIZADO.value: "tarifa_tercerizado",
+    EmpresaEnum.VALPARAISO.value: "tarifa_valparaiso",
+    EmpresaEnum.MELIPILLA.value: "tarifa_melipilla",
+}
+
+
+def _get_tarifa_driver(driver, empresa_value: str) -> int:
+    attr = TARIFA_MAP_DRIVER.get(empresa_value)
+    return getattr(driver, attr, 0) if attr else 0
+
+
 def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: int) -> int:
     if tipo == "SELLER":
         entidad = db.query(Seller).get(entidad_id)
         if not entidad:
             raise ValueError("Seller no encontrado")
-        current_aliases = list(entidad.aliases or [])
-        if nombre_raw not in current_aliases:
-            current_aliases.append(nombre_raw)
-            entidad.aliases = current_aliases
-            flag_modified(entidad, "aliases")
+        _persist_alias(entidad, nombre_raw)
         tarifas_plan = db.query(TarifaPlanComuna).all()
         plan_comuna_map = {(t.plan_tarifario.lower(), t.comuna.lower()): t.precio for t in tarifas_plan}
 
@@ -543,11 +562,8 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
         entidad = db.query(Driver).get(entidad_id)
         if not entidad:
             raise ValueError("Driver no encontrado")
-        current_aliases = list(entidad.aliases or [])
-        if nombre_raw not in current_aliases:
-            current_aliases.append(nombre_raw)
-            entidad.aliases = current_aliases
-            flag_modified(entidad, "aliases")
+        _persist_alias(entidad, nombre_raw)
+        seller_cache = {}
         envios = db.query(Envio).filter(
             Envio.driver_nombre_raw == nombre_raw,
             Envio.driver_id.is_(None),
@@ -555,19 +571,11 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
         for envio in envios:
             envio.driver_id = entidad_id
             if envio.seller_id:
-                seller = db.query(Seller).get(envio.seller_id)
+                if envio.seller_id not in seller_cache:
+                    seller_cache[envio.seller_id] = db.query(Seller).get(envio.seller_id)
+                seller = seller_cache[envio.seller_id]
                 if seller:
-                    emp = seller.empresa
-                    if emp in (EmpresaEnum.ECOURIER, EmpresaEnum.ECOURIER.value):
-                        envio.costo_driver = entidad.tarifa_ecourier
-                    elif emp in (EmpresaEnum.OVIEDO, EmpresaEnum.OVIEDO.value):
-                        envio.costo_driver = entidad.tarifa_oviedo
-                    elif emp in (EmpresaEnum.TERCERIZADO, EmpresaEnum.TERCERIZADO.value):
-                        envio.costo_driver = entidad.tarifa_tercerizado
-                    elif emp in (EmpresaEnum.VALPARAISO, EmpresaEnum.VALPARAISO.value):
-                        envio.costo_driver = entidad.tarifa_valparaiso
-                    elif emp in (EmpresaEnum.MELIPILLA, EmpresaEnum.MELIPILLA.value):
-                        envio.costo_driver = entidad.tarifa_melipilla
+                    envio.costo_driver = _get_tarifa_driver(entidad, seller.empresa)
             envio.homologado = envio.seller_id is not None
         db.commit()
         return len(envios)
@@ -576,11 +584,7 @@ def resolver_homologacion(db: Session, nombre_raw: str, tipo: str, entidad_id: i
         pickup = db.query(Pickup).get(entidad_id)
         if not pickup:
             raise ValueError("Pickup no encontrado")
-        current_aliases = list(pickup.aliases or [])
-        if nombre_raw not in current_aliases:
-            current_aliases.append(nombre_raw)
-            pickup.aliases = current_aliases
-            flag_modified(pickup, "aliases")
+        _persist_alias(pickup, nombre_raw)
 
         recepciones = db.query(RecepcionPaquete).filter(
             RecepcionPaquete.pickup_nombre_raw == nombre_raw,

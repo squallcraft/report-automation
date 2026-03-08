@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Boolean, Text, Date, DateTime,
-    Enum, ForeignKey, JSON, UniqueConstraint, func,
+    Enum, ForeignKey, JSON, UniqueConstraint, Index, func,
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -121,6 +121,11 @@ class Driver(Base):
 
 class Envio(Base):
     __tablename__ = "envios"
+    __table_args__ = (
+        Index("ix_envios_periodo", "semana", "mes", "anio"),
+        Index("ix_envios_seller_periodo", "seller_id", "mes", "anio"),
+        Index("ix_envios_driver_periodo", "driver_id", "mes", "anio"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     semana = Column(Integer, nullable=False)
@@ -213,6 +218,10 @@ class Pickup(Base):
 
 class RecepcionPaquete(Base):
     __tablename__ = "recepciones_paquetes"
+    __table_args__ = (
+        Index("ix_recpaq_periodo", "semana", "mes", "anio"),
+        Index("ix_recpaq_pickup_periodo", "pickup_id", "mes", "anio"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=True)

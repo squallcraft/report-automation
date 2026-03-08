@@ -25,6 +25,9 @@ api.interceptors.response.use(
         window.location.href = '/login'
       }
     }
+    const url = error.config?.url || 'unknown'
+    const status = error.response?.status || 'network'
+    console.error(`[API ${status}] ${error.config?.method?.toUpperCase()} ${url}`, error.response?.data || error.message)
     return Promise.reject(error)
   }
 )

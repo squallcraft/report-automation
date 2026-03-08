@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import PeriodSelector from '../../components/PeriodSelector'
+import { fmt, fmtDateLong, IVA_RATE } from '../../utils/format'
 
-const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
 
 export default function PickupRecepciones() {
@@ -20,13 +20,7 @@ export default function PickupRecepciones() {
 
   const totalPaquetes = dias.reduce((acc, d) => acc + (d.paquetes || 0), 0)
   const totalComision = dias.reduce((acc, d) => acc + (d.comision || 0), 0)
-  const totalIva = Math.round(totalComision * 0.19)
-
-  const fmtDate = (d) => {
-    if (!d) return '—'
-    const date = new Date(d + 'T12:00:00')
-    return date.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })
-  }
+  const totalIva = Math.round(totalComision * IVA_RATE)
 
   return (
     <div className="flex flex-col h-full gap-3 sm:gap-4">
@@ -65,10 +59,10 @@ export default function PickupRecepciones() {
               </thead>
               <tbody>
                 {dias.map((d, idx) => {
-                  const iva = Math.round((d.comision || 0) * 0.19)
+                  const iva = Math.round((d.comision || 0) * IVA_RATE)
                   return (
                     <tr key={d.fecha || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                      <td className="px-3 sm:px-5 py-2 sm:py-3 text-gray-800 font-medium whitespace-nowrap">{fmtDate(d.fecha)}</td>
+                      <td className="px-3 sm:px-5 py-2 sm:py-3 text-gray-800 font-medium whitespace-nowrap">{fmtDateLong(d.fecha)}</td>
                       <td className="px-2 sm:px-5 py-2 sm:py-3 text-center text-gray-700">{d.paquetes || 0}</td>
                       <td className="px-2 sm:px-5 py-2 sm:py-3 text-right text-gray-700">{fmt(d.comision)}</td>
                       <td className="px-2 sm:px-5 py-2 sm:py-3 text-right text-gray-500">{fmt(iva)}</td>

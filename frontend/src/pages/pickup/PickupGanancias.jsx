@@ -1,14 +1,10 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { fmt, MESES } from '../../utils/format'
 
-const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
 
-const MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-]
 
 const ESTADO_CONFIG = {
   PAGADO:     { label: 'Pagado',     icon: CheckCircle, cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
@@ -186,7 +182,7 @@ export default function PickupGanancias() {
               <h2 className="text-xs sm:text-sm font-semibold text-gray-700">Registro de pagos recibidos</h2>
               <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5">Transferencias registradas por el administrador</p>
             </div>
-            {data.pagos.length === 0 ? (
+            {(data.pagos || []).length === 0 ? (
               <div className="px-3 sm:px-5 py-10 text-center text-xs sm:text-sm text-gray-400">
                 No hay pagos registrados para este período
               </div>
@@ -203,7 +199,7 @@ export default function PickupGanancias() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.pagos.map(p => (
+                    {(data.pagos || []).map(p => (
                       <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
                         <td className="px-2 sm:px-4 py-2 sm:py-3 whitespace-nowrap">
                           {p.fecha_pago
@@ -231,7 +227,7 @@ export default function PickupGanancias() {
                     <tr className="bg-gray-50 border-t-2 border-gray-200">
                       <td className="px-2 sm:px-4 py-2 sm:py-3 font-semibold text-gray-700" colSpan={2}>Total</td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-bold text-emerald-700 whitespace-nowrap">
-                        {fmt(data.pagos.reduce((a, p) => a + p.monto, 0))}
+                        {fmt((data.pagos || []).reduce((a, p) => a + p.monto, 0))}
                       </td>
                       <td colSpan={2} className="hidden sm:table-cell" />
                     </tr>

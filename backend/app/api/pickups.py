@@ -253,6 +253,25 @@ def eliminar_pickup(pickup_id: int, request: Request, db: Session = Depends(get_
 
 # ── Recepciones ──
 
+def _build_recepciones_query(db, semana=None, mes=None, anio=None, pickup_id=None, search=None):
+    query = db.query(RecepcionPaquete)
+    if semana is not None:
+        query = query.filter(RecepcionPaquete.semana == semana)
+    if mes is not None:
+        query = query.filter(RecepcionPaquete.mes == mes)
+    if anio is not None:
+        query = query.filter(RecepcionPaquete.anio == anio)
+    if pickup_id is not None:
+        query = query.filter(RecepcionPaquete.pickup_id == pickup_id)
+    if search:
+        s = f"%{search}%"
+        query = query.filter(
+            (RecepcionPaquete.pedido.ilike(s))
+            | (RecepcionPaquete.pickup_nombre_raw.ilike(s))
+        )
+    return query
+
+
 @router.get("/recepciones/all")
 def listar_todas_recepciones(
     semana: Optional[int] = None,
@@ -267,21 +286,7 @@ def listar_todas_recepciones(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    query = db.query(RecepcionPaquete)
-    if semana is not None:
-        query = query.filter(RecepcionPaquete.semana == semana)
-    if mes is not None:
-        query = query.filter(RecepcionPaquete.mes == mes)
-    if anio is not None:
-        query = query.filter(RecepcionPaquete.anio == anio)
-    if pickup_id is not None:
-        query = query.filter(RecepcionPaquete.pickup_id == pickup_id)
-    if search:
-        s = f"%{search}%"
-        query = query.filter(
-            (RecepcionPaquete.pedido.ilike(s))
-            | (RecepcionPaquete.pickup_nombre_raw.ilike(s))
-        )
+    query = _build_recepciones_query(db, semana, mes, anio, pickup_id, search)
 
     total = query.count()
 
@@ -290,24 +295,25 @@ def listar_todas_recepciones(
     order = col.desc() if sort_dir == "desc" else col.asc()
     recs = query.order_by(order).offset(offset).limit(limit).all()
 
-    pickup_cache = {}
+    pickup_ids = {r.pickup_id for r in recs if r.pickup_id}
+    envio_ids = {r.envio_id for r in recs if r.envio_id}
+    pickup_map = {p.id: p.nombre for p in db.query(Pickup.id, Pickup.nombre).filter(Pickup.id.in_(pickup_ids)).all()} if pickup_ids else {}
+    envio_map = {}
+    seller_map = {}
+    if envio_ids:
+        envios = db.query(Envio.id, Envio.tracking_id, Envio.seller_id).filter(Envio.id.in_(envio_ids)).all()
+        envio_map = {e.id: e for e in envios}
+        seller_ids = {e.seller_id for e in envios if e.seller_id}
+        if seller_ids:
+            seller_map = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).filter(Seller.id.in_(seller_ids)).all()}
+
     result = []
     for r in recs:
         d = {c.name: getattr(r, c.name) for c in r.__table__.columns}
-        if r.pickup_id and r.pickup_id not in pickup_cache:
-            p = db.get(Pickup, r.pickup_id)
-            pickup_cache[r.pickup_id] = p.nombre if p else "—"
-        d["pickup_nombre"] = pickup_cache.get(r.pickup_id, r.pickup_nombre_raw or "Sin asignar")
-        if r.envio_id:
-            envio = db.get(Envio, r.envio_id)
-            d["tracking_id"] = envio.tracking_id if envio else None
-            d["seller_nombre"] = None
-            if envio and envio.seller_id:
-                seller = db.get(Seller, envio.seller_id)
-                d["seller_nombre"] = seller.nombre if seller else None
-        else:
-            d["tracking_id"] = None
-            d["seller_nombre"] = None
+        d["pickup_nombre"] = pickup_map.get(r.pickup_id, r.pickup_nombre_raw or "Sin asignar")
+        envio = envio_map.get(r.envio_id)
+        d["tracking_id"] = envio.tracking_id if envio else None
+        d["seller_nombre"] = seller_map.get(envio.seller_id) if envio and envio.seller_id else None
         result.append(d)
     return {"data": result, "total": total}
 
@@ -322,22 +328,7 @@ def contar_recepciones(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    query = db.query(RecepcionPaquete)
-    if semana is not None:
-        query = query.filter(RecepcionPaquete.semana == semana)
-    if mes is not None:
-        query = query.filter(RecepcionPaquete.mes == mes)
-    if anio is not None:
-        query = query.filter(RecepcionPaquete.anio == anio)
-    if pickup_id is not None:
-        query = query.filter(RecepcionPaquete.pickup_id == pickup_id)
-    if search:
-        s = f"%{search}%"
-        query = query.filter(
-            (RecepcionPaquete.pedido.ilike(s))
-            | (RecepcionPaquete.pickup_nombre_raw.ilike(s))
-        )
-    return {"total": query.count()}
+    return {"total": _build_recepciones_query(db, semana, mes, anio, pickup_id, search).count()}
 
 
 @router.get("/portal/recepciones")
