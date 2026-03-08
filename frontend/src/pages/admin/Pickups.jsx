@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Upload, Download } from 'lucide-react'
+import { Plus, Pencil, Trash2, Upload, Download, AlertTriangle, Link } from 'lucide-react'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -114,6 +114,10 @@ export default function Pickups() {
   const [ttFechaInicio, setTtFechaInicio] = useState('')
   const [ttFechaFin, setTtFechaFin] = useState('')
   const [importResult, setImportResult] = useState(null)
+  const [pendientes, setPendientes] = useState([])
+  const [resolveModal, setResolveModal] = useState(null)
+  const [resolvePickupId, setResolvePickupId] = useState('')
+  const [resolving, setResolving] = useState(false)
 
   const fetchData = () => {
     Promise.all([
@@ -130,7 +134,13 @@ export default function Pickups() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { fetchData() }, [])
+  const loadPendientes = () => {
+    api.get('/ingesta/pendientes')
+      .then(({ data }) => setPendientes(data.filter(p => p.tipo === 'PICKUP')))
+      .catch(() => {})
+  }
+
+  useEffect(() => { fetchData(); loadPendientes() }, [])
 
   const openCreate = () => {
     setEditing(null)
@@ -208,6 +218,26 @@ export default function Pickups() {
       .finally(() => setSaving(false))
   }
 
+  const handleResolvePickup = async () => {
+    if (!resolvePickupId) return toast.error('Selecciona un pickup')
+    setResolving(true)
+    try {
+      const { data } = await api.post('/ingesta/resolver', {
+        nombre_raw: resolveModal.nombre_raw,
+        tipo: 'PICKUP',
+        entidad_id: Number(resolvePickupId),
+      })
+      toast.success(data.message)
+      setResolveModal(null)
+      setResolvePickupId('')
+      loadPendientes()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error al resolver')
+    } finally {
+      setResolving(false)
+    }
+  }
+
   const handleImportExcel = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -220,6 +250,7 @@ export default function Pickups() {
       setImportResult({ ...data, fuente: 'excel' })
       if (data.creados > 0) toast.success(`${data.creados} recepciones importadas desde Excel`)
       if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar`)
+      loadPendientes()
     } catch (err) { toast.error(err.response?.data?.detail || 'Error al importar') }
     finally { setImporting(false); e.target.value = '' }
   }
@@ -241,6 +272,7 @@ export default function Pickups() {
         toast('No se encontraron registros nuevos', { icon: 'ℹ️' })
       }
       if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar`)
+      loadPendientes()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error al importar desde TrackingTech')
     } finally {
@@ -327,6 +359,67 @@ export default function Pickups() {
           emptyMessage="No hay pickups registrados"
         />
       </div>
+
+      {pendientes.length > 0 && (
+        <div className="card border-amber-200 bg-amber-50/50">
+          <h2 className="text-base font-semibold text-amber-800 flex items-center gap-2 mb-3">
+            <AlertTriangle size={18} /> Pickups sin Homologar ({pendientes.length})
+          </h2>
+          <p className="text-xs text-amber-700 mb-3">
+            Estos nombres llegaron desde las importaciones y no coinciden con ningún pickup registrado. Asígnalos para que sus recepciones se contabilicen correctamente.
+          </p>
+          <div className="space-y-2">
+            {pendientes.map((p, i) => (
+              <div key={i} className="flex items-center justify-between bg-white rounded-lg border border-amber-200 px-4 py-2.5">
+                <div>
+                  <span className="font-medium text-gray-800">{p.nombre_raw}</span>
+                  <span className="ml-2 text-xs text-gray-400">{p.cantidad} recepciones</span>
+                </div>
+                <button
+                  onClick={() => { setResolveModal(p); setResolvePickupId('') }}
+                  className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1"
+                >
+                  <Link size={14} /> Asignar Pickup
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Modal open={!!resolveModal} onClose={() => setResolveModal(null)} title="Asignar Pickup">
+        {resolveModal && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="text-sm text-gray-500">Nombre en importación:</p>
+              <p className="font-semibold text-lg">{resolveModal.nombre_raw}</p>
+              <p className="text-xs text-gray-400 mt-1">{resolveModal.cantidad} recepciones pendientes de asignar</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Asignar a Pickup:</label>
+              <select
+                value={resolvePickupId}
+                onChange={(e) => setResolvePickupId(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Seleccionar pickup...</option>
+                {pickups.filter(p => p.activo).map((p) => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                El nombre se guardará como alias del pickup para futuras importaciones.
+              </p>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setResolveModal(null)} className="btn-secondary">Cancelar</button>
+              <button onClick={handleResolvePickup} disabled={resolving || !resolvePickupId} className="btn-primary">
+                {resolving ? 'Asignando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Pickup' : 'Nuevo Pickup'} wide>
         <form onSubmit={handleSubmit} className="space-y-4">
