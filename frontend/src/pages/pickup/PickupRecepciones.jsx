@@ -1,22 +1,22 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
-import PeriodSelector from '../../components/PeriodSelector'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
 
 export default function PickupRecepciones() {
-  const [period, setPeriod] = useState({ semana: 1, mes: now.getMonth() + 1, anio: now.getFullYear() })
+  const [mes, setMes] = useState(now.getMonth() + 1)
+  const [anio, setAnio] = useState(now.getFullYear())
   const [dias, setDias] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
-    api.get('/pickups/portal/recepciones', { params: period })
+    api.get('/pickups/portal/recepciones', { params: { mes, anio } })
       .then(({ data }) => setDias(data))
       .catch(() => setDias([]))
       .finally(() => setLoading(false))
-  }, [period])
+  }, [mes, anio])
 
   const totalPaquetes = dias.reduce((acc, d) => acc + d.paquetes, 0)
   const totalComision = dias.reduce((acc, d) => acc + d.comision, 0)
@@ -37,7 +37,24 @@ export default function PickupRecepciones() {
 
       <div className="card">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <PeriodSelector {...period} onChange={setPeriod} />
+          <div className="flex items-center gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
+              <select value={mes} onChange={(e) => setMes(Number(e.target.value))} className="input-field w-36">
+                {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m,i) => (
+                  <option key={i+1} value={i+1}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
+              <select value={anio} onChange={(e) => setAnio(Number(e.target.value))} className="input-field w-24">
+                {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          </div>
           <div className="text-right">
             <p className="text-xs text-gray-500">{totalPaquetes} paquetes</p>
             <p className="text-lg font-bold text-emerald-700">{fmt(totalComision + totalIva)}</p>
