@@ -1010,9 +1010,16 @@ def pickup_recepciones(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_pickup),
 ):
-    """Recepciones del pickup autenticado."""
+    """Recepciones del pickup autenticado agrupadas por día."""
+    from sqlalchemy import func as sqlfunc
+
     pickup_id = current_user["id"]
-    query = db.query(RecepcionPaquete).filter(RecepcionPaquete.pickup_id == pickup_id)
+    query = db.query(
+        RecepcionPaquete.fecha_recepcion,
+        sqlfunc.count(RecepcionPaquete.id).label("paquetes"),
+        sqlfunc.sum(RecepcionPaquete.comision).label("comision"),
+    ).filter(RecepcionPaquete.pickup_id == pickup_id)
+
     if semana is not None:
         query = query.filter(RecepcionPaquete.semana == semana)
     if mes is not None:
@@ -1020,15 +1027,18 @@ def pickup_recepciones(
     if anio is not None:
         query = query.filter(RecepcionPaquete.anio == anio)
 
-    recs = query.order_by(RecepcionPaquete.fecha_recepcion.desc()).all()
-    pickup = db.get(Pickup, pickup_id)
-    pickup_nombre = pickup.nombre if pickup else "—"
-    result = []
-    for r in recs:
-        d = {col.name: getattr(r, col.name) for col in r.__table__.columns}
-        d["pickup_nombre"] = pickup_nombre
-        result.append(d)
-    return result
+    rows = query.group_by(RecepcionPaquete.fecha_recepcion).order_by(
+        RecepcionPaquete.fecha_recepcion.desc()
+    ).all()
+
+    return [
+        {
+            "fecha": str(r.fecha_recepcion) if r.fecha_recepcion else None,
+            "paquetes": int(r.paquetes or 0),
+            "comision": int(r.comision or 0),
+        }
+        for r in rows
+    ]
 
 
 @router.get("/portal/entregas")
