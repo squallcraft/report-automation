@@ -172,3 +172,78 @@ def resumen_financiero(
             subtotal[k] += s[k]
 
     return {"semanas": semanas, "subtotal": subtotal}
+
+
+@router.get("/resumen-anual")
+def resumen_anual(
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Resumen financiero anual: mismas métricas que resumen-financiero pero agrupadas por mes."""
+    envio_rows = db.query(
+        Envio.mes,
+        sqlfunc.sum(Envio.cobro_seller).label("ingreso_paquete"),
+        sqlfunc.count(Envio.id).label("paquetes_totales"),
+        sqlfunc.sum(Envio.extra_producto_seller).label("ingreso_bulto_extra"),
+        sqlfunc.sum(Envio.extra_comuna_seller).label("ingreso_peso_extra"),
+        sqlfunc.sum(Envio.cobro_extra_manual).label("ingreso_extra_manual"),
+        sqlfunc.sum(Envio.costo_driver).label("costo_paquete_driver"),
+        sqlfunc.sum(Envio.extra_comuna_driver).label("costo_comuna"),
+        sqlfunc.sum(Envio.extra_producto_driver).label("costo_bulto_extra_driver"),
+        sqlfunc.sum(Envio.pago_extra_manual).label("costo_extra_manual_driver"),
+    ).filter(
+        Envio.anio == anio,
+    ).group_by(Envio.mes).all()
+
+    retiro_rows = db.query(
+        Retiro.mes,
+        sqlfunc.sum(Retiro.tarifa_seller).label("ingreso_retiro"),
+        sqlfunc.sum(Retiro.tarifa_driver).label("costo_retiro_driver"),
+    ).filter(
+        Retiro.anio == anio,
+    ).group_by(Retiro.mes).all()
+
+    pickup_rows = db.query(
+        RecepcionPaquete.mes,
+        sqlfunc.sum(RecepcionPaquete.comision).label("costo_comision_pickup"),
+    ).filter(
+        RecepcionPaquete.anio == anio,
+        RecepcionPaquete.pickup_id.isnot(None),
+    ).group_by(RecepcionPaquete.mes).all()
+
+    meses = {}
+    for r in envio_rows:
+        s = _empty_row()
+        s["ingreso_paquete"] = int(r.ingreso_paquete or 0)
+        s["paquetes_totales"] = int(r.paquetes_totales or 0)
+        s["ingreso_bulto_extra"] = int(r.ingreso_bulto_extra or 0)
+        s["ingreso_peso_extra"] = int(r.ingreso_peso_extra or 0)
+        s["ingreso_extra_manual"] = int(r.ingreso_extra_manual or 0)
+        s["costo_paquete_driver"] = int(r.costo_paquete_driver or 0)
+        s["costo_comuna"] = int(r.costo_comuna or 0)
+        s["costo_bulto_extra_driver"] = int(r.costo_bulto_extra_driver or 0)
+        s["costo_extra_manual_driver"] = int(r.costo_extra_manual_driver or 0)
+        meses[r.mes] = s
+
+    for r in retiro_rows:
+        if r.mes not in meses:
+            meses[r.mes] = _empty_row()
+        meses[r.mes]["ingreso_retiro"] = int(r.ingreso_retiro or 0)
+        meses[r.mes]["costo_retiro_driver"] = int(r.costo_retiro_driver or 0)
+
+    for r in pickup_rows:
+        if r.mes not in meses:
+            meses[r.mes] = _empty_row()
+        meses[r.mes]["costo_comision_pickup"] = int(r.costo_comision_pickup or 0)
+
+    for m in range(1, 13):
+        if m not in meses:
+            meses[m] = _empty_row()
+
+    total = _empty_row()
+    for s in meses.values():
+        for k in total:
+            total[k] += s[k]
+
+    return {"meses": meses, "total": total}

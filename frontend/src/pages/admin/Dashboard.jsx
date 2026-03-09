@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, AlertTriangle, MessageSquare, Activity, ChevronDown, ChevronUp, RefreshCw, Trash2 } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, AlertTriangle, MessageSquare } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
 
 const WEEKS = [1, 2, 3, 4, 5]
+const MESES_CORTO = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+const MESES_12 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 const INCOME_ROWS = [
   { key: 'ingreso_paquete', label: 'Ingreso Paquete', isMoney: true },
@@ -36,27 +38,14 @@ function calcCostos(row) {
     + (row.costo_extra_manual_driver || 0) + (row.costo_retiro_driver || 0) + (row.costo_comision_pickup || 0)
 }
 
-function perfColor(ms) {
-  if (ms < 300) return 'text-green-600'
-  if (ms < 1000) return 'text-amber-600'
-  return 'text-red-600'
-}
-
-function perfBadge(ms) {
-  if (ms < 300) return 'bg-green-100 text-green-700'
-  if (ms < 1000) return 'bg-amber-100 text-amber-700'
-  return 'bg-red-100 text-red-700'
-}
-
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [resumen, setResumen] = useState(null)
+  const [resumenAnual, setResumenAnual] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadingAnual, setLoadingAnual] = useState(true)
   const [period, setPeriod] = useState({ semana: null, mes: now.getMonth() + 1, anio: now.getFullYear() })
   const [filterSemana, setFilterSemana] = useState(false)
-  const [perfOpen, setPerfOpen] = useState(false)
-  const [perfData, setPerfData] = useState(null)
-  const [perfLoading, setPerfLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -75,26 +64,13 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [period, filterSemana])
 
-  const loadPerf = useCallback(async () => {
-    setPerfLoading(true)
-    try {
-      const res = await api.get('/diagnostics/performance')
-      setPerfData(res.data)
-    } catch {
-      // sin acceso o sin datos aún
-    } finally {
-      setPerfLoading(false)
-    }
-  }, [])
-
-  const resetPerf = async () => {
-    await api.delete('/diagnostics/performance')
-    setPerfData([])
-  }
-
   useEffect(() => {
-    if (perfOpen && !perfData) loadPerf()
-  }, [perfOpen, perfData, loadPerf])
+    setLoadingAnual(true)
+    api.get('/dashboard/resumen-anual', { params: { anio: period.anio } })
+      .then(({ data }) => setResumenAnual(data))
+      .catch(() => setResumenAnual(null))
+      .finally(() => setLoadingAnual(false))
+  }, [period.anio])
 
   const getVal = (weekNum, key) => {
     if (!resumen?.semanas?.[weekNum]) return 0
@@ -297,90 +273,103 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-          {/* ── Panel de rendimiento API ── */}
-          <div className="mt-4 sm:mt-6 border border-gray-200 rounded-xl overflow-hidden">
-            <button
-              onClick={() => setPerfOpen(o => !o)}
-              className="w-full flex items-center justify-between px-3 sm:px-5 py-3 sm:py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors text-xs sm:text-sm font-medium text-gray-700"
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                <Activity size={16} className="text-primary-500 shrink-0" />
-                <span className="truncate">Rendimiento API</span>
-                <span className="text-[10px] sm:text-xs text-gray-400 font-normal hidden sm:inline">(últimas 500 llamadas)</span>
-              </span>
-              {perfOpen ? <ChevronUp size={16} className="shrink-0" /> : <ChevronDown size={16} className="shrink-0" />}
-            </button>
-
-            {perfOpen && (
-              <div className="p-3 sm:p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                  <p className="text-[10px] sm:text-xs text-gray-500">
-                    Verde &lt;300ms · Amarillo &lt;1s · Rojo ≥1s
-                  </p>
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={loadPerf} disabled={perfLoading} className="flex items-center gap-1.5 text-[10px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 text-gray-600">
-                      <RefreshCw size={12} className={perfLoading ? 'animate-spin' : ''} />
-                      Actualizar
-                    </button>
-                    <button onClick={resetPerf} className="flex items-center gap-1.5 text-[10px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-lg bg-white border border-red-200 hover:bg-red-50 text-red-600">
-                      <Trash2 size={12} />
-                      Resetear
-                    </button>
-                  </div>
-                </div>
-
-                {perfLoading ? (
-                  <div className="text-center py-8 text-gray-400 text-sm">Cargando estadísticas...</div>
-                ) : !perfData || perfData.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400 text-sm">
-                    Sin datos aún. Las estadísticas se acumulan con el uso del sistema.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-left text-gray-500 border-b border-gray-100">
-                          <th className="pb-2 font-medium pr-4">Endpoint</th>
-                          <th className="pb-2 font-medium text-right pr-3">Llamadas</th>
-                          <th className="pb-2 font-medium text-right pr-3">Promedio</th>
-                          <th className="pb-2 font-medium text-right pr-3">P95</th>
-                          <th className="pb-2 font-medium text-right pr-3">Máximo</th>
-                          <th className="pb-2 font-medium text-right">Errores</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {perfData.map((row) => (
-                          <tr key={row.endpoint} className="border-b border-gray-50 hover:bg-gray-50">
-                            <td className="py-2 pr-4 font-mono text-gray-700 max-w-xs truncate" title={row.endpoint}>
-                              {row.endpoint}
-                            </td>
-                            <td className="py-2 pr-3 text-right text-gray-600">{row.llamadas_totales.toLocaleString()}</td>
-                            <td className={`py-2 pr-3 text-right font-semibold ${perfColor(row.avg_ms)}`}>
-                              <span className={`px-2 py-0.5 rounded-full text-[11px] ${perfBadge(row.avg_ms)}`}>
-                                {row.avg_ms < 1000 ? `${row.avg_ms}ms` : `${(row.avg_ms / 1000).toFixed(1)}s`}
-                              </span>
-                            </td>
-                            <td className={`py-2 pr-3 text-right ${perfColor(row.p95_ms)}`}>
-                              {row.p95_ms < 1000 ? `${row.p95_ms}ms` : `${(row.p95_ms / 1000).toFixed(1)}s`}
-                            </td>
-                            <td className={`py-2 pr-3 text-right ${perfColor(row.max_ms)}`}>
-                              {row.max_ms < 1000 ? `${row.max_ms}ms` : `${(row.max_ms / 1000).toFixed(1)}s`}
-                            </td>
-                            <td className="py-2 text-right">
-                              {row.errores > 0
-                                ? <span className="text-red-600 font-semibold">{row.errores} ({row.error_pct}%)</span>
-                                : <span className="text-gray-300">—</span>
-                              }
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+          {/* ── Resumen Anual ── */}
+          {loadingAnual ? (
+            <div className="mt-6 text-center py-8 text-gray-400 text-sm">Cargando resumen anual...</div>
+          ) : resumenAnual && (
+            <div className="card overflow-hidden p-0 mt-6">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <h2 className="text-sm font-semibold text-gray-700">Resumen Anual — {period.anio}</h2>
+                <p className="text-[10px] text-gray-400 mt-0.5">Desglose mensual de ingresos y costos</p>
               </div>
-            )}
-          </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" style={{ minWidth: '1100px' }}>
+                  <thead>
+                    <tr className="bg-[#1e3a5f]">
+                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-white uppercase tracking-wider min-w-[180px] sticky left-0 bg-[#1e3a5f] z-10">Item</th>
+                      {MESES_12.map(m => (
+                        <th key={m} className={headerClass}>{MESES_CORTO[m]}</th>
+                      ))}
+                      <th className={`${headerClass} border-l border-white/20`}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {INCOME_ROWS.map((row, idx) => (
+                      <tr key={row.key} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className={`${labelClass} sticky left-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>{row.label}</td>
+                        {MESES_12.map(m => (
+                          <td key={m} className={cellClass}>{renderVal(resumenAnual.meses?.[m]?.[row.key] || 0, row.isMoney)}</td>
+                        ))}
+                        <td className={`${cellClass} font-semibold border-l border-gray-200`}>{renderVal(resumenAnual.total?.[row.key] || 0, row.isMoney)}</td>
+                      </tr>
+                    ))}
+
+                    {COST_ROWS.map((row, idx) => (
+                      <tr key={row.key} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className={`${labelClass} sticky left-0 z-10 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>{row.label}</td>
+                        {MESES_12.map(m => (
+                          <td key={m} className={cellClass}>{renderVal(resumenAnual.meses?.[m]?.[row.key] || 0, row.isMoney)}</td>
+                        ))}
+                        <td className={`${cellClass} font-semibold border-l border-gray-200`}>{renderVal(resumenAnual.total?.[row.key] || 0, row.isMoney)}</td>
+                      </tr>
+                    ))}
+
+                    <tr className="border-t-2 border-[#1e3a5f]">
+                      <td colSpan={MESES_12.length + 2} className="h-1 bg-[#1e3a5f]" />
+                    </tr>
+
+                    <tr className="bg-blue-50">
+                      <td className={`${summaryLabelClass} text-blue-900 sticky left-0 z-10 bg-blue-50`}>Ingreso Neto</td>
+                      {MESES_12.map(m => {
+                        const row = resumenAnual.meses?.[m] || {}
+                        return <td key={m} className={`${summaryCellClass} text-blue-900`}>{fmt(calcIngresoNeto(row))}</td>
+                      })}
+                      <td className={`${summaryCellClass} text-blue-900 border-l border-blue-200`}>{fmt(calcIngresoNeto(resumenAnual.total))}</td>
+                    </tr>
+
+                    <tr className="bg-red-50">
+                      <td className={`${summaryLabelClass} text-red-900 sticky left-0 z-10 bg-red-50`}>Costos</td>
+                      {MESES_12.map(m => {
+                        const row = resumenAnual.meses?.[m] || {}
+                        return <td key={m} className={`${summaryCellClass} text-red-900`}>{fmt(calcCostos(row))}</td>
+                      })}
+                      <td className={`${summaryCellClass} text-red-900 border-l border-red-200`}>{fmt(calcCostos(resumenAnual.total))}</td>
+                    </tr>
+
+                    <tr className="bg-emerald-50 border-t border-emerald-200">
+                      <td className={`${summaryLabelClass} text-emerald-900 sticky left-0 z-10 bg-emerald-50`}>Margen</td>
+                      {MESES_12.map(m => {
+                        const row = resumenAnual.meses?.[m] || {}
+                        return <td key={m} className={`${summaryCellClass} text-emerald-900`}>{fmt(calcIngresoNeto(row) - calcCostos(row))}</td>
+                      })}
+                      <td className={`${summaryCellClass} text-emerald-900 border-l border-emerald-200`}>
+                        {fmt(calcIngresoNeto(resumenAnual.total) - calcCostos(resumenAnual.total))}
+                      </td>
+                    </tr>
+
+                    <tr className="bg-gray-100 border-t border-gray-300">
+                      <td className={`${summaryLabelClass} text-gray-800 sticky left-0 z-10 bg-gray-100`}>Ingreso por Envío</td>
+                      {MESES_12.map(m => {
+                        const row = resumenAnual.meses?.[m] || {}
+                        const margen = calcIngresoNeto(row) - calcCostos(row)
+                        const paq = row.paquetes_totales || 0
+                        return <td key={m} className={`${summaryCellClass} text-gray-800`}>{paq > 0 ? fmt(Math.round(margen / paq)) : '—'}</td>
+                      })}
+                      {(() => {
+                        const margen = calcIngresoNeto(resumenAnual.total) - calcCostos(resumenAnual.total)
+                        const paq = resumenAnual.total.paquetes_totales || 0
+                        return (
+                          <td className={`${summaryCellClass} text-gray-800 border-l border-gray-300`}>
+                            {paq > 0 ? fmt(Math.round(margen / paq)) : '—'}
+                          </td>
+                        )
+                      })()}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
