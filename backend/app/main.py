@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios
 from app.middleware.timing import TimingMiddleware
 
 try:
@@ -166,6 +166,8 @@ with engine.connect() as conn:
         except Exception:
             conn.rollback()
 
+    # ── Migración: tablas CPP (pagos pickups) y facturas pickups se crean via create_all ──
+
     # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────
     with engine.connect() as conn:
         try:
@@ -217,6 +219,7 @@ app.include_router(consultas.router, prefix="/api")
 app.include_router(calendario.router, prefix="/api")
 app.include_router(facturacion.router, prefix="/api")
 app.include_router(cpc.router, prefix="/api")
+app.include_router(cpp.router, prefix="/api")
 app.include_router(usuarios.router, prefix="/api")
 app.include_router(tarifas_escalonadas.router, prefix="/api")
 app.include_router(diagnostics.router, prefix="/api")

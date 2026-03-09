@@ -39,11 +39,13 @@ import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Auditoria from './pages/admin/Auditoria'
 import Pickups from './pages/admin/Pickups'
+import CPP from './pages/admin/CPP'
 import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
 import PickupEnvios from './pages/pickup/PickupEnvios'
 import PickupEntregas from './pages/pickup/PickupEntregas'
 import PickupGanancias from './pages/pickup/PickupGanancias'
+import PickupFacturas from './pages/pickup/PickupFacturas'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -92,6 +94,7 @@ export default function App() {
         <Route path="usuarios" element={<Usuarios />} />
         <Route path="asistente" element={<Asistente />} />
         <Route path="pickups" element={<Pickups />} />
+        <Route path="cpp" element={<CPP />} />
         <Route path="auditoria" element={<Auditoria />} />
       </Route>
 
@@ -110,6 +113,7 @@ export default function App() {
         <Route path="envios" element={<PickupEnvios />} />
         <Route path="entregas" element={<PickupEntregas />} />
         <Route path="ganancias" element={<PickupGanancias />} />
+        <Route path="facturas" element={<PickupFacturas />} />
       </Route>
 
       <Route path="/driver" element={<ProtectedRoute roles={['DRIVER']}><Layout /></ProtectedRoute>}>

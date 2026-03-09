@@ -23,7 +23,7 @@ from app.auth import (
 from app.config import get_settings
 from app.models import (
     Pickup, RecepcionPaquete, Envio, Seller, Driver, RolEnum,
-    PagoCartola, PagoCartolaSeller, Retiro, CalendarioSemanas,
+    PagoCartola, PagoCartolaSeller, PagoCartolaPickup, Retiro, CalendarioSemanas,
 )
 from app.schemas import PickupCreate, PickupUpdate, PickupOut, RecepcionPaqueteOut
 from app.services.audit import registrar as audit
@@ -795,6 +795,18 @@ def _calcular_periodo_pickup(db: Session, pickup, mes: int, anio: int) -> dict:
             by_semana[sem] = {"semana": sem, "paquetes": paquetes_sem, "comision": comision_sem}
 
     pagos_recibidos = []
+    # Pagos directos al pickup via CPP
+    pcs_pickup = db.query(PagoCartolaPickup).filter(
+        PagoCartolaPickup.pickup_id == pickup.id,
+        PagoCartolaPickup.mes == mes,
+        PagoCartolaPickup.anio == anio,
+    ).order_by(PagoCartolaPickup.created_at.desc()).all()
+    for p in pcs_pickup:
+        pagos_recibidos.append({
+            "id": p.id, "fecha": p.fecha_pago, "monto": p.monto,
+            "descripcion": p.descripcion, "fuente": p.fuente, "tipo": "recibido",
+        })
+    # Pagos via driver vinculado (legacy / CPC)
     if pickup.driver_id:
         pcs = db.query(PagoCartola).filter(
             PagoCartola.driver_id == pickup.driver_id,
@@ -977,6 +989,13 @@ def pickup_ganancias(
         liquidado_sem = comision_sem + ganancia_driver_sem - cargo_seller_sem
 
         pagado_sem = 0
+        # Pagos directos al pickup via CPP
+        pcs_pickup = db.query(PagoCartolaPickup).filter(
+            PagoCartolaPickup.pickup_id == pickup_id,
+            PagoCartolaPickup.semana == sem, PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
+        ).all()
+        pagado_sem += sum(p.monto for p in pcs_pickup)
+        # Pagos via driver vinculado (legacy / CPC)
         if pickup.driver_id:
             pcs = db.query(PagoCartola).filter(
                 PagoCartola.driver_id == pickup.driver_id,
@@ -1008,6 +1027,17 @@ def pickup_ganancias(
             })
 
     pagos = []
+    # Pagos directos al pickup via CPP
+    pcs_pickup = db.query(PagoCartolaPickup).filter(
+        PagoCartolaPickup.pickup_id == pickup_id,
+        PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
+    ).order_by(PagoCartolaPickup.created_at.desc()).all()
+    for p in pcs_pickup:
+        pagos.append({
+            "id": p.id, "semana": p.semana, "fecha_pago": p.fecha_pago,
+            "monto": p.monto, "descripcion": p.descripcion, "fuente": p.fuente,
+        })
+    # Pagos via driver vinculado (legacy / CPC)
     if pickup.driver_id:
         pcs = db.query(PagoCartola).filter(
             PagoCartola.driver_id == pickup.driver_id,

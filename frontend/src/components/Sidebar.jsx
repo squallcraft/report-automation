@@ -26,6 +26,7 @@ const adminLinks = [
   { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
   { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
   { to: '/admin/pickups', icon: Store, label: 'Pickups', permiso: 'pickups' },
+  { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
   { to: '/admin/auditoria', icon: Shield, label: 'Auditoría' },
   { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
   { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
@@ -74,6 +75,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     ...(pickupProfile?.seller_id ? [{ to: '/pickup/envios', icon: FileText, label: 'Mis Envíos' }] : []),
     ...(pickupProfile?.driver_id ? [{ to: '/pickup/entregas', icon: Truck, label: 'Mis Entregas' }] : []),
     { to: '/pickup/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
+    { to: '/pickup/facturas', icon: Receipt, label: 'Mis Facturas' },
   ]
 
   let links = adminLinks

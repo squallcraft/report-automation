@@ -584,6 +584,80 @@ class AuditLog(Base):
     detail = Column(String, nullable=True)
 
 
+class EstadoFacturaPickupEnum(str, enum.Enum):
+    SIN_FACTURA = "SIN_FACTURA"
+    CARGADA = "CARGADA"
+    APROBADA = "APROBADA"
+    RECHAZADA = "RECHAZADA"
+
+
+class PagoSemanaPickup(Base):
+    """Control semanal de pagos a pickups (egresos / CPP)."""
+    __tablename__ = "pagos_semana_pickups"
+    __table_args__ = (
+        UniqueConstraint("pickup_id", "semana", "mes", "anio", name="uq_pago_semana_pickup"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=False)
+    semana = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto_neto = Column(Integer, default=0)
+    monto_override = Column(Integer, nullable=True)
+    estado = Column(String, nullable=False, default=EstadoPagoEnum.PENDIENTE.value)
+    nota = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    pickup = relationship("Pickup")
+
+
+class PagoCartolaPickup(Base):
+    """Pago efectivo a un pickup, importado desde cartola bancaria o registrado manualmente."""
+    __tablename__ = "pagos_cartola_pickups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=False)
+    semana = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto = Column(Integer, nullable=False)
+    fecha_pago = Column(String, nullable=True)
+    descripcion = Column(String, nullable=True)
+    fuente = Column(String, nullable=False, default="cartola")
+    carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    pickup = relationship("Pickup")
+    carga = relationship("CartolaCarga", foreign_keys=[carga_id])
+
+
+class FacturaPickup(Base):
+    """Factura subida por un pickup para un período específico."""
+    __tablename__ = "facturas_pickups"
+    __table_args__ = (
+        UniqueConstraint("pickup_id", "mes", "anio", name="uq_factura_pickup_periodo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    pickup_id = Column(Integer, ForeignKey("pickups.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto_neto = Column(Integer, default=0)
+    archivo_nombre = Column(String, nullable=True)
+    archivo_path = Column(String, nullable=True)
+    estado = Column(String, nullable=False, default=EstadoFacturaPickupEnum.CARGADA.value)
+    nota_pickup = Column(Text, nullable=True)
+    nota_admin = Column(Text, nullable=True)
+    revisado_por = Column(String, nullable=True)
+    revisado_en = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    pickup = relationship("Pickup")
+
+
 class CartolaCarga(Base):
     """Historial de cada archivo de cartola subido al sistema."""
     __tablename__ = "cartola_cargas"
