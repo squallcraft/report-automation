@@ -19,6 +19,14 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_fecha(valor: str) -> date:
+    """Parsea fecha en formato ISO (YYYY-MM-DD) o DD/MM/YYYY."""
+    if "/" in valor:
+        parts = valor.split("/")
+        return date(int(parts[2]), int(parts[1]), int(parts[0]))
+    return date.fromisoformat(valor)
+
 # Códigos del plan de cuentas (deben coincidir con el seed)
 CUENTA_BANCO = "1.1"
 CUENTA_CXC_SELLERS = "1.2"
@@ -169,7 +177,7 @@ def asiento_cobro_seller(db: Session, pago: PagoCartolaSeller, es_backfill=False
     """Cartola seller → Debe: Banco / Haber: Ingreso Operacional"""
     if not pago.monto or pago.monto <= 0:
         return None
-    fecha = date.fromisoformat(pago.fecha_pago) if pago.fecha_pago else date.today()
+    fecha = _parse_fecha(pago.fecha_pago) if pago.fecha_pago else date.today()
     from app.models import Seller
     seller = db.get(Seller, pago.seller_id)
     nombre = seller.nombre if seller else f"Seller {pago.seller_id}"
@@ -188,7 +196,7 @@ def asiento_pago_pickup(db: Session, pago: PagoCartolaPickup, es_backfill=False)
     """Cartola pickup → Debe: Costo Pickup / Haber: Banco"""
     if not pago.monto or pago.monto <= 0:
         return None
-    fecha = date.fromisoformat(pago.fecha_pago) if pago.fecha_pago else date.today()
+    fecha = _parse_fecha(pago.fecha_pago) if pago.fecha_pago else date.today()
     return crear_asiento(db, fecha,
         f"Pago pickup S{pago.semana}",
         "PagoCartolaPickup", pago.id,
@@ -204,7 +212,7 @@ def asiento_pago_driver_cartola(db: Session, pago: PagoCartola, es_backfill=Fals
     """Cartola driver → Debe: Costo Driver / Haber: Banco"""
     if not pago.monto or pago.monto <= 0:
         return None
-    fecha = date.fromisoformat(pago.fecha_pago) if pago.fecha_pago else date.today()
+    fecha = _parse_fecha(pago.fecha_pago) if pago.fecha_pago else date.today()
     driver = db.get(Driver, pago.driver_id)
     nombre = driver.nombre if driver else f"Driver {pago.driver_id}"
     return crear_asiento(db, fecha,
