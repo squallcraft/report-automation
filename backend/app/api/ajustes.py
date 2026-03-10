@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion
+from app.auth import require_permission
 from app.models import AjusteLiquidacion, Seller, Driver, TipoEntidadEnum
 from app.schemas import AjusteCreate, AjusteOut
 from app.api.liquidacion import invalidar_snapshots
@@ -30,7 +30,7 @@ def listar_ajustes(
     anio: Optional[int] = None,
     tipo: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    _=require_permission("ajustes:ver"),
 ):
     query = db.query(AjusteLiquidacion)
     if semana is not None:
@@ -49,7 +49,7 @@ def listar_ajustes(
 def crear_ajuste(
     data: AjusteCreate,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=require_permission("ajustes:editar"),
 ):
     if data.tipo == TipoEntidadEnum.SELLER:
         entidad = db.query(Seller).get(data.entidad_id)
@@ -69,7 +69,7 @@ def crear_ajuste(
 
 
 @router.delete("/{ajuste_id}")
-def eliminar_ajuste(ajuste_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+def eliminar_ajuste(ajuste_id: int, db: Session = Depends(get_db), _=require_permission("ajustes:editar")):
     ajuste = db.query(AjusteLiquidacion).get(ajuste_id)
     if not ajuste:
         raise HTTPException(status_code=404, detail="Ajuste no encontrado")
