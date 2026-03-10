@@ -675,3 +675,123 @@ class CartolaCarga(Base):
     no_matcheadas = Column(Integer, default=0)
     monto_total = Column(Integer, default=0)
     detalle = Column(JSON, nullable=True)
+
+
+# ── Finanzas / ERP ──
+
+
+class TipoFinancieroEnum(str, enum.Enum):
+    INGRESO = "INGRESO"
+    EGRESO = "EGRESO"
+
+
+class EstadoMovimientoEnum(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    PAGADO = "PAGADO"
+    VENCIDO = "VENCIDO"
+
+
+class CategoriaFinanciera(Base):
+    __tablename__ = "categorias_financieras"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    tipo = Column(String, nullable=False)
+    parent_id = Column(Integer, ForeignKey("categorias_financieras.id"), nullable=True)
+    activo = Column(Boolean, default=True)
+    orden = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+    parent = relationship("CategoriaFinanciera", remote_side="CategoriaFinanciera.id", backref="hijos")
+    movimientos = relationship("MovimientoFinanciero", back_populates="categoria")
+
+
+class MovimientoFinanciero(Base):
+    __tablename__ = "movimientos_financieros"
+
+    id = Column(Integer, primary_key=True, index=True)
+    categoria_id = Column(Integer, ForeignKey("categorias_financieras.id"), nullable=False)
+    nombre = Column(String, nullable=False)
+    descripcion = Column(String, nullable=True)
+    monto = Column(Integer, nullable=False)
+    moneda = Column(String, default="CLP")
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    fecha_vencimiento = Column(Date, nullable=True)
+    fecha_pago = Column(Date, nullable=True)
+    estado = Column(String, nullable=False, default=EstadoMovimientoEnum.PENDIENTE.value)
+    recurrente = Column(Boolean, default=False)
+    proveedor = Column(String, nullable=True)
+    notas = Column(Text, nullable=True)
+    documento_nombre = Column(String, nullable=True)
+    documento_path = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    categoria = relationship("CategoriaFinanciera", back_populates="movimientos")
+
+
+# ── GL: Contabilidad de Partida Doble ──
+
+
+class TipoCuentaEnum(str, enum.Enum):
+    ACTIVO = "ACTIVO"
+    PASIVO = "PASIVO"
+    PATRIMONIO = "PATRIMONIO"
+    INGRESO = "INGRESO"
+    GASTO = "GASTO"
+
+
+class CuentaContable(Base):
+    __tablename__ = "cuentas_contables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String, nullable=False, unique=True)
+    nombre = Column(String, nullable=False)
+    tipo = Column(String, nullable=False)
+    parent_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=True)
+    categoria_financiera_id = Column(Integer, ForeignKey("categorias_financieras.id"), nullable=True)
+    activo = Column(Boolean, default=True)
+    orden = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+    parent = relationship("CuentaContable", remote_side="CuentaContable.id", backref="subcuentas")
+    categoria_financiera = relationship("CategoriaFinanciera")
+    lineas = relationship("LineaAsiento", back_populates="cuenta")
+
+
+class AsientoContable(Base):
+    __tablename__ = "asientos_contables"
+    __table_args__ = (
+        UniqueConstraint("ref_tipo", "ref_id", name="uq_asiento_ref"),
+        Index("ix_asiento_fecha_periodo", "fecha", "mes", "anio"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(Date, nullable=False)
+    descripcion = Column(String, nullable=False)
+    ref_tipo = Column(String, nullable=False)
+    ref_id = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    es_backfill = Column(Boolean, default=False)
+    creado_por = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    lineas = relationship("LineaAsiento", back_populates="asiento", cascade="all, delete-orphan")
+
+
+class LineaAsiento(Base):
+    __tablename__ = "lineas_asientos"
+    __table_args__ = (
+        Index("ix_linea_asiento_cuenta", "asiento_id", "cuenta_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    asiento_id = Column(Integer, ForeignKey("asientos_contables.id", ondelete="CASCADE"), nullable=False)
+    cuenta_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=False)
+    debe = Column(Integer, default=0)
+    haber = Column(Integer, default=0)
+    glosa = Column(String, nullable=True)
+
+    asiento = relationship("AsientoContable", back_populates="lineas")
+    cuenta = relationship("CuentaContable", back_populates="lineas")

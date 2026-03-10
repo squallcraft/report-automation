@@ -12,6 +12,7 @@ from app.auth import require_admin_or_administracion
 from app.models import (
     Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
     PagoSemanaDriver, EstadoPagoEnum, RecepcionPaquete,
+    MovimientoFinanciero, CategoriaFinanciera,
 )
 from app.schemas import DashboardStats
 
@@ -70,15 +71,27 @@ def obtener_stats(
         ConsultaPortal.estado == EstadoConsultaEnum.PENDIENTE
     ).count()
 
+    total_gastos_op = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(
+        CategoriaFinanciera
+    ).filter(
+        MovimientoFinanciero.mes == mes,
+        MovimientoFinanciero.anio == anio,
+        CategoriaFinanciera.tipo == "EGRESO",
+    ).scalar()
+
+    margen_bruto = int(total_cobrado) - int(costo_calculado)
+
     return DashboardStats(
         total_sellers=total_sellers,
         total_drivers=total_drivers,
         total_envios_mes=total_envios_mes,
         total_cobrado_mes=int(total_cobrado),
         total_pagado_mes=int(total_pagado),
-        margen_mes=int(total_cobrado) - int(costo_calculado),
+        margen_mes=margen_bruto,
         envios_sin_homologar=envios_sin_homologar,
         consultas_pendientes=consultas_pendientes,
+        total_gastos_operacionales=int(total_gastos_op),
+        margen_neto=margen_bruto - int(total_gastos_op),
     )
 
 

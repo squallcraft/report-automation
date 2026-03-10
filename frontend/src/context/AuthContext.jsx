@@ -40,8 +40,17 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  const tienePermiso = (slug) => {
+    if (!user) return false
+    if (user.rol === 'ADMIN') return true
+    return (user.permisos || []).includes(slug)
+  }
+
+  const puedeEditar = (seccion) => tienePermiso(`${seccion}:editar`)
+  const puedeVer = (seccion) => tienePermiso(`${seccion}:ver`) || tienePermiso(`${seccion}:editar`)
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, tienePermiso, puedeEditar, puedeVer }}>
       {children}
     </AuthContext.Provider>
   )

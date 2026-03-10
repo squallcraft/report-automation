@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas
 from app.middleware.timing import TimingMiddleware
 
 try:
@@ -166,6 +166,14 @@ with engine.connect() as conn:
         except Exception:
             conn.rollback()
 
+    # ── Migración: campos documento en movimientos_financieros ──
+    if "movimientos_financieros" in insp.get_table_names():
+        mf_cols = [c["name"] for c in insp.get_columns("movimientos_financieros")]
+        if "documento_nombre" not in mf_cols:
+            safe_exec("ALTER TABLE movimientos_financieros ADD COLUMN documento_nombre TEXT")
+        if "documento_path" not in mf_cols:
+            safe_exec("ALTER TABLE movimientos_financieros ADD COLUMN documento_path TEXT")
+
     # ── Migración: tablas CPP (pagos pickups) y facturas pickups se crean via create_all ──
 
     # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────
@@ -187,6 +195,146 @@ with engine.connect() as conn:
                 conn.commit()
         except Exception:
             conn.rollback()
+
+# ── Seed categorías financieras ──
+from app.database import SessionLocal
+from app.models import CategoriaFinanciera
+
+def _seed_categorias():
+    db = SessionLocal()
+    try:
+        if db.query(CategoriaFinanciera).first():
+            return
+        tree = [
+            ("INGRESO", "Ingresos", [
+                ("Software", [
+                    ("Inquilinos", []),
+                    ("Proyectos", []),
+                ]),
+            ]),
+            ("EGRESO", "Egresos", [
+                ("Remuneraciones", [
+                    ("Sueldos", []),
+                    ("Cotizaciones Previsionales", []),
+                ]),
+                ("Arriendo y Servicios", [
+                    ("Arriendo", []),
+                    ("Servicios Básicos", []),
+                ]),
+                ("Tecnología", [
+                    ("Servidores", []),
+                    ("Software / APIs", []),
+                ]),
+                ("Freelancers", []),
+                ("Marketing", []),
+                ("Impuestos", [
+                    ("IVA", []),
+                    ("PPM", []),
+                ]),
+                ("Deudas", [
+                    ("Créditos", []),
+                    ("Leasing", []),
+                ]),
+                ("Otros", []),
+            ]),
+        ]
+
+        def _insert(tipo, nombre, hijos, parent_id=None, orden=0):
+            cat = CategoriaFinanciera(nombre=nombre, tipo=tipo, parent_id=parent_id, orden=orden)
+            db.add(cat)
+            db.flush()
+            for i, hijo in enumerate(hijos):
+                if len(hijo) == 2:
+                    child_nombre, child_hijos = hijo
+                else:
+                    child_nombre, child_hijos = hijo[0], []
+                _insert(tipo, child_nombre, child_hijos, parent_id=cat.id, orden=i)
+
+        for i, (tipo, nombre, hijos) in enumerate(tree):
+            _insert(tipo, nombre, hijos, orden=i)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+_seed_categorias()
+
+
+# ── Seed plan de cuentas contables (GL) ──
+from app.models import CuentaContable
+
+def _seed_cuentas_contables():
+    db = SessionLocal()
+    try:
+        if db.query(CuentaContable).first():
+            return
+
+        plan = [
+            ("ACTIVO", [
+                ("1.0", "Activos", [
+                    ("1.1", "Banco", []),
+                    ("1.2", "Cuentas por Cobrar Sellers", []),
+                    ("1.3", "IVA Crédito Fiscal", []),
+                ]),
+            ]),
+            ("PASIVO", [
+                ("2.0", "Pasivos", [
+                    ("2.1", "Cuentas por Pagar Drivers", []),
+                    ("2.2", "Cuentas por Pagar Pickups", []),
+                    ("2.3", "Cuentas por Pagar Proveedores", []),
+                    ("2.4", "IVA Débito Fiscal", []),
+                    ("2.5", "Remuneraciones por Pagar", []),
+                ]),
+            ]),
+            ("PATRIMONIO", [
+                ("3.0", "Patrimonio", [
+                    ("3.1", "Capital", []),
+                    ("3.2", "Resultados Acumulados", []),
+                ]),
+            ]),
+            ("INGRESO", [
+                ("4.0", "Ingresos", [
+                    ("4.1", "Ingreso Operacional Sellers", []),
+                    ("4.2", "Ingreso Software", []),
+                    ("4.3", "Otros Ingresos", []),
+                ]),
+            ]),
+            ("GASTO", [
+                ("5.0", "Gastos", [
+                    ("5.1", "Costo Drivers", []),
+                    ("5.2", "Costo Pickups", []),
+                    ("5.3", "Remuneraciones", []),
+                    ("5.4", "Arriendo y Servicios", []),
+                    ("5.5", "Tecnología", []),
+                    ("5.6", "Freelancers", []),
+                    ("5.7", "Marketing", []),
+                    ("5.8", "Impuestos", []),
+                    ("5.9", "Otros Gastos", []),
+                ]),
+            ]),
+        ]
+
+        def _insert_cuenta(tipo, codigo, nombre, hijos, parent_id=None, orden=0):
+            cuenta = CuentaContable(codigo=codigo, nombre=nombre, tipo=tipo, parent_id=parent_id, orden=orden)
+            db.add(cuenta)
+            db.flush()
+            for i, (c_codigo, c_nombre, c_hijos) in enumerate(hijos):
+                _insert_cuenta(tipo, c_codigo, c_nombre, c_hijos, parent_id=cuenta.id, orden=i)
+
+        for i, (tipo, cuentas) in enumerate(plan):
+            for j, (codigo, nombre, hijos) in enumerate(cuentas):
+                _insert_cuenta(tipo, codigo, nombre, hijos, orden=i * 10 + j)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+_seed_cuentas_contables()
+
 
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",
@@ -228,6 +376,7 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(pickups.router, prefix="/api")
 app.include_router(auditoria.router, prefix="/api")
 app.include_router(planes_tarifarios.router, prefix="/api")
+app.include_router(finanzas.router, prefix="/api")
 
 
 @app.get("/")

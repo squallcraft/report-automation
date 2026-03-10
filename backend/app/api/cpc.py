@@ -23,6 +23,7 @@ from app.models import (
 )
 from app.services.liquidacion import _calcular_retiro_driver
 from app.services.audit import registrar as audit
+from app.services.contabilidad import asiento_pago_driver, asiento_pago_driver_cartola
 
 # ---------------------------------------------------------------------------
 # Datos fijos del emisor (E-Courier)
@@ -383,6 +384,16 @@ def actualizar_pago_semana_driver(
               cambios={"estado": {"antes": "—", "despues": body.estado}},
               metadata={"nombre": driver.nombre, "semana": semana, "mes": mes, "anio": anio, "monto": body.monto_override})
 
+    if body.estado == EstadoPagoEnum.PAGADO.value:
+        pago = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == semana,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+        ).first()
+        if pago:
+            asiento_pago_driver(db, pago)
+
     db.commit()
     return {"ok": True}
 
@@ -434,6 +445,17 @@ def actualizar_pagos_batch_driver(
                     e.sync_estado_financiero()
 
         updated += 1
+
+    for item in body:
+        if item.get("estado") == EstadoPagoEnum.PAGADO.value and item.get("driver_id") and item.get("semana"):
+            pago = db.query(PagoSemanaDriver).filter(
+                PagoSemanaDriver.driver_id == item["driver_id"],
+                PagoSemanaDriver.semana == item["semana"],
+                PagoSemanaDriver.mes == mes,
+                PagoSemanaDriver.anio == anio,
+            ).first()
+            if pago:
+                asiento_pago_driver(db, pago)
 
     audit(db, "pago_batch_driver", usuario=current_user, request=request, entidad="pago_semana_driver", metadata={"mes": mes, "anio": anio, "cambios": len(body)})
 
@@ -853,6 +875,10 @@ def cartola_confirmar(
                 # Solo agregar si no es el nombre principal ni ya existe como alias
                 if alias_lower != nombre_lower and alias_lower not in aliases_actuales:
                     driver.aliases = list(driver.aliases or []) + [alias_nuevo]
+
+    db.flush()
+    for pago_c in db.query(PagoCartola).filter(PagoCartola.carga_id == carga.id).all():
+        asiento_pago_driver_cartola(db, pago_c)
 
     audit(db, "carga_cartola_driver", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
 

@@ -24,6 +24,7 @@ from app.models import (
 from app.services.liquidacion import calcular_liquidacion_sellers
 from app.services.audit import registrar as audit
 from app.services.haulmer import emitir_factura, _formatear_rut as _fmt_rut
+from app.services.contabilidad import asiento_cobro_seller
 
 router = APIRouter(prefix="/facturacion", tags=["Facturación"])
 
@@ -888,6 +889,7 @@ async def cartola_seller_preview(
 class ItemConfirmarCartolaSeller(BaseModel):
     seller_id: int
     monto: int
+    semana: int
     fecha: Optional[str] = None
     descripcion: Optional[str] = None
     nombre_extraido: Optional[str] = None
@@ -907,7 +909,7 @@ def cartola_seller_confirmar(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin_or_administracion),
 ):
-    """Graba pagos recibidos de sellers desde cartola. Guarda alias automáticamente."""
+    """Graba pagos recibidos de sellers desde cartola. Cada item puede tener su propia semana."""
 
     carga = CartolaCarga(
         tipo="seller", archivo_nombre="cartola_bancaria",
@@ -921,12 +923,13 @@ def cartola_seller_confirmar(
     db.flush()
 
     grabados = 0
+    alias_guardados = set()
     for item in body.items:
         if item.seller_id <= 0 or item.monto <= 0:
             continue
         db.add(PagoCartolaSeller(
             seller_id=item.seller_id,
-            semana=body.semana,
+            semana=item.semana,
             mes=body.mes,
             anio=body.anio,
             monto=item.monto,
@@ -937,13 +940,18 @@ def cartola_seller_confirmar(
         ))
         grabados += 1
 
-        if item.nombre_extraido:
+        if item.nombre_extraido and item.seller_id not in alias_guardados:
             seller = db.get(Seller, item.seller_id)
             if seller:
                 alias_nuevo = item.nombre_extraido.strip()
                 aliases_actuales = [a.lower() for a in (seller.aliases or [])]
                 if alias_nuevo.lower() != seller.nombre.lower() and alias_nuevo.lower() not in aliases_actuales:
                     seller.aliases = list(seller.aliases or []) + [alias_nuevo]
+                    alias_guardados.add(item.seller_id)
+
+    db.flush()
+    for pago_s in db.query(PagoCartolaSeller).filter(PagoCartolaSeller.carga_id == carga.id).all():
+        asiento_cobro_seller(db, pago_s)
 
     audit(db, "carga_cartola_seller", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
     db.commit()

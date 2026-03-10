@@ -20,6 +20,7 @@ import Consultas from './pages/admin/Consultas'
 import Logs from './pages/admin/Logs'
 import Calendario from './pages/admin/Calendario'
 import Facturacion from './pages/admin/Facturacion'
+import Finanzas from './pages/admin/Finanzas'
 import CPC from './pages/admin/CPC'
 import Usuarios from './pages/admin/Usuarios'
 import Asistente from './pages/admin/Asistente'
@@ -90,6 +91,7 @@ export default function App() {
         <Route path="logs" element={<Logs />} />
         <Route path="calendario" element={<Calendario />} />
         <Route path="facturacion" element={<Facturacion />} />
+        <Route path="finanzas" element={<Finanzas />} />
         <Route path="cpc" element={<CPC />} />
         <Route path="usuarios" element={<Usuarios />} />
         <Route path="asistente" element={<Asistente />} />

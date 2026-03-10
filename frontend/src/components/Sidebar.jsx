@@ -3,32 +3,45 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
 
-const adminLinks = [
+const adminMenu = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/sellers', icon: Users, label: 'Sellers', permiso: 'sellers' },
-  { to: '/admin/drivers', icon: Truck, label: 'Drivers', permiso: 'drivers' },
-  { to: '/admin/ingesta', icon: Upload, label: 'Ingesta', permiso: 'ingesta' },
-  { to: '/admin/envios', icon: FileText, label: 'Envíos', permiso: 'envios' },
-  { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
-  { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
-  { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
-  { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes Tarifarios', permiso: 'comunas' },
-  { to: '/admin/ajustes', icon: Settings, label: 'Ajustes', permiso: 'ajustes' },
-  { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
+  {
+    group: 'Configuración', icon: Settings, children: [
+      { to: '/admin/sellers', icon: Users, label: 'Sellers', permiso: 'sellers' },
+      { to: '/admin/drivers', icon: Truck, label: 'Drivers', permiso: 'drivers' },
+      { to: '/admin/pickups', icon: Store, label: 'Pickups', permiso: 'pickups' },
+      { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
+      { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes Tarifarios', permiso: 'comunas' },
+      { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
+      { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
+    ],
+  },
+  {
+    group: 'Envíos', icon: Package, children: [
+      { to: '/admin/ingesta', icon: Upload, label: 'Ingesta', permiso: 'ingesta' },
+      { to: '/admin/envios', icon: FileText, label: 'Envíos', permiso: 'envios' },
+      { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
+    ],
+  },
+  {
+    group: 'Finanzas', icon: Wallet, children: [
+      { to: '/admin/finanzas', icon: Wallet, label: 'Estado ECourier', permiso: 'finanzas' },
+      { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
+      { to: '/admin/facturacion', icon: Receipt, label: 'CPS Sellers', permiso: 'facturacion' },
+      { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
+      { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
+      { to: '/admin/ajustes', icon: Settings, label: 'Ajustes', permiso: 'ajustes' },
+    ],
+  },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
-  { to: '/admin/facturacion', icon: Receipt, label: 'Facturación', permiso: 'facturacion' },
-  { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
   { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
   { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
-  { to: '/admin/pickups', icon: Store, label: 'Pickups', permiso: 'pickups' },
-  { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
   { to: '/admin/auditoria', icon: Shield, label: 'Auditoría' },
-  { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
   { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
 ]
 
@@ -49,12 +62,78 @@ const driverLinks = [
   { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 
+function tieneAcceso(permisos, slug) {
+  return permisos.includes(`${slug}:ver`) || permisos.includes(`${slug}:editar`)
+}
+
+function filterMenu(menu, permisos) {
+  return menu.reduce((acc, item) => {
+    if (item.group) {
+      const filtered = item.children.filter(c => !c.permiso || tieneAcceso(permisos, c.permiso))
+      if (filtered.length > 0) acc.push({ ...item, children: filtered })
+    } else {
+      if (!item.permiso || tieneAcceso(permisos, item.permiso)) acc.push(item)
+    }
+    return acc
+  }, [])
+}
+
+function SidebarLink({ to, icon: Icon, label, collapsed, end = false }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `flex items-center gap-3 px-3 sm:px-4 py-2 sm:py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors touch-manipulation
+        ${isActive ? 'bg-primary-700 text-white' : 'text-primary-200 hover:bg-primary-800 hover:text-white'}`
+      }
+    >
+      <Icon size={18} className="shrink-0" />
+      {!collapsed && <span>{label}</span>}
+    </NavLink>
+  )
+}
+
+function SidebarGroup({ group, icon: Icon, children, collapsed, openGroups, toggleGroup }) {
+  const isOpen = openGroups[group] !== false
+  const location = useLocation()
+  const hasActive = children.some(c => location.pathname === c.to)
+
+  return (
+    <div>
+      <button
+        onClick={() => toggleGroup(group)}
+        className={`flex items-center gap-3 px-3 sm:px-4 py-2 sm:py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors w-full text-left touch-manipulation
+          ${hasActive ? 'text-white' : 'text-primary-300 hover:bg-primary-800 hover:text-white'}`}
+      >
+        <Icon size={18} className="shrink-0" />
+        {!collapsed && (
+          <>
+            <span className="flex-1">{group}</span>
+            <ChevronDown size={14} className={`transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`} />
+          </>
+        )}
+      </button>
+      {isOpen && !collapsed && (
+        <div className="ml-3 border-l border-primary-700 pl-1 mt-0.5 mb-1">
+          {children.map(child => (
+            <SidebarLink key={child.to} {...child} collapsed={collapsed} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Sidebar({ mobileOpen = false, onClose }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [pickupProfile, setPickupProfile] = useState(null)
+  const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true })
+
+  const toggleGroup = (name) => setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }))
 
   useEffect(() => {
     if (user?.rol === 'PICKUP') {
@@ -64,7 +143,6 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     }
   }, [user?.rol])
 
-  // Cerrar drawer al cambiar de ruta (móvil)
   useEffect(() => {
     if (onClose && mobileOpen) onClose()
   }, [location.pathname])
@@ -78,21 +156,18 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     { to: '/pickup/facturas', icon: Receipt, label: 'Mis Facturas' },
   ]
 
-  let links = adminLinks
+  let menu = adminMenu
+  let isFlat = false
   if (user?.rol === 'ADMINISTRACION') {
     const permisos = user?.permisos || []
-    links = adminLinks.filter(l => {
-      if (!l.permiso) return false          // sin slug = solo ADMIN (ej: Usuarios)
-      return permisos.includes(l.permiso)
-    })
-    // Dashboard siempre visible para ADMINISTRACION
-    if (!links.find(l => l.to === '/admin')) {
-      links = [adminLinks[0], ...links]
+    menu = filterMenu(adminMenu, permisos)
+    if (!menu.find(m => m.to === '/admin')) {
+      menu = [adminMenu[0], ...menu]
     }
   }
-  if (user?.rol === 'SELLER') links = sellerLinks
-  if (user?.rol === 'DRIVER') links = driverLinks
-  if (user?.rol === 'PICKUP') links = pickupLinks
+  if (user?.rol === 'SELLER') { menu = sellerLinks; isFlat = true }
+  if (user?.rol === 'DRIVER') { menu = driverLinks; isFlat = true }
+  if (user?.rol === 'PICKUP') { menu = pickupLinks; isFlat = true }
 
   const handleLogout = () => {
     logout()
@@ -127,21 +202,25 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         )}
       </div>
 
-      <nav className="flex-1 py-2 sm:py-4 space-y-0.5 sm:space-y-1 overflow-y-auto">
-        {links.map(({ to, icon: Icon, label }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/admin' || to === '/seller' || to === '/driver' || to === '/pickup'}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-2.5 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors touch-manipulation
-              ${isActive ? 'bg-primary-700 text-white' : 'text-primary-200 hover:bg-primary-800 hover:text-white'}`
-            }
-          >
-            <Icon size={18} className="shrink-0" />
-            {!collapsed && <span>{label}</span>}
-          </NavLink>
-        ))}
+      <nav className="flex-1 py-2 sm:py-4 space-y-0.5 overflow-y-auto">
+        {menu.map((item) =>
+          item.group ? (
+            <SidebarGroup
+              key={item.group}
+              {...item}
+              collapsed={collapsed}
+              openGroups={openGroups}
+              toggleGroup={toggleGroup}
+            />
+          ) : (
+            <SidebarLink
+              key={item.to}
+              {...item}
+              collapsed={collapsed}
+              end={item.to === '/admin' || item.to === '/seller' || item.to === '/driver' || item.to === '/pickup'}
+            />
+          )
+        )}
       </nav>
 
       <div className="border-t border-primary-800 p-3 sm:p-4">

@@ -42,28 +42,67 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
       })
       setPreview(data)
       setTodosSellers(data.sellers || [])
-      setItems(data.items.map(it => ({
+      setItems(data.items.map((it, i) => ({
         ...it,
+        _key: `orig-${i}`,
+        _origMonto: it.monto,
         incluir: it.seller_id != null,
         seller_id_sel: it.seller_id,
         seller_nombre_sel: it.seller_nombre,
+        semana_sel: semana,
       })))
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Error procesando cartola')
     } finally { setCargando(false) }
   }
 
-  const toggleItem = (idx) =>
-    setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
+  const toggleItem = (key) =>
+    setItems(prev => prev.map(it => it._key === key ? { ...it, incluir: !it.incluir } : it))
 
-  const cambiarSeller = (idx, sellerId) => {
+  const cambiarSeller = (key, sellerId) => {
     const s = todosSellers.find(x => x.id === Number(sellerId))
-    setItems(prev => prev.map((it, i) => i === idx ? {
+    setItems(prev => prev.map(it => it._key === key ? {
       ...it,
       seller_id_sel: s ? s.id : null,
       seller_nombre_sel: s ? s.nombre : null,
       incluir: s != null,
     } : it))
+  }
+
+  const cambiarSemana = (key, val) =>
+    setItems(prev => prev.map(it => it._key === key ? { ...it, semana_sel: Number(val) } : it))
+
+  const cambiarMonto = (key, val) =>
+    setItems(prev => prev.map(it => it._key === key ? { ...it, monto: Number(val) || 0 } : it))
+
+  const splitRow = (key) => {
+    setItems(prev => {
+      const idx = prev.findIndex(it => it._key === key)
+      if (idx === -1) return prev
+      const orig = prev[idx]
+      const half = Math.floor(orig.monto / 2)
+      const rest = orig.monto - half
+      const newItems = [...prev]
+      newItems[idx] = { ...orig, monto: half }
+      const splitItem = {
+        ...orig,
+        _key: `split-${Date.now()}-${Math.random()}`,
+        monto: rest,
+        seller_id_sel: null,
+        seller_nombre_sel: null,
+        incluir: false,
+      }
+      newItems.splice(idx + 1, 0, splitItem)
+      return newItems
+    })
+  }
+
+  const removeRow = (key) => {
+    setItems(prev => {
+      const item = prev.find(it => it._key === key)
+      if (!item || !item._key.startsWith('split-')) return prev
+      return prev.filter(it => it._key !== key)
+    })
   }
 
   const confirmar = async () => {
@@ -76,6 +115,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
         items: seleccionados.map(it => ({
           seller_id: it.seller_id_sel,
           monto: it.monto,
+          semana: it.semana_sel,
           fecha: it.fecha,
           descripcion: it.descripcion,
           nombre_extraido: it.nombre_extraido,
@@ -92,7 +132,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Cargar Cartola — Pagos Sellers</h2>
@@ -103,7 +143,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
 
         <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-end gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Semana que corresponden los pagos</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Semana por defecto</label>
             <select className="input-field text-sm w-32" value={semana} onChange={e => setSemana(Number(e.target.value))}>
               {SEMANAS_LIST.map(s => <option key={s} value={s}>Semana {s}</option>)}
             </select>
@@ -126,9 +166,9 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
           <>
             <div className="flex-1 overflow-auto px-6 py-2">
               <div className="mb-2 flex items-center gap-4 text-xs text-gray-500">
-                <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable (≥55%)</span>
-                <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto — verifica</span>
-                <span className="text-gray-400">· Al confirmar se guarda la homologación automáticamente.</span>
+                <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable</span>
+                <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto</span>
+                <span className="text-gray-400">· Usa "Dividir" para separar un pago en múltiples sellers o semanas.</span>
               </div>
               <table className="w-full text-sm">
                 <thead>
@@ -136,57 +176,73 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
                     <th className="py-2 w-8"></th>
                     <th className="py-2 text-left font-medium">Nombre en cartola</th>
                     <th className="py-2 text-left font-medium">Seller asignado</th>
-                    <th className="py-2 text-right font-medium">Monto</th>
+                    <th className="py-2 text-center font-medium w-20">Semana</th>
+                    <th className="py-2 text-right font-medium w-28">Monto</th>
                     <th className="py-2 text-right font-medium">Ya cobrado</th>
                     <th className="py-2 text-right font-medium">Liquidado</th>
+                    <th className="py-2 w-16"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((it, idx) => (
-                    <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
-                      <td className="py-1.5">
-                        <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)}
-                          className="w-3.5 h-3.5 accent-primary-600" />
-                      </td>
-                      <td className="py-1.5 max-w-[180px]">
-                        <span className="truncate block font-medium text-gray-800" title={it.descripcion}>
-                          {it.nombre_extraido}
-                        </span>
-                        <span className="text-gray-400 text-[10px]">{it.fecha}</span>
-                      </td>
-                      <td className="py-1.5 min-w-[200px]">
-                        <div className="flex items-center gap-1.5">
-                          {it.seller_id_sel
-                            ? (it.match_confiable && it.seller_id_sel === it.seller_id
-                              ? <Check size={11} className="text-green-600 flex-shrink-0" />
-                              : <AlertCircle size={11} className="text-amber-500 flex-shrink-0" />)
-                            : <AlertCircle size={11} className="text-red-400 flex-shrink-0" />
-                          }
-                          <select
-                            className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white flex-1 min-w-0"
-                            value={it.seller_id_sel ?? ''}
-                            onChange={e => cambiarSeller(idx, e.target.value)}
-                          >
-                            <option value="">— Sin asignar —</option>
-                            {todosSellers.map(s => (
-                              <option key={s.id} value={s.id}>{s.nombre}</option>
-                            ))}
+                  {items.map(it => {
+                    const isSplit = it._key.startsWith('split-')
+                    return (
+                      <tr key={it._key} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''} ${isSplit ? 'bg-blue-50/50' : ''}`}>
+                        <td className="py-1.5">
+                          <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(it._key)}
+                            className="w-3.5 h-3.5 accent-primary-600" />
+                        </td>
+                        <td className="py-1.5 max-w-[160px]">
+                          <span className="truncate block font-medium text-gray-800" title={it.descripcion}>
+                            {isSplit ? '↳ (dividido)' : it.nombre_extraido}
+                          </span>
+                          <span className="text-gray-400 text-[10px]">{it.fecha}</span>
+                        </td>
+                        <td className="py-1.5 min-w-[180px]">
+                          <div className="flex items-center gap-1.5">
+                            {it.seller_id_sel
+                              ? (it.match_confiable && it.seller_id_sel === it.seller_id
+                                ? <Check size={11} className="text-green-600 flex-shrink-0" />
+                                : <AlertCircle size={11} className="text-amber-500 flex-shrink-0" />)
+                              : <AlertCircle size={11} className="text-red-400 flex-shrink-0" />
+                            }
+                            <select
+                              className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white flex-1 min-w-0"
+                              value={it.seller_id_sel ?? ''}
+                              onChange={e => cambiarSeller(it._key, e.target.value)}
+                            >
+                              <option value="">— Sin asignar —</option>
+                              {todosSellers.map(s => (
+                                <option key={s.id} value={s.id}>{s.nombre}</option>
+                              ))}
+                            </select>
+                            {!isSplit && it.seller_id_sel === it.seller_id && it.score > 0 && (
+                              <span className="text-[10px] text-gray-400 flex-shrink-0">({Math.round(it.score * 100)}%)</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-1.5 text-center">
+                          <select className="text-xs border border-gray-200 rounded px-1 py-0.5 bg-white w-16"
+                            value={it.semana_sel} onChange={e => cambiarSemana(it._key, e.target.value)}>
+                            {SEMANAS_LIST.map(s => <option key={s} value={s}>S{s}</option>)}
                           </select>
-                          {it.seller_id_sel === it.seller_id && it.score > 0 && (
-                            <span className="text-[10px] text-gray-400 flex-shrink-0">
-                              ({Math.round(it.score * 100)}%)
-                            </span>
+                        </td>
+                        <td className="py-1.5 text-right">
+                          <input type="number" className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white w-24 text-right font-mono"
+                            value={it.monto} onChange={e => cambiarMonto(it._key, e.target.value)} min="0" />
+                        </td>
+                        <td className="py-1.5 text-right font-mono text-blue-600">{it.ya_cobrado > 0 ? fmt(it.ya_cobrado) : '—'}</td>
+                        <td className="py-1.5 text-right font-mono text-gray-600">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
+                        <td className="py-1.5 text-center">
+                          {!isSplit ? (
+                            <button onClick={() => splitRow(it._key)} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium" title="Dividir en 2 filas">Dividir</button>
+                          ) : (
+                            <button onClick={() => removeRow(it._key)} className="text-[10px] text-red-500 hover:text-red-700 font-medium" title="Eliminar fila dividida">Quitar</button>
                           )}
-                          {it.seller_id_sel !== it.seller_id && it.seller_id_sel && (
-                            <span className="text-[10px] text-blue-500 flex-shrink-0">editado</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-1.5 text-right font-mono">{fmt(it.monto)}</td>
-                      <td className="py-1.5 text-right font-mono text-blue-600">{it.ya_cobrado > 0 ? fmt(it.ya_cobrado) : '—'}</td>
-                      <td className="py-1.5 text-right font-mono text-gray-600">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

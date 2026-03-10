@@ -15,20 +15,32 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 # ---------------------------------------------------------------------------
-# Permisos disponibles por slug
-# ADMIN siempre tiene todos. ADMINISTRACION parte con PERMISOS_DEFAULT_ADMINISTRACION
+# Permisos disponibles por slug — formato  seccion:ver | seccion:editar
+# ADMIN siempre tiene todos.  ADMINISTRACION parte con PERMISOS_DEFAULT_ADMINISTRACION
 # y puede tener una lista custom guardada en AdminUser.permisos.
 # ---------------------------------------------------------------------------
-PERMISOS_DISPONIBLES: list[str] = [
-    "sellers", "drivers", "ingesta", "envios", "liquidacion",
-    "productos", "comunas", "ajustes", "retiros", "consultas",
-    "facturacion", "cpc", "logs", "calendario", "asistente", "pickups",
+SECCIONES: list[str] = [
+    "sellers", "drivers", "pickups", "ingesta", "envios", "retiros",
+    "finanzas", "liquidacion", "facturacion", "cpc", "cpp", "ajustes",
+    "productos", "comunas", "calendario",
+    "consultas", "logs", "asistente",
 ]
 
+_SECCIONES_SET = set(SECCIONES)
+
+PERMISOS_DISPONIBLES: list[str] = [
+    f"{s}:{nivel}" for s in SECCIONES for nivel in ("ver", "editar")
+]
+_PERMISOS_SET = set(PERMISOS_DISPONIBLES)
+
 PERMISOS_DEFAULT_ADMINISTRACION: list[str] = [
-    "envios", "liquidacion", "productos", "comunas", "ajustes",
-    "retiros", "consultas", "facturacion", "cpc", "logs", "calendario", "asistente",
-    "sellers", "drivers",
+    f"{s}:{nivel}"
+    for s in [
+        "envios", "liquidacion", "productos", "comunas", "ajustes",
+        "retiros", "consultas", "facturacion", "cpc", "logs", "calendario",
+        "asistente", "sellers", "drivers",
+    ]
+    for nivel in ("ver", "editar")
 ]
 
 
@@ -38,7 +50,16 @@ def resolver_permisos(user: AdminUser) -> list[str]:
         return PERMISOS_DISPONIBLES[:]
     # ADMINISTRACION: si tiene permisos custom en DB los usa, si no el default
     if user.permisos is not None:
-        return [p for p in user.permisos if p in PERMISOS_DISPONIBLES]
+        resultado: list[str] = []
+        for p in user.permisos:
+            if ":" in p:
+                if p in _PERMISOS_SET:
+                    resultado.append(p)
+            elif p in _SECCIONES_SET:
+                resultado.extend(
+                    f"{p}:{n}" for n in ("ver", "editar") if f"{p}:{n}" in _PERMISOS_SET
+                )
+        return resultado
     return PERMISOS_DEFAULT_ADMINISTRACION[:]
 
 

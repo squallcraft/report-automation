@@ -10,33 +10,35 @@ const ROL_COLORS = {
   ADMINISTRACION: 'bg-blue-100 text-blue-700',
 }
 
-// Permisos disponibles agrupados por categoría
+// Permisos disponibles agrupados por categoría (formato seccion:ver / seccion:editar)
 const GRUPOS_PERMISOS = [
   {
-    grupo: 'Datos',
+    grupo: 'Configuración',
+    items: [
+      { slug: 'sellers', label: 'Sellers' },
+      { slug: 'drivers', label: 'Drivers' },
+      { slug: 'pickups', label: 'Pickups' },
+      { slug: 'productos', label: 'Productos Extra' },
+      { slug: 'comunas', label: 'Comunas / Tarifas' },
+    ],
+  },
+  {
+    grupo: 'Envíos',
     items: [
       { slug: 'ingesta', label: 'Ingesta' },
       { slug: 'envios', label: 'Envíos' },
-      { slug: 'sellers', label: 'Sellers' },
-      { slug: 'drivers', label: 'Drivers' },
       { slug: 'retiros', label: 'Retiros' },
     ],
   },
   {
-    grupo: 'Operación',
+    grupo: 'Finanzas',
     items: [
+      { slug: 'finanzas', label: 'Estado ECourier' },
       { slug: 'liquidacion', label: 'Liquidación' },
-      { slug: 'facturacion', label: 'Facturación' },
+      { slug: 'facturacion', label: 'CPS Sellers' },
       { slug: 'cpc', label: 'CPC Drivers' },
+      { slug: 'cpp', label: 'CPP Pickups' },
       { slug: 'ajustes', label: 'Ajustes' },
-    ],
-  },
-  {
-    grupo: 'Configuración',
-    items: [
-      { slug: 'productos', label: 'Productos Extra' },
-      { slug: 'comunas', label: 'Comunas' },
-      { slug: 'calendario', label: 'Calendario' },
     ],
   },
   {
@@ -44,12 +46,16 @@ const GRUPOS_PERMISOS = [
     items: [
       { slug: 'consultas', label: 'Consultas' },
       { slug: 'logs', label: 'Logs' },
+      { slug: 'calendario', label: 'Calendario' },
       { slug: 'asistente', label: 'Asistente IA' },
     ],
   },
 ]
 
-const TODOS_LOS_SLUGS = GRUPOS_PERMISOS.flatMap(g => g.items.map(i => i.slug))
+const TODOS_LOS_SLUGS = GRUPOS_PERMISOS.flatMap(g =>
+  g.items.flatMap(i => [`${i.slug}:ver`, `${i.slug}:editar`])
+)
+const TOTAL_SECCIONES = GRUPOS_PERMISOS.reduce((n, g) => n + g.items.length, 0)
 
 export default function Usuarios() {
   const [tab, setTab] = useState('admin') // 'admin' | 'sellers' | 'drivers'
@@ -156,23 +162,42 @@ export default function Usuarios() {
     }
   }
 
-  const togglePermiso = (slug) => {
-    setPermisosSel(prev =>
-      prev.includes(slug) ? prev.filter(p => p !== slug) : [...prev, slug]
-    )
+  const togglePermiso = (slug, nivel) => {
+    const key = `${slug}:${nivel}`
+    setPermisosSel(prev => {
+      if (prev.includes(key)) {
+        if (nivel === 'ver') return prev.filter(p => p !== `${slug}:ver` && p !== `${slug}:editar`)
+        return prev.filter(p => p !== key)
+      }
+      if (nivel === 'editar') return [...new Set([...prev, `${slug}:ver`, `${slug}:editar`])]
+      return [...prev, key]
+    })
   }
 
-  const toggleGrupo = (items) => {
-    const slugs = items.map(i => i.slug)
-    const todosActivos = slugs.every(s => permisosSel.includes(s))
-    if (todosActivos) {
-      setPermisosSel(prev => prev.filter(p => !slugs.includes(p)))
-    } else {
-      setPermisosSel(prev => [...new Set([...prev, ...slugs])])
-    }
+  const toggleGrupoNivel = (items, nivel) => {
+    const keys = items.map(i => `${i.slug}:${nivel}`)
+    const todosActivos = keys.every(k => permisosSel.includes(k))
+    setPermisosSel(prev => {
+      if (todosActivos) {
+        if (nivel === 'ver') {
+          const editarKeys = items.map(i => `${i.slug}:editar`)
+          return prev.filter(p => !keys.includes(p) && !editarKeys.includes(p))
+        }
+        return prev.filter(p => !keys.includes(p))
+      }
+      if (nivel === 'editar') {
+        const verKeys = items.map(i => `${i.slug}:ver`)
+        return [...new Set([...prev, ...keys, ...verKeys])]
+      }
+      return [...new Set([...prev, ...keys])]
+    })
   }
 
   const selectAll = () => setPermisosSel([...TODOS_LOS_SLUGS])
+  const selectAllVer = () => {
+    const verSlugs = GRUPOS_PERMISOS.flatMap(g => g.items.map(i => `${i.slug}:ver`))
+    setPermisosSel([...verSlugs])
+  }
   const clearAll = () => setPermisosSel([])
 
   const handleDelete = async (u) => {
@@ -302,18 +327,33 @@ export default function Usuarios() {
                       <td className="px-4 py-3">
                         {u.rol === 'ADMIN' ? (
                           <span className="text-xs text-gray-400 italic">Acceso total</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1 max-w-xs">
-                            {(u.permisos_efectivos || []).slice(0, 5).map(p => (
-                              <span key={p} className="text-[10px] px-1.5 py-0.5 bg-primary-50 text-primary-700 rounded border border-primary-100">
-                                {p}
-                              </span>
-                            ))}
-                            {(u.permisos_efectivos || []).length > 5 && (
-                              <span className="text-[10px] text-gray-400">+{u.permisos_efectivos.length - 5} más</span>
-                            )}
-                          </div>
-                        )}
+                        ) : (() => {
+                          const perms = u.permisos_efectivos || []
+                          const bases = [...new Set(perms.map(p => p.split(':')[0]))]
+                          return (
+                            <div className="flex flex-wrap gap-1 max-w-sm">
+                              {bases.slice(0, 6).map(b => {
+                                const hasEditar = perms.includes(`${b}:editar`)
+                                return (
+                                  <span
+                                    key={b}
+                                    className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                      hasEditar
+                                        ? 'bg-primary-50 text-primary-700 border-primary-100'
+                                        : 'bg-gray-50 text-gray-500 border-gray-200 italic'
+                                    }`}
+                                    title={hasEditar ? 'Lectura y edición' : 'Solo lectura'}
+                                  >
+                                    {b}
+                                  </span>
+                                )
+                              })}
+                              {bases.length > 6 && (
+                                <span className="text-[10px] text-gray-400">+{bases.length - 6}</span>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`text-xs px-2 py-0.5 rounded ${u.activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -477,59 +517,93 @@ export default function Usuarios() {
         open={showPermisos}
         title={`Permisos — ${editingPermisos?.username || ''}`}
         onClose={() => setShowPermisos(false)}
+        wide
       >
         <div className="space-y-4">
           <p className="text-sm text-gray-500">
-            Activa o desactiva las secciones a las que este usuario puede acceder.
+            Configura el nivel de acceso por sección: <strong>Lectura</strong> permite visualizar los datos, <strong>Edición</strong> permite crear, modificar y eliminar.
           </p>
 
           {/* Acciones rápidas */}
           <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
             <button type="button" onClick={selectAll} className="text-xs text-primary-600 hover:text-primary-800 font-medium">
-              Seleccionar todo
+              Acceso total
+            </button>
+            <span className="text-gray-300">|</span>
+            <button type="button" onClick={selectAllVer} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+              Solo lectura
             </button>
             <span className="text-gray-300">|</span>
             <button type="button" onClick={clearAll} className="text-xs text-gray-500 hover:text-gray-700">
               Quitar todo
             </button>
             <span className="ml-auto text-xs text-gray-400">
-              {permisosSel.length} / {TODOS_LOS_SLUGS.length} activos
+              {permisosSel.filter(p => p.endsWith(':ver')).length} lectura · {permisosSel.filter(p => p.endsWith(':editar')).length} edición
             </span>
           </div>
 
+          {/* Headers */}
+          <div className="grid grid-cols-[1fr_3.5rem_3.5rem] gap-1 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            <span />
+            <span className="text-center">Leer</span>
+            <span className="text-center">Editar</span>
+          </div>
+
           {/* Checkboxes agrupados */}
-          <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
+          <div className="space-y-3 max-h-[26rem] overflow-y-auto pr-1">
             {GRUPOS_PERMISOS.map(({ grupo, items }) => {
-              const todosActivos = items.every(i => permisosSel.includes(i.slug))
-              const algunoActivo = items.some(i => permisosSel.includes(i.slug))
+              const verKeys = items.map(i => `${i.slug}:ver`)
+              const editarKeys = items.map(i => `${i.slug}:editar`)
+              const todosVer = verKeys.every(k => permisosSel.includes(k))
+              const algunoVer = verKeys.some(k => permisosSel.includes(k))
+              const todosEditar = editarKeys.every(k => permisosSel.includes(k))
+              const algunoEditar = editarKeys.some(k => permisosSel.includes(k))
               return (
                 <div key={grupo}>
-                  <button
-                    type="button"
-                    onClick={() => toggleGrupo(items)}
-                    className="flex items-center gap-2 mb-2 w-full text-left"
-                  >
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors
-                      ${todosActivos ? 'bg-primary-600 border-primary-600' : algunoActivo ? 'bg-primary-100 border-primary-400' : 'border-gray-300'}`}
-                    >
-                      {todosActivos && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                      {algunoActivo && !todosActivos && <div className="w-2 h-0.5 bg-primary-500 rounded" />}
-                    </div>
+                  {/* Group header */}
+                  <div className="grid grid-cols-[1fr_3.5rem_3.5rem] gap-1 items-center mb-1.5">
                     <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{grupo}</span>
-                  </button>
-                  <div className="grid grid-cols-2 gap-y-1.5 gap-x-4 ml-6">
-                    {items.map(({ slug, label }) => (
-                      <label key={slug} className="flex items-center gap-2 cursor-pointer group">
+                    <div className="flex justify-center">
+                      <button type="button" onClick={() => toggleGrupoNivel(items, 'ver')}>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors
+                          ${todosVer ? 'bg-blue-500 border-blue-500' : algunoVer ? 'bg-blue-100 border-blue-400' : 'border-gray-300'}`}>
+                          {todosVer && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          {algunoVer && !todosVer && <div className="w-2 h-0.5 bg-blue-400 rounded" />}
+                        </div>
+                      </button>
+                    </div>
+                    <div className="flex justify-center">
+                      <button type="button" onClick={() => toggleGrupoNivel(items, 'editar')}>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors
+                          ${todosEditar ? 'bg-amber-500 border-amber-500' : algunoEditar ? 'bg-amber-100 border-amber-400' : 'border-gray-300'}`}>
+                          {todosEditar && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          {algunoEditar && !todosEditar && <div className="w-2 h-0.5 bg-amber-400 rounded" />}
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                  {/* Items */}
+                  {items.map(({ slug, label }) => (
+                    <div key={slug} className="grid grid-cols-[1fr_3.5rem_3.5rem] gap-1 items-center py-1 ml-5">
+                      <span className="text-sm text-gray-700">{label}</span>
+                      <div className="flex justify-center">
                         <input
                           type="checkbox"
-                          checked={permisosSel.includes(slug)}
-                          onChange={() => togglePermiso(slug)}
-                          className="rounded text-primary-600 focus:ring-primary-500 w-4 h-4"
+                          checked={permisosSel.includes(`${slug}:ver`)}
+                          onChange={() => togglePermiso(slug, 'ver')}
+                          className="rounded text-blue-500 focus:ring-blue-400 w-4 h-4 cursor-pointer"
                         />
-                        <span className="text-sm text-gray-700 group-hover:text-gray-900">{label}</span>
-                      </label>
-                    ))}
-                  </div>
+                      </div>
+                      <div className="flex justify-center">
+                        <input
+                          type="checkbox"
+                          checked={permisosSel.includes(`${slug}:editar`)}
+                          onChange={() => togglePermiso(slug, 'editar')}
+                          className="rounded text-amber-500 focus:ring-amber-400 w-4 h-4 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )
             })}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, AlertTriangle, MessageSquare } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -160,12 +160,20 @@ export default function Dashboard() {
             <StatsCard icon={Users} label="Sellers con Envíos" value={stats.total_sellers} color="primary" sub="En el período" />
             <StatsCard icon={Truck} label="Drivers con Envíos" value={stats.total_drivers} color="green" sub="En el período" />
             <StatsCard icon={Package} label="Envíos" value={stats.total_envios_mes.toLocaleString()} color="purple" />
-            <StatsCard icon={TrendingUp} label="Margen" value={fmt(stats.margen_mes)} color="green" />
+            <StatsCard icon={TrendingUp} label="Margen Bruto" value={fmt(stats.margen_mes)} color="green" sub="Ingresos - Costos directos" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
             <StatsCard icon={DollarSign} label="Total Cobrado" value={fmt(stats.total_cobrado_mes)} color="primary" sub="Cobros a sellers" />
             <StatsCard icon={DollarSign} label="Total Pagado" value={fmt(stats.total_pagado_mes)} color="amber" sub="Pagos a drivers" />
+            <StatsCard icon={Wallet} label="Gastos Operacionales" value={fmt(stats.total_gastos_operacionales)} color="red" sub="Sueldos, servidores, etc." />
+            <StatsCard
+              icon={TrendingDown}
+              label="Margen Neto"
+              value={fmt(stats.margen_neto)}
+              color={stats.margen_neto >= 0 ? 'green' : 'red'}
+              sub="Margen bruto - gastos op."
+            />
             <StatsCard
               icon={AlertTriangle}
               label="Sin Homologar"

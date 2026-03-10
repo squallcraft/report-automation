@@ -541,3 +541,65 @@ class DashboardStats(BaseModel):
     margen_mes: int
     envios_sin_homologar: int
     consultas_pendientes: int
+    total_gastos_operacionales: int = 0
+    margen_neto: int = 0
+
+
+# ── Finanzas ──
+
+class CategoriaFinancieraBase(BaseModel):
+    nombre: str
+    tipo: str
+    parent_id: Optional[int] = None
+    activo: bool = True
+    orden: int = 0
+
+class CategoriaFinancieraCreate(CategoriaFinancieraBase):
+    pass
+
+class CategoriaFinancieraOut(CategoriaFinancieraBase):
+    id: int
+    hijos: List["CategoriaFinancieraOut"] = []
+    model_config = {"from_attributes": True}
+
+class MovimientoFinancieroBase(BaseModel):
+    categoria_id: int
+    nombre: str
+    descripcion: Optional[str] = None
+    monto: int
+    moneda: str = "CLP"
+    mes: int
+    anio: int
+    fecha_vencimiento: Optional[date] = None
+    fecha_pago: Optional[date] = None
+    estado: str = "PENDIENTE"
+    recurrente: bool = False
+    proveedor: Optional[str] = None
+    notas: Optional[str] = None
+
+class MovimientoFinancieroCreate(MovimientoFinancieroBase):
+    pass
+
+class MovimientoFinancieroUpdate(BaseModel):
+    categoria_id: Optional[int] = None
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    monto: Optional[int] = None
+    moneda: Optional[str] = None
+    mes: Optional[int] = None
+    anio: Optional[int] = None
+    fecha_vencimiento: Optional[date] = None
+    fecha_pago: Optional[date] = None
+    estado: Optional[str] = None
+    recurrente: Optional[bool] = None
+    proveedor: Optional[str] = None
+    notas: Optional[str] = None
+
+class MovimientoFinancieroOut(MovimientoFinancieroBase):
+    id: int
+    categoria_nombre: Optional[str] = None
+    categoria_tipo: Optional[str] = None
+    documento_nombre: Optional[str] = None
+    tiene_documento: bool = False
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}

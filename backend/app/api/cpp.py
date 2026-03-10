@@ -24,6 +24,7 @@ from app.models import (
     CartolaCarga, EstadoPagoEnum, FacturaPickup, EstadoFacturaPickupEnum,
 )
 from app.services.audit import registrar as audit
+from app.services.contabilidad import asiento_pago_pickup
 
 EMISOR_RUT = "77512163"
 EMISOR_DV = "7"
@@ -599,6 +600,10 @@ def cartola_pickup_confirmar(
                 aliases_actuales = [a.lower() for a in (pickup.aliases or [])]
                 if alias_nuevo.lower() != pickup.nombre.lower() and alias_nuevo.lower() not in aliases_actuales:
                     pickup.aliases = list(pickup.aliases or []) + [alias_nuevo]
+
+    db.flush()
+    for pago_p in db.query(PagoCartolaPickup).filter(PagoCartolaPickup.carga_id == carga.id).all():
+        asiento_pago_pickup(db, pago_p)
 
     audit(db, "carga_cartola_pickup", usuario=current_user, request=request,
           entidad="cartola_carga", entidad_id=carga.id,
