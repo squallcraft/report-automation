@@ -398,6 +398,7 @@ class PagoSemanaSeller(Base):
     monto_override = Column(Integer, nullable=True)
     estado = Column(String, nullable=False, default=EstadoPagoEnum.PENDIENTE.value)
     nota = Column(Text, nullable=True)
+    fecha_pago = Column(Date, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -420,6 +421,7 @@ class PagoSemanaDriver(Base):
     monto_override = Column(Integer, nullable=True)
     estado = Column(String, nullable=False, default=EstadoPagoEnum.PENDIENTE.value)
     nota = Column(Text, nullable=True)
+    fecha_pago = Column(Date, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

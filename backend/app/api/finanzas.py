@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import date, datetime
+from calendar import monthrange
 import os
 import uuid
 import shutil
@@ -244,24 +245,32 @@ def dashboard_consolidado(
     chart_data = [{"semana": w, "ingresos": semanas[w]["ingreso"], "egresos": semanas[w]["costo"]}
                   for w in sorted(semanas.keys())]
 
-    # Flujo de caja real (pagos efectivos)
+    # Flujo de caja real: basado en fecha_pago (cuándo se movió el dinero)
+    _, last_day = monthrange(anio, mes)
+    fecha_inicio = date(anio, mes, 1)
+    fecha_fin = date(anio, mes, last_day)
+
+    from sqlalchemy import cast, Date as SQLDate
     cobros_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaSeller.monto), 0)).filter(
-        PagoCartolaSeller.mes == mes, PagoCartolaSeller.anio == anio,
+        cast(PagoCartolaSeller.fecha_pago, SQLDate) >= fecha_inicio,
+        cast(PagoCartolaSeller.fecha_pago, SQLDate) <= fecha_fin,
     ).scalar()
     pagos_drivers_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
-        PagoCartola.mes == mes, PagoCartola.anio == anio,
+        cast(PagoCartola.fecha_pago, SQLDate) >= fecha_inicio,
+        cast(PagoCartola.fecha_pago, SQLDate) <= fecha_fin,
     ).scalar()
     pagos_pickups_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)).filter(
-        PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
+        cast(PagoCartolaPickup.fecha_pago, SQLDate) >= fecha_inicio,
+        cast(PagoCartolaPickup.fecha_pago, SQLDate) <= fecha_fin,
     ).scalar()
     movs_pagados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
-        MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
+        MovimientoFinanciero.fecha_pago >= fecha_inicio,
+        MovimientoFinanciero.fecha_pago <= fecha_fin,
         CategoriaFinanciera.tipo == "EGRESO",
     ).scalar()
     movs_cobrados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
-        MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
+        MovimientoFinanciero.fecha_pago >= fecha_inicio,
+        MovimientoFinanciero.fecha_pago <= fecha_fin,
         CategoriaFinanciera.tipo == "INGRESO",
     ).scalar()
 

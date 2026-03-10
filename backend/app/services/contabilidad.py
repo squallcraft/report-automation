@@ -29,13 +29,23 @@ def _parse_fecha(valor: str) -> date:
 
 # Códigos del plan de cuentas (deben coincidir con el seed)
 CUENTA_BANCO = "1.1"
+CUENTA_BANCO_CHILE = "1.1.1"
+CUENTA_BANCO_SANTANDER = "1.1.2"
 CUENTA_CXC_SELLERS = "1.2"
+CUENTA_INVERSIONES = "1.4"
+CUENTA_FONDOS_MUTUOS = "1.4.1"
+CUENTA_DEPOSITOS_PLAZO = "1.4.2"
 CUENTA_CXP_DRIVERS = "2.1"
 CUENTA_CXP_PICKUPS = "2.2"
 CUENTA_CXP_PROVEEDORES = "2.3"
+CUENTA_TC_BCHILE = "2.6"
+CUENTA_TC_SANTANDER = "2.7"
+CUENTA_LINEA_BCHILE = "2.8"
+CUENTA_LINEA_SANTANDER = "2.9"
 CUENTA_INGRESO_OP = "4.1"
 CUENTA_INGRESO_SOFTWARE = "4.2"
 CUENTA_OTROS_INGRESOS = "4.3"
+CUENTA_INGRESO_FINANCIERO = "4.4"
 CUENTA_COSTO_DRIVERS = "5.1"
 CUENTA_COSTO_PICKUPS = "5.2"
 CUENTA_REMUNERACIONES = "5.3"
@@ -45,6 +55,7 @@ CUENTA_FREELANCERS = "5.6"
 CUENTA_MARKETING = "5.7"
 CUENTA_IMPUESTOS = "5.8"
 CUENTA_OTROS_GASTOS = "5.9"
+CUENTA_INTERESES = "5.10"
 
 # Mapeo CategoriaFinanciera.nombre → código cuenta contable
 _CAT_TO_CUENTA = {
@@ -159,7 +170,7 @@ def asiento_pago_driver(db: Session, pago: PagoSemanaDriver, es_backfill=False):
     monto = pago.monto_override if pago.monto_override is not None else pago.monto_neto
     if not monto or monto <= 0:
         return None
-    fecha = pago.updated_at.date() if pago.updated_at else date.today()
+    fecha = pago.fecha_pago or (pago.updated_at.date() if pago.updated_at else date.today())
     driver = db.get(Driver, pago.driver_id)
     nombre = driver.nombre if driver else f"Driver {pago.driver_id}"
     return crear_asiento(db, fecha,

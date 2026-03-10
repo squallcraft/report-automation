@@ -357,6 +357,7 @@ export default function Facturacion() {
   }
 
   const updateEstado = async (sellerId, semana, estado) => {
+    const fechaPago = estado === 'PAGADO' ? new Date().toISOString().split('T')[0] : null
     setData(prev => {
       if (!prev) return prev
       return {
@@ -367,17 +368,27 @@ export default function Facturacion() {
             ...s,
             semanas: {
               ...s.semanas,
-              [String(semana)]: { ...s.semanas[String(semana)], estado },
+              [String(semana)]: { ...s.semanas[String(semana)], estado, fecha_pago: fechaPago },
             },
           }
         }),
       }
     })
     try {
-      await api.put(`/facturacion/pago-semana/${sellerId}`, { estado }, { params: { semana, mes, anio } })
+      await api.put(`/facturacion/pago-semana/${sellerId}`, { estado, fecha_pago: fechaPago }, { params: { semana, mes, anio } })
     } catch {
       toast.error('Error actualizando estado')
       recargar()
+    }
+  }
+
+  const updateFechaPago = async (pagoId, fecha) => {
+    if (!pagoId || !fecha) return
+    try {
+      await api.patch(`/facturacion/pago-semana-seller/${pagoId}/fecha-pago`, { fecha_pago: fecha })
+      recargar()
+    } catch {
+      toast.error('Error actualizando fecha de pago')
     }
   }
 
@@ -749,6 +760,14 @@ export default function Facturacion() {
                                 <option value="PAGADO">Pagado</option>
                                 <option value="INCOMPLETO">Incompleto</option>
                               </select>
+                            )}
+                            {semData.estado === 'PAGADO' && (
+                              <input
+                                type="date"
+                                className="text-[10px] px-1 py-0.5 border border-gray-200 rounded w-[105px] text-gray-600"
+                                value={semData.fecha_pago || ''}
+                                onChange={e => updateFechaPago(semData.pago_id, e.target.value)}
+                              />
                             )}
                           </div>
                         </td>

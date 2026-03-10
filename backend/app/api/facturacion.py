@@ -35,6 +35,7 @@ class PagoSemanaUpdate(BaseModel):
     estado: Optional[str] = None
     monto_override: Optional[int] = None
     nota: Optional[str] = None
+    fecha_pago: Optional[str] = None
 
 
 class FacturaMensualOut(BaseModel):
@@ -149,6 +150,8 @@ def tabla_facturacion(
                 "estado": estado,
                 "editable": editable or is_feb_override,
                 "nota": pago.nota if pago else None,
+                "fecha_pago": pago.fecha_pago.isoformat() if pago and pago.fecha_pago else None,
+                "pago_id": pago.id if pago else None,
             }
             subtotal += monto
 
@@ -198,6 +201,7 @@ def actualizar_pago_semana(
         estado=body.estado,
         monto_override=body.monto_override,
         nota=body.nota,
+        fecha_pago=body.fecha_pago,
     )
     audit(db, "pago_manual_seller", usuario=current_user, request=request, entidad="pago_semana_seller", entidad_id=seller_id, metadata={"nombre": seller.nombre, "semana": semana, "mes": mes, "anio": anio, "estado": body.estado, "monto": body.monto_override})
     db.commit()
@@ -226,12 +230,42 @@ def actualizar_pagos_batch(
             estado=item.get("estado"),
             monto_override=item.get("monto_override"),
             nota=item.get("nota"),
+            fecha_pago=item.get("fecha_pago"),
         )
         updated += 1
 
     audit(db, "pago_batch_seller", usuario=current_user, request=request, entidad="pago_semana_seller", metadata={"mes": mes, "anio": anio, "cambios": len(body)})
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+@router.patch("/pago-semana-seller/{pago_id}/fecha-pago")
+def actualizar_fecha_pago_seller(
+    pago_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Actualiza la fecha_pago de un PagoSemanaSeller existente."""
+    pago = db.get(PagoSemanaSeller, pago_id)
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+    nueva_fecha = body.get("fecha_pago")
+    if not nueva_fecha:
+        raise HTTPException(status_code=400, detail="fecha_pago requerida")
+    from datetime import date as _date
+    pago.fecha_pago = _date.fromisoformat(nueva_fecha)
+    cartola_manual = db.query(PagoCartolaSeller).filter(
+        PagoCartolaSeller.seller_id == pago.seller_id,
+        PagoCartolaSeller.semana == pago.semana,
+        PagoCartolaSeller.mes == pago.mes,
+        PagoCartolaSeller.anio == pago.anio,
+        PagoCartolaSeller.fuente == "manual",
+    ).first()
+    if cartola_manual:
+        cartola_manual.fecha_pago = nueva_fecha
+    db.commit()
+    return {"ok": True, "fecha_pago": pago.fecha_pago.isoformat()}
 
 
 # ── Factura mensual ──
@@ -644,6 +678,7 @@ def _upsert_pago_semana_seller(
     estado: str = None,
     nota: str = None,
     monto_override: int = None,
+    fecha_pago: str = None,
 ):
     """Crea o actualiza PagoSemanaSeller.
     Si estado cambia a PAGADO → crea registro manual en PagoCartolaSeller.
@@ -675,7 +710,15 @@ def _upsert_pago_semana_seller(
         pago.monto_override = monto_override
     if nota is not None:
         pago.nota = nota
+    if fecha_pago is not None:
+        pago.fecha_pago = date.fromisoformat(fecha_pago) if isinstance(fecha_pago, str) else fecha_pago
+    elif estado == EstadoPagoEnum.PAGADO.value and not pago.fecha_pago:
+        pago.fecha_pago = date.today()
+    if estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
+        pago.fecha_pago = None
     pago.monto_neto = monto_sistema
+
+    fecha_pago_str = (pago.fecha_pago.isoformat() if pago.fecha_pago else date.today().isoformat())
 
     # Gestión automática de PagoCartolaSeller
     if estado is not None and estado != estado_anterior:
@@ -692,7 +735,7 @@ def _upsert_pago_semana_seller(
                     seller_id=seller_id,
                     semana=semana, mes=mes, anio=anio,
                     monto=monto_sistema,
-                    fecha_pago=date.today().isoformat(),
+                    fecha_pago=fecha_pago_str,
                     descripcion="Pago recibido manual por administrador",
                     fuente="manual",
                 ))
@@ -939,6 +982,18 @@ def cartola_seller_confirmar(
             carga_id=carga.id,
         ))
         grabados += 1
+
+        # Propagar fecha_pago al PagoSemanaSeller
+        from app.models import PagoSemanaSeller
+        pago_sem = db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == item.seller_id,
+            PagoSemanaSeller.semana == item.semana,
+            PagoSemanaSeller.mes == body.mes,
+            PagoSemanaSeller.anio == body.anio,
+        ).first()
+        if pago_sem and item.fecha:
+            from datetime import date as _date
+            pago_sem.fecha_pago = _date.fromisoformat(item.fecha) if isinstance(item.fecha, str) else item.fecha
 
         if item.nombre_extraido and item.seller_id not in alias_guardados:
             seller = db.get(Seller, item.seller_id)

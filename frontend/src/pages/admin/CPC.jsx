@@ -401,7 +401,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 // ---------------------------------------------------------------------------
 // Fila de conductor en la tabla
 // ---------------------------------------------------------------------------
-function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
+function DriverRow({ d, semanas, pagados, onUpdateEstado, onUpdateFechaPago }) {
   const [expandido, setExpandido] = useState(false)
   const dPagados = pagados[String(d.driver_id)] || {}
   const esJefe = d.es_jefe_flota
@@ -458,6 +458,14 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado }) {
                       <option value="PAGADO">Pagado</option>
                       <option value="INCOMPLETO">Incompleto</option>
                     </select>
+                  )}
+                  {semData.estado === 'PAGADO' && (
+                    <input
+                      type="date"
+                      className="text-[10px] px-1 py-0.5 border border-gray-200 rounded w-[105px] text-gray-600"
+                      value={semData.fecha_pago || ''}
+                      onChange={e => onUpdateFechaPago(semData.pago_id, e.target.value)}
+                    />
                   )}
                 </div>
               </td>
@@ -549,7 +557,7 @@ export default function CPC() {
   }, [data, filterText])
 
   const updateEstado = async (driverId, semana, estado) => {
-    // Actualizar optimistamente en local antes de esperar la API
+    const fechaPago = estado === 'PAGADO' ? new Date().toISOString().split('T')[0] : null
     setData(prev => {
       if (!prev) return prev
       return {
@@ -560,17 +568,27 @@ export default function CPC() {
             ...d,
             semanas: {
               ...d.semanas,
-              [String(semana)]: { ...d.semanas[String(semana)], estado },
+              [String(semana)]: { ...d.semanas[String(semana)], estado, fecha_pago: fechaPago },
             },
           }
         }),
       }
     })
     try {
-      await api.put(`/cpc/pago-semana/${driverId}`, { estado }, { params: { semana, mes, anio } })
+      await api.put(`/cpc/pago-semana/${driverId}`, { estado, fecha_pago: fechaPago }, { params: { semana, mes, anio } })
     } catch {
       toast.error('Error actualizando estado')
-      cargar(true) // revertir si falla
+      cargar(true)
+    }
+  }
+
+  const updateFechaPago = async (pagoId, fecha) => {
+    if (!pagoId || !fecha) return
+    try {
+      await api.patch(`/cpc/pago-semana/${pagoId}/fecha-pago`, { fecha_pago: fecha })
+      cargar(true)
+    } catch {
+      toast.error('Error actualizando fecha de pago')
     }
   }
 
@@ -742,6 +760,7 @@ export default function CPC() {
                     semanas={semanas}
                     pagados={pagados}
                     onUpdateEstado={updateEstado}
+                    onUpdateFechaPago={updateFechaPago}
                   />
               ))}
             </tbody>

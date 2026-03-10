@@ -174,6 +174,16 @@ with engine.connect() as conn:
         if "documento_path" not in mf_cols:
             safe_exec("ALTER TABLE movimientos_financieros ADD COLUMN documento_path TEXT")
 
+    # ── Migración: fecha_pago en pagos_semana_sellers y pagos_semana_drivers ──
+    if "pagos_semana_sellers" in insp.get_table_names():
+        ps_cols = [c["name"] for c in insp.get_columns("pagos_semana_sellers")]
+        if "fecha_pago" not in ps_cols:
+            safe_exec("ALTER TABLE pagos_semana_sellers ADD COLUMN fecha_pago DATE")
+    if "pagos_semana_drivers" in insp.get_table_names():
+        pd_cols = [c["name"] for c in insp.get_columns("pagos_semana_drivers")]
+        if "fecha_pago" not in pd_cols:
+            safe_exec("ALTER TABLE pagos_semana_drivers ADD COLUMN fecha_pago DATE")
+
     # ── Migración: tablas CPP (pagos pickups) y facturas pickups se crean via create_all ──
 
     # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────
@@ -334,6 +344,46 @@ def _seed_cuentas_contables():
         db.close()
 
 _seed_cuentas_contables()
+
+
+# ── Migración: ampliar plan de cuentas (bancos, TC, líneas crédito, inversiones) ──
+def _ampliar_plan_cuentas():
+    db = SessionLocal()
+    try:
+        nuevas = [
+            ("1.1.1", "Banco de Chile CTA CTE", "ACTIVO", "1.0"),
+            ("1.1.2", "Santander CTA CTE", "ACTIVO", "1.0"),
+            ("1.4", "Inversiones Financieras", "ACTIVO", "1.0"),
+            ("1.4.1", "Fondos Mutuos", "ACTIVO", "1.4"),
+            ("1.4.2", "Depósitos a Plazo", "ACTIVO", "1.4"),
+            ("2.6", "Tarjeta Crédito Banco de Chile", "PASIVO", "2.0"),
+            ("2.7", "Tarjeta Crédito Santander", "PASIVO", "2.0"),
+            ("2.8", "Línea Crédito Banco de Chile", "PASIVO", "2.0"),
+            ("2.9", "Línea Crédito Santander", "PASIVO", "2.0"),
+            ("4.4", "Ingresos Financieros", "INGRESO", "4.0"),
+            ("5.10", "Intereses y Comisiones", "GASTO", "5.0"),
+        ]
+        for codigo, nombre, tipo, parent_codigo in nuevas:
+            exists = db.query(CuentaContable).filter(CuentaContable.codigo == codigo).first()
+            if exists:
+                continue
+            parent = db.query(CuentaContable).filter(CuentaContable.codigo == parent_codigo).first()
+            if not parent:
+                continue
+            db.add(CuentaContable(codigo=codigo, nombre=nombre, tipo=tipo, parent_id=parent.id))
+
+        # Renombrar 1.1 "Banco" → "Banco (General)" para distinguir de las subcuentas
+        vieja = db.query(CuentaContable).filter(CuentaContable.codigo == "1.1").first()
+        if vieja and vieja.nombre == "Banco":
+            vieja.nombre = "Banco (General)"
+
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+_ampliar_plan_cuentas()
 
 
 app = FastAPI(

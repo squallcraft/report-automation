@@ -88,6 +88,7 @@ class PagoDriverUpdate(BaseModel):
     estado: Optional[str] = None
     monto_override: Optional[int] = None
     nota: Optional[str] = None
+    fecha_pago: Optional[str] = None
 
 
 def _semanas_del_mes(db: Session, mes: int, anio: int) -> List[int]:
@@ -172,6 +173,8 @@ def tabla_cpc(
                 "monto_neto": monto,
                 "estado": estado,
                 "nota": pago.nota if pago else None,
+                "fecha_pago": pago.fecha_pago.isoformat() if pago and pago.fecha_pago else None,
+                "pago_id": pago.id if pago else None,
             }
             subtotal += monto
         return semanas_data, subtotal
@@ -269,7 +272,7 @@ def _get_monto_consolidado_driver(db: Session, driver_id: int, semana: int, mes:
     return monto_propio + monto_subs
 
 
-def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio: int, estado: str = None, nota: str = None, monto_override: int = None):
+def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio: int, estado: str = None, nota: str = None, monto_override: int = None, fecha_pago: str = None):
     """Crea o actualiza un PagoSemanaDriver. Retorna el registro.
     Si el estado cambia a PAGADO, crea un registro manual en PagoCartola.
     Si el estado cambia a PENDIENTE/INCOMPLETO, elimina el registro manual previo.
@@ -297,12 +300,19 @@ def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio
         pago.monto_override = monto_override
     if nota is not None:
         pago.nota = nota
+    if fecha_pago is not None:
+        pago.fecha_pago = date.fromisoformat(fecha_pago) if isinstance(fecha_pago, str) else fecha_pago
+    elif estado == EstadoPagoEnum.PAGADO.value and not pago.fecha_pago:
+        pago.fecha_pago = date.today()
+    if estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
+        pago.fecha_pago = None
     pago.monto_neto = monto_sistema
+
+    fecha_pago_str = (pago.fecha_pago.isoformat() if pago.fecha_pago else date.today().isoformat())
 
     # Gestión de registro en PagoCartola al cambiar estado
     if estado is not None and estado != estado_anterior:
         if estado == EstadoPagoEnum.PAGADO.value:
-            # Crear registro manual solo si no existe ya uno manual para esta semana
             existe_manual = db.query(PagoCartola).filter(
                 PagoCartola.driver_id == driver_id,
                 PagoCartola.semana == semana,
@@ -317,12 +327,11 @@ def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio
                     mes=mes,
                     anio=anio,
                     monto=monto_sistema,
-                    fecha_pago=date.today().isoformat(),
+                    fecha_pago=fecha_pago_str,
                     descripcion="Pago emitido manual por administrador",
                     fuente="manual",
                 ))
         elif estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
-            # Al revertir a pendiente/incompleto, eliminar el registro manual automático
             db.query(PagoCartola).filter(
                 PagoCartola.driver_id == driver_id,
                 PagoCartola.semana == semana,
@@ -355,6 +364,7 @@ def actualizar_pago_semana_driver(
         estado=body.estado,
         monto_override=body.monto_override,
         nota=body.nota,
+        fecha_pago=body.fecha_pago,
     )
 
     # Si es jefe de flota, propagar el estado a todos sus subordinados
@@ -364,7 +374,7 @@ def actualizar_pago_semana_driver(
             Driver.activo == True,
         ).all()
         for sub in subordinados:
-            _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=body.estado)
+            _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=body.estado, fecha_pago=body.fecha_pago)
 
     if body.estado == EstadoPagoEnum.PAGADO.value:
         # Fase 4: marcar envíos del driver como pagados
@@ -421,6 +431,7 @@ def actualizar_pagos_batch_driver(
             estado=estado,
             monto_override=item.get("monto_override"),
             nota=item.get("nota"),
+            fecha_pago=item.get("fecha_pago"),
         )
 
         # Propagar estado a subordinados si es jefe de flota
@@ -430,7 +441,7 @@ def actualizar_pagos_batch_driver(
                 Driver.activo == True,
             ).all()
             for sub in subordinados:
-                _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=estado)
+                _upsert_pago_semana(db, sub.id, semana, mes, anio, estado=estado, fecha_pago=item.get("fecha_pago"))
 
         # Fase 4: marcar envíos como pagados
         if estado == EstadoPagoEnum.PAGADO.value:
@@ -461,6 +472,35 @@ def actualizar_pagos_batch_driver(
 
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+@router.patch("/pago-semana/{pago_id}/fecha-pago")
+def actualizar_fecha_pago_driver(
+    pago_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Actualiza la fecha_pago de un PagoSemanaDriver existente."""
+    pago = db.get(PagoSemanaDriver, pago_id)
+    if not pago:
+        raise HTTPException(status_code=404, detail="Pago no encontrado")
+    nueva_fecha = body.get("fecha_pago")
+    if not nueva_fecha:
+        raise HTTPException(status_code=400, detail="fecha_pago requerida")
+    pago.fecha_pago = date.fromisoformat(nueva_fecha)
+    # Sincronizar con PagoCartola manual si existe
+    cartola_manual = db.query(PagoCartola).filter(
+        PagoCartola.driver_id == pago.driver_id,
+        PagoCartola.semana == pago.semana,
+        PagoCartola.mes == pago.mes,
+        PagoCartola.anio == pago.anio,
+        PagoCartola.fuente == "manual",
+    ).first()
+    if cartola_manual:
+        cartola_manual.fecha_pago = nueva_fecha
+    db.commit()
+    return {"ok": True, "fecha_pago": pago.fecha_pago.isoformat()}
 
 
 # ---------------------------------------------------------------------------
@@ -863,6 +903,16 @@ def cartola_confirmar(
         )
         db.add(pago)
         grabados += 1
+
+        # Propagar fecha_pago al PagoSemanaDriver
+        pago_sem = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == item.driver_id,
+            PagoSemanaDriver.semana == body.semana,
+            PagoSemanaDriver.mes == body.mes,
+            PagoSemanaDriver.anio == body.anio,
+        ).first()
+        if pago_sem and item.fecha:
+            pago_sem.fecha_pago = date.fromisoformat(item.fecha) if isinstance(item.fecha, str) else item.fecha
 
         # Guardar alias si viene nombre_extraido y no coincide exactamente con el nombre del driver
         if item.nombre_extraido:
