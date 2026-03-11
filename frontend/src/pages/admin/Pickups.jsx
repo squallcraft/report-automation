@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import api from '../../api'
 import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
@@ -148,6 +148,11 @@ export default function Pickups() {
       .then(({ data }) => setPendientes(data.filter(p => p.tipo === 'PICKUP')))
       .catch(() => {})
   }
+
+  const pickupsEnPeriodo = useMemo(() => {
+    const ids = new Set(recepciones.map(r => r.pickup_id).filter(Boolean))
+    return ids.size > 0 ? pickups.filter(p => ids.has(p.id)) : pickups.filter(p => p.activo)
+  }, [recepciones, pickups])
 
   const REC_LIMIT = 500
   const loadRecepciones = () => {
@@ -490,7 +495,7 @@ export default function Pickups() {
                   className="input-field w-full lg:w-48 text-sm"
                 >
                   <option value="">Todos</option>
-                  {pickups.filter(p => p.activo).map(p => (
+                  {pickupsEnPeriodo.map(p => (
                     <option key={p.id} value={p.id}>{p.nombre}</option>
                   ))}
                 </select>

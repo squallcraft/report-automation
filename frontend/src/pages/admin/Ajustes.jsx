@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
@@ -111,7 +111,17 @@ export default function Ajustes() {
       .finally(() => setSaving(false))
   }
 
-  const entidades = form.tipo === 'SELLER' ? sellers : drivers
+  const sellersEnPeriodo = useMemo(() => {
+    const ids = new Set(ajustes.filter(a => a.tipo === 'SELLER').map(a => a.entidad_id).filter(Boolean))
+    return ids.size > 0 ? sellers.filter(s => ids.has(s.id)) : sellers
+  }, [ajustes, sellers])
+
+  const driversEnPeriodo = useMemo(() => {
+    const ids = new Set(ajustes.filter(a => a.tipo === 'DRIVER').map(a => a.entidad_id).filter(Boolean))
+    return ids.size > 0 ? drivers.filter(d => ids.has(d.id)) : drivers
+  }, [ajustes, drivers])
+
+  const entidades = form.tipo === 'SELLER' ? sellersEnPeriodo : driversEnPeriodo
 
   const columns = [
     {

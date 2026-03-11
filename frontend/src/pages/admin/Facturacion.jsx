@@ -275,6 +275,7 @@ export default function Facturacion() {
   const [editCell, setEditCell] = useState(null)
   const [editValue, setEditValue] = useState('')
   const [filterText, setFilterText] = useState('')
+  const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [showFacturar, setShowFacturar] = useState(false)
   const [tab, setTab] = useState('facturacion')
   const [progress, setProgress] = useState(null)
@@ -321,6 +322,19 @@ export default function Facturacion() {
   }, [tab, historialAnio])
 
   const semanas = data?.semanas_disponibles || []
+  const semanasVisibles = filterSemanas.size > 0
+    ? semanas.filter(s => filterSemanas.has(s))
+    : semanas
+
+  const toggleSemana = (s) => {
+    setFilterSemanas(prev => {
+      const next = new Set(prev)
+      if (next.has(s)) next.delete(s)
+      else next.add(s)
+      return next
+    })
+  }
+
   const sellers = useMemo(() => {
     if (!data?.sellers) return []
     if (!filterText) return data.sellers
@@ -542,12 +556,19 @@ export default function Facturacion() {
 
   const totalesGenerales = useMemo(() => {
     if (!sellers.length) return { neto: 0, iva: 0, total: 0 }
-    return sellers.reduce((acc, s) => ({
-      neto: acc.neto + s.subtotal_neto,
-      iva: acc.iva + s.iva,
-      total: acc.total + s.total_con_iva,
-    }), { neto: 0, iva: 0, total: 0 })
-  }, [sellers])
+    const activas = filterSemanas.size > 0 ? filterSemanas : null
+    return sellers.reduce((acc, s) => {
+      let neto
+      if (activas) {
+        neto = Object.entries(s.semanas || {}).reduce((a, [sem, sd]) =>
+          activas.has(Number(sem)) ? a + (sd.monto_neto || 0) : a, 0)
+      } else {
+        neto = s.subtotal_neto
+      }
+      const iva = Math.round(neto * 0.19)
+      return { neto: acc.neto + neto, iva: acc.iva + iva, total: acc.total + neto + iva }
+    }, { neto: 0, iva: 0, total: 0 })
+  }, [sellers, filterSemanas])
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -594,6 +615,32 @@ export default function Facturacion() {
           </div>
           <input type="text" placeholder="Buscar seller..." className="input w-48"
             value={filterText} onChange={e => setFilterText(e.target.value)} />
+          {semanas.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <label className="text-sm font-medium text-gray-700">Semana:</label>
+              {semanas.map(s => (
+                <button
+                  key={s}
+                  onClick={() => toggleSemana(s)}
+                  className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                    filterSemanas.has(s)
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'
+                  }`}
+                >
+                  S{s}
+                </button>
+              ))}
+              {filterSemanas.size > 0 && (
+                <button
+                  onClick={() => setFilterSemanas(new Set())}
+                  className="text-xs text-gray-500 hover:text-gray-700 underline ml-1"
+                >
+                  Todas
+                </button>
+              )}
+            </div>
+          )}
           {tab === 'pagos' && (
             <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
               <Upload size={15} /> Cargar Cartola
@@ -714,7 +761,7 @@ export default function Facturacion() {
                   </th>
                 )}
                 <th className="pb-2 pt-3 px-3 font-medium">Vendedor</th>
-                {semanas.map(s => tab === 'pagos' ? (
+                {semanasVisibles.map(s => tab === 'pagos' ? (
                   <React.Fragment key={`h-${s}`}>
                     <th className="pb-2 pt-3 px-2 font-medium text-right text-gray-700">Sem {s}</th>
                     <th className="pb-2 pt-3 px-2 font-medium text-right text-blue-600">Recibido</th>
@@ -740,7 +787,7 @@ export default function Facturacion() {
                     <span className="font-medium text-gray-800">{s.seller_nombre}</span>
                     {s.rut && <span className="text-xs text-gray-400 ml-2">{s.rut}</span>}
                   </td>
-                  {semanas.map(sem => {
+                  {semanasVisibles.map(sem => {
                     const semData = s.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE', editable: false }
                     const isEditing = editCell?.sellerId === s.seller_id && editCell?.semana === sem
                     const cobradoSem = pagosAcumulados[String(s.seller_id)]?.[String(sem)] || 0
@@ -804,8 +851,18 @@ export default function Facturacion() {
                       </td>
                     )
                   })}
-                  <td className="py-2 px-3 text-right font-semibold text-gray-800 font-mono">{fmt(s.subtotal_neto)}</td>
-                  <td className="py-2 px-3 text-right font-semibold text-green-700 font-mono">{fmt(s.total_con_iva)}</td>
+                  {(() => {
+                    const neto = filterSemanas.size > 0
+                      ? semanasVisibles.reduce((a, sem) => a + (s.semanas[String(sem)]?.monto_neto || 0), 0)
+                      : s.subtotal_neto
+                    const total = filterSemanas.size > 0 ? neto + Math.round(neto * 0.19) : s.total_con_iva
+                    return (
+                      <>
+                        <td className="py-2 px-3 text-right font-semibold text-gray-800 font-mono">{fmt(neto)}</td>
+                        <td className="py-2 px-3 text-right font-semibold text-green-700 font-mono">{fmt(total)}</td>
+                      </>
+                    )
+                  })()}
                   {tab === 'facturacion' && (
                     <td className="py-2 px-3 text-center">
                       {s.factura_estado === 'EMITIDA' ? (

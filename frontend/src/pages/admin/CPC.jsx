@@ -405,6 +405,7 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado, onUpdateFechaPago }) {
   const [expandido, setExpandido] = useState(false)
   const dPagados = pagados[String(d.driver_id)] || {}
   const esJefe = d.es_jefe_flota
+  const subtotal = semanas.reduce((acc, sem) => acc + (d.semanas[String(sem)]?.monto_neto || 0), 0)
 
   return (
     <>
@@ -481,33 +482,35 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado, onUpdateFechaPago }) {
             </React.Fragment>
           )
         })}
-        <td className="py-2 px-4 text-right font-semibold text-gray-800 font-mono">{fmt(d.subtotal_neto)}</td>
+        <td className="py-2 px-4 text-right font-semibold text-gray-800 font-mono">{fmt(subtotal)}</td>
       </tr>
 
-      {/* Detalle de subordinados del jefe (colapsable) */}
-      {esJefe && expandido && d.subordinados?.map(sub => (
-        <tr key={sub.driver_id} className="border-b border-gray-100 bg-gray-50/80">
-          <td className="py-1.5 px-4">
-            <div className="pl-10 flex items-center gap-1.5 text-xs text-gray-600">
-              <span className="text-gray-400">↳</span>
-              <span>{sub.driver_nombre}</span>
-            </div>
-          </td>
-          <td />
-          {semanas.map(sem => {
-            const semData = sub.semanas[String(sem)] || { monto_neto: 0 }
-            return (
-              <React.Fragment key={`sub-${sub.driver_id}-${sem}`}>
-                <td className="py-1.5 px-2 text-right">
-                  <span className="font-mono text-xs text-gray-500">{semData.monto_neto > 0 ? fmt(semData.monto_neto) : '—'}</span>
-                </td>
-                <td />
-              </React.Fragment>
-            )
-          })}
-          <td className="py-1.5 px-4 text-right font-mono text-xs text-gray-500">{fmt(sub.subtotal_neto)}</td>
-        </tr>
-      ))}
+      {esJefe && expandido && d.subordinados?.map(sub => {
+        const subSubtotal = semanas.reduce((acc, sem) => acc + (sub.semanas[String(sem)]?.monto_neto || 0), 0)
+        return (
+          <tr key={sub.driver_id} className="border-b border-gray-100 bg-gray-50/80">
+            <td className="py-1.5 px-4">
+              <div className="pl-10 flex items-center gap-1.5 text-xs text-gray-600">
+                <span className="text-gray-400">↳</span>
+                <span>{sub.driver_nombre}</span>
+              </div>
+            </td>
+            <td />
+            {semanas.map(sem => {
+              const semData = sub.semanas[String(sem)] || { monto_neto: 0 }
+              return (
+                <React.Fragment key={`sub-${sub.driver_id}-${sem}`}>
+                  <td className="py-1.5 px-2 text-right">
+                    <span className="font-mono text-xs text-gray-500">{semData.monto_neto > 0 ? fmt(semData.monto_neto) : '—'}</span>
+                  </td>
+                  <td />
+                </React.Fragment>
+              )
+            })}
+            <td className="py-1.5 px-4 text-right font-mono text-xs text-gray-500">{fmt(subSubtotal)}</td>
+          </tr>
+        )
+      })}
     </>
   )
 }
@@ -523,6 +526,7 @@ export default function CPC() {
   const [pagados, setPagados] = useState({})
   const [loading, setLoading] = useState(true)
   const [filterText, setFilterText] = useState('')
+  const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
   const reqId = useRef(0)
@@ -546,6 +550,19 @@ export default function CPC() {
   useEffect(() => { cargar() }, [cargar])
 
   const semanas = data?.semanas_disponibles || []
+  const semanasVisibles = filterSemanas.size > 0
+    ? semanas.filter(s => filterSemanas.has(s))
+    : semanas
+
+  const toggleSemana = (s) => {
+    setFilterSemanas(prev => {
+      const next = new Set(prev)
+      if (next.has(s)) next.delete(s)
+      else next.add(s)
+      return next
+    })
+  }
+
   const drivers = useMemo(() => {
     if (!data?.drivers) return []
     if (!filterText) return data.drivers
@@ -620,26 +637,30 @@ export default function CPC() {
 
   const totalesGenerales = useMemo(() => {
     if (!drivers.length) return { neto: 0, pagado: 0 }
+    const activas = filterSemanas.size > 0 ? filterSemanas : null
     return drivers.reduce((acc, d) => {
-      // Total pagado = suma de montos de semanas marcadas como PAGADO
-      const pagadoDriver = Object.values(d.semanas || {}).reduce((a, s) => {
-        if (s.estado === 'PAGADO') return a + (s.monto_neto || 0)
-        return a
-      }, 0)
-      return { neto: acc.neto + d.subtotal_neto, pagado: acc.pagado + pagadoDriver }
+      let neto = 0, pagado = 0
+      Object.entries(d.semanas || {}).forEach(([sem, s]) => {
+        if (activas && !activas.has(Number(sem))) return
+        neto += s.monto_neto || 0
+        if (s.estado === 'PAGADO') pagado += s.monto_neto || 0
+      })
+      return { neto: acc.neto + neto, pagado: acc.pagado + pagado }
     }, { neto: 0, pagado: 0 })
-  }, [drivers])
+  }, [drivers, filterSemanas])
 
   const estadoConteo = useMemo(() => {
     const counts = { PENDIENTE: 0, PAGADO: 0, INCOMPLETO: 0 }
+    const activas = filterSemanas.size > 0 ? filterSemanas : null
     drivers.forEach(d => {
       semanas.forEach(sem => {
+        if (activas && !activas.has(sem)) return
         const s = d.semanas[String(sem)]
         if (s && s.monto_neto > 0) counts[s.estado] = (counts[s.estado] || 0) + 1
       })
     })
     return counts
-  }, [drivers, semanas])
+  }, [drivers, semanas, filterSemanas])
 
   return (
     <div className="flex flex-col h-full gap-4">
@@ -696,6 +717,32 @@ export default function CPC() {
           </div>
           <input type="text" placeholder="Buscar conductor..." className="input w-48"
             value={filterText} onChange={e => setFilterText(e.target.value)} />
+          {semanas.length > 0 && (
+            <div className="flex items-center gap-1.5 ml-auto">
+              <label className="text-sm font-medium text-gray-700">Semana:</label>
+              {semanas.map(s => (
+                <button
+                  key={s}
+                  onClick={() => toggleSemana(s)}
+                  className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                    filterSemanas.has(s)
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'
+                  }`}
+                >
+                  S{s}
+                </button>
+              ))}
+              {filterSemanas.size > 0 && (
+                <button
+                  onClick={() => setFilterSemanas(new Set())}
+                  className="text-xs text-gray-500 hover:text-gray-700 underline ml-1"
+                >
+                  Todas
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -734,7 +781,7 @@ export default function CPC() {
               <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
                 <th className="pb-2 pt-3 px-4 font-medium">Conductor</th>
                 <th className="pb-2 pt-3 px-4 font-medium text-center">Banco</th>
-                  {semanas.map(s => (
+                  {semanasVisibles.map(s => (
                     <th key={s} className="pb-2 pt-3 px-2 font-medium text-right" colSpan={2}>
                       Sem {s}
                     </th>
@@ -743,7 +790,7 @@ export default function CPC() {
               </tr>
                 <tr className="text-[10px] text-gray-400 border-b border-gray-200 bg-gray-50">
                   <th /><th />
-                  {semanas.map(s => (
+                  {semanasVisibles.map(s => (
                     <React.Fragment key={`h2-${s}`}>
                       <th className="pb-1 px-2 text-right font-normal">Liq.</th>
                       <th className="pb-1 px-2 text-right font-normal text-emerald-600">Pagado</th>
@@ -757,7 +804,7 @@ export default function CPC() {
                   <DriverRow
                     key={d.driver_id}
                     d={d}
-                    semanas={semanas}
+                    semanas={semanasVisibles}
                     pagados={pagados}
                     onUpdateEstado={updateEstado}
                     onUpdateFechaPago={updateFechaPago}

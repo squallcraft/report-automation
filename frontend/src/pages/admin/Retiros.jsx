@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
@@ -352,6 +352,16 @@ export default function Retiros() {
     api.get('/drivers').then(({ data }) => setDrivers(data)).catch(() => toast.error('Error al cargar drivers'))
   }, [])
 
+  const sellersEnPeriodo = useMemo(() => {
+    const ids = new Set(retiros.map(r => r.seller_id).filter(Boolean))
+    return sellers.filter(s => ids.has(s.id))
+  }, [retiros, sellers])
+
+  const driversEnPeriodo = useMemo(() => {
+    const ids = new Set(retiros.map(r => r.driver_id).filter(Boolean))
+    return drivers.filter(d => ids.has(d.id))
+  }, [retiros, drivers])
+
   useEffect(() => { load() }, [period])
 
   const load = () => {
@@ -628,14 +638,14 @@ export default function Retiros() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Seller</label>
               <select value={editForm.seller_id} onChange={(e) => handleSellerChange(e.target.value, 'edit')} className="input-field" required>
                 <option value="">Seleccionar...</option>
-                {sellers.filter(s => !s.usa_pickup).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                {sellersEnPeriodo.filter(s => !s.usa_pickup).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Driver</label>
               <select value={editForm.driver_id} onChange={(e) => setEditForm(f => ({ ...f, driver_id: e.target.value }))} className="input-field" required>
                 <option value="">Seleccionar...</option>
-                {drivers.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+                {driversEnPeriodo.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">

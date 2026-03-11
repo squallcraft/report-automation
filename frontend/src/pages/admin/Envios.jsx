@@ -200,6 +200,16 @@ export default function Envios() {
   const hasFilters = search || filters.semana || (filters.meses && filters.meses.length !== 1) || filters.anio !== String(now.getFullYear())
     || colFilters.seller_nombre || colFilters.driver_nombre || colFilters.comuna || colFilters.empresa || colFilters.tracking_id
 
+  const sellersEnPeriodo = useMemo(() => {
+    const ids = new Set(envios.map(e => e.seller_id).filter(Boolean))
+    return ids.size > 0 ? sellers.filter(s => ids.has(s.id)) : sellers
+  }, [envios, sellers])
+
+  const driversEnPeriodo = useMemo(() => {
+    const ids = new Set(envios.map(e => e.driver_id).filter(Boolean))
+    return ids.size > 0 ? drivers.filter(d => ids.has(d.id)) : drivers
+  }, [envios, drivers])
+
   const empresaOptions = useMemo(() => [
     { value: 'ECOURIER', label: 'ECourier' },
     { value: 'OVIEDO', label: 'Oviedo' },
@@ -209,20 +219,20 @@ export default function Envios() {
   const columnFiltersConfig = useMemo(() => ({
     seller_nombre: {
       type: 'select',
-      options: sellers.map((s) => ({ value: String(s.id), label: s.nombre })),
+      options: sellersEnPeriodo.map((s) => ({ value: String(s.id), label: s.nombre })),
       value: colFilters.seller_nombre,
       placeholder: 'Todos',
     },
     driver_nombre: {
       type: 'select',
-      options: drivers.map((d) => ({ value: String(d.id), label: d.nombre })),
+      options: driversEnPeriodo.map((d) => ({ value: String(d.id), label: d.nombre })),
       value: colFilters.driver_nombre,
       placeholder: 'Todos',
     },
     comuna: { type: 'text', value: colFilters.comuna, placeholder: 'Filtrar...' },
     empresa: { type: 'select', options: empresaOptions, value: colFilters.empresa, placeholder: 'Todas' },
     tracking_id: { type: 'text', value: colFilters.tracking_id, placeholder: 'Filtrar...' },
-  }), [sellers, drivers, colFilters, empresaOptions])
+  }), [sellersEnPeriodo, driversEnPeriodo, colFilters, empresaOptions])
 
   const sm = 'text-[11px]'
   const columns = [
