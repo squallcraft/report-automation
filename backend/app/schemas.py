@@ -516,6 +516,14 @@ class RetiroCreate(BaseModel):
     tarifa_driver: int = 0
 
 
+class RetiroUpdate(BaseModel):
+    fecha: Optional[date] = None
+    seller_id: Optional[int] = None
+    driver_id: Optional[int] = None
+    tarifa_seller: Optional[int] = None
+    tarifa_driver: Optional[int] = None
+
+
 class RetiroOut(RetiroBase):
     id: int
     sucursal_id: Optional[int] = None

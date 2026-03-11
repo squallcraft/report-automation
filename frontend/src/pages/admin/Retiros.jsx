@@ -4,7 +4,8 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import PeriodSelector from '../../components/PeriodSelector'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, Download, Upload, Check, AlertCircle, X, FileText } from 'lucide-react'
+import { Plus, Trash2, Download, Upload, Check, AlertCircle, X, FileText, Edit2 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 
@@ -325,6 +326,9 @@ function ModalImportRetiros({ onClose, onConfirmado }) {
 }
 
 export default function Retiros() {
+  const { puedeEditar } = useAuth()
+  const canEdit = puedeEditar('retiros')
+
   const [retiros, setRetiros] = useState([])
   const [sellers, setSellers] = useState([])
   const [drivers, setDrivers] = useState([])
@@ -333,6 +337,10 @@ export default function Retiros() {
   const [showImport, setShowImport] = useState(false)
   const [deleteModal, setDeleteModal] = useState(false)
   const [toDelete, setToDelete] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [batchDeleting, setBatchDeleting] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [editForm, setEditForm] = useState({ fecha: '', seller_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
   const [period, setPeriod] = useState(() => {
     const d = new Date()
     return { semana: 1, mes: d.getMonth() + 1, anio: d.getFullYear() }
@@ -348,6 +356,7 @@ export default function Retiros() {
 
   const load = () => {
     setLoading(true)
+    setSelectedIds(new Set())
     api.get('/retiros', { params: period })
       .then(({ data }) => setRetiros(data))
       .catch(() => toast.error('Error al cargar retiros'))
@@ -366,14 +375,15 @@ export default function Retiros() {
     } catch { toast.error('Error al descargar plantilla') }
   }
 
-  const handleSellerChange = (sellerId) => {
+  const handleSellerChange = (sellerId, target = 'form') => {
     const seller = sellers.find(s => s.id === Number(sellerId))
-    setForm(f => ({
-      ...f,
+    const update = {
       seller_id: sellerId,
       tarifa_seller: seller?.tarifa_retiro || 0,
       tarifa_driver: seller?.tarifa_retiro_driver || 0,
-    }))
+    }
+    if (target === 'edit') setEditForm(f => ({ ...f, ...update }))
+    else setForm(f => ({ ...f, ...update }))
   }
 
   const handleCreate = async (e) => {
@@ -405,7 +415,84 @@ export default function Retiros() {
       .catch(() => toast.error('Error al eliminar'))
   }
 
+  // --- Batch selection ---
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === retiros.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(retiros.map(r => r.id)))
+  }
+
+  const handleBatchDelete = async () => {
+    if (!selectedIds.size) return
+    if (!window.confirm(`¿Eliminar ${selectedIds.size} retiros seleccionados?`)) return
+    setBatchDeleting(true)
+    try {
+      await api.delete('/retiros/batch', { data: [...selectedIds] })
+      toast.success(`${selectedIds.size} retiros eliminados`)
+      load()
+    } catch { toast.error('Error al eliminar retiros') }
+    finally { setBatchDeleting(false) }
+  }
+
+  // --- Edit ---
+  const openEdit = (row) => {
+    setEditing(row)
+    setEditForm({
+      fecha: row.fecha || '',
+      seller_id: row.seller_id || '',
+      driver_id: row.driver_id || '',
+      tarifa_seller: row.tarifa_seller || 0,
+      tarifa_driver: row.tarifa_driver || 0,
+    })
+  }
+
+  const handleEdit = async (e) => {
+    e.preventDefault()
+    try {
+      await api.put(`/retiros/${editing.id}`, {
+        fecha: editForm.fecha || undefined,
+        seller_id: editForm.seller_id ? Number(editForm.seller_id) : undefined,
+        driver_id: editForm.driver_id ? Number(editForm.driver_id) : undefined,
+        tarifa_seller: Number(editForm.tarifa_seller),
+        tarifa_driver: Number(editForm.tarifa_driver),
+      })
+      toast.success('Retiro actualizado')
+      setEditing(null)
+      load()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error al actualizar')
+    }
+  }
+
   const columns = [
+    ...(canEdit ? [{
+      key: 'select',
+      label: (
+        <input
+          type="checkbox"
+          checked={retiros.length > 0 && selectedIds.size === retiros.length}
+          ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < retiros.length }}
+          onChange={toggleSelectAll}
+          className="w-4 h-4 rounded text-primary-600 cursor-pointer"
+        />
+      ),
+      render: (_, row) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(row.id)}
+          onChange={() => toggleSelect(row.id)}
+          className="w-4 h-4 rounded text-primary-600 cursor-pointer"
+        />
+      ),
+    }] : []),
     { key: 'fecha', label: 'Fecha' },
     { key: 'seller_nombre', label: 'Seller/Pickup' },
     { key: 'driver_nombre', label: 'Driver' },
@@ -418,11 +505,16 @@ export default function Retiros() {
         {v ? 'OK' : 'Sin homologar'}
       </span>
     )},
-    { key: 'actions', label: '', render: (_, row) => (
-      <button onClick={() => { setToDelete(row); setDeleteModal(true) }} className="p-1.5 hover:bg-red-50 rounded-lg">
-        <Trash2 size={16} className="text-red-500" />
-      </button>
-    )},
+    ...(canEdit ? [{ key: 'actions', label: '', render: (_, row) => (
+      <div className="flex items-center gap-1">
+        <button onClick={() => openEdit(row)} className="p-1.5 hover:bg-blue-50 rounded-lg" title="Editar">
+          <Edit2 size={15} className="text-blue-500" />
+        </button>
+        <button onClick={() => { setToDelete(row); setDeleteModal(true) }} className="p-1.5 hover:bg-red-50 rounded-lg" title="Eliminar">
+          <Trash2 size={15} className="text-red-500" />
+        </button>
+      </div>
+    )}] : []),
   ]
 
   return (
@@ -432,22 +524,46 @@ export default function Retiros() {
           <h1 className="text-2xl font-bold text-gray-900">Retiros</h1>
           <p className="text-sm text-gray-500 mt-1">Gestión de retiros por seller/driver</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
-            <Download size={16} /> Plantilla
-          </button>
-          <button onClick={() => setShowImport(true)} className="btn-secondary flex items-center gap-2 text-sm">
-            <Upload size={16} /> Importar Excel
-          </button>
-          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Nuevo Retiro
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
+              <Download size={16} /> Plantilla
+            </button>
+            <button onClick={() => setShowImport(true)} className="btn-secondary flex items-center gap-2 text-sm">
+              <Upload size={16} /> Importar Excel
+            </button>
+            <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Nuevo Retiro
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="card mb-6">
         <PeriodSelector {...period} onChange={setPeriod} />
       </div>
+
+      {/* Barra de acciones batch */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-4 mb-4 px-4 py-3 bg-primary-50 border border-primary-200 rounded-lg">
+          <span className="text-sm font-medium text-primary-800">
+            {selectedIds.size} {selectedIds.size === 1 ? 'retiro seleccionado' : 'retiros seleccionados'}
+          </span>
+          <button
+            onClick={handleBatchDelete}
+            disabled={batchDeleting}
+            className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-800 font-medium"
+          >
+            <Trash2 size={14} /> {batchDeleting ? 'Eliminando...' : 'Eliminar seleccionados'}
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-sm text-gray-500 hover:text-gray-700 ml-auto"
+          >
+            Deseleccionar
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-12 text-gray-400">Cargando...</div>
@@ -462,6 +578,7 @@ export default function Retiros() {
         />
       )}
 
+      {/* Modal crear retiro */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Nuevo Retiro">
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
@@ -499,6 +616,47 @@ export default function Retiros() {
         </form>
       </Modal>
 
+      {/* Modal editar retiro */}
+      <Modal open={!!editing} onClose={() => setEditing(null)} title="Editar Retiro">
+        {editing && (
+          <form onSubmit={handleEdit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+              <input type="date" value={editForm.fecha} onChange={(e) => setEditForm(f => ({ ...f, fecha: e.target.value }))} className="input-field" required />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Seller</label>
+              <select value={editForm.seller_id} onChange={(e) => handleSellerChange(e.target.value, 'edit')} className="input-field" required>
+                <option value="">Seleccionar...</option>
+                {sellers.filter(s => !s.usa_pickup).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Driver</label>
+              <select value={editForm.driver_id} onChange={(e) => setEditForm(f => ({ ...f, driver_id: e.target.value }))} className="input-field" required>
+                <option value="">Seleccionar...</option>
+                {drivers.map((d) => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cobro al Seller (CLP)</label>
+                <input type="number" value={editForm.tarifa_seller} onChange={(e) => setEditForm(f => ({ ...f, tarifa_seller: e.target.value }))} className="input-field" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Pago al Driver (CLP)</label>
+                <input type="number" value={editForm.tarifa_driver} onChange={(e) => setEditForm(f => ({ ...f, tarifa_driver: e.target.value }))} className="input-field" required />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setEditing(null)} className="btn-secondary">Cancelar</button>
+              <button type="submit" className="btn-primary">Guardar</button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Modal confirmar eliminar */}
       <Modal open={deleteModal} onClose={() => { setDeleteModal(false); setToDelete(null) }} title="Eliminar Retiro">
         {toDelete && (
           <div>

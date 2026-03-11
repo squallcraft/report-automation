@@ -14,9 +14,9 @@ from pydantic import BaseModel
 import pandas as pd
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion
+from app.auth import require_permission
 from app.models import Retiro, Seller, Driver, Pickup, Sucursal
-from app.schemas import RetiroCreate, RetiroOut
+from app.schemas import RetiroCreate, RetiroUpdate, RetiroOut
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
 from app.services.audit import registrar as audit
 from app.api.liquidacion import invalidar_snapshots
@@ -63,7 +63,7 @@ def listar_retiros(
     mes: Optional[int] = None,
     anio: Optional[int] = None,
     db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
+    _=require_permission("retiros:ver"),
 ):
     query = db.query(Retiro)
     if semana is not None:
@@ -161,7 +161,7 @@ def descargar_plantilla_retiros():
 async def preview_retiros(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=require_permission("retiros:editar"),
 ):
     """Parsea Excel de retiros y retorna un preview con matches propuestos. No graba nada."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -334,7 +334,7 @@ def confirmar_retiros(
     body: ConfirmarRetirosRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=require_permission("retiros:editar"),
 ):
     """Crea retiros confirmados y guarda aliases de homologación."""
     ingesta_id = str(uuid.uuid4())[:8]
@@ -451,14 +451,14 @@ async def importar_retiros(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=require_permission("retiros:editar"),
 ):
     """Legacy: importa retiros directamente sin preview."""
     raise HTTPException(status_code=410, detail="Use /importar/preview + /importar/confirmar")
 
 
 @router.post("", response_model=RetiroOut, status_code=201)
-def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get_db), current_user=require_permission("retiros:editar")):
     seller = db.get(Seller, data.seller_id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
@@ -474,8 +474,80 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
     return _enrich_retiro(retiro, db)
 
 
+@router.put("/{retiro_id}", response_model=RetiroOut)
+def editar_retiro(
+    retiro_id: int,
+    data: RetiroUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=require_permission("retiros:editar"),
+):
+    retiro = db.get(Retiro, retiro_id)
+    if not retiro:
+        raise HTTPException(status_code=404, detail="Retiro no encontrado")
+
+    antes = {"seller_id": retiro.seller_id, "driver_id": retiro.driver_id,
+             "fecha": str(retiro.fecha), "tarifa_seller": retiro.tarifa_seller, "tarifa_driver": retiro.tarifa_driver}
+
+    if data.fecha is not None:
+        retiro.fecha = data.fecha
+    if data.seller_id is not None:
+        if not db.get(Seller, data.seller_id):
+            raise HTTPException(status_code=404, detail="Seller no encontrado")
+        retiro.seller_id = data.seller_id
+    if data.driver_id is not None:
+        if not db.get(Driver, data.driver_id):
+            raise HTTPException(status_code=404, detail="Driver no encontrado")
+        retiro.driver_id = data.driver_id
+    if data.tarifa_seller is not None:
+        retiro.tarifa_seller = data.tarifa_seller
+    if data.tarifa_driver is not None:
+        retiro.tarifa_driver = data.tarifa_driver
+
+    invalidar_snapshots(db, retiro.semana, retiro.mes, retiro.anio)
+    db.commit()
+    db.refresh(retiro)
+
+    despues = {"seller_id": retiro.seller_id, "driver_id": retiro.driver_id,
+               "fecha": str(retiro.fecha), "tarifa_seller": retiro.tarifa_seller, "tarifa_driver": retiro.tarifa_driver}
+    cambios = {k: {"antes": antes[k], "despues": despues[k]} for k in antes if antes[k] != despues[k]}
+    if cambios:
+        audit(db, "editar_retiro", usuario=current_user, request=request,
+              entidad="retiro", entidad_id=retiro_id, cambios=cambios)
+    return _enrich_retiro(retiro, db)
+
+
+@router.delete("/batch")
+def eliminar_retiros_batch(
+    ids: List[int],
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=require_permission("retiros:editar"),
+):
+    """Elimina múltiples retiros por lista de IDs."""
+    if not ids:
+        raise HTTPException(status_code=400, detail="Lista de IDs vacía")
+
+    retiros = db.query(Retiro).filter(Retiro.id.in_(ids)).all()
+    if not retiros:
+        raise HTTPException(status_code=404, detail="No se encontraron retiros")
+
+    periodos = set()
+    for r in retiros:
+        periodos.add((r.semana, r.mes, r.anio))
+        db.delete(r)
+
+    for s, m, a in periodos:
+        invalidar_snapshots(db, s, m, a)
+
+    db.commit()
+    audit(db, "eliminar_retiros_batch", usuario=current_user, request=request,
+          entidad="retiro_batch", metadata={"ids": ids, "eliminados": len(retiros)})
+    return {"message": f"{len(retiros)} retiros eliminados", "eliminados": len(retiros)}
+
+
 @router.delete("/{retiro_id}")
-def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_db), current_user=require_permission("retiros:editar")):
     retiro = db.get(Retiro, retiro_id)
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")

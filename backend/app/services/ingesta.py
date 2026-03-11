@@ -87,9 +87,6 @@ def homologar_nombre(nombre_raw: str, entidades: list, cache: Dict[str, int]) ->
                 if alias.lower() == nombre_clean.lower():
                     cache[nombre_clean] = entidad.id
                     return entidad.id
-                if alias.lower() in nombre_clean.lower():
-                    cache[nombre_clean] = entidad.id
-                    return entidad.id
 
     return None
 
