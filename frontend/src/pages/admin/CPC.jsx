@@ -43,21 +43,27 @@ const BANCOS_TEF_VALIDOS = new Set([
 // ---------------------------------------------------------------------------
 // Modal generador TEF — Opción A: jefes de flota consolidan su flota
 // ---------------------------------------------------------------------------
-function ModalTEF({ semana, mes, anio, drivers, onClose }) {
-  // Construir items: jefes con monto consolidado, independientes con monto individual
+function ModalTEF({ semana, mes, anio, drivers, pagados = {}, onClose }) {
   const [items, setItems] = useState(() =>
-    drivers.map(d => ({
-      driver_id: d.driver_id,
-      driver_nombre: d.driver_nombre,
-      rut: d.rut,
-      banco: d.banco,
-      numero_cuenta: d.numero_cuenta,
-      es_jefe: d.es_jefe_flota,
-      subordinados: d.subordinados || [],
-      liquidado: d.semanas?.[String(semana)]?.monto_neto || 0,
-      monto: d.semanas?.[String(semana)]?.monto_neto || 0,
-      incluir: (d.semanas?.[String(semana)]?.monto_neto || 0) > 0,
-    }))
+    drivers.map(d => {
+      const liquidado = d.semanas?.[String(semana)]?.monto_neto || 0
+      const ya_pagado = pagados[String(d.driver_id)]?.[String(semana)] || 0
+      const saldo = Math.max(0, liquidado - ya_pagado)
+      return {
+        driver_id: d.driver_id,
+        driver_nombre: d.driver_nombre,
+        rut: d.rut,
+        banco: d.banco,
+        numero_cuenta: d.numero_cuenta,
+        es_jefe: d.es_jefe_flota,
+        subordinados: d.subordinados || [],
+        liquidado,
+        ya_pagado,
+        saldo,
+        monto: saldo,
+        incluir: saldo > 0,
+      }
+    })
   )
   const [porcentaje, setPorcentaje] = useState('')
   const [cargando, setCargando] = useState(false)
@@ -65,7 +71,7 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
   const aplicarPorcentaje = () => {
     const pct = parseFloat(porcentaje)
     if (isNaN(pct) || pct <= 0 || pct > 100) return
-    setItems(prev => prev.map(it => ({ ...it, monto: Math.round(it.liquidado * pct / 100) })))
+    setItems(prev => prev.map(it => ({ ...it, monto: Math.round(it.saldo * pct / 100) })))
   }
 
   const toggle = (id) => setItems(prev => prev.map(it => it.driver_id === id ? { ...it, incluir: !it.incluir } : it))
@@ -129,7 +135,7 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
             className="input w-24 text-sm" value={porcentaje}
             onChange={e => setPorcentaje(e.target.value)} />
           <button onClick={aplicarPorcentaje} className="btn btn-secondary text-sm py-1.5">Aplicar</button>
-          <button onClick={() => setItems(prev => prev.map(it => ({ ...it, monto: it.liquidado })))}
+          <button onClick={() => setItems(prev => prev.map(it => ({ ...it, monto: it.saldo })))}
             className="btn btn-secondary text-sm py-1.5">Reset 100%</button>
           <span className="ml-auto text-sm font-semibold text-blue-700">Total: {fmt(totalTEF)}</span>
         </div>
@@ -150,7 +156,9 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
                 <th className="py-2 text-left font-medium">Destinatario</th>
                 <th className="py-2 text-left font-medium">Banco</th>
                 <th className="py-2 text-right font-medium">Liquidado</th>
-                <th className="py-2 text-right font-medium w-36">Monto a pagar</th>
+                <th className="py-2 text-right font-medium">Pagado</th>
+                <th className="py-2 text-right font-medium">Saldo</th>
+                <th className="py-2 text-right font-medium w-36">A pagar</th>
               </tr>
             </thead>
             <tbody>
@@ -177,6 +185,16 @@ function ModalTEF({ semana, mes, anio, drivers, onClose }) {
                     {it.banco ? `${it.banco} · ${it.numero_cuenta || '—'}` : '—'}
                   </td>
                   <td className="py-2 text-right font-mono text-gray-600">{fmt(it.liquidado)}</td>
+                  <td className="py-2 text-right font-mono">
+                    {it.ya_pagado > 0
+                      ? <span className="text-green-600">{fmt(it.ya_pagado)}</span>
+                      : <span className="text-gray-300">—</span>}
+                  </td>
+                  <td className="py-2 text-right font-mono">
+                    {it.saldo > 0
+                      ? <span className="font-semibold text-gray-800">{fmt(it.saldo)}</span>
+                      : <span className="text-green-600 text-xs font-medium">completo</span>}
+                  </td>
                   <td className="py-2 text-right">
                     <input type="number" min="0"
                       className="input text-right text-sm w-32 font-mono"
@@ -822,6 +840,7 @@ export default function CPC() {
           mes={mes}
           anio={anio}
           drivers={drivers}
+          pagados={pagados}
           onClose={() => setModalTEF(null)}
         />
       )}

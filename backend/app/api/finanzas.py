@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import date, datetime
-from calendar import monthrange
+
 import os
 import uuid
 import shutil
@@ -78,23 +78,34 @@ def _get_descendant_ids(db: Session, cat_id: int) -> list:
 
 
 def _operacional_mes(db: Session, mes: int, anio: int):
-    """Ingresos = liquidaciones sellers (PagoSemanaSeller). Costos = liquidaciones drivers + pickups."""
+    """Ingresos = liquidaciones sellers. Costos = MAX(liquidaciones, pagos reales) drivers + pickups."""
     ingreso_sellers = db.query(
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaSeller.monto_neto), 0)
     ).filter(PagoSemanaSeller.mes == mes, PagoSemanaSeller.anio == anio).scalar()
 
-    costo_drivers = db.query(
+    costo_drivers_liq = int(db.query(
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0)
     ).filter(PagoSemanaDriver.mes == mes, PagoSemanaDriver.anio == anio,
              ~PagoSemanaDriver.driver_id.in_(
                  db.query(Driver.id).filter(Driver.jefe_flota_id.isnot(None))
-             )).scalar()
+             )).scalar())
 
-    costo_pickups = db.query(
+    costo_drivers_real = int(db.query(
+        sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)
+    ).filter(PagoCartola.mes == mes, PagoCartola.anio == anio).scalar())
+
+    costo_pickups_liq = int(db.query(
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaPickup.monto_neto), 0)
-    ).filter(PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio).scalar()
+    ).filter(PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio).scalar())
 
-    return int(ingreso_sellers), int(costo_drivers) + int(costo_pickups)
+    costo_pickups_real = int(db.query(
+        sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)
+    ).filter(PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio).scalar())
+
+    costo_drivers = max(costo_drivers_liq, costo_drivers_real)
+    costo_pickups = max(costo_pickups_liq, costo_pickups_real)
+
+    return int(ingreso_sellers), costo_drivers + costo_pickups
 
 
 def _manual_mes(db: Session, mes: int, anio: int):
@@ -210,14 +221,14 @@ def dashboard_consolidado(
         MovimientoFinanciero.estado == EstadoMovimientoEnum.VENCIDO.value,
     ).scalar()
 
-    # Datos por semana para el gráfico (basado en pagos, no en paquetes)
+    # Datos por semana para el gráfico
     ingreso_semanal = db.query(
         PagoSemanaSeller.semana,
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaSeller.monto_neto), 0).label("total"),
     ).filter(PagoSemanaSeller.mes == mes, PagoSemanaSeller.anio == anio
     ).group_by(PagoSemanaSeller.semana).all()
 
-    costo_driver_semanal = db.query(
+    costo_driver_liq_semanal = db.query(
         PagoSemanaDriver.semana,
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0).label("total"),
     ).filter(PagoSemanaDriver.mes == mes, PagoSemanaDriver.anio == anio,
@@ -225,52 +236,66 @@ def dashboard_consolidado(
                  db.query(Driver.id).filter(Driver.jefe_flota_id.isnot(None))
              )).group_by(PagoSemanaDriver.semana).all()
 
-    costo_pickup_semanal = db.query(
+    costo_driver_real_semanal = db.query(
+        PagoCartola.semana,
+        sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0).label("total"),
+    ).filter(PagoCartola.mes == mes, PagoCartola.anio == anio
+    ).group_by(PagoCartola.semana).all()
+
+    costo_pickup_liq_semanal = db.query(
         PagoSemanaPickup.semana,
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaPickup.monto_neto), 0).label("total"),
     ).filter(PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio
     ).group_by(PagoSemanaPickup.semana).all()
 
-    semanas = {w: {"ingreso": 0, "costo": 0} for w in range(1, 6)}
+    costo_pickup_real_semanal = db.query(
+        PagoCartolaPickup.semana,
+        sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0).label("total"),
+    ).filter(PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio
+    ).group_by(PagoCartolaPickup.semana).all()
+
+    semanas = {w: {"ingreso": 0, "costo_drv_liq": 0, "costo_drv_real": 0,
+                    "costo_pk_liq": 0, "costo_pk_real": 0} for w in range(1, 6)}
     for r in ingreso_semanal:
         if r.semana in semanas:
             semanas[r.semana]["ingreso"] = int(r.total)
-    for r in costo_driver_semanal:
+    for r in costo_driver_liq_semanal:
         if r.semana in semanas:
-            semanas[r.semana]["costo"] += int(r.total)
-    for r in costo_pickup_semanal:
+            semanas[r.semana]["costo_drv_liq"] = int(r.total)
+    for r in costo_driver_real_semanal:
         if r.semana in semanas:
-            semanas[r.semana]["costo"] += int(r.total)
+            semanas[r.semana]["costo_drv_real"] = int(r.total)
+    for r in costo_pickup_liq_semanal:
+        if r.semana in semanas:
+            semanas[r.semana]["costo_pk_liq"] = int(r.total)
+    for r in costo_pickup_real_semanal:
+        if r.semana in semanas:
+            semanas[r.semana]["costo_pk_real"] = int(r.total)
 
-    chart_data = [{"semana": w, "ingresos": semanas[w]["ingreso"], "egresos": semanas[w]["costo"]}
+    chart_data = [{"semana": w,
+                   "ingresos": semanas[w]["ingreso"],
+                   "egresos": max(semanas[w]["costo_drv_liq"], semanas[w]["costo_drv_real"])
+                            + max(semanas[w]["costo_pk_liq"], semanas[w]["costo_pk_real"])}
                   for w in sorted(semanas.keys())]
 
-    # Flujo de caja real: basado en fecha_pago (cuándo se movió el dinero)
-    _, last_day = monthrange(anio, mes)
-    fecha_inicio = date(anio, mes, 1)
-    fecha_fin = date(anio, mes, last_day)
-
-    from sqlalchemy import cast, Date as SQLDate
+    # Flujo de caja real: por mes/anio del período (más confiable que parsear fecha_pago)
     cobros_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaSeller.monto), 0)).filter(
-        cast(PagoCartolaSeller.fecha_pago, SQLDate) >= fecha_inicio,
-        cast(PagoCartolaSeller.fecha_pago, SQLDate) <= fecha_fin,
+        PagoCartolaSeller.mes == mes, PagoCartolaSeller.anio == anio,
     ).scalar()
     pagos_drivers_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
-        cast(PagoCartola.fecha_pago, SQLDate) >= fecha_inicio,
-        cast(PagoCartola.fecha_pago, SQLDate) <= fecha_fin,
+        PagoCartola.mes == mes, PagoCartola.anio == anio,
     ).scalar()
     pagos_pickups_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)).filter(
-        cast(PagoCartolaPickup.fecha_pago, SQLDate) >= fecha_inicio,
-        cast(PagoCartolaPickup.fecha_pago, SQLDate) <= fecha_fin,
+        PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
     ).scalar()
     movs_pagados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.fecha_pago >= fecha_inicio,
-        MovimientoFinanciero.fecha_pago <= fecha_fin,
+        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
+        MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "EGRESO",
     ).scalar()
     movs_cobrados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.fecha_pago >= fecha_inicio,
-        MovimientoFinanciero.fecha_pago <= fecha_fin,
+        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
+        MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "INGRESO",
     ).scalar()
 
@@ -318,19 +343,25 @@ def flujo_caja_proyectado(
             PagoSemanaSeller.semana == s, PagoSemanaSeller.mes == mes, PagoSemanaSeller.anio == anio,
         ).scalar()
 
-        costo_drivers = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0)).filter(
+        costo_drivers_liq = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0)).filter(
             PagoSemanaDriver.semana == s, PagoSemanaDriver.mes == mes, PagoSemanaDriver.anio == anio,
             ~PagoSemanaDriver.driver_id.in_(
                 db.query(Driver.id).filter(Driver.jefe_flota_id.isnot(None))
             ),
-        ).scalar()
+        ).scalar())
+        costo_drivers_real = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
+            PagoCartola.semana == s, PagoCartola.mes == mes, PagoCartola.anio == anio,
+        ).scalar())
 
-        costo_pickups = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaPickup.monto_neto), 0)).filter(
+        costo_pickups_liq = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaPickup.monto_neto), 0)).filter(
             PagoSemanaPickup.semana == s, PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio,
-        ).scalar()
+        ).scalar())
+        costo_pickups_real = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)).filter(
+            PagoCartolaPickup.semana == s, PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
+        ).scalar())
 
         ingresos = int(ingreso_sellers)
-        egresos = int(costo_drivers) + int(costo_pickups)
+        egresos = max(costo_drivers_liq, costo_drivers_real) + max(costo_pickups_liq, costo_pickups_real)
 
         if s == 1:
             ingresos += manual["INGRESO"]
