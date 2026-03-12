@@ -814,6 +814,17 @@ def descargar_zip_sellers(
     size = buf.tell()
     buf.seek(0)
 
+    envios_pendientes = db.query(Envio).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+        Envio.is_liquidado == False,
+    ).all()
+    for e in envios_pendientes:
+        e.is_liquidado = True
+        e.sync_estado_financiero()
+    if envios_pendientes:
+        db.commit()
+        logger.info("ZIP sellers S%s M%s/%s: %d envíos liquidados", semana, mes, anio, len(envios_pendientes))
+
     return StreamingResponse(
         buf,
         media_type="application/zip",
@@ -873,6 +884,17 @@ def descargar_zip_drivers(
                 logger.error("Error generando PDF driver %s: %s", item.get("driver_id"), exc)
     size = buf.tell()
     buf.seek(0)
+
+    envios_pendientes = db.query(Envio).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+        Envio.is_liquidado == False,
+    ).all()
+    for e in envios_pendientes:
+        e.is_liquidado = True
+        e.sync_estado_financiero()
+    if envios_pendientes:
+        db.commit()
+        logger.info("ZIP drivers S%s M%s/%s: %d envíos liquidados", semana, mes, anio, len(envios_pendientes))
 
     return StreamingResponse(
         buf,
