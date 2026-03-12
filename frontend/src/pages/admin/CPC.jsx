@@ -155,9 +155,9 @@ function ModalTEF({ semana, mes, anio, drivers, pagados = {}, onClose }) {
                 </th>
                 <th className="py-2 text-left font-medium">Destinatario</th>
                 <th className="py-2 text-left font-medium">Banco</th>
-                <th className="py-2 text-right font-medium">Liquidado</th>
-                <th className="py-2 text-right font-medium">Pagado</th>
-                <th className="py-2 text-right font-medium">Saldo</th>
+                <th className="py-2 pr-5 text-right font-medium">Liquidado</th>
+                <th className="py-2 pr-5 text-right font-medium">Pagado</th>
+                <th className="py-2 pr-5 text-right font-medium">Saldo</th>
                 <th className="py-2 text-right font-medium w-36">A pagar</th>
               </tr>
             </thead>
@@ -184,13 +184,13 @@ function ModalTEF({ semana, mes, anio, drivers, pagados = {}, onClose }) {
                   <td className="py-2 text-xs text-gray-500">
                     {it.banco ? `${it.banco} · ${it.numero_cuenta || '—'}` : '—'}
                   </td>
-                  <td className="py-2 text-right font-mono text-gray-600">{fmt(it.liquidado)}</td>
-                  <td className="py-2 text-right font-mono">
+                  <td className="py-2 pr-5 text-right font-mono text-gray-600">{fmt(it.liquidado)}</td>
+                  <td className="py-2 pr-5 text-right font-mono">
                     {it.ya_pagado > 0
                       ? <span className="text-green-600">{fmt(it.ya_pagado)}</span>
                       : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="py-2 text-right font-mono">
+                  <td className="py-2 pr-5 text-right font-mono">
                     {it.saldo > 0
                       ? <span className="font-semibold text-gray-800">{fmt(it.saldo)}</span>
                       : <span className="text-green-600 text-xs font-medium">completo</span>}
