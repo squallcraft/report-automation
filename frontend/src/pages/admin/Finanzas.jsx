@@ -190,6 +190,9 @@ export default function Finanzas() {
   const [balanceComp, setBalanceComp] = useState(null)
   const [backfilling, setBackfilling] = useState(false)
 
+  // Resumen anual
+  const [resumenAnual, setResumenAnual] = useState(null)
+
   // Modal state
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
@@ -207,8 +210,9 @@ export default function Finanzas() {
         api.get('/finanzas/movimientos', { params: period }),
         api.get('/finanzas/contabilidad/libro-diario', { params: { ...period, limit: 100, offset: 0 } }),
         api.get('/finanzas/contabilidad/balance-comprobacion', { params: period }),
+        api.get('/finanzas/resumen-anual', { params: { anio: period.anio } }),
       ]
-      const [dashRes, flujoRes, txnRes, catRes, movRes, libroRes, balRes] = await Promise.all(requests)
+      const [dashRes, flujoRes, txnRes, catRes, movRes, libroRes, balRes, anualRes] = await Promise.all(requests)
       setDashData(dashRes.data)
       setFlujoCaja(flujoRes.data)
       setTransacciones(txnRes.data)
@@ -216,6 +220,7 @@ export default function Finanzas() {
       setMovimientos(movRes.data)
       setLibroDiario(libroRes.data)
       setBalanceComp(balRes.data)
+      setResumenAnual(anualRes.data)
     } catch {
       toast.error('Error al cargar datos financieros')
     } finally {
@@ -262,14 +267,17 @@ export default function Finanzas() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    const fechaPago = form.fecha_pago || null
+    const mesTarget = fechaPago ? new Date(fechaPago + 'T12:00:00').getMonth() + 1 : period.mes
+    const anioTarget = fechaPago ? new Date(fechaPago + 'T12:00:00').getFullYear() : period.anio
     const payload = {
       ...form,
       monto: Number(form.monto),
-      mes: period.mes,
-      anio: period.anio,
+      mes: mesTarget,
+      anio: anioTarget,
       categoria_id: Number(form.categoria_id),
       fecha_vencimiento: form.fecha_vencimiento || null,
-      fecha_pago: form.fecha_pago || null,
+      fecha_pago: fechaPago,
     }
     try {
       let movId = editId
@@ -346,11 +354,14 @@ export default function Finanzas() {
         <div className="flex bg-gray-100 rounded-lg p-0.5 ml-auto">
           <button onClick={() => setTab('dashboard')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'dashboard' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Dashboard</button>
           <button onClick={() => setTab('detalle')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'detalle' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Detalle</button>
+          <button onClick={() => setTab('anual')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'anual' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Resumen Anual</button>
           <button onClick={() => setTab('contabilidad')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'contabilidad' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>Contabilidad</button>
         </div>
       </div>
 
-      {loading ? <div className="text-center py-12 text-gray-400">Cargando...</div> : tab === 'dashboard' ? (
+      {loading ? <div className="text-center py-12 text-gray-400">Cargando...</div> : tab === 'anual' ? (
+        <ResumenAnualTab data={resumenAnual} anio={period.anio} />
+      ) : tab === 'dashboard' ? (
         <DashboardTab dashData={dashData} flujoCaja={flujoCaja} transacciones={transacciones} onDownloadDoc={downloadDoc} />
       ) : tab === 'contabilidad' ? (
         <ContabilidadTab libroDiario={libroDiario} balanceComp={balanceComp} backfilling={backfilling}
@@ -724,6 +735,153 @@ function LibroDiario({ data }) {
           </table>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Resumen Anual Tab ──
+
+function ResumenAnualTab({ data, anio }) {
+  if (!data || !data.meses) return <div className="text-center py-12 text-gray-400">Sin datos</div>
+
+  const maxVal = Math.max(...data.meses.map(m => Math.max(m.total_ingresos, m.total_egresos)), 1)
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-bold text-gray-800">Resumen Financiero {anio}</h2>
+
+      {/* Cards totales */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Ingresos Totales</p>
+          <p className="text-2xl font-bold text-green-600">{fmt(data.totales.total_ingresos)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Egresos Totales</p>
+          <p className="text-2xl font-bold text-red-600">{fmt(data.totales.total_egresos)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Margen Neto</p>
+          <p className={`text-2xl font-bold ${data.totales.margen >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(data.totales.margen)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cobros Sellers</p>
+          <p className="text-2xl font-bold text-blue-600">{fmt(data.totales.cobros_sellers)}</p>
+          <p className="text-xs text-gray-400 mt-1">Pagos Drivers: {fmt(data.totales.pagos_drivers)} | Pickups: {fmt(data.totales.pagos_pickups)}</p>
+        </div>
+      </div>
+
+      {/* Bar chart */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Ingresos vs Egresos por mes</h3>
+        <div className="flex items-end gap-2 h-48">
+          {data.meses.map(m => (
+            <div key={m.mes} className="flex-1 flex flex-col items-center gap-1">
+              <div className="w-full flex gap-0.5 items-end justify-center" style={{ height: '160px' }}>
+                <div className="w-2/5 bg-green-400 rounded-t" style={{ height: `${(m.total_ingresos / maxVal) * 100}%`, minHeight: m.total_ingresos > 0 ? '2px' : 0 }} title={`Ingresos: ${fmt(m.total_ingresos)}`} />
+                <div className="w-2/5 bg-red-400 rounded-t" style={{ height: `${(m.total_egresos / maxVal) * 100}%`, minHeight: m.total_egresos > 0 ? '2px' : 0 }} title={`Egresos: ${fmt(m.total_egresos)}`} />
+              </div>
+              <span className="text-xs text-gray-500">{MESES[m.mes]?.substring(0, 3)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-4 mt-3 justify-center text-xs text-gray-500">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-400 rounded" /> Ingresos</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-400 rounded" /> Egresos</span>
+        </div>
+      </div>
+
+      {/* Tabla mensual */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-gray-500 text-xs uppercase border-b">
+              <th className="py-2 pr-3">Mes</th>
+              <th className="py-2 pr-3 text-right">Ing. Operacional</th>
+              <th className="py-2 pr-3 text-right">Costo Operacional</th>
+              <th className="py-2 pr-3 text-right">Ing. Manual</th>
+              <th className="py-2 pr-3 text-right">Egreso Manual</th>
+              <th className="py-2 pr-3 text-right">Total Ingresos</th>
+              <th className="py-2 pr-3 text-right">Total Egresos</th>
+              <th className="py-2 pr-3 text-right">Margen</th>
+              <th className="py-2 text-right">Acumulado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.meses.map(m => {
+              const hasData = m.total_ingresos > 0 || m.total_egresos > 0
+              return (
+                <tr key={m.mes} className={`border-b border-gray-50 ${hasData ? 'hover:bg-gray-50' : 'text-gray-300'}`}>
+                  <td className="py-2 pr-3 font-medium">{MESES[m.mes]}</td>
+                  <td className="py-2 pr-3 text-right text-green-600">{fmt(m.ingreso_operacional)}</td>
+                  <td className="py-2 pr-3 text-right text-red-600">{fmt(m.costo_operacional)}</td>
+                  <td className="py-2 pr-3 text-right text-green-500">{fmt(m.ingreso_manual)}</td>
+                  <td className="py-2 pr-3 text-right text-red-500">{fmt(m.egreso_manual)}</td>
+                  <td className="py-2 pr-3 text-right font-medium text-green-700">{fmt(m.total_ingresos)}</td>
+                  <td className="py-2 pr-3 text-right font-medium text-red-700">{fmt(m.total_egresos)}</td>
+                  <td className={`py-2 pr-3 text-right font-bold ${m.margen >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(m.margen)}</td>
+                  <td className={`py-2 text-right font-bold ${m.acumulado >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(m.acumulado)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-gray-300 font-bold">
+              <td className="py-3 pr-3">TOTAL</td>
+              <td className="py-3 pr-3 text-right text-green-600">{fmt(data.meses.reduce((s, m) => s + m.ingreso_operacional, 0))}</td>
+              <td className="py-3 pr-3 text-right text-red-600">{fmt(data.meses.reduce((s, m) => s + m.costo_operacional, 0))}</td>
+              <td className="py-3 pr-3 text-right text-green-500">{fmt(data.meses.reduce((s, m) => s + m.ingreso_manual, 0))}</td>
+              <td className="py-3 pr-3 text-right text-red-500">{fmt(data.meses.reduce((s, m) => s + m.egreso_manual, 0))}</td>
+              <td className="py-3 pr-3 text-right text-green-700">{fmt(data.totales.total_ingresos)}</td>
+              <td className="py-3 pr-3 text-right text-red-700">{fmt(data.totales.total_egresos)}</td>
+              <td className={`py-3 pr-3 text-right ${data.totales.margen >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(data.totales.margen)}</td>
+              <td className="py-3 text-right">—</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Flujo real */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 overflow-x-auto">
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Flujo Real: Cobros y Pagos por Mes</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-gray-500 text-xs uppercase border-b">
+              <th className="py-2 pr-3">Mes</th>
+              <th className="py-2 pr-3 text-right">Cobros Sellers</th>
+              <th className="py-2 pr-3 text-right">Pagos Drivers</th>
+              <th className="py-2 pr-3 text-right">Pagos Pickups</th>
+              <th className="py-2 text-right">Neto Real</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.meses.map(m => {
+              const neto = m.cobros_sellers - m.pagos_drivers - m.pagos_pickups
+              const hasData = m.cobros_sellers > 0 || m.pagos_drivers > 0 || m.pagos_pickups > 0
+              return (
+                <tr key={m.mes} className={`border-b border-gray-50 ${hasData ? 'hover:bg-gray-50' : 'text-gray-300'}`}>
+                  <td className="py-2 pr-3 font-medium">{MESES[m.mes]}</td>
+                  <td className="py-2 pr-3 text-right text-green-600">{fmt(m.cobros_sellers)}</td>
+                  <td className="py-2 pr-3 text-right text-red-600">{fmt(m.pagos_drivers)}</td>
+                  <td className="py-2 pr-3 text-right text-red-500">{fmt(m.pagos_pickups)}</td>
+                  <td className={`py-2 text-right font-bold ${neto >= 0 ? 'text-green-700' : 'text-red-700'}`}>{fmt(neto)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-gray-300 font-bold">
+              <td className="py-3 pr-3">TOTAL</td>
+              <td className="py-3 pr-3 text-right text-green-600">{fmt(data.totales.cobros_sellers)}</td>
+              <td className="py-3 pr-3 text-right text-red-600">{fmt(data.totales.pagos_drivers)}</td>
+              <td className="py-3 pr-3 text-right text-red-500">{fmt(data.totales.pagos_pickups)}</td>
+              <td className={`py-3 text-right ${(data.totales.cobros_sellers - data.totales.pagos_drivers - data.totales.pagos_pickups) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                {fmt(data.totales.cobros_sellers - data.totales.pagos_drivers - data.totales.pagos_pickups)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   )
 }

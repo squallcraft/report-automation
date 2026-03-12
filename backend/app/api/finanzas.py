@@ -405,6 +405,66 @@ def flujo_caja_proyectado(
     return {"mes": mes, "anio": anio, "semanas": semanas_data}
 
 
+# ── Resumen anual ──
+
+@router.get("/resumen-anual")
+def resumen_anual(
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Resumen mensual consolidado para todo un año, con todas las fuentes."""
+    meses = []
+    acumulado_neto = 0
+
+    for mes in range(1, 13):
+        ingreso_op, costo_op = _operacional_mes(db, mes, anio)
+        manual = _manual_mes(db, mes, anio)
+
+        cobros_sellers = int(db.query(
+            sqlfunc.coalesce(sqlfunc.sum(PagoCartolaSeller.monto), 0)
+        ).filter(PagoCartolaSeller.mes == mes, PagoCartolaSeller.anio == anio).scalar())
+
+        pagos_drivers = int(db.query(
+            sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)
+        ).filter(PagoCartola.mes == mes, PagoCartola.anio == anio).scalar())
+
+        pagos_pickups = int(db.query(
+            sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)
+        ).filter(PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio).scalar())
+
+        total_ingresos = ingreso_op + manual["INGRESO"]
+        total_egresos = costo_op + manual["EGRESO"]
+        margen = total_ingresos - total_egresos
+        acumulado_neto += margen
+
+        meses.append({
+            "mes": mes,
+            "ingreso_operacional": ingreso_op,
+            "costo_operacional": costo_op,
+            "ingreso_manual": manual["INGRESO"],
+            "egreso_manual": manual["EGRESO"],
+            "total_ingresos": total_ingresos,
+            "total_egresos": total_egresos,
+            "margen": margen,
+            "acumulado": acumulado_neto,
+            "cobros_sellers": cobros_sellers,
+            "pagos_drivers": pagos_drivers,
+            "pagos_pickups": pagos_pickups,
+        })
+
+    totales = {
+        "total_ingresos": sum(m["total_ingresos"] for m in meses),
+        "total_egresos": sum(m["total_egresos"] for m in meses),
+        "margen": sum(m["margen"] for m in meses),
+        "cobros_sellers": sum(m["cobros_sellers"] for m in meses),
+        "pagos_drivers": sum(m["pagos_drivers"] for m in meses),
+        "pagos_pickups": sum(m["pagos_pickups"] for m in meses),
+    }
+
+    return {"anio": anio, "meses": meses, "totales": totales}
+
+
 # ── Transacciones unificadas ──
 
 @router.get("/transacciones")
@@ -516,6 +576,8 @@ def crear_movimiento(
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     mov = MovimientoFinanciero(**data.model_dump())
     if data.fecha_pago:
+        mov.mes = data.fecha_pago.month
+        mov.anio = data.fecha_pago.year
         mov.estado = EstadoMovimientoEnum.PAGADO.value
     db.add(mov)
     db.flush()
@@ -542,8 +604,11 @@ def actualizar_movimiento(
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(mov, field, value)
-    if "fecha_pago" in update_data and update_data["fecha_pago"] and "estado" not in update_data:
-        mov.estado = EstadoMovimientoEnum.PAGADO.value
+    if "fecha_pago" in update_data and update_data["fecha_pago"]:
+        mov.mes = update_data["fecha_pago"].month
+        mov.anio = update_data["fecha_pago"].year
+        if "estado" not in update_data:
+            mov.estado = EstadoMovimientoEnum.PAGADO.value
 
     old_asiento = db.query(AsientoContable).filter(
         AsientoContable.ref_tipo == "MovimientoFinanciero",
