@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos
 from app.middleware.timing import TimingMiddleware
 
 try:
@@ -427,6 +427,8 @@ app.include_router(pickups.router, prefix="/api")
 app.include_router(auditoria.router, prefix="/api")
 app.include_router(planes_tarifarios.router, prefix="/api")
 app.include_router(finanzas.router, prefix="/api")
+app.include_router(trabajadores.router, prefix="/api")
+app.include_router(prestamos.router, prefix="/api")
 
 
 @app.get("/")

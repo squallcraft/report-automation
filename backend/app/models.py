@@ -732,6 +732,104 @@ class MovimientoFinanciero(Base):
     categoria = relationship("CategoriaFinanciera", back_populates="movimientos")
 
 
+# ── Trabajadores ──
+
+
+class Trabajador(Base):
+    __tablename__ = "trabajadores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    rut = Column(String, nullable=True, unique=True)
+    email = Column(String, nullable=True)
+    direccion = Column(String, nullable=True)
+    cargo = Column(String, nullable=True)
+    sueldo_bruto = Column(Integer, nullable=False, default=0)
+    afp = Column(String, nullable=True)
+    costo_afp = Column(Integer, nullable=False, default=0)
+    sistema_salud = Column(String, nullable=True)  # FONASA / nombre Isapre
+    costo_salud = Column(Integer, nullable=False, default=0)
+    banco = Column(String, nullable=True)
+    tipo_cuenta = Column(String, nullable=True)
+    numero_cuenta = Column(String, nullable=True)
+    fecha_ingreso = Column(Date, nullable=True)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    pagos = relationship("PagoTrabajador", back_populates="trabajador")
+    prestamos = relationship("Prestamo", back_populates="trabajador", foreign_keys="Prestamo.trabajador_id")
+
+
+class PagoTrabajador(Base):
+    """Pago efectivo a un trabajador, importado desde cartola o manual."""
+    __tablename__ = "pagos_trabajadores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto = Column(Integer, nullable=False)
+    fecha_pago = Column(String, nullable=True)
+    descripcion = Column(String, nullable=True)
+    fuente = Column(String, nullable=False, default="cartola")
+    created_at = Column(DateTime, server_default=func.now())
+
+    trabajador = relationship("Trabajador", back_populates="pagos")
+
+
+# ── Préstamos ──
+
+
+class EstadoPrestamoEnum(str, enum.Enum):
+    ACTIVO = "ACTIVO"
+    PAGADO = "PAGADO"
+    CANCELADO = "CANCELADO"
+
+
+class TipoBeneficiarioEnum(str, enum.Enum):
+    TRABAJADOR = "TRABAJADOR"
+    DRIVER = "DRIVER"
+
+
+class Prestamo(Base):
+    __tablename__ = "prestamos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tipo_beneficiario = Column(String, nullable=False)  # TRABAJADOR / DRIVER
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
+    monto_total = Column(Integer, nullable=False)
+    monto_cuota = Column(Integer, nullable=False)
+    saldo_pendiente = Column(Integer, nullable=False)
+    modalidad = Column(String, nullable=False, default="cuota_fija")  # cuota_fija / porcentaje / unico
+    porcentaje = Column(Integer, nullable=True)
+    mes_inicio = Column(Integer, nullable=False)
+    anio_inicio = Column(Integer, nullable=False)
+    motivo = Column(String, nullable=True)
+    estado = Column(String, nullable=False, default=EstadoPrestamoEnum.ACTIVO.value)
+    created_at = Column(DateTime, server_default=func.now())
+
+    trabajador = relationship("Trabajador", back_populates="prestamos", foreign_keys=[trabajador_id])
+    driver = relationship("Driver")
+    cuotas = relationship("CuotaPrestamo", back_populates="prestamo", order_by="CuotaPrestamo.mes, CuotaPrestamo.anio")
+
+
+class CuotaPrestamo(Base):
+    __tablename__ = "cuotas_prestamos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prestamo_id = Column(Integer, ForeignKey("prestamos.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto = Column(Integer, nullable=False)
+    pagado = Column(Boolean, default=False)
+    fecha_pago = Column(Date, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    prestamo = relationship("Prestamo", back_populates="cuotas")
+
+
 # ── GL: Contabilidad de Partida Doble ──
 
 

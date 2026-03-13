@@ -20,6 +20,7 @@ const GRUPOS_PERMISOS = [
       { slug: 'pickups', label: 'Pickups' },
       { slug: 'productos', label: 'Productos Extra' },
       { slug: 'comunas', label: 'Comunas / Tarifas' },
+      { slug: 'trabajadores', label: 'Trabajadores' },
     ],
   },
   {
@@ -39,6 +40,7 @@ const GRUPOS_PERMISOS = [
       { slug: 'cpc', label: 'CPC Drivers' },
       { slug: 'cpp', label: 'CPP Pickups' },
       { slug: 'ajustes', label: 'Ajustes' },
+      { slug: 'prestamos', label: 'Préstamos' },
     ],
   },
   {

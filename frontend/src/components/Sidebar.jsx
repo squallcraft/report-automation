@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -17,6 +17,7 @@ const adminMenu = [
       { to: '/admin/pickups', icon: Store, label: 'Pickups', permiso: 'pickups' },
       { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
       { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes Tarifarios', permiso: 'comunas' },
+      { to: '/admin/trabajadores', icon: Briefcase, label: 'Trabajadores', permiso: 'trabajadores' },
       { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
       { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
     ],
@@ -36,6 +37,7 @@ const adminMenu = [
       { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
       { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
       { to: '/admin/ajustes', icon: Settings, label: 'Ajustes', permiso: 'ajustes' },
+      { to: '/admin/prestamos', icon: HandCoins, label: 'Préstamos', permiso: 'prestamos' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },

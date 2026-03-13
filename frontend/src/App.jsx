@@ -38,6 +38,8 @@ import DriverConsultas from './pages/driver/DriverConsultas'
 import DriverGanancias from './pages/driver/DriverGanancias'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
+import Trabajadores from './pages/admin/Trabajadores'
+import Prestamos from './pages/admin/Prestamos'
 import Auditoria from './pages/admin/Auditoria'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
@@ -97,6 +99,8 @@ export default function App() {
         <Route path="asistente" element={<Asistente />} />
         <Route path="pickups" element={<Pickups />} />
         <Route path="cpp" element={<CPP />} />
+        <Route path="trabajadores" element={<Trabajadores />} />
+        <Route path="prestamos" element={<Prestamos />} />
         <Route path="auditoria" element={<Auditoria />} />
       </Route>
 

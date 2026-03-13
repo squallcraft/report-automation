@@ -611,3 +611,93 @@ class MovimientoFinancieroOut(MovimientoFinancieroBase):
     tiene_documento: bool = False
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
+
+
+# ── Trabajadores ──
+
+class TrabajadorBase(BaseModel):
+    nombre: str
+    rut: Optional[str] = None
+    email: Optional[str] = None
+    direccion: Optional[str] = None
+    cargo: Optional[str] = None
+    sueldo_bruto: int = 0
+    afp: Optional[str] = None
+    costo_afp: int = 0
+    sistema_salud: Optional[str] = None
+    costo_salud: int = 0
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+    fecha_ingreso: Optional[date] = None
+    activo: bool = True
+
+class TrabajadorCreate(TrabajadorBase):
+    pass
+
+class TrabajadorUpdate(BaseModel):
+    nombre: Optional[str] = None
+    rut: Optional[str] = None
+    email: Optional[str] = None
+    direccion: Optional[str] = None
+    cargo: Optional[str] = None
+    sueldo_bruto: Optional[int] = None
+    afp: Optional[str] = None
+    costo_afp: Optional[int] = None
+    sistema_salud: Optional[str] = None
+    costo_salud: Optional[int] = None
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+    fecha_ingreso: Optional[date] = None
+    activo: Optional[bool] = None
+
+class TrabajadorOut(TrabajadorBase):
+    id: int
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+# ── Préstamos ──
+
+class PrestamoCreate(BaseModel):
+    tipo_beneficiario: str  # TRABAJADOR / DRIVER
+    trabajador_id: Optional[int] = None
+    driver_id: Optional[int] = None
+    monto_total: int
+    monto_cuota: int
+    modalidad: str = "cuota_fija"
+    porcentaje: Optional[int] = None
+    mes_inicio: int
+    anio_inicio: int
+    motivo: Optional[str] = None
+
+class PrestamoOut(BaseModel):
+    id: int
+    tipo_beneficiario: str
+    trabajador_id: Optional[int] = None
+    driver_id: Optional[int] = None
+    beneficiario_nombre: Optional[str] = None
+    monto_total: int
+    monto_cuota: int
+    saldo_pendiente: int
+    modalidad: str
+    porcentaje: Optional[int] = None
+    mes_inicio: int
+    anio_inicio: int
+    motivo: Optional[str] = None
+    estado: str
+    cuotas_pagadas: int = 0
+    cuotas_total: int = 0
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+class CuotaPrestamoOut(BaseModel):
+    id: int
+    prestamo_id: int
+    mes: int
+    anio: int
+    monto: int
+    pagado: bool
+    fecha_pago: Optional[date] = None
+    model_config = {"from_attributes": True}
