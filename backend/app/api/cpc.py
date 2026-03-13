@@ -5,6 +5,15 @@ import io
 import re
 from datetime import date
 from difflib import SequenceMatcher
+
+
+def _parse_fecha(valor: str) -> date:
+    valor = valor.strip()
+    if "/" in valor:
+        parts = valor.split("/")
+        if len(parts) == 3 and len(parts[0]) <= 2:
+            return date(int(parts[2]), int(parts[1]), int(parts[0]))
+    return date.fromisoformat(valor)
 from typing import Optional, List
 
 import pandas as pd
@@ -301,7 +310,7 @@ def _upsert_pago_semana(db: Session, driver_id: int, semana: int, mes: int, anio
     if nota is not None:
         pago.nota = nota
     if fecha_pago is not None:
-        pago.fecha_pago = date.fromisoformat(fecha_pago) if isinstance(fecha_pago, str) else fecha_pago
+        pago.fecha_pago = _parse_fecha(fecha_pago) if isinstance(fecha_pago, str) else fecha_pago
     elif estado == EstadoPagoEnum.PAGADO.value and not pago.fecha_pago:
         pago.fecha_pago = date.today()
     if estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
@@ -488,7 +497,7 @@ def actualizar_fecha_pago_driver(
     nueva_fecha = body.get("fecha_pago")
     if not nueva_fecha:
         raise HTTPException(status_code=400, detail="fecha_pago requerida")
-    pago.fecha_pago = date.fromisoformat(nueva_fecha)
+    pago.fecha_pago = _parse_fecha(nueva_fecha)
     # Sincronizar con PagoCartola manual si existe
     cartola_manual = db.query(PagoCartola).filter(
         PagoCartola.driver_id == pago.driver_id,
@@ -912,7 +921,7 @@ def cartola_confirmar(
             PagoSemanaDriver.anio == body.anio,
         ).first()
         if pago_sem and item.fecha:
-            pago_sem.fecha_pago = date.fromisoformat(item.fecha) if isinstance(item.fecha, str) else item.fecha
+            pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
 
         # Guardar alias si viene nombre_extraido y no coincide exactamente con el nombre del driver
         if item.nombre_extraido:

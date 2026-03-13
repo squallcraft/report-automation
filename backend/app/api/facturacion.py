@@ -3,7 +3,16 @@ API de Facturación: control semanal de cobros a sellers y factura mensual.
 """
 import json
 from typing import Optional, List
-from datetime import datetime, timezone
+from datetime import date as _date_type, datetime, timezone
+
+
+def _parse_fecha(valor: str) -> _date_type:
+    valor = valor.strip()
+    if "/" in valor:
+        parts = valor.split("/")
+        if len(parts) == 3 and len(parts[0]) <= 2:
+            return _date_type(int(parts[2]), int(parts[1]), int(parts[0]))
+    return _date_type.fromisoformat(valor)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
@@ -253,8 +262,7 @@ def actualizar_fecha_pago_seller(
     nueva_fecha = body.get("fecha_pago")
     if not nueva_fecha:
         raise HTTPException(status_code=400, detail="fecha_pago requerida")
-    from datetime import date as _date
-    pago.fecha_pago = _date.fromisoformat(nueva_fecha)
+    pago.fecha_pago = _parse_fecha(nueva_fecha)
     cartola_manual = db.query(PagoCartolaSeller).filter(
         PagoCartolaSeller.seller_id == pago.seller_id,
         PagoCartolaSeller.semana == pago.semana,
@@ -711,7 +719,7 @@ def _upsert_pago_semana_seller(
     if nota is not None:
         pago.nota = nota
     if fecha_pago is not None:
-        pago.fecha_pago = date.fromisoformat(fecha_pago) if isinstance(fecha_pago, str) else fecha_pago
+        pago.fecha_pago = _parse_fecha(fecha_pago) if isinstance(fecha_pago, str) else fecha_pago
     elif estado == EstadoPagoEnum.PAGADO.value and not pago.fecha_pago:
         pago.fecha_pago = date.today()
     if estado in (EstadoPagoEnum.PENDIENTE.value, EstadoPagoEnum.INCOMPLETO.value):
@@ -992,8 +1000,7 @@ def cartola_seller_confirmar(
             PagoSemanaSeller.anio == body.anio,
         ).first()
         if pago_sem and item.fecha:
-            from datetime import date as _date
-            pago_sem.fecha_pago = _date.fromisoformat(item.fecha) if isinstance(item.fecha, str) else item.fecha
+            pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
 
         if item.nombre_extraido and item.seller_id not in alias_guardados:
             seller = db.get(Seller, item.seller_id)
