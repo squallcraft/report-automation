@@ -114,22 +114,22 @@ export default function Trabajadores() {
   )
 
   const columns = [
-    { header: 'Nombre', accessor: 'nombre', cell: (r) => (
+    { key: 'nombre', label: 'Nombre', render: (v, row) => (
       <div>
-        <span className="font-medium text-gray-900">{r.nombre}</span>
-        {!r.activo && <span className="ml-2 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Inactivo</span>}
+        <span className="font-medium text-gray-900">{row.nombre}</span>
+        {!row.activo && <span className="ml-2 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">Inactivo</span>}
       </div>
     )},
-    { header: 'RUT', accessor: 'rut', cell: (r) => r.rut || '—' },
-    { header: 'Cargo', accessor: 'cargo', cell: (r) => r.cargo || '—' },
-    { header: 'Sueldo Bruto', accessor: 'sueldo_bruto', cell: (r) => fmt(r.sueldo_bruto) },
-    { header: 'AFP', accessor: 'afp', cell: (r) => r.afp ? `${r.afp} (${fmt(r.costo_afp)})` : '—' },
-    { header: 'Salud', accessor: 'sistema_salud', cell: (r) => r.sistema_salud ? `${r.sistema_salud} (${fmt(r.costo_salud)})` : '—' },
-    { header: 'Banco', accessor: 'banco', cell: (r) => r.banco || '—' },
-    { header: '', accessor: 'actions', cell: (r) => (
+    { key: 'rut', label: 'RUT', render: (v) => v || '—' },
+    { key: 'cargo', label: 'Cargo', render: (v) => v || '—' },
+    { key: 'sueldo_bruto', label: 'Sueldo Bruto', align: 'right', render: (v) => fmt(v) },
+    { key: 'afp', label: 'AFP', render: (v, row) => row.afp ? `${row.afp} (${fmt(row.costo_afp)})` : '—' },
+    { key: 'sistema_salud', label: 'Salud', render: (v, row) => row.sistema_salud ? `${row.sistema_salud} (${fmt(row.costo_salud)})` : '—' },
+    { key: 'banco', label: 'Banco', render: (v) => v || '—' },
+    { key: 'actions', label: '', render: (_, row) => (
       <div className="flex gap-1">
-        <button onClick={() => openEdit(r)} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Pencil size={14} /></button>
-        {r.activo && <button onClick={() => handleDelete(r)} className="p-1 rounded hover:bg-red-100 text-red-600"><Trash2 size={14} /></button>}
+        <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Pencil size={14} /></button>
+        {row.activo && <button onClick={() => handleDelete(row)} className="p-1 rounded hover:bg-red-100 text-red-600"><Trash2 size={14} /></button>}
       </div>
     )},
   ]
