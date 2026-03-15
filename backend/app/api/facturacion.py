@@ -991,7 +991,7 @@ def cartola_seller_confirmar(
         ))
         grabados += 1
 
-        # Propagar fecha_pago al PagoSemanaSeller
+        # Propagar estado PAGADO y fecha_pago al PagoSemanaSeller
         from app.models import PagoSemanaSeller
         pago_sem = db.query(PagoSemanaSeller).filter(
             PagoSemanaSeller.seller_id == item.seller_id,
@@ -999,8 +999,18 @@ def cartola_seller_confirmar(
             PagoSemanaSeller.mes == body.mes,
             PagoSemanaSeller.anio == body.anio,
         ).first()
-        if pago_sem and item.fecha:
+        if not pago_sem:
+            monto_sistema = _get_monto_semanal_seller(db, item.seller_id, item.semana, body.mes, body.anio)
+            pago_sem = PagoSemanaSeller(
+                seller_id=item.seller_id, semana=item.semana,
+                mes=body.mes, anio=body.anio, monto_neto=monto_sistema,
+            )
+            db.add(pago_sem)
+        pago_sem.estado = EstadoPagoEnum.PAGADO.value
+        if item.fecha:
             pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
+        elif not pago_sem.fecha_pago:
+            pago_sem.fecha_pago = _date_type.today()
 
         if item.nombre_extraido and item.seller_id not in alias_guardados:
             seller = db.get(Seller, item.seller_id)

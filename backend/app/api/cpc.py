@@ -913,15 +913,25 @@ def cartola_confirmar(
         db.add(pago)
         grabados += 1
 
-        # Propagar fecha_pago al PagoSemanaDriver
+        # Propagar estado PAGADO y fecha_pago al PagoSemanaDriver
         pago_sem = db.query(PagoSemanaDriver).filter(
             PagoSemanaDriver.driver_id == item.driver_id,
             PagoSemanaDriver.semana == body.semana,
             PagoSemanaDriver.mes == body.mes,
             PagoSemanaDriver.anio == body.anio,
         ).first()
-        if pago_sem and item.fecha:
+        if not pago_sem:
+            monto_sistema = _get_monto_semanal_driver(db, item.driver_id, body.semana, body.mes, body.anio)
+            pago_sem = PagoSemanaDriver(
+                driver_id=item.driver_id, semana=body.semana,
+                mes=body.mes, anio=body.anio, monto_neto=monto_sistema,
+            )
+            db.add(pago_sem)
+        pago_sem.estado = EstadoPagoEnum.PAGADO.value
+        if item.fecha:
             pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
+        elif not pago_sem.fecha_pago:
+            pago_sem.fecha_pago = date.today()
 
         # Guardar alias si viene nombre_extraido y no coincide exactamente con el nombre del driver
         if item.nombre_extraido:
