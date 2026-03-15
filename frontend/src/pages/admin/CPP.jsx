@@ -497,6 +497,9 @@ function PickupRow({ p, semanas, pagados, onUpdateEstado }) {
               <div className="flex flex-col items-end gap-1">
                 <span className="font-mono text-gray-700">{fmt(semData.monto_neto)}</span>
                 {semData.monto_neto > 0 && (
+                  <span className="font-mono text-[10px] text-gray-400">{fmt(Math.round(semData.monto_neto * 1.19))} <span className="text-gray-300">+IVA</span></span>
+                )}
+                {semData.monto_neto > 0 && (
                   <select
                     className={`text-[10px] px-1.5 py-0.5 rounded border-0 cursor-pointer ${ESTADO_COLORS[semData.estado] || ESTADO_COLORS.PENDIENTE}`}
                     value={semData.estado}
