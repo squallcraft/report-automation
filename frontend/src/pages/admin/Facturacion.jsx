@@ -390,6 +390,7 @@ export default function Facturacion() {
     })
     try {
       await api.put(`/facturacion/pago-semana/${sellerId}`, { estado, fecha_pago: fechaPago }, { params: { semana, mes, anio } })
+      recargar()
     } catch {
       toast.error('Error actualizando estado')
       recargar()

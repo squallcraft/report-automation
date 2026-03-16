@@ -614,6 +614,7 @@ export default function CPC() {
     })
     try {
       await api.put(`/cpc/pago-semana/${driverId}`, { estado, fecha_pago: fechaPago }, { params: { semana, mes, anio } })
+      cargar(true)
     } catch {
       toast.error('Error actualizando estado')
       cargar(true)
