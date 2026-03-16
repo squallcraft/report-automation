@@ -227,6 +227,7 @@ export default function Envios() {
     { key: 'seller_nombre', label: 'Seller', render: (v) => v || '—' },
     { key: 'driver_nombre', label: 'Driver', className: sm, render: (v) => v || '—' },
     { key: 'comuna', label: 'Comuna', render: (v) => v || '—' },
+    { key: 'seller_code', label: 'Seller ID', className: sm, render: (v) => v || '—' },
     { key: 'tracking_id', label: 'Tracking', className: sm, render: (v) => v || '—' },
     { key: 'bultos', label: 'Blt', align: 'center', className: sm },
     { key: 'descripcion_producto', label: 'Descripción', className: 'text-xs !whitespace-normal min-w-[250px]', render: (v) => v ? (
