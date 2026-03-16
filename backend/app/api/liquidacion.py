@@ -513,19 +513,16 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
     # Retiros solo aplican al desglose de drivers.
-    # - Semana cerrada (PAGADO): usar r.tarifa_driver almacenado (histórico inmutable).
-    # - Semana abierta con tarifa_retiro_fija: mostrar tarifa_fija por día (1 valor/día).
-    # - Sin tarifa fija: sumar r.tarifa_driver por retiro.
+    # Semana cerrada → sum(r.tarifa_driver) almacenado. No se toca nada.
+    # Semana abierta con tarifa_retiro_fija → tarifa_fija por día (1 valor por día).
+    # Semana abierta sin tarifa fija → sum(r.tarifa_driver) por retiro.
     if not is_seller and retiros_list:
-        usa_fija = (
-            not semana_cerrada
-            and driver
-            and getattr(driver, 'tarifa_retiro_fija', 0)
-            and driver.tarifa_retiro_fija > 0
-        )
-        if usa_fija:
-            dias_con_retiro = {r.fecha for r in retiros_list if r.fecha}
-            for d in dias_con_retiro:
+        if semana_cerrada:
+            for r in retiros_list:
+                if r.fecha in daily_map:
+                    daily_map[r.fecha]["retiros"] += r.tarifa_driver or 0
+        elif driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0:
+            for d in {r.fecha for r in retiros_list if r.fecha}:
                 if d in daily_map:
                     daily_map[d]["retiros"] = driver.tarifa_retiro_fija
         else:
