@@ -1,11 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays } from 'lucide-react'
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
+
+function StatsCard({ icon: Icon, label, value, sub, color = 'blue' }) {
+  const colors = {
+    blue:   'bg-blue-50 text-blue-600 border-blue-100',
+    green:  'bg-green-50 text-green-600 border-green-100',
+    purple: 'bg-purple-50 text-purple-600 border-purple-100',
+    amber:  'bg-amber-50 text-amber-600 border-amber-100',
+  }
+  return (
+    <div className={`rounded-xl border p-4 flex items-start gap-4 ${colors[color]}`}>
+      <div className="p-2 rounded-lg bg-white/60">
+        <Icon size={20} />
+      </div>
+      <div>
+        <p className="text-xs font-medium opacity-70 uppercase tracking-wide">{label}</p>
+        <p className="text-xl font-bold mt-0.5">{value}</p>
+        {sub && <p className="text-xs opacity-60 mt-0.5">{sub}</p>}
+      </div>
+    </div>
+  )
+}
 
 const BANCOS = [
   'Banco de Chile', 'Banco Estado', 'BCI', 'Banco Santander', 'Scotiabank',
@@ -113,6 +134,12 @@ export default function Trabajadores() {
     (t.rut || '').includes(filterText)
   )
 
+  const activos = trabajadores.filter(t => t.activo)
+  const totalMensual = useMemo(() => activos.reduce((s, t) => s + (t.sueldo_bruto || 0), 0), [activos])
+  const totalAnual   = totalMensual * 12
+  const totalCostoMes = useMemo(() => activos.reduce((s, t) =>
+    s + (t.sueldo_bruto || 0) + (t.costo_afp || 0) + (t.costo_salud || 0), 0), [activos])
+
   const columns = [
     { key: 'nombre', label: 'Nombre', render: (v, row) => (
       <div>
@@ -144,6 +171,13 @@ export default function Trabajadores() {
         <button onClick={openNew} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Nuevo Trabajador
         </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatsCard icon={Users}       label="Trabajadores activos" value={activos.length}    color="blue" />
+        <StatsCard icon={DollarSign}  label="Costo total mensual"  value={fmt(totalCostoMes)} sub="Bruto + AFP + Salud" color="green" />
+        <StatsCard icon={Calendar}    label="Sueldo bruto / mes"   value={fmt(totalMensual)}  sub={`${activos.length} contratos activos`} color="purple" />
+        <StatsCard icon={CalendarDays} label="Sueldo bruto / año"  value={fmt(totalAnual)}    sub="Proyección 12 meses" color="amber" />
       </div>
 
       <div className="flex items-center gap-3">
