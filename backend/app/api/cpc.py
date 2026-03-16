@@ -225,6 +225,9 @@ def tabla_cpc(
             pago = pagos_map.get((driver.id, sem))
             if pago and pago.monto_override is not None:
                 monto = pago.monto_override
+            elif pago and pago.estado == EstadoPagoEnum.PAGADO.value and pago.monto_neto:
+                # Semana cerrada con monto guardado: usar el histórico, no recalcular
+                monto = pago.monto_neto
             elif es_jefe:
                 monto = _monto_consolidado(driver.id, sem)
             else:
