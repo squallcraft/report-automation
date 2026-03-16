@@ -459,9 +459,15 @@ async def importar_retiros(
 
 @router.post("", response_model=RetiroOut, status_code=201)
 def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get_db), current_user=require_permission("retiros:editar")):
-    seller = db.get(Seller, data.seller_id)
-    if not seller:
-        raise HTTPException(status_code=404, detail="Seller no encontrado")
+    if not data.seller_id and not data.pickup_id and not data.sucursal_id:
+        raise HTTPException(status_code=400, detail="Debe especificar seller, pickup o sucursal")
+    if data.seller_id:
+        if not db.get(Seller, data.seller_id):
+            raise HTTPException(status_code=404, detail="Seller no encontrado")
+    if data.pickup_id:
+        from app.models import Pickup
+        if not db.get(Pickup, data.pickup_id):
+            raise HTTPException(status_code=404, detail="Pickup no encontrado")
     driver = db.get(Driver, data.driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
@@ -470,7 +476,7 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
     invalidar_snapshots(db, data.semana, data.mes, data.anio)
     db.commit()
     db.refresh(retiro)
-    audit(db, "crear_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro.id, metadata={"seller_id": data.seller_id, "driver_id": data.driver_id, "fecha": str(data.fecha)})
+    audit(db, "crear_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro.id, metadata={"seller_id": data.seller_id, "pickup_id": data.pickup_id, "driver_id": data.driver_id, "fecha": str(data.fecha)})
     return _enrich_retiro(retiro, db)
 
 

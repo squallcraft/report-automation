@@ -332,6 +332,7 @@ export default function Retiros() {
   const [retiros, setRetiros] = useState([])
   const [sellers, setSellers] = useState([])
   const [drivers, setDrivers] = useState([])
+  const [pickups, setPickups] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -340,16 +341,17 @@ export default function Retiros() {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [editForm, setEditForm] = useState({ fecha: '', seller_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
+  const [editForm, setEditForm] = useState({ fecha: '', seller_id: '', pickup_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
   const [period, setPeriod] = useState(() => {
     const d = new Date()
     return { semana: 1, mes: d.getMonth() + 1, anio: d.getFullYear() }
   })
-  const [form, setForm] = useState({ fecha: '', seller_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
+  const [form, setForm] = useState({ fecha: '', seller_id: '', pickup_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
 
   useEffect(() => {
     api.get('/sellers').then(({ data }) => setSellers(data)).catch(() => toast.error('Error al cargar sellers'))
     api.get('/drivers').then(({ data }) => setDrivers(data)).catch(() => toast.error('Error al cargar drivers'))
+    api.get('/pickups').then(({ data }) => setPickups(data)).catch(() => {})
   }, [])
 
   const sellersEnPeriodo = useMemo(() => {
@@ -385,12 +387,14 @@ export default function Retiros() {
     } catch { toast.error('Error al descargar plantilla') }
   }
 
-  const handleSellerChange = (sellerId, target = 'form') => {
-    const seller = sellers.find(s => s.id === Number(sellerId))
-    const update = {
-      seller_id: sellerId,
-      tarifa_seller: seller?.tarifa_retiro || 0,
-      tarifa_driver: seller?.tarifa_retiro_driver || 0,
+  const handleOrigenChange = (val, target = 'form') => {
+    let update = { seller_id: '', pickup_id: '', tarifa_seller: 0, tarifa_driver: 0 }
+    if (val.startsWith('p-')) {
+      const pickup = pickups.find(p => p.id === Number(val.slice(2)))
+      if (pickup) update = { seller_id: '', pickup_id: pickup.id, tarifa_seller: 0, tarifa_driver: 0 }
+    } else if (val) {
+      const seller = sellers.find(s => s.id === Number(val))
+      if (seller) update = { seller_id: seller.id, pickup_id: '', tarifa_seller: seller.tarifa_retiro || 0, tarifa_driver: seller.tarifa_retiro_driver || 0 }
     }
     if (target === 'edit') setEditForm(f => ({ ...f, ...update }))
     else setForm(f => ({ ...f, ...update }))
@@ -398,20 +402,22 @@ export default function Retiros() {
 
   const handleCreate = async (e) => {
     e.preventDefault()
+    const payload = {
+      fecha: form.fecha,
+      driver_id: Number(form.driver_id),
+      tarifa_seller: Number(form.tarifa_seller),
+      tarifa_driver: Number(form.tarifa_driver),
+      semana: period.semana,
+      mes: period.mes,
+      anio: period.anio,
+    }
+    if (form.pickup_id) payload.pickup_id = Number(form.pickup_id)
+    else if (form.seller_id) payload.seller_id = Number(form.seller_id)
     try {
-      await api.post('/retiros', {
-        ...form,
-        seller_id: Number(form.seller_id),
-        driver_id: Number(form.driver_id),
-        tarifa_seller: Number(form.tarifa_seller),
-        tarifa_driver: Number(form.tarifa_driver),
-        semana: period.semana,
-        mes: period.mes,
-        anio: period.anio,
-      })
+      await api.post('/retiros', payload)
       toast.success('Retiro creado')
       setShowModal(false)
-      setForm({ fecha: '', seller_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
+      setForm({ fecha: '', seller_id: '', pickup_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
       load()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Error')
@@ -596,10 +602,21 @@ export default function Retiros() {
             <input type="date" value={form.fecha} onChange={(e) => setForm(f => ({ ...f, fecha: e.target.value }))} className="input-field" required />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Seller</label>
-            <select value={form.seller_id} onChange={(e) => handleSellerChange(e.target.value)} className="input-field" required>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Origen (Seller / Pickup)</label>
+            <select
+              value={form.pickup_id ? `p-${form.pickup_id}` : form.seller_id || ''}
+              onChange={(e) => handleOrigenChange(e.target.value)}
+              className="input-field" required
+            >
               <option value="">Seleccionar...</option>
-              {sellers.filter(s => !s.usa_pickup).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              {pickups.length > 0 && (
+                <optgroup label="Pickups">
+                  {pickups.map(p => <option key={`p-${p.id}`} value={`p-${p.id}`}>{p.nombre}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="Sellers">
+                {sellers.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+              </optgroup>
             </select>
           </div>
           <div>
@@ -635,10 +652,21 @@ export default function Retiros() {
               <input type="date" value={editForm.fecha} onChange={(e) => setEditForm(f => ({ ...f, fecha: e.target.value }))} className="input-field" required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Seller</label>
-              <select value={editForm.seller_id} onChange={(e) => handleSellerChange(e.target.value, 'edit')} className="input-field" required>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Origen (Seller / Pickup)</label>
+              <select
+                value={editForm.pickup_id ? `p-${editForm.pickup_id}` : editForm.seller_id || ''}
+                onChange={(e) => handleOrigenChange(e.target.value, 'edit')}
+                className="input-field" required
+              >
                 <option value="">Seleccionar...</option>
-                {sellersEnPeriodo.filter(s => !s.usa_pickup).map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                {pickups.length > 0 && (
+                  <optgroup label="Pickups">
+                    {pickups.map(p => <option key={`p-${p.id}`} value={`p-${p.id}`}>{p.nombre}</option>)}
+                  </optgroup>
+                )}
+                <optgroup label="Sellers">
+                  {sellers.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                </optgroup>
               </select>
             </div>
             <div>

@@ -512,7 +512,9 @@ class RetiroCreate(BaseModel):
     semana: int
     mes: int
     anio: int
-    seller_id: int
+    seller_id: Optional[int] = None
+    pickup_id: Optional[int] = None
+    sucursal_id: Optional[int] = None
     driver_id: int
     tarifa_seller: int = 0
     tarifa_driver: int = 0
