@@ -164,7 +164,7 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-            <StatsCard icon={DollarSign} label="Total Cobrado" value={fmt(stats.total_cobrado_mes)} color="primary" sub="Cobros a sellers" />
+            <StatsCard icon={DollarSign} label="Total Ingresado" value={fmt(stats.total_cobrado_mes)} color="primary" sub="Pagos Sellers" />
             <StatsCard icon={DollarSign} label="Total Pagado" value={fmt(stats.total_pagado_mes)} color="amber" sub="Pagos a drivers" />
             <StatsCard icon={Wallet} label="Gastos Operacionales" value={fmt(stats.total_gastos_operacionales)} color="red" sub="Sueldos, servidores, etc." />
             <StatsCard
