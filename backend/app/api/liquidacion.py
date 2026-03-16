@@ -451,6 +451,14 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
 
         es_contratado = getattr(driver, 'contratado', False)
         pago_extra_envios = sum(e.pago_extra_manual for e in envios)
+        pago_sem = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == s,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+            PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+        ).first()
+        cerrada = pago_sem is not None
         weekly[s] = {
             "normal_count": len(normal),
             "normal_total": sum(e.costo_driver for e in normal),
@@ -464,7 +472,7 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
             "melipilla_total": sum(e.costo_driver for e in melipilla),
             "comuna": 0 if es_contratado else sum(e.extra_comuna_driver for e in envios),
             "bultos_extra": 0 if es_contratado else sum(e.extra_producto_driver for e in envios) + pago_extra_envios,
-            "retiros": _calcular_retiro_driver(driver, retiros_q),
+            "retiros": _calcular_retiro_driver(driver, retiros_q, semana_cerrada=cerrada),
             "bonificaciones": bonif,
             "descuentos": desc,
             "envios": len(envios),
