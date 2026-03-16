@@ -454,9 +454,9 @@ app.include_router(pickups.router, prefix="/api")
 app.include_router(auditoria.router, prefix="/api")
 app.include_router(planes_tarifarios.router, prefix="/api")
 app.include_router(finanzas.router, prefix="/api")
+app.include_router(pagos_trabajadores.router, prefix="/api")  # antes de trabajadores para evitar colisión de rutas /{id}
 app.include_router(trabajadores.router, prefix="/api")
 app.include_router(prestamos.router, prefix="/api")
-app.include_router(pagos_trabajadores.router, prefix="/api")
 
 
 @app.get("/")
