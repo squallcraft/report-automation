@@ -4,7 +4,7 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { FileText, Search, ChevronLeft, ChevronRight, PackagePlus, Pencil, X, Lock } from 'lucide-react'
+import { FileText, Search, PackagePlus, Pencil, X, Lock } from 'lucide-react'
 
 const ESTADO_BADGE = {
   pendiente:     { label: 'Pendiente',  cls: 'bg-gray-100 text-gray-600' },
@@ -15,7 +15,6 @@ const ESTADO_BADGE = {
 }
 
 const fmtClp = (v) => `$${(v ?? 0).toLocaleString('es-CL')}`
-const PAGE_SIZE = 500
 
 const now = new Date()
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -24,9 +23,7 @@ export default function Envios() {
   const [searchParams] = useSearchParams()
 
   const [envios, setEnvios] = useState([])
-  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [filters, setFilters] = useState({
@@ -66,7 +63,7 @@ export default function Envios() {
   }, [])
 
   const buildParams = useCallback(() => {
-    const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE, sort_by: sortBy, sort_dir: sortDir }
+    const params = { limit: 100000, sort_by: sortBy, sort_dir: sortDir }
     if (search) params.search = search
     if (filters.semana) params.semana = filters.semana
     if (filters.meses && filters.meses.length === 1) {
@@ -81,23 +78,19 @@ export default function Envios() {
     if (colFilters.empresa) params.empresa = colFilters.empresa
     if (colFilters.tracking_id) params.search = colFilters.tracking_id
     return params
-  }, [page, search, filters, colFilters, sortBy, sortDir])
+  }, [search, filters, colFilters, sortBy, sortDir])
 
   const fetchEnvios = useCallback(() => {
     setLoading(true)
     const params = buildParams()
-    Promise.all([
-      api.get('/envios', { params }),
-      api.get('/envios/count', { params }),
-    ])
-      .then(([envRes, countRes]) => {
+    api.get('/envios', { params })
+      .then((envRes) => {
         const enriched = (envRes.data || []).map(e => ({
           ...e,
           extra_total_seller: (e.extra_producto_seller || 0) + (e.extra_comuna_seller || 0) + (e.cobro_extra_manual || 0),
           extra_total_driver: (e.extra_producto_driver || 0) + (e.extra_comuna_driver || 0) + (e.pago_extra_manual || 0),
         }))
         setEnvios(enriched)
-        setTotal(countRes.data.count)
       })
       .catch(() => toast.error('Error al cargar envíos'))
       .finally(() => setLoading(false))
@@ -109,7 +102,6 @@ export default function Envios() {
 
   const handleSearch = (e) => {
     e.preventDefault()
-    setPage(0)
     setSearch(searchInput)
   }
 
@@ -120,13 +112,11 @@ export default function Envios() {
     setColFilters({ seller_nombre: '', driver_nombre: '', comuna: '', empresa: '', tracking_id: '' })
     setSortBy('fecha_entrega')
     setSortDir('desc')
-    setPage(0)
   }
 
   const handleServerSort = (key, dir) => {
     setSortBy(key)
     setSortDir(dir)
-    setPage(0)
   }
 
   const debounceRef = useRef(null)
@@ -135,14 +125,11 @@ export default function Envios() {
     if (filterConfig?.type === 'text') {
       setColFilters((f) => ({ ...f, [key]: value }))
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => setPage(0), 500)
+      debounceRef.current = setTimeout(() => {}, 500)
     } else {
       setColFilters((f) => ({ ...f, [key]: value }))
-      setPage(0)
     }
   }
-
-  const totalPages = Math.ceil(total / PAGE_SIZE) || 1
 
   const openEdit = (envio) => {
     setEditModal(envio)
@@ -297,7 +284,7 @@ export default function Envios() {
             <FileText size={28} />
             Envíos
           </h1>
-          <p className="text-sm text-gray-500 mt-1">{total.toLocaleString()} envíos encontrados</p>
+          <p className="text-sm text-gray-500 mt-1">{envios.length.toLocaleString()} envíos encontrados</p>
         </div>
       </div>
 
@@ -318,7 +305,7 @@ export default function Envios() {
           </div>
           <div className="w-28">
             <label className="block text-xs font-medium text-gray-500 mb-1">Semana</label>
-            <select className="input-field" value={filters.semana} onChange={(e) => { setFilters((f) => ({ ...f, semana: e.target.value })); setPage(0) }}>
+            <select className="input-field" value={filters.semana} onChange={(e) => setFilters((f) => ({ ...f, semana: e.target.value }))}>
               <option value="">Todas</option>
               {[1,2,3,4,5].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -340,7 +327,6 @@ export default function Envios() {
                           : [...f.meses, m]
                         return { ...f, meses: next.length ? next : [m] }
                       })
-                      setPage(0)
                     }}
                     className={`px-2 py-1 text-xs rounded border transition-colors ${active ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'}`}
                   >
@@ -352,7 +338,7 @@ export default function Envios() {
           </div>
           <div className="w-28">
             <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
-            <input type="number" className="input-field" placeholder="2026" value={filters.anio} onChange={(e) => { setFilters((f) => ({ ...f, anio: e.target.value })); setPage(0) }} />
+            <input type="number" className="input-field" placeholder="2026" value={filters.anio} onChange={(e) => setFilters((f) => ({ ...f, anio: e.target.value }))} />
           </div>
           <button type="submit" className="btn-primary h-10">Buscar</button>
           {hasFilters && (
@@ -380,26 +366,6 @@ export default function Envios() {
             onColumnFilterChange={handleColumnFilter}
             maxHeight="calc(100vh - 280px)"
           />
-
-          <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-            <span>Página {page + 1} de {totalPages}</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-40"
-              >
-                <ChevronLeft size={14} /> Anterior
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                className="btn-secondary flex items-center gap-1 text-xs disabled:opacity-40"
-              >
-                Siguiente <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
         </>
       )}
 
