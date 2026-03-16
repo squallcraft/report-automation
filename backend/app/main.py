@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores
 from app.middleware.timing import TimingMiddleware
 
 try:
@@ -121,6 +121,27 @@ with engine.connect() as conn:
             conn.commit()
         except Exception:
             conn.rollback()
+
+    # ── Migración: pagos_mes_trabajadores ──
+    if "pagos_mes_trabajadores" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE IF NOT EXISTS pagos_mes_trabajadores (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                mes INTEGER NOT NULL,
+                anio INTEGER NOT NULL,
+                monto_bruto INTEGER NOT NULL DEFAULT 0,
+                descuento_cuotas INTEGER NOT NULL DEFAULT 0,
+                descuento_ajustes INTEGER NOT NULL DEFAULT 0,
+                monto_neto INTEGER NOT NULL DEFAULT 0,
+                estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                fecha_pago DATE,
+                nota TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT uq_pago_mes_trabajador UNIQUE (trabajador_id, mes, anio)
+            )
+        """)
 
     # ── Migración: cartola_cargas se crea via create_all ──
     # ── Migración: carga_id en pagos_cartola_drivers y pagos_cartola_sellers ──
@@ -429,6 +450,7 @@ app.include_router(planes_tarifarios.router, prefix="/api")
 app.include_router(finanzas.router, prefix="/api")
 app.include_router(trabajadores.router, prefix="/api")
 app.include_router(prestamos.router, prefix="/api")
+app.include_router(pagos_trabajadores.router, prefix="/api")
 
 
 @app.get("/")

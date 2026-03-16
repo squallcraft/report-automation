@@ -12,7 +12,7 @@ from app.auth import require_admin_or_administracion
 from app.models import (
     Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
     PagoSemanaDriver, PagoCartola, EstadoPagoEnum, RecepcionPaquete,
-    MovimientoFinanciero, CategoriaFinanciera,
+    MovimientoFinanciero, CategoriaFinanciera, Trabajador,
 )
 from app.schemas import DashboardStats
 
@@ -76,6 +76,28 @@ def obtener_stats(
 
     margen_bruto = int(total_cobrado) - int(costo_calculado)
 
+    # ── Sueldos: suma de sueldo_bruto de trabajadores activos (proyección mensual) ──
+    total_sueldos = db.query(sqlfunc.coalesce(sqlfunc.sum(Trabajador.sueldo_bruto), 0)).filter(
+        Trabajador.activo == True
+    ).scalar()
+
+    # ── Imposiciones: suma costo_afp + costo_salud de trabajadores activos ──
+    total_imposiciones_row = db.query(
+        sqlfunc.coalesce(sqlfunc.sum(Trabajador.costo_afp), 0),
+        sqlfunc.coalesce(sqlfunc.sum(Trabajador.costo_salud), 0),
+    ).filter(Trabajador.activo == True).first()
+    total_imposiciones = int(total_imposiciones_row[0]) + int(total_imposiciones_row[1])
+
+    # ── Impuestos: MovimientoFinanciero donde categoría = "Impuestos" ──
+    total_impuestos = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(
+        CategoriaFinanciera
+    ).filter(
+        MovimientoFinanciero.mes == mes,
+        MovimientoFinanciero.anio == anio,
+        CategoriaFinanciera.nombre == "Impuestos",
+        CategoriaFinanciera.tipo == "EGRESO",
+    ).scalar()
+
     return DashboardStats(
         total_sellers=total_sellers,
         total_drivers=total_drivers,
@@ -87,6 +109,9 @@ def obtener_stats(
         consultas_pendientes=consultas_pendientes,
         total_gastos_operacionales=int(total_gastos_op),
         margen_neto=margen_bruto - int(total_gastos_op),
+        total_sueldos_mes=int(total_sueldos),
+        total_imposiciones_mes=int(total_imposiciones),
+        total_impuestos_mes=int(total_impuestos),
     )
 
 

@@ -40,6 +40,7 @@ import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Trabajadores from './pages/admin/Trabajadores'
 import Prestamos from './pages/admin/Prestamos'
+import PagosTrabajadores from './pages/admin/PagosTrabajadores'
 import Auditoria from './pages/admin/Auditoria'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
@@ -101,6 +102,7 @@ export default function App() {
         <Route path="cpp" element={<CPP />} />
         <Route path="trabajadores" element={<Trabajadores />} />
         <Route path="prestamos" element={<Prestamos />} />
+        <Route path="pagos-trabajadores" element={<PagosTrabajadores />} />
         <Route path="auditoria" element={<Auditoria />} />
       </Route>
 

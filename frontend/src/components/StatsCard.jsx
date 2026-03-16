@@ -5,6 +5,8 @@ export default function StatsCard({ icon: Icon, label, value, color = 'primary',
     amber: 'bg-amber-50 text-amber-600',
     red: 'bg-red-50 text-red-600',
     purple: 'bg-purple-50 text-purple-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
+    teal: 'bg-teal-50 text-teal-600',
   }
 
   return (

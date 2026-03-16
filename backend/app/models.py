@@ -760,6 +760,7 @@ class Trabajador(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     pagos = relationship("PagoTrabajador", back_populates="trabajador")
+    pagos_mes = relationship("PagoMesTrabajador", back_populates="trabajador")
     prestamos = relationship("Prestamo", back_populates="trabajador", foreign_keys="Prestamo.trabajador_id")
 
 
@@ -778,6 +779,30 @@ class PagoTrabajador(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     trabajador = relationship("Trabajador", back_populates="pagos")
+
+
+class PagoMesTrabajador(Base):
+    """Estado mensual de pago a un trabajador. Equivalente a PagoSemanaDriver pero mensual."""
+    __tablename__ = "pagos_mes_trabajadores"
+    __table_args__ = (
+        UniqueConstraint("trabajador_id", "mes", "anio", name="uq_pago_mes_trabajador"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto_bruto = Column(Integer, nullable=False, default=0)        # sueldo_bruto congelado al cerrar
+    descuento_cuotas = Column(Integer, nullable=False, default=0)   # suma cuotas préstamo descontadas
+    descuento_ajustes = Column(Integer, nullable=False, default=0)  # suma ajustes negativos
+    monto_neto = Column(Integer, nullable=False, default=0)         # monto_bruto - descuentos
+    estado = Column(String, nullable=False, default="PENDIENTE")    # PENDIENTE / PAGADO
+    fecha_pago = Column(Date, nullable=True)
+    nota = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    trabajador = relationship("Trabajador", back_populates="pagos_mes")
 
 
 # ── Préstamos ──

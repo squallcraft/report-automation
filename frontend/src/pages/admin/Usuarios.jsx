@@ -41,6 +41,7 @@ const GRUPOS_PERMISOS = [
       { slug: 'cpp', label: 'CPP Pickups' },
       { slug: 'ajustes', label: 'Ajustes' },
       { slug: 'prestamos', label: 'Préstamos' },
+      { slug: 'pagos-trabajadores', label: 'Pagos Nómina' },
     ],
   },
   {

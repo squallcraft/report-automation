@@ -555,6 +555,9 @@ class DashboardStats(BaseModel):
     consultas_pendientes: int
     total_gastos_operacionales: int = 0
     margen_neto: int = 0
+    total_sueldos_mes: int = 0
+    total_imposiciones_mes: int = 0
+    total_impuestos_mes: int = 0
 
 
 # ── Finanzas ──

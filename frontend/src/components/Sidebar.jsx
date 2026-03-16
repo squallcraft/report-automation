@@ -38,6 +38,7 @@ const adminMenu = [
       { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
       { to: '/admin/ajustes', icon: Settings, label: 'Ajustes', permiso: 'ajustes' },
       { to: '/admin/prestamos', icon: HandCoins, label: 'Préstamos', permiso: 'prestamos' },
+      { to: '/admin/pagos-trabajadores', icon: Briefcase, label: 'Pagos Nómina', permiso: 'pagos-trabajadores' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },

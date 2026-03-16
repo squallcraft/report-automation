@@ -24,7 +24,7 @@ SECCIONES: list[str] = [
     "finanzas", "liquidacion", "facturacion", "cpc", "cpp", "ajustes",
     "productos", "comunas", "calendario",
     "consultas", "logs", "asistente",
-    "trabajadores", "prestamos",
+    "trabajadores", "prestamos", "pagos-trabajadores",
 ]
 
 _SECCIONES_SET = set(SECCIONES)

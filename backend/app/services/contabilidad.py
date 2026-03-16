@@ -237,6 +237,26 @@ def asiento_pago_driver_cartola(db: Session, pago: PagoCartola, es_backfill=Fals
     )
 
 
+def asiento_pago_trabajador(db: Session, pago_mes, es_backfill=False):
+    """Pago mensual a trabajador → Debe: Remuneraciones / Haber: Banco"""
+    monto = pago_mes.monto_neto
+    if not monto or monto <= 0:
+        return None
+    fecha = pago_mes.fecha_pago or date.today()
+    from app.models import Trabajador
+    trabajador = db.get(Trabajador, pago_mes.trabajador_id)
+    nombre = trabajador.nombre if trabajador else f"Trabajador {pago_mes.trabajador_id}"
+    return crear_asiento(db, fecha,
+        f"Pago nómina {pago_mes.mes}/{pago_mes.anio} — {nombre}",
+        "PagoMesTrabajador", pago_mes.id,
+        [
+            (_cuenta_id(db, CUENTA_REMUNERACIONES), monto, 0),
+            (_cuenta_id(db, CUENTA_BANCO), 0, monto),
+        ],
+        es_backfill=es_backfill,
+    )
+
+
 def asiento_movimiento_financiero(db: Session, mov: MovimientoFinanciero, es_backfill=False):
     """MovimientoFinanciero manual → Asiento según tipo de categoría."""
     if not mov.monto or mov.monto <= 0:
