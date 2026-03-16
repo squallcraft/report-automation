@@ -27,7 +27,7 @@ from app.models import (
     PeriodoLiquidacion, EstadoLiquidacionEnum,
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     TipoEntidadEnum, EmpresaEnum, ProductoConExtra, TarifaPlanComuna,
-    TarifaComuna,
+    TarifaComuna, PagoSemanaDriver, EstadoPagoEnum,
 )
 from app.services.calendario import get_dates_for_week
 from app.services.audit import registrar as audit
@@ -483,7 +483,7 @@ def _driver_detail(db: Session, driver_id: int, mes: int, anio: int):
     }
 
 
-def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False, seller=None, driver=None):
+def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, semana, mes, anio, is_seller=True, db=None, contratado=False, seller=None, driver=None, semana_cerrada=False):
     all_dates = get_dates_for_week(db, semana, mes, anio) if db else []
 
     daily_map = {}
@@ -513,16 +513,17 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
     # Retiros solo aplican al desglose de drivers.
-    # La tarifa a mostrar por día es r.tarifa_driver almacenado en cada retiro.
-    # Para semanas cerradas ese valor es el histórico inmutable.
-    # Para semanas abiertas con tarifa_retiro_fija, el valor ya fue guardado
-    # en r.tarifa_driver al crear el retiro (fix aplicado en retiros.py).
-    # Si el retiro es anterior al fix (tarifa_driver != tarifa_retiro_fija),
-    # mostramos tarifa_retiro_fija para que el desglose sea consistente con el pago real.
+    # - Semana cerrada (PAGADO): usar r.tarifa_driver almacenado (histórico inmutable).
+    # - Semana abierta con tarifa_retiro_fija: mostrar tarifa_fija por día (1 valor/día).
+    # - Sin tarifa fija: sumar r.tarifa_driver por retiro.
     if not is_seller and retiros_list:
-        usa_fija = driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0
+        usa_fija = (
+            not semana_cerrada
+            and driver
+            and getattr(driver, 'tarifa_retiro_fija', 0)
+            and driver.tarifa_retiro_fija > 0
+        )
         if usa_fija:
-            # Mostrar tarifa_retiro_fija por día con retiros (1 valor por día, no por retiro)
             dias_con_retiro = {r.fecha for r in retiros_list if r.fecha}
             for d in dias_con_retiro:
                 if d in daily_map:
@@ -634,10 +635,18 @@ def detalle_driver(
         Retiro.driver_id == driver_id, Retiro.semana == semana,
         Retiro.mes == mes, Retiro.anio == anio,
     ).all()
+    pago_sem = db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.driver_id == driver_id,
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+    ).first()
+    semana_cerrada = pago_sem is not None and pago_sem.estado == EstadoPagoEnum.PAGADO.value
     detail["daily"] = _daily_breakdown(
         envios_semana, retiros_semana,
         "extra_producto_driver", "extra_comuna_driver",
         semana, mes, anio, is_seller=False, db=db, contratado=es_contratado, driver=driver,
+        semana_cerrada=semana_cerrada,
     )
     detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
     return detail
