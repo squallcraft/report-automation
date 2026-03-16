@@ -131,6 +131,7 @@ with engine.connect() as conn:
                 mes INTEGER NOT NULL,
                 anio INTEGER NOT NULL,
                 monto_bruto INTEGER NOT NULL DEFAULT 0,
+                bonificaciones INTEGER NOT NULL DEFAULT 0,
                 descuento_cuotas INTEGER NOT NULL DEFAULT 0,
                 descuento_ajustes INTEGER NOT NULL DEFAULT 0,
                 monto_neto INTEGER NOT NULL DEFAULT 0,
@@ -142,6 +143,11 @@ with engine.connect() as conn:
                 CONSTRAINT uq_pago_mes_trabajador UNIQUE (trabajador_id, mes, anio)
             )
         """)
+    else:
+        # Agregar columna bonificaciones si no existe
+        pmt_cols = [c["name"] for c in insp.get_columns("pagos_mes_trabajadores")]
+        if "bonificaciones" not in pmt_cols:
+            safe_exec("ALTER TABLE pagos_mes_trabajadores ADD COLUMN bonificaciones INTEGER NOT NULL DEFAULT 0")
 
     # ── Migración: cartola_cargas se crea via create_all ──
     # ── Migración: carga_id en pagos_cartola_drivers y pagos_cartola_sellers ──

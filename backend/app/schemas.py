@@ -16,6 +16,7 @@ class EmpresaEnum(str, Enum):
 class TipoEntidadEnum(str, Enum):
     SELLER = "SELLER"
     DRIVER = "DRIVER"
+    TRABAJADOR = "TRABAJADOR"
 
 
 class EstadoLiquidacionEnum(str, Enum):

@@ -77,19 +77,30 @@ def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: in
     descuento_cuotas = sum(c.monto for c in cuotas)
 
     # Sumar ajustes negativos del mes
-    ajustes = db.query(AjusteLiquidacion).filter(
+    ajustes_neg = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == "TRABAJADOR",
         AjusteLiquidacion.entidad_id == trabajador.id,
         AjusteLiquidacion.mes == mes,
         AjusteLiquidacion.anio == anio,
         AjusteLiquidacion.monto < 0,
     ).all()
-    descuento_ajustes = abs(sum(a.monto for a in ajustes))
+    descuento_ajustes = abs(sum(a.monto for a in ajustes_neg))
 
-    monto_neto = max(0, monto_bruto - descuento_cuotas - descuento_ajustes)
+    # Sumar bonificaciones (ajustes positivos) del mes
+    ajustes_pos = db.query(AjusteLiquidacion).filter(
+        AjusteLiquidacion.tipo == "TRABAJADOR",
+        AjusteLiquidacion.entidad_id == trabajador.id,
+        AjusteLiquidacion.mes == mes,
+        AjusteLiquidacion.anio == anio,
+        AjusteLiquidacion.monto > 0,
+    ).all()
+    bonificaciones = sum(a.monto for a in ajustes_pos)
+
+    monto_neto = max(0, monto_bruto + bonificaciones - descuento_cuotas - descuento_ajustes)
 
     return {
         "monto_bruto": monto_bruto,
+        "bonificaciones": bonificaciones,
         "descuento_cuotas": descuento_cuotas,
         "descuento_ajustes": descuento_ajustes,
         "monto_neto": monto_neto,
@@ -128,6 +139,7 @@ def listar_pagos_mes(
         if pago and pago.estado == "PAGADO":
             montos = {
                 "monto_bruto": pago.monto_bruto,
+                "bonificaciones": getattr(pago, 'bonificaciones', 0),
                 "descuento_cuotas": pago.descuento_cuotas,
                 "descuento_ajustes": pago.descuento_ajustes,
                 "monto_neto": pago.monto_neto,
@@ -205,6 +217,7 @@ def actualizar_pago_mes(
     if body.estado == "PAGADO":
         # Congelar montos al cerrar
         pago.monto_bruto = montos["monto_bruto"]
+        pago.bonificaciones = montos["bonificaciones"]
         pago.descuento_cuotas = montos["descuento_cuotas"]
         pago.descuento_ajustes = montos["descuento_ajustes"]
         pago.monto_neto = montos["monto_neto"]
@@ -531,6 +544,7 @@ def cartola_confirmar(
             db.add(pago_mes)
         else:
             pago_mes.monto_bruto = montos["monto_bruto"]
+            pago_mes.bonificaciones = montos["bonificaciones"]
             pago_mes.descuento_cuotas = montos["descuento_cuotas"]
             pago_mes.descuento_ajustes = montos["descuento_ajustes"]
             pago_mes.monto_neto = montos["monto_neto"]

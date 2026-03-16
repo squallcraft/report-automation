@@ -20,6 +20,7 @@ class EmpresaEnum(str, enum.Enum):
 class TipoEntidadEnum(str, enum.Enum):
     SELLER = "SELLER"
     DRIVER = "DRIVER"
+    TRABAJADOR = "TRABAJADOR"
 
 
 class EstadoLiquidacionEnum(str, enum.Enum):
@@ -793,9 +794,10 @@ class PagoMesTrabajador(Base):
     mes = Column(Integer, nullable=False)
     anio = Column(Integer, nullable=False)
     monto_bruto = Column(Integer, nullable=False, default=0)        # sueldo_bruto congelado al cerrar
+    bonificaciones = Column(Integer, nullable=False, default=0)     # suma bonificaciones del mes
     descuento_cuotas = Column(Integer, nullable=False, default=0)   # suma cuotas préstamo descontadas
     descuento_ajustes = Column(Integer, nullable=False, default=0)  # suma ajustes negativos
-    monto_neto = Column(Integer, nullable=False, default=0)         # monto_bruto - descuentos
+    monto_neto = Column(Integer, nullable=False, default=0)         # monto_bruto + bonificaciones - descuentos
     estado = Column(String, nullable=False, default="PENDIENTE")    # PENDIENTE / PAGADO
     fecha_pago = Column(Date, nullable=True)
     nota = Column(String, nullable=True)
