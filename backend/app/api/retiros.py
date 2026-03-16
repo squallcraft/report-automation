@@ -15,11 +15,12 @@ import pandas as pd
 
 from app.database import get_db
 from app.auth import require_permission
-from app.models import Retiro, Seller, Driver, Pickup, Sucursal
+from app.models import Retiro, Seller, Driver, Pickup, Sucursal, PagoSemanaDriver, PagoSemanaSeller, PagoSemanaPickup
 from app.schemas import RetiroCreate, RetiroUpdate, RetiroOut
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
 from app.services.audit import registrar as audit
 from app.api.liquidacion import invalidar_snapshots
+from app.models import EstadoPagoEnum
 
 
 def _similaridad(a: str, b: str) -> float:
@@ -42,6 +43,126 @@ def _mejor_match(nombre_raw: str, entidades) -> tuple:
     return mejor, round(mejor_score, 2)
 
 router = APIRouter(prefix="/retiros", tags=["Retiros"])
+
+
+def _verificar_semana_abierta(db: Session, semana: int, mes: int, anio: int,
+                               driver_id: int = None, seller_id: int = None, pickup_id: int = None):
+    """Lanza HTTP 409 si la semana ya está cerrada (pago en estado PAGADO) para el driver/seller/pickup del retiro."""
+    if driver_id:
+        psd = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == semana,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+            PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+        ).first()
+        if psd:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La semana {semana} ({mes}/{anio}) ya está cerrada para este conductor. No se pueden modificar retiros en semanas pagadas.",
+            )
+    if seller_id:
+        pss = db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == seller_id,
+            PagoSemanaSeller.semana == semana,
+            PagoSemanaSeller.mes == mes,
+            PagoSemanaSeller.anio == anio,
+            PagoSemanaSeller.estado == EstadoPagoEnum.PAGADO.value,
+        ).first()
+        if pss:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La semana {semana} ({mes}/{anio}) ya está cerrada para este seller. No se pueden modificar retiros en semanas pagadas.",
+            )
+    if pickup_id:
+        psp = db.query(PagoSemanaPickup).filter(
+            PagoSemanaPickup.pickup_id == pickup_id,
+            PagoSemanaPickup.semana == semana,
+            PagoSemanaPickup.mes == mes,
+            PagoSemanaPickup.anio == anio,
+            PagoSemanaPickup.estado == EstadoPagoEnum.PAGADO.value,
+        ).first()
+        if psp:
+            raise HTTPException(
+                status_code=409,
+                detail=f"La semana {semana} ({mes}/{anio}) ya está cerrada para este pickup. No se pueden modificar retiros en semanas pagadas.",
+            )
+
+
+def _check_cerrado(db: Session, semana: int, mes: int, anio: int,
+                   driver_id: int = None, seller_id: int = None, pickup_id: int = None) -> bool:
+    """Versión booleana de _verificar_semana_abierta, para uso en validación batch."""
+    if driver_id:
+        if db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == semana,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+            PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+        ).first():
+            return True
+    if seller_id:
+        if db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == seller_id,
+            PagoSemanaSeller.semana == semana,
+            PagoSemanaSeller.mes == mes,
+            PagoSemanaSeller.anio == anio,
+            PagoSemanaSeller.estado == EstadoPagoEnum.PAGADO.value,
+        ).first():
+            return True
+    if pickup_id:
+        if db.query(PagoSemanaPickup).filter(
+            PagoSemanaPickup.pickup_id == pickup_id,
+            PagoSemanaPickup.semana == semana,
+            PagoSemanaPickup.mes == mes,
+            PagoSemanaPickup.anio == anio,
+            PagoSemanaPickup.estado == EstadoPagoEnum.PAGADO.value,
+        ).first():
+            return True
+    return False
+
+
+@router.get("/semanas-cerradas")
+def semanas_cerradas(
+    mes: int,
+    anio: int,
+    db: Session = Depends(get_db),
+    _=require_permission("retiros:ver"),
+):
+    """
+    Retorna qué (driver_id, semana), (seller_id, semana) y (pickup_id, semana) están cerradas (PAGADO)
+    para el mes/año dado. El frontend usa esto para bloquear acciones sobre retiros cerrados.
+    """
+    drivers_cerrados: dict[str, list[int]] = {}
+    sellers_cerrados: dict[str, list[int]] = {}
+    pickups_cerrados: dict[str, list[int]] = {}
+
+    for psd in db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+    ).all():
+        drivers_cerrados.setdefault(str(psd.driver_id), []).append(psd.semana)
+
+    for pss in db.query(PagoSemanaSeller).filter(
+        PagoSemanaSeller.mes == mes,
+        PagoSemanaSeller.anio == anio,
+        PagoSemanaSeller.estado == EstadoPagoEnum.PAGADO.value,
+    ).all():
+        sellers_cerrados.setdefault(str(pss.seller_id), []).append(pss.semana)
+
+    for psp in db.query(PagoSemanaPickup).filter(
+        PagoSemanaPickup.mes == mes,
+        PagoSemanaPickup.anio == anio,
+        PagoSemanaPickup.estado == EstadoPagoEnum.PAGADO.value,
+    ).all():
+        pickups_cerrados.setdefault(str(psp.pickup_id), []).append(psp.semana)
+
+    return {
+        "drivers": drivers_cerrados,
+        "sellers": sellers_cerrados,
+        "pickups": pickups_cerrados,
+    }
 
 
 def _enrich_retiro(r, db) -> dict:
@@ -346,6 +467,11 @@ def confirmar_retiros(
         fecha = pd.to_datetime(item.fecha).date()
         semana = calcular_semana_del_mes(fecha)
 
+        _verificar_semana_abierta(
+            db, semana, fecha.month, fecha.year,
+            driver_id=item.driver_id, seller_id=item.seller_id, pickup_id=item.pickup_id,
+        )
+
         if item.tipo == "pickup" and item.pickup_id:
             pickup = db.get(Pickup, item.pickup_id)
             retiro = Retiro(
@@ -475,6 +601,10 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
     campos["semana"] = calcular_semana_del_mes(data.fecha)
     campos["mes"] = data.fecha.month
     campos["anio"] = data.fecha.year
+    _verificar_semana_abierta(
+        db, campos["semana"], campos["mes"], campos["anio"],
+        driver_id=data.driver_id, seller_id=data.seller_id, pickup_id=data.pickup_id,
+    )
     retiro = Retiro(**campos)
     db.add(retiro)
     invalidar_snapshots(db, campos["semana"], campos["mes"], campos["anio"])
@@ -495,6 +625,11 @@ def editar_retiro(
     retiro = db.get(Retiro, retiro_id)
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
+
+    _verificar_semana_abierta(
+        db, retiro.semana, retiro.mes, retiro.anio,
+        driver_id=retiro.driver_id, seller_id=retiro.seller_id, pickup_id=retiro.pickup_id,
+    )
 
     antes = {"seller_id": retiro.seller_id, "driver_id": retiro.driver_id,
              "fecha": str(retiro.fecha), "tarifa_seller": retiro.tarifa_seller, "tarifa_driver": retiro.tarifa_driver}
@@ -542,6 +677,16 @@ def eliminar_retiros_batch(
     if not retiros:
         raise HTTPException(status_code=404, detail="No se encontraron retiros")
 
+    cerrados = [
+        r for r in retiros
+        if _check_cerrado(db, r.semana, r.mes, r.anio, r.driver_id, r.seller_id, r.pickup_id)
+    ]
+    if cerrados:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{len(cerrados)} retiro(s) pertenecen a semanas ya cerradas y no pueden eliminarse.",
+        )
+
     periodos = set()
     for r in retiros:
         periodos.add((r.semana, r.mes, r.anio))
@@ -561,6 +706,10 @@ def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_
     retiro = db.get(Retiro, retiro_id)
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
+    _verificar_semana_abierta(
+        db, retiro.semana, retiro.mes, retiro.anio,
+        driver_id=retiro.driver_id, seller_id=retiro.seller_id, pickup_id=retiro.pickup_id,
+    )
     meta = {"seller_id": retiro.seller_id, "driver_id": retiro.driver_id, "fecha": str(retiro.fecha)}
     semana, mes, anio = retiro.semana, retiro.mes, retiro.anio
     db.delete(retiro)

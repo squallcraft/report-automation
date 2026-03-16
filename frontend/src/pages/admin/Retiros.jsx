@@ -4,7 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import PeriodSelector from '../../components/PeriodSelector'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, Download, Upload, Check, AlertCircle, X, FileText, Edit2 } from 'lucide-react'
+import { Plus, Trash2, Download, Upload, Check, AlertCircle, X, FileText, Edit2, Lock } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
@@ -342,6 +342,7 @@ export default function Retiros() {
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [editing, setEditing] = useState(null)
   const [editForm, setEditForm] = useState({ fecha: '', seller_id: '', pickup_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
+  const [semanasCerradas, setSemanasCerradas] = useState({ drivers: {}, sellers: {}, pickups: {} })
   const [period, setPeriod] = useState(() => {
     const d = new Date()
     return { semana: 1, mes: d.getMonth() + 1, anio: d.getFullYear() }
@@ -369,10 +370,24 @@ export default function Retiros() {
   const load = () => {
     setLoading(true)
     setSelectedIds(new Set())
-    api.get('/retiros', { params: period })
-      .then(({ data }) => setRetiros(data))
+    Promise.all([
+      api.get('/retiros', { params: period }),
+      api.get('/retiros/semanas-cerradas', { params: { mes: period.mes, anio: period.anio } }),
+    ])
+      .then(([retirosRes, cerradasRes]) => {
+        setRetiros(retirosRes.data)
+        setSemanasCerradas(cerradasRes.data)
+      })
       .catch(() => toast.error('Error al cargar retiros'))
       .finally(() => setLoading(false))
+  }
+
+  const esRetiroCerrado = (row) => {
+    const sem = row.semana
+    if (row.driver_id && semanasCerradas.drivers[String(row.driver_id)]?.includes(sem)) return true
+    if (row.seller_id && semanasCerradas.sellers[String(row.seller_id)]?.includes(sem)) return true
+    if (row.pickup_id && semanasCerradas.pickups[String(row.pickup_id)]?.includes(sem)) return true
+    return false
   }
 
   const handleDownloadPlantilla = async () => {
@@ -439,8 +454,9 @@ export default function Retiros() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === retiros.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(retiros.map(r => r.id)))
+    const editables = retiros.filter(r => !esRetiroCerrado(r)).map(r => r.id)
+    if (selectedIds.size === editables.length && editables.length > 0) setSelectedIds(new Set())
+    else setSelectedIds(new Set(editables))
   }
 
   const handleBatchDelete = async () => {
@@ -491,13 +507,15 @@ export default function Retiros() {
       label: (
         <input
           type="checkbox"
-          checked={retiros.length > 0 && selectedIds.size === retiros.length}
-          ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < retiros.length }}
+          checked={retiros.filter(r => !esRetiroCerrado(r)).length > 0 && selectedIds.size === retiros.filter(r => !esRetiroCerrado(r)).length}
+          ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < retiros.filter(r => !esRetiroCerrado(r)).length }}
           onChange={toggleSelectAll}
           className="w-4 h-4 rounded text-primary-600 cursor-pointer"
         />
       ),
-      render: (_, row) => (
+      render: (_, row) => esRetiroCerrado(row) ? (
+        <Lock size={13} className="text-gray-400 mx-auto" title="Semana cerrada" />
+      ) : (
         <input
           type="checkbox"
           checked={selectedIds.has(row.id)}
@@ -511,14 +529,24 @@ export default function Retiros() {
     { key: 'driver_nombre', label: 'Driver' },
     { key: 'tarifa_seller', label: 'Cobro Seller', align: 'right', render: (v) => fmt(v) },
     { key: 'tarifa_driver', label: 'Pago Driver', align: 'right', render: (v) => fmt(v) },
-    { key: 'homologado', label: 'Estado', align: 'center', render: (v) => (
-      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${
-        v ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-      }`}>
-        {v ? 'OK' : 'Sin homologar'}
-      </span>
+    { key: 'homologado', label: 'Estado', align: 'center', render: (v, row) => (
+      esRetiroCerrado(row) ? (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500">
+          <Lock size={10} /> Cerrado
+        </span>
+      ) : (
+        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${
+          v ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+        }`}>
+          {v ? 'OK' : 'Sin homologar'}
+        </span>
+      )
     )},
-    ...(canEdit ? [{ key: 'actions', label: '', render: (_, row) => (
+    ...(canEdit ? [{ key: 'actions', label: '', render: (_, row) => esRetiroCerrado(row) ? (
+      <span className="text-[10px] text-gray-400 flex items-center gap-1 px-1.5">
+        <Lock size={11} /> Bloqueado
+      </span>
+    ) : (
       <div className="flex items-center gap-1">
         <button onClick={() => openEdit(row)} className="p-1.5 hover:bg-blue-50 rounded-lg" title="Editar">
           <Edit2 size={15} className="text-blue-500" />
