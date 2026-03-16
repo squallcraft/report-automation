@@ -513,12 +513,24 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
     # Retiros solo aplican al desglose de drivers.
-    # Siempre usar r.tarifa_driver almacenado en el retiro (valor histórico inmutable),
-    # igual que hace el total semanal en _calcular_retiro_driver.
+    # La tarifa a mostrar por día es r.tarifa_driver almacenado en cada retiro.
+    # Para semanas cerradas ese valor es el histórico inmutable.
+    # Para semanas abiertas con tarifa_retiro_fija, el valor ya fue guardado
+    # en r.tarifa_driver al crear el retiro (fix aplicado en retiros.py).
+    # Si el retiro es anterior al fix (tarifa_driver != tarifa_retiro_fija),
+    # mostramos tarifa_retiro_fija para que el desglose sea consistente con el pago real.
     if not is_seller and retiros_list:
-        for r in retiros_list:
-            if r.fecha in daily_map:
-                daily_map[r.fecha]["retiros"] += r.tarifa_driver or 0
+        usa_fija = driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0
+        if usa_fija:
+            # Mostrar tarifa_retiro_fija por día con retiros (1 valor por día, no por retiro)
+            dias_con_retiro = {r.fecha for r in retiros_list if r.fecha}
+            for d in dias_con_retiro:
+                if d in daily_map:
+                    daily_map[d]["retiros"] = driver.tarifa_retiro_fija
+        else:
+            for r in retiros_list:
+                if r.fecha in daily_map:
+                    daily_map[r.fecha]["retiros"] += r.tarifa_driver or 0
 
     # monto diario = cobro/pago base + retiro del día (solo drivers)
     for info in daily_map.values():

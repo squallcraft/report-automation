@@ -74,15 +74,20 @@ def _calcular_retiro_seller(seller, envios: list, retiros_seller: list = None) -
     return seller.tarifa_retiro * dias_con_envios
 
 
-def _calcular_retiro_driver(driver, retiros: list) -> int:
+def _calcular_retiro_driver(driver, retiros: list, semana_cerrada: bool = False) -> int:
     """
     Pago al driver por retiros en una semana.
-    Siempre suma r.tarifa_driver de cada retiro individual (valor almacenado al crear).
-    La tarifa efectiva (fija o por retiro) ya fue guardada en Retiro.tarifa_driver al crear/importar.
+
+    - semana_cerrada=True (PAGADO): usar sum(r.tarifa_driver) — valor histórico inmutable.
+    - semana_cerrada=False y tarifa_retiro_fija > 0: tarifa_fija × días distintos con retiro.
+    - Sin tarifa fija: sum(r.tarifa_driver).
     """
     if not retiros:
         return 0
-    return sum(r.tarifa_driver for r in retiros)
+    if not semana_cerrada and driver and driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
+        dias_con_retiro = len({r.fecha for r in retiros if r.fecha})
+        return driver.tarifa_retiro_fija * dias_con_retiro
+    return sum(r.tarifa_driver or 0 for r in retiros)
 
 
 def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
@@ -193,9 +198,7 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
     drivers_map = {d.id: d for d in drivers}
 
     # Bulk: envio aggregates
-    # Los extras (extra_producto_driver, extra_comuna_driver) ya están almacenados en el envío
-    # con el valor efectivo al momento de ingesta (0 si el driver era contratado).
-    # NO se recalculan desde driver.contratado actual para no retroafectar semanas cerradas.
+    # Los extras ya están almacenados en el envío con el valor efectivo al momento de ingesta.
     envio_rows = db.query(
         Envio.driver_id,
         func.sum(Envio.costo_driver).label("t_envios"),
@@ -209,7 +212,7 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
 
     envio_agg = {r.driver_id: (r.t_envios or 0, r.t_pago_extra or 0, r.t_extras_prod or 0, r.t_extras_com or 0, r.cant) for r in envio_rows}
 
-    # Bulk: retiros — tarifa_driver ya contiene la tarifa efectiva (fija o por retiro)
+    # Bulk: retiros
     all_retiros = db.query(Retiro).filter(
         Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
     ).all()
@@ -218,6 +221,15 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
         retiros_map.setdefault(r.driver_id, []).append(r)
 
     driver_ids_con_retiros = set(retiros_map.keys())
+
+    # Bulk: semanas cerradas para esta semana/mes/año (para saber si usar tarifa fija o histórica)
+    pagos_cerrados = db.query(PagoSemanaDriver.driver_id).filter(
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+    ).all()
+    drivers_con_semana_cerrada = {r.driver_id for r in pagos_cerrados}
 
     # Bulk: ajustes
     ajuste_rows = db.query(
@@ -237,13 +249,12 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
             continue
 
         t_envios, t_pago_extra, t_ep, t_ec, cant = envio_agg.get(driver.id, (0, 0, 0, 0, 0))
-        # Los extras vienen del valor almacenado en el envío (inmutable).
-        # Suma directa: si el driver era contratado al ingestar, extra_producto/comuna ya son 0.
         total_extras_producto = t_ep + t_pago_extra
         total_extras_comuna = t_ec
 
         retiros = retiros_map.get(driver.id, [])
-        total_retiros = _calcular_retiro_driver(driver, retiros)
+        semana_cerrada = driver.id in drivers_con_semana_cerrada
+        total_retiros = _calcular_retiro_driver(driver, retiros, semana_cerrada=semana_cerrada)
         total_ajustes = ajuste_agg.get(driver.id, 0)
         total = t_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
 

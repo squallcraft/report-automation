@@ -130,7 +130,14 @@ def _get_monto_semanal_driver(db: Session, driver_id: int, semana: int, mes: int
         Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
     ).all()
     driver = db.get(Driver, driver_id)
-    total_retiros = _calcular_retiro_driver(driver, retiros) if driver else sum(r.tarifa_driver for r in retiros)
+    pago = db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.driver_id == driver_id,
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+    ).first()
+    cerrada = pago is not None and pago.estado == EstadoPagoEnum.PAGADO.value
+    total_retiros = _calcular_retiro_driver(driver, retiros, semana_cerrada=cerrada) if driver else sum(r.tarifa_driver for r in retiros)
 
     ajustes = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
@@ -198,7 +205,9 @@ def tabla_cpc(
         t_env, t_ep, t_ec = envio_agg[(driver_id, semana)]
         retiros = retiros_map.get((driver_id, semana), [])
         driver = drivers_map.get(driver_id)
-        t_ret = _calcular_retiro_driver(driver, retiros) if driver else sum(r.tarifa_driver for r in retiros)
+        pago = pagos_map.get((driver_id, semana))
+        cerrada = pago is not None and pago.estado == EstadoPagoEnum.PAGADO.value
+        t_ret = _calcular_retiro_driver(driver, retiros, semana_cerrada=cerrada) if driver else sum(r.tarifa_driver for r in retiros)
         t_aj = ajuste_agg.get((driver_id, semana), 0)
         return t_env + t_ep + t_ec + t_ret + t_aj
 
