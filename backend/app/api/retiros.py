@@ -471,9 +471,13 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
     driver = db.get(Driver, data.driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
-    retiro = Retiro(**data.model_dump())
+    campos = data.model_dump()
+    campos["semana"] = calcular_semana_del_mes(data.fecha)
+    campos["mes"] = data.fecha.month
+    campos["anio"] = data.fecha.year
+    retiro = Retiro(**campos)
     db.add(retiro)
-    invalidar_snapshots(db, data.semana, data.mes, data.anio)
+    invalidar_snapshots(db, campos["semana"], campos["mes"], campos["anio"])
     db.commit()
     db.refresh(retiro)
     audit(db, "crear_retiro", usuario=current_user, request=request, entidad="retiro", entidad_id=retiro.id, metadata={"seller_id": data.seller_id, "pickup_id": data.pickup_id, "driver_id": data.driver_id, "fecha": str(data.fecha)})

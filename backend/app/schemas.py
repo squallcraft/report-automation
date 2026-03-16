@@ -509,9 +509,9 @@ class RetiroBase(BaseModel):
 
 class RetiroCreate(BaseModel):
     fecha: date
-    semana: int
-    mes: int
-    anio: int
+    semana: Optional[int] = None
+    mes: Optional[int] = None
+    anio: Optional[int] = None
     seller_id: Optional[int] = None
     pickup_id: Optional[int] = None
     sucursal_id: Optional[int] = None

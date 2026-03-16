@@ -407,9 +407,6 @@ export default function Retiros() {
       driver_id: Number(form.driver_id),
       tarifa_seller: Number(form.tarifa_seller),
       tarifa_driver: Number(form.tarifa_driver),
-      semana: period.semana,
-      mes: period.mes,
-      anio: period.anio,
     }
     if (form.pickup_id) payload.pickup_id = Number(form.pickup_id)
     else if (form.seller_id) payload.seller_id = Number(form.seller_id)
