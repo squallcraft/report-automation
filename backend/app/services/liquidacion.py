@@ -3,9 +3,11 @@ Motor de liquidación: calcula cobros a sellers y pagos a drivers.
 
 Reglas de negocio — Retiros:
   - La tabla `retiros` representa paradas físicas de un conductor para recoger carga.
-  - `tarifa_driver` de cada retiro se suma al pago del conductor.
-  - El cobro de retiro al seller se calcula desde la configuración del seller
-    (tarifa_retiro × días con envíos), NO desde la tabla retiros.
+  - `tarifa_driver` de cada retiro ya contiene la tarifa efectiva (fija o por retiro) al momento
+    de creación, por lo que la liquidación siempre suma r.tarifa_driver directamente.
+  - `tarifa_seller` de cada retiro ya contiene el cobro efectivo al seller al momento de creación.
+  - Para semanas cerradas (PAGADO), los valores almacenados son inmutables; el perfil del
+    driver/seller puede cambiar sin retroafectar pagos históricos.
 """
 from typing import List
 
@@ -14,24 +16,73 @@ from sqlalchemy import func
 
 from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
-    TipoEntidadEnum,
+    TipoEntidadEnum, PagoSemanaDriver, PagoSemanaSeller, EstadoPagoEnum,
 )
 
 
-def _calcular_retiro_seller(seller, envios: list) -> int:
+def _semana_cerrada_driver(db: Session, driver_id: int, semana: int, mes: int, anio: int) -> bool:
+    """Retorna True si la semana ya está pagada (cerrada) para este driver."""
+    if not driver_id:
+        return False
+    return db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.driver_id == driver_id,
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+    ).first() is not None
+
+
+def _semana_cerrada_seller(db: Session, seller_id: int, semana: int, mes: int, anio: int) -> bool:
+    """Retorna True si la semana ya está pagada (cerrada) para este seller."""
+    if not seller_id:
+        return False
+    return db.query(PagoSemanaSeller).filter(
+        PagoSemanaSeller.seller_id == seller_id,
+        PagoSemanaSeller.semana == semana,
+        PagoSemanaSeller.mes == mes,
+        PagoSemanaSeller.anio == anio,
+        PagoSemanaSeller.estado == EstadoPagoEnum.PAGADO.value,
+    ).first() is not None
+
+
+def _calcular_retiro_seller(seller, envios: list, retiros_seller: list = None) -> int:
     """
     Cobro de retiro al seller para una semana.
-    Usa tarifa_retiro del seller × días distintos con envíos.
+
+    Si existen registros en la tabla retiros con tarifa_seller > 0, los usa directamente
+    (valores históricos inmutables). De lo contrario, calcula dinámicamente desde el perfil
+    del seller (comportamiento legacy para semanas abiertas sin retiros importados).
+
     Respeta min_paquetes_retiro_gratis y usa_pickup.
     """
     if not seller.tiene_retiro or seller.usa_pickup or not envios:
         return 0
+
+    # Si hay retiros con tarifa_seller guardada, sumar esos valores (inmutables)
+    if retiros_seller:
+        total_stored = sum(r.tarifa_seller for r in retiros_seller if r.tarifa_seller)
+        if total_stored > 0:
+            return total_stored
+
+    # Fallback dinámico (semanas sin retiros importados)
     if seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis:
         return 0
     if not seller.tarifa_retiro:
         return 0
     dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
     return seller.tarifa_retiro * dias_con_envios
+
+
+def _calcular_retiro_driver(driver, retiros: list) -> int:
+    """
+    Pago al driver por retiros en una semana.
+    Siempre suma r.tarifa_driver de cada retiro individual (valor almacenado al crear).
+    La tarifa efectiva (fija o por retiro) ya fue guardada en Retiro.tarifa_driver al crear/importar.
+    """
+    if not retiros:
+        return 0
+    return sum(r.tarifa_driver for r in retiros)
 
 
 def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
@@ -64,15 +115,20 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
     for k in user_nombres_map:
         user_nombres_map[k] = sorted(user_nombres_map[k])
 
-    # Bulk: retiros sucursal
-    retiro_suc_rows = db.query(
-        Retiro.seller_id,
-        func.sum(Retiro.tarifa_seller).label("total"),
-    ).filter(
-        Retiro.sucursal_id.isnot(None),
+    # Bulk: todos los retiros del periodo (seller directo + sucursal)
+    all_retiros_seller = db.query(Retiro).filter(
         Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
-    ).group_by(Retiro.seller_id).all()
-    retiro_suc_agg = {r.seller_id: (r.total or 0) for r in retiro_suc_rows}
+        Retiro.seller_id.isnot(None),
+    ).all()
+
+    # Separar retiros de sucursal vs directos del seller
+    retiro_directo_map: dict[int, list] = {}   # seller_id -> retiros sin sucursal
+    retiro_suc_agg: dict[int, int] = {}         # seller_id -> sum(tarifa_seller) de sucursal
+    for r in all_retiros_seller:
+        if r.sucursal_id:
+            retiro_suc_agg[r.seller_id] = retiro_suc_agg.get(r.seller_id, 0) + (r.tarifa_seller or 0)
+        else:
+            retiro_directo_map.setdefault(r.seller_id, []).append(r)
 
     # Bulk: ajustes
     ajuste_rows = db.query(
@@ -91,11 +147,22 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
 
         t_envios, t_ep, t_ec, cant, dias = envio_agg[seller.id]
 
-        total_retiros = 0
-        if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
+        # Retiro directo del seller: usar tarifa_seller almacenada si existe,
+        # si no, calcular dinámicamente (legacy para sellers sin retiros importados)
+        retiros_directos = retiro_directo_map.get(seller.id, [])
+        if retiros_directos:
+            # Usar valores almacenados (inmutables, no afectados por cambios de perfil)
+            total_retiro_directo = sum(r.tarifa_seller or 0 for r in retiros_directos)
+        elif seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
+            # Cálculo dinámico solo para semanas sin retiros importados
             if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
-                total_retiros = seller.tarifa_retiro * dias
-        total_retiros += retiro_suc_agg.get(seller.id, 0)
+                total_retiro_directo = seller.tarifa_retiro * dias
+            else:
+                total_retiro_directo = 0
+        else:
+            total_retiro_directo = 0
+
+        total_retiros = total_retiro_directo + retiro_suc_agg.get(seller.id, 0)
 
         total_ajustes = ajuste_agg.get(seller.id, 0)
         subtotal = t_envios + t_ep + t_ec + total_retiros + total_ajustes
@@ -120,26 +187,15 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
     return sorted(resultados, key=lambda x: x["seller_nombre"])
 
 
-def _calcular_retiro_driver(driver, retiros: list) -> int:
-    """
-    Pago al driver por retiros en una semana.
-    Si tiene tarifa_retiro_fija > 0: tarifa_fija × días con al menos 1 retiro.
-    Si no: suma de tarifa_driver de cada retiro individual.
-    """
-    if not retiros:
-        return 0
-    if driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
-        dias_con_retiro = len({r.fecha for r in retiros if r.fecha})
-        return driver.tarifa_retiro_fija * dias_con_retiro
-    return sum(r.tarifa_driver for r in retiros)
-
-
 def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
     """Calcula el pago a cada driver para una semana específica. Optimizado con bulk queries."""
     drivers = db.query(Driver).filter(Driver.activo == True).all()
     drivers_map = {d.id: d for d in drivers}
 
-    # Bulk: envio aggregates (separamos contratado/no-contratado en Python)
+    # Bulk: envio aggregates
+    # Los extras (extra_producto_driver, extra_comuna_driver) ya están almacenados en el envío
+    # con el valor efectivo al momento de ingesta (0 si el driver era contratado).
+    # NO se recalculan desde driver.contratado actual para no retroafectar semanas cerradas.
     envio_rows = db.query(
         Envio.driver_id,
         func.sum(Envio.costo_driver).label("t_envios"),
@@ -153,7 +209,7 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
 
     envio_agg = {r.driver_id: (r.t_envios or 0, r.t_pago_extra or 0, r.t_extras_prod or 0, r.t_extras_com or 0, r.cant) for r in envio_rows}
 
-    # Bulk: retiros
+    # Bulk: retiros — tarifa_driver ya contiene la tarifa efectiva (fija o por retiro)
     all_retiros = db.query(Retiro).filter(
         Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
     ).all()
@@ -181,12 +237,10 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
             continue
 
         t_envios, t_pago_extra, t_ep, t_ec, cant = envio_agg.get(driver.id, (0, 0, 0, 0, 0))
-        if driver.contratado:
-            total_extras_producto = 0
-            total_extras_comuna = 0
-        else:
-            total_extras_producto = t_ep + t_pago_extra
-            total_extras_comuna = t_ec
+        # Los extras vienen del valor almacenado en el envío (inmutable).
+        # Suma directa: si el driver era contratado al ingestar, extra_producto/comuna ya son 0.
+        total_extras_producto = t_ep + t_pago_extra
+        total_extras_comuna = t_ec
 
         retiros = retiros_map.get(driver.id, [])
         total_retiros = _calcular_retiro_driver(driver, retiros)
@@ -213,30 +267,41 @@ def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) 
 def _calcular_costo_retiro_para_seller(db: Session, seller_id: int, retiros_seller: list, semana: int, mes: int, anio: int) -> int:
     """
     Costo de retiros atribuido a un seller para rentabilidad.
-    Si el driver tiene tarifa fija: reparte el costo diario parejo entre sellers del día.
-    Si no: usa la tarifa_driver individual del retiro.
+    Usa tarifa_driver almacenada en cada retiro (valor histórico inmutable).
+    Si el driver tiene múltiples paradas en el mismo día, prorratear el costo entre sellers/pickups.
     """
+    if not retiros_seller:
+        return 0
+
+    # Agrupar retiros del mismo driver por día para prorratear
+    from collections import defaultdict
+    # all_retiros_dia[driver_id][fecha] = list of retiros
+    driver_fecha_retiros: dict = {}
+    for r in retiros_seller:
+        if r.driver_id:
+            key = (r.driver_id, r.fecha)
+            if key not in driver_fecha_retiros:
+                driver_fecha_retiros[key] = db.query(Retiro).filter(
+                    Retiro.driver_id == r.driver_id,
+                    Retiro.fecha == r.fecha,
+                    Retiro.semana == semana,
+                    Retiro.mes == mes,
+                    Retiro.anio == anio,
+                ).all()
+
     costo = 0
     for retiro in retiros_seller:
         if not retiro.driver_id:
-            costo += retiro.tarifa_driver
+            costo += retiro.tarifa_driver or 0
             continue
-        driver = db.get(Driver, retiro.driver_id)
-        if not driver or not driver.tarifa_retiro_fija or driver.tarifa_retiro_fija <= 0:
-            costo += retiro.tarifa_driver
-            continue
-        retiros_driver_dia = db.query(Retiro).filter(
-            Retiro.driver_id == retiro.driver_id,
-            Retiro.fecha == retiro.fecha,
-            Retiro.semana == semana,
-            Retiro.mes == mes,
-            Retiro.anio == anio,
-        ).all()
-        sellers_del_dia = {r.seller_id for r in retiros_driver_dia if r.seller_id}
-        pickups_del_dia = {r.pickup_id for r in retiros_driver_dia if r.pickup_id}
-        total_destinos = len(sellers_del_dia) + len(pickups_del_dia)
-        if total_destinos > 0:
-            costo += driver.tarifa_retiro_fija // total_destinos
+        key = (retiro.driver_id, retiro.fecha)
+        retiros_dia = driver_fecha_retiros.get(key, [retiro])
+        # Prorratear tarifa_driver del retiro entre todos los destinos del día
+        destinos_dia = len({r.id for r in retiros_dia})
+        if destinos_dia > 1:
+            costo += (retiro.tarifa_driver or 0) // destinos_dia
+        else:
+            costo += retiro.tarifa_driver or 0
     return costo
 
 
@@ -251,10 +316,6 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
         pickup_seller_map[p.id] = p.seller_id
 
     sellers = db.query(Seller).filter(Seller.activo == True).all()
-
-    # Bulk: all drivers for contratado check
-    all_drivers = db.query(Driver).all()
-    drivers_map = {d.id: d for d in all_drivers}
 
     # Bulk: envíos por seller (ingreso + costo driver)
     envios = db.query(Envio).filter(
@@ -312,16 +373,15 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
             e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller
             for e in seller_envios
         )
-        ingreso += _calcular_retiro_seller(seller, seller_envios)
+        # Retiro directo del seller: usar tarifa_seller almacenada
+        retiros_directos_seller = [r for r in retiros_by_seller.get(seller.id, []) if not r.sucursal_id]
+        ingreso += _calcular_retiro_seller(seller, seller_envios, retiros_directos_seller)
         ingreso += sum(r.tarifa_seller for r in retiros_suc_by_seller.get(seller.id, []))
 
         costo_drivers = 0
         for e in seller_envios:
-            driver_e = drivers_map.get(e.driver_id)
-            es_contratado = getattr(driver_e, 'contratado', False) if driver_e else False
-            extra_p = 0 if es_contratado else e.extra_producto_driver
-            extra_c = 0 if es_contratado else e.extra_comuna_driver
-            costo_drivers += e.costo_driver + e.pago_extra_manual + extra_p + extra_c
+            # Usar valores almacenados en el envío (no depender de driver.contratado actual)
+            costo_drivers += e.costo_driver + e.pago_extra_manual + (e.extra_producto_driver or 0) + (e.extra_comuna_driver or 0)
 
         retiros = retiros_by_seller.get(seller.id, [])
         costo_retiros = _calcular_costo_retiro_para_seller(db, seller.id, retiros, semana, mes, anio)

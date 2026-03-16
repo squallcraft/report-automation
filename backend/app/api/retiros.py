@@ -474,11 +474,15 @@ def confirmar_retiros(
 
         if item.tipo == "pickup" and item.pickup_id:
             pickup = db.get(Pickup, item.pickup_id)
+            driver_obj = db.get(Driver, item.driver_id) if item.driver_id else None
+            tarifa_driver_efectiva = pickup.tarifa_driver if pickup else 0
+            if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
+                tarifa_driver_efectiva = driver_obj.tarifa_retiro_fija
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
                 seller_id=None, driver_id=item.driver_id, pickup_id=item.pickup_id,
                 tarifa_seller=0,
-                tarifa_driver=pickup.tarifa_driver if pickup else 0,
+                tarifa_driver=tarifa_driver_efectiva,
                 seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
                 homologado=item.driver_id is not None,
                 ingesta_id=ingesta_id,
@@ -487,13 +491,17 @@ def confirmar_retiros(
             creados_pickup += 1
         elif item.tipo == "sucursal" and item.sucursal_id:
             suc = db.get(Sucursal, item.sucursal_id)
+            driver_obj = db.get(Driver, item.driver_id) if item.driver_id else None
+            tarifa_driver_efectiva = suc.tarifa_retiro_driver if suc else 0
+            if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
+                tarifa_driver_efectiva = driver_obj.tarifa_retiro_fija
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
                 seller_id=suc.seller_id if suc else item.seller_id,
                 driver_id=item.driver_id,
                 sucursal_id=item.sucursal_id,
                 tarifa_seller=suc.tarifa_retiro if suc else 0,
-                tarifa_driver=suc.tarifa_retiro_driver if suc else 0,
+                tarifa_driver=tarifa_driver_efectiva,
                 seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
                 homologado=item.driver_id is not None,
                 ingesta_id=ingesta_id,
@@ -502,8 +510,11 @@ def confirmar_retiros(
             creados_sucursal += 1
         elif item.tipo == "seller":
             seller = db.get(Seller, item.seller_id) if item.seller_id else None
+            driver_obj = db.get(Driver, item.driver_id) if item.driver_id else None
             tarifa_seller = (seller.tarifa_retiro or 0) if seller else 0
             tarifa_driver = (seller.tarifa_retiro_driver or 0) if seller else 0
+            if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
+                tarifa_driver = driver_obj.tarifa_retiro_fija
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
                 seller_id=item.seller_id, driver_id=item.driver_id,
@@ -605,6 +616,9 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
         db, campos["semana"], campos["mes"], campos["anio"],
         driver_id=data.driver_id, seller_id=data.seller_id, pickup_id=data.pickup_id,
     )
+    # Si el driver tiene tarifa fija, guardarla en tarifa_driver del retiro (valor histórico)
+    if driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
+        campos["tarifa_driver"] = driver.tarifa_retiro_fija
     retiro = Retiro(**campos)
     db.add(retiro)
     invalidar_snapshots(db, campos["semana"], campos["mes"], campos["anio"])

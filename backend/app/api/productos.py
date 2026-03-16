@@ -21,15 +21,40 @@ router = APIRouter(prefix="/productos", tags=["Productos con Extra"])
 
 def _recalcular_extras_envios(db: Session, codigos: set[str]):
     """
-    Recalcula extra_producto_seller/driver en TODOS los envíos que tengan un código afectado.
+    Recalcula extra_producto_seller/driver en envíos que tengan un código afectado,
+    EXCEPTO aquellos que pertenecen a semanas ya cerradas (PagoSemanaDriver/Seller = PAGADO).
     Aplica regla de negocio: si driver tiene extra producto Y extra comuna,
     se mantiene solo el mayor.
     """
     if not codigos:
         return 0
+
+    from app.models import PagoSemanaDriver, PagoSemanaSeller, EstadoPagoEnum
+
+    # Obtener semanas cerradas para drivers y sellers (inmutables)
+    semanas_cerradas_driver: set = set()
+    for r in db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value
+    ).all():
+        semanas_cerradas_driver.add((r.driver_id, r.semana, r.mes, r.anio))
+
+    semanas_cerradas_seller: set = set()
+    for r in db.query(PagoSemanaSeller).filter(
+        PagoSemanaSeller.estado == EstadoPagoEnum.PAGADO.value
+    ).all():
+        semanas_cerradas_seller.add((r.seller_id, r.semana, r.mes, r.anio))
+
     envios = db.query(Envio).filter(Envio.codigo_producto.in_(codigos)).all()
     updated = 0
+    skipped = 0
     for envio in envios:
+        # No tocar envíos de semanas cerradas
+        driver_cerrado = (envio.driver_id, envio.semana, envio.mes, envio.anio) in semanas_cerradas_driver
+        seller_cerrado = (envio.seller_id, envio.semana, envio.mes, envio.anio) in semanas_cerradas_seller
+        if driver_cerrado or seller_cerrado:
+            skipped += 1
+            continue
+
         prod = db.query(ProductoConExtra).filter(
             ProductoConExtra.codigo_mlc == envio.codigo_producto,
             ProductoConExtra.activo == True,

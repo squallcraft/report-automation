@@ -12,7 +12,7 @@ import pandas as pd
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, require_driver, get_current_user, hash_password
-from app.models import Driver, RolEnum
+from app.models import Driver, RolEnum, Retiro, PagoSemanaDriver, EstadoPagoEnum
 from app.schemas import DriverCreate, DriverUpdate, DriverOut
 from app.services.audit import registrar as audit
 from app.services.audit import diff_campos
@@ -565,6 +565,28 @@ def actualizar_driver(
     db.flush()
     despues = {c: getattr(driver, c, None) for c in campos_audit}
     cambios = diff_campos(antes, despues, campos_audit)
+
+    # Si cambió tarifa_retiro_fija, actualizar Retiro.tarifa_driver en semanas NO cerradas
+    nueva_tarifa_fija = despues.get("tarifa_retiro_fija")
+    vieja_tarifa_fija = antes.get("tarifa_retiro_fija")
+    if nueva_tarifa_fija != vieja_tarifa_fija and nueva_tarifa_fija is not None and nueva_tarifa_fija > 0:
+        # Obtener semanas cerradas para este driver
+        semanas_cerradas = db.query(
+            PagoSemanaDriver.semana, PagoSemanaDriver.mes, PagoSemanaDriver.anio,
+        ).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+        ).all()
+        semanas_cerradas_set = {(r.semana, r.mes, r.anio) for r in semanas_cerradas}
+
+        # Actualizar solo retiros de semanas abiertas
+        retiros_abiertos = db.query(Retiro).filter(
+            Retiro.driver_id == driver_id,
+        ).all()
+        for retiro in retiros_abiertos:
+            if (retiro.semana, retiro.mes, retiro.anio) not in semanas_cerradas_set:
+                retiro.tarifa_driver = nueva_tarifa_fija
+
     if cambios:
         audit(
             db, "editar_driver",
