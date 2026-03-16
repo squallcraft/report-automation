@@ -210,6 +210,8 @@ def crear_producto(data: ProductoExtraCreate, db: Session = Depends(get_db), _=D
     producto = ProductoConExtra(**data.model_dump())
     db.add(producto)
     db.commit()
+    _recalcular_extras_envios(db, {producto.codigo_mlc})
+    db.commit()
     db.refresh(producto)
     return producto
 
