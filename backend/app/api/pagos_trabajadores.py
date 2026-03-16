@@ -201,9 +201,10 @@ def actualizar_pago_mes(
         PagoMesTrabajador.anio == anio,
     ).first()
 
-    montos = _calcular_monto_neto(db, trabajador, mes, anio)
+    ya_estaba_pagado = pago is not None and pago.estado == "PAGADO"
 
     if not pago:
+        montos = _calcular_monto_neto(db, trabajador, mes, anio)
         pago = PagoMesTrabajador(
             trabajador_id=trabajador_id,
             mes=mes,
@@ -211,36 +212,53 @@ def actualizar_pago_mes(
             **montos,
         )
         db.add(pago)
+    elif not ya_estaba_pagado:
+        # Actualizar montos en tiempo real sólo si aún PENDIENTE
+        montos = _calcular_monto_neto(db, trabajador, mes, anio)
+    else:
+        # Ya cerrado: usar montos congelados
+        montos = {
+            "monto_bruto": pago.monto_bruto,
+            "bonificaciones": pago.bonificaciones,
+            "descuento_cuotas": pago.descuento_cuotas,
+            "descuento_ajustes": pago.descuento_ajustes,
+            "monto_neto": pago.monto_neto,
+        }
 
     pago.estado = body.estado
 
     if body.estado == "PAGADO":
-        # Congelar montos al cerrar
-        pago.monto_bruto = montos["monto_bruto"]
-        pago.bonificaciones = montos["bonificaciones"]
-        pago.descuento_cuotas = montos["descuento_cuotas"]
-        pago.descuento_ajustes = montos["descuento_ajustes"]
-        pago.monto_neto = montos["monto_neto"]
-        pago.fecha_pago = _parse_fecha(body.fecha_pago) if body.fecha_pago else date.today()
+        if not ya_estaba_pagado:
+            # Primera vez que se marca PAGADO: congelar montos, crear registros
+            pago.monto_bruto = montos["monto_bruto"]
+            pago.bonificaciones = montos["bonificaciones"]
+            pago.descuento_cuotas = montos["descuento_cuotas"]
+            pago.descuento_ajustes = montos["descuento_ajustes"]
+            pago.monto_neto = montos["monto_neto"]
+            pago.fecha_pago = _parse_fecha(body.fecha_pago) if body.fecha_pago else date.today()
 
-        # Crear PagoTrabajador como registro de pago
-        pago_t = PagoTrabajador(
-            trabajador_id=trabajador_id,
-            mes=mes,
-            anio=anio,
-            monto=montos["monto_neto"],
-            fecha_pago=str(pago.fecha_pago),
-            descripcion=f"Nómina {mes}/{anio}",
-            fuente="manual",
-        )
-        db.add(pago_t)
-        db.flush()
+            # Crear PagoTrabajador como registro de pago
+            pago_t = PagoTrabajador(
+                trabajador_id=trabajador_id,
+                mes=mes,
+                anio=anio,
+                monto=montos["monto_neto"],
+                fecha_pago=str(pago.fecha_pago),
+                descripcion=f"Nómina {mes}/{anio}",
+                fuente="manual",
+            )
+            db.add(pago_t)
+            db.flush()
 
-        # Descontar cuotas de préstamo
-        _descontar_cuotas(db, trabajador_id, mes, anio)
+            # Descontar cuotas de préstamo
+            _descontar_cuotas(db, trabajador_id, mes, anio)
 
-        # Asiento contable
-        asiento_pago_trabajador(db, pago)
+            # Asiento contable
+            asiento_pago_trabajador(db, pago)
+        else:
+            # Ya estaba PAGADO: sólo actualizar fecha si se envía una nueva
+            if body.fecha_pago:
+                pago.fecha_pago = _parse_fecha(body.fecha_pago)
     else:
         pago.fecha_pago = None
 

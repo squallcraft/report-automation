@@ -3,16 +3,11 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   Users, Download, Upload, FileText, X, Check, AlertCircle,
-  DollarSign, Lock, Calendar,
+  DollarSign, Lock, Calendar, RotateCcw, CreditCard,
 } from 'lucide-react'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-
-const ESTADO_COLORS = {
-  PENDIENTE: 'bg-amber-100 text-amber-800',
-  PAGADO: 'bg-green-100 text-green-800',
-}
 
 function fmt(v) {
   if (!v && v !== 0) return '$0'
@@ -36,6 +31,135 @@ function StatsCard({ icon: Icon, label, value, sub, color = 'blue' }) {
         <p className="text-xs text-gray-500 font-medium">{label}</p>
         <p className="text-lg font-bold text-gray-900 truncate">{value}</p>
         {sub && <p className="text-xs text-gray-400 truncate">{sub}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Modal pago manual — equivalente al flujo CPC manual
+// ─────────────────────────────────────────────────────────────────
+function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirmado }) {
+  const hoy = new Date().toISOString().split('T')[0]
+  // El pago físico suele ser el mes siguiente al de la nómina
+  const [fecha, setFecha] = useState(hoy)
+  const [monto, setMonto] = useState(trabajador.monto_neto || 0)
+  const [nota, setNota] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const confirmar = async (e) => {
+    e.preventDefault()
+    if (!fecha) return toast.error('Ingresa la fecha de pago')
+    if (!monto || Number(monto) <= 0) return toast.error('El monto debe ser mayor a 0')
+    setGuardando(true)
+    try {
+      await api.put(
+        `/trabajadores/pago-mes/${trabajador.id}`,
+        { estado: 'PAGADO', fecha_pago: fecha, nota: nota || null },
+        { params: { mes: mesNomina, anio: anioNomina } }
+      )
+      toast.success(`Pago registrado — ${trabajador.nombre}`)
+      onConfirmado()
+      onClose()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error registrando pago')
+    } finally { setGuardando(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">Registrar Pago Manual</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Nómina <span className="font-semibold text-gray-700">{MESES[mesNomina]} {anioNomina}</span>
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+        </div>
+
+        <form onSubmit={confirmar} className="px-6 py-5 space-y-4">
+          {/* Resumen del trabajador */}
+          <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Trabajador</span>
+              <span className="font-semibold text-gray-900">{trabajador.nombre}</span>
+            </div>
+            {trabajador.cargo && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Cargo</span>
+                <span className="text-gray-700">{trabajador.cargo}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-gray-500">Sueldo bruto</span>
+              <span className="text-gray-700">{fmt(trabajador.sueldo_bruto)}</span>
+            </div>
+            {trabajador.bonificaciones > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Bonificaciones</span>
+                <span className="text-green-600">+{fmt(trabajador.bonificaciones)}</span>
+              </div>
+            )}
+            {trabajador.descuento_cuotas > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Cuotas préstamo</span>
+                <span className="text-red-600">-{fmt(trabajador.descuento_cuotas)}</span>
+              </div>
+            )}
+            {trabajador.descuento_ajustes > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Ajustes</span>
+                <span className="text-amber-600">-{fmt(trabajador.descuento_ajustes)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
+              <span className="text-gray-700">Líquido a pagar</span>
+              <span className="text-gray-900">{fmt(trabajador.monto_neto)}</span>
+            </div>
+            {trabajador.banco && (
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <span>Cuenta</span>
+                <span>{trabajador.banco} · {trabajador.numero_cuenta || '—'}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Fecha real del pago */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha real del pago
+              <span className="ml-1 text-xs font-normal text-gray-400">(puede ser mes siguiente al de la nómina)</span>
+            </label>
+            <input
+              type="date"
+              className="input-field w-full"
+              value={fecha}
+              onChange={e => setFecha(e.target.value)}
+              required
+            />
+          </div>
+
+          {/* Nota opcional */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nota <span className="text-gray-400 font-normal">(opcional)</span></label>
+            <input
+              type="text"
+              className="input-field w-full"
+              value={nota}
+              onChange={e => setNota(e.target.value)}
+              placeholder="Ej: Transferencia Banco Chile"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+            <button type="submit" disabled={guardando} className="btn-primary flex-1 flex items-center justify-center gap-2">
+              <Check size={16} /> {guardando ? 'Guardando...' : 'Confirmar pago'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -119,7 +243,10 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Cargar Cartola — Nómina Trabajadores</h2>
-            <p className="text-sm text-gray-500">{MESES[mes]} {anio}</p>
+            <p className="text-sm text-gray-500">
+              Nómina de <span className="font-semibold">{MESES[mes]} {anio}</span>
+              <span className="ml-2 text-gray-400">· La fecha del pago se tomará de la cartola</span>
+            </p>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
         </div>
@@ -225,29 +352,31 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 // ─────────────────────────────────────────────────────────────────
 // Fila de trabajador
 // ─────────────────────────────────────────────────────────────────
-function TrabajadorRow({ t, mes, anio, onReload }) {
-  const [actualizando, setActualizando] = useState(false)
+function TrabajadorRow({ t, mes, anio, onPagoManual, onReload }) {
+  const [revirtiendo, setRevirtiendo] = useState(false)
   const isPagado = t.estado === 'PAGADO'
 
-  const updateEstado = async (estado) => {
-    const fechaPago = estado === 'PAGADO' ? new Date().toISOString().split('T')[0] : null
-    setActualizando(true)
+  const revertir = async () => {
+    if (!confirm(`¿Revertir el pago de ${t.nombre} para ${MESES[mes]} ${anio}? Se reabrirá el mes.`)) return
+    setRevirtiendo(true)
     try {
-      await api.put(`/trabajadores/pago-mes/${t.id}`,
-        { estado, fecha_pago: fechaPago },
+      await api.put(
+        `/trabajadores/pago-mes/${t.id}`,
+        { estado: 'PENDIENTE' },
         { params: { mes, anio } }
       )
       onReload()
     } catch {
-      toast.error('Error actualizando estado')
+      toast.error('Error revirtiendo pago')
       onReload()
-    } finally { setActualizando(false) }
+    } finally { setRevirtiendo(false) }
   }
 
   const updateFechaPago = async (fecha) => {
     if (!fecha || !t.pago_id) return
     try {
-      await api.put(`/trabajadores/pago-mes/${t.id}`,
+      await api.put(
+        `/trabajadores/pago-mes/${t.id}`,
         { estado: 'PAGADO', fecha_pago: fecha },
         { params: { mes, anio } }
       )
@@ -260,13 +389,20 @@ function TrabajadorRow({ t, mes, anio, onReload }) {
       <td className="py-2 px-3 font-medium text-gray-900">{t.nombre}</td>
       <td className="py-2 px-3 text-gray-500 text-xs">{t.cargo || '—'}</td>
       <td className="py-2 px-3 text-right font-mono">{fmt(t.sueldo_bruto)}</td>
-      <td className="py-2 px-3 text-right font-mono text-red-600">
-        {t.descuento_cuotas > 0 ? `-${fmt(t.descuento_cuotas)}` : '—'}
+      {/* Bonificaciones */}
+      <td className="py-2 px-3 text-right font-mono text-green-600">
+        {(t.bonificaciones || 0) > 0 ? `+${fmt(t.bonificaciones)}` : '—'}
       </td>
+      {/* Descuento cuotas */}
+      <td className="py-2 px-3 text-right font-mono text-red-600">
+        {(t.descuento_cuotas || 0) > 0 ? `-${fmt(t.descuento_cuotas)}` : '—'}
+      </td>
+      {/* Ajustes negativos */}
       <td className="py-2 px-3 text-right font-mono text-amber-600">
-        {t.descuento_ajustes > 0 ? `-${fmt(t.descuento_ajustes)}` : '—'}
+        {(t.descuento_ajustes || 0) > 0 ? `-${fmt(t.descuento_ajustes)}` : '—'}
       </td>
       <td className="py-2 px-3 text-right font-mono font-semibold text-gray-900">{fmt(t.monto_neto)}</td>
+      {/* Estado / acción */}
       <td className="py-2 px-3">
         {isPagado ? (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -274,26 +410,41 @@ function TrabajadorRow({ t, mes, anio, onReload }) {
           </span>
         ) : (
           <button
-            onClick={() => updateEstado('PAGADO')}
-            disabled={actualizando}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors"
+            onClick={() => onPagoManual(t)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors"
           >
-            {actualizando ? '...' : 'PENDIENTE'}
+            <CreditCard size={10} /> Pagar
           </button>
         )}
       </td>
+      {/* Fecha pago */}
       <td className="py-2 px-3 text-xs text-gray-500">
         {isPagado ? (
           <input
             type="date"
             defaultValue={t.fecha_pago || ''}
+            key={t.fecha_pago}
             className="text-xs border border-gray-200 rounded px-1.5 py-0.5 w-32"
             onBlur={e => updateFechaPago(e.target.value)}
           />
         ) : '—'}
       </td>
+      {/* Cuenta */}
       <td className="py-2 px-3 text-xs text-gray-400">
         {t.banco ? `${t.banco} · ${t.numero_cuenta || '—'}` : '—'}
+      </td>
+      {/* Revertir */}
+      <td className="py-2 px-3">
+        {isPagado && (
+          <button
+            onClick={revertir}
+            disabled={revirtiendo}
+            title="Revertir pago"
+            className="p-1 rounded text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+          >
+            <RotateCcw size={13} />
+          </button>
+        )}
       </td>
     </tr>
   )
@@ -309,6 +460,7 @@ export default function PagosTrabajadores() {
   const [data, setData] = useState([])
   const [cargando, setCargando] = useState(false)
   const [modalCartola, setModalCartola] = useState(false)
+  const [modalPago, setModalPago] = useState(null) // trabajador a pagar manualmente
 
   const cargar = async () => {
     setCargando(true)
@@ -357,18 +509,23 @@ export default function PagosTrabajadores() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-gray-900">Pagos Trabajadores</h1>
-            <p className="text-sm text-gray-500">Nómina mensual</p>
+            <p className="text-sm text-gray-500">
+              Nómina mensual · El período indica <em>a qué mes corresponde</em> la nómina, no la fecha del pago
+            </p>
           </div>
         </div>
 
         {/* Selector de período */}
         <div className="flex items-center gap-2 flex-wrap">
-          <select className="input w-36" value={mes} onChange={e => setMes(Number(e.target.value))}>
-            {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-          <select className="input w-24" value={anio} onChange={e => setAnio(Number(e.target.value))}>
-            {anos.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500 font-medium">Nómina de:</span>
+            <select className="input w-36" value={mes} onChange={e => setMes(Number(e.target.value))}>
+              {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+            </select>
+            <select className="input w-24" value={anio} onChange={e => setAnio(Number(e.target.value))}>
+              {anos.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
           <button onClick={descargarPlantilla} className="btn btn-secondary flex items-center gap-2 text-sm">
             <Download size={14} /> Plantilla
           </button>
@@ -389,9 +546,10 @@ export default function PagosTrabajadores() {
       {/* Tabla */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-800">
-            {MESES[mes]} {anio}
-          </span>
+          <div>
+            <span className="text-sm font-semibold text-gray-800">Nómina {MESES[mes]} {anio}</span>
+            <span className="ml-2 text-xs text-gray-400">· Pago físico puede ocurrir en {MESES[mes === 12 ? 1 : mes + 1] || 'mes siguiente'}</span>
+          </div>
           <span className="text-xs text-gray-400">{data.length} trabajadores</span>
         </div>
 
@@ -407,12 +565,14 @@ export default function PagosTrabajadores() {
                   <th className="py-2 px-3 text-left font-medium">Nombre</th>
                   <th className="py-2 px-3 text-left font-medium">Cargo</th>
                   <th className="py-2 px-3 text-right font-medium">Sueldo Bruto</th>
-                  <th className="py-2 px-3 text-right font-medium">Cuotas Préstamo</th>
-                  <th className="py-2 px-3 text-right font-medium">Ajustes</th>
+                  <th className="py-2 px-3 text-right font-medium text-green-600">Bonif.</th>
+                  <th className="py-2 px-3 text-right font-medium text-red-500">Cuotas</th>
+                  <th className="py-2 px-3 text-right font-medium text-amber-500">Ajustes</th>
                   <th className="py-2 px-3 text-right font-medium">Líquido</th>
                   <th className="py-2 px-3 text-left font-medium">Estado</th>
-                  <th className="py-2 px-3 text-left font-medium">Fecha Pago</th>
+                  <th className="py-2 px-3 text-left font-medium">Fecha Pago Real</th>
                   <th className="py-2 px-3 text-left font-medium">Cuenta</th>
+                  <th className="py-2 px-3 w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -422,6 +582,7 @@ export default function PagosTrabajadores() {
                     t={t}
                     mes={mes}
                     anio={anio}
+                    onPagoManual={setModalPago}
                     onReload={cargar}
                   />
                 ))}
@@ -430,6 +591,9 @@ export default function PagosTrabajadores() {
                 <tr className="bg-gray-50 border-t-2 border-gray-200 text-sm font-semibold text-gray-800">
                   <td className="py-2 px-3 text-xs text-gray-500" colSpan={2}>Total</td>
                   <td className="py-2 px-3 text-right font-mono">{fmt(resumen.totalBruto)}</td>
+                  <td className="py-2 px-3 text-right font-mono text-green-600">
+                    {fmt(data.reduce((s, t) => s + (t.bonificaciones || 0), 0))}
+                  </td>
                   <td className="py-2 px-3 text-right font-mono text-red-600">
                     {fmt(data.reduce((s, t) => s + (t.descuento_cuotas || 0), 0))}
                   </td>
@@ -437,13 +601,24 @@ export default function PagosTrabajadores() {
                     {fmt(data.reduce((s, t) => s + (t.descuento_ajustes || 0), 0))}
                   </td>
                   <td className="py-2 px-3 text-right font-mono">{fmt(resumen.totalLiquido)}</td>
-                  <td colSpan={3}></td>
+                  <td colSpan={4}></td>
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
       </div>
+
+      {/* Modal pago manual */}
+      {modalPago && (
+        <ModalPagoManual
+          trabajador={modalPago}
+          mesNomina={mes}
+          anioNomina={anio}
+          onClose={() => setModalPago(null)}
+          onConfirmado={cargar}
+        />
+      )}
 
       {/* Modal cartola */}
       {modalCartola && (
