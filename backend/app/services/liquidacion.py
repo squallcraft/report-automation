@@ -10,6 +10,7 @@ Reglas de negocio — Retiros:
 from typing import List
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
@@ -34,65 +35,86 @@ def _calcular_retiro_seller(seller, envios: list) -> int:
 
 
 def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
-    """Calcula el cobro a cada seller para una semana específica."""
+    """Calcula el cobro a cada seller para una semana específica. Optimizado con bulk queries."""
     sellers = db.query(Seller).filter(Seller.activo == True).all()
+    sellers_map = {s.id: s for s in sellers}
+
+    # Bulk: envio aggregates
+    envio_rows = db.query(
+        Envio.seller_id,
+        func.sum(Envio.cobro_seller + Envio.cobro_extra_manual).label("t_envios"),
+        func.sum(Envio.extra_producto_seller).label("t_extras_prod"),
+        func.sum(Envio.extra_comuna_seller).label("t_extras_com"),
+        func.count(Envio.id).label("cant"),
+        func.count(func.distinct(Envio.fecha_entrega)).label("dias"),
+    ).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+    ).group_by(Envio.seller_id).all()
+
+    envio_agg = {r.seller_id: (r.t_envios or 0, r.t_extras_prod or 0, r.t_extras_com or 0, r.cant, r.dias) for r in envio_rows}
+
+    # Bulk: user_nombres per seller
+    user_rows = db.query(Envio.seller_id, Envio.user_nombre).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+        Envio.user_nombre.isnot(None),
+    ).distinct().all()
+    user_nombres_map: dict[int, list] = {}
+    for r in user_rows:
+        user_nombres_map.setdefault(r.seller_id, []).append(r.user_nombre)
+    for k in user_nombres_map:
+        user_nombres_map[k] = sorted(user_nombres_map[k])
+
+    # Bulk: retiros sucursal
+    retiro_suc_rows = db.query(
+        Retiro.seller_id,
+        func.sum(Retiro.tarifa_seller).label("total"),
+    ).filter(
+        Retiro.sucursal_id.isnot(None),
+        Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
+    ).group_by(Retiro.seller_id).all()
+    retiro_suc_agg = {r.seller_id: (r.total or 0) for r in retiro_suc_rows}
+
+    # Bulk: ajustes
+    ajuste_rows = db.query(
+        AjusteLiquidacion.entidad_id,
+        func.sum(AjusteLiquidacion.monto).label("total"),
+    ).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
+        AjusteLiquidacion.semana == semana, AjusteLiquidacion.mes == mes, AjusteLiquidacion.anio == anio,
+    ).group_by(AjusteLiquidacion.entidad_id).all()
+    ajuste_agg = {r.entidad_id: (r.total or 0) for r in ajuste_rows}
+
     resultados = []
-
     for seller in sellers:
-        envios = db.query(Envio).filter(
-            Envio.seller_id == seller.id,
-            Envio.semana == semana,
-            Envio.mes == mes,
-            Envio.anio == anio,
-        ).all()
-
-        if not envios:
+        if seller.id not in envio_agg:
             continue
 
-        user_nombres = sorted({e.user_nombre for e in envios if e.user_nombre})
+        t_envios, t_ep, t_ec, cant, dias = envio_agg[seller.id]
 
-        total_envios = sum(e.cobro_seller + e.cobro_extra_manual for e in envios)
-        total_extras_producto = sum(e.extra_producto_seller for e in envios)
-        total_extras_comuna = sum(e.extra_comuna_seller for e in envios)
-        total_retiros = _calcular_retiro_seller(seller, envios)
+        total_retiros = 0
+        if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
+            if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
+                total_retiros = seller.tarifa_retiro * dias
+        total_retiros += retiro_suc_agg.get(seller.id, 0)
 
-        # Sumar retiros de sucursales del seller
-        retiros_sucursal = db.query(Retiro).filter(
-            Retiro.seller_id == seller.id,
-            Retiro.sucursal_id.isnot(None),
-            Retiro.semana == semana,
-            Retiro.mes == mes,
-            Retiro.anio == anio,
-        ).all()
-        total_retiros += sum(r.tarifa_seller for r in retiros_sucursal)
-
-        ajustes = db.query(AjusteLiquidacion).filter(
-            AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
-            AjusteLiquidacion.entidad_id == seller.id,
-            AjusteLiquidacion.semana == semana,
-            AjusteLiquidacion.mes == mes,
-            AjusteLiquidacion.anio == anio,
-        ).all()
-        total_ajustes = sum(a.monto for a in ajustes)
-
-        subtotal = total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
+        total_ajustes = ajuste_agg.get(seller.id, 0)
+        subtotal = t_envios + t_ep + t_ec + total_retiros + total_ajustes
         iva = int(subtotal * 0.19)
-        total_con_iva = subtotal + iva
 
         resultados.append({
             "seller_id": seller.id,
             "seller_nombre": seller.nombre,
             "empresa": seller.empresa or "",
-            "user_nombres": user_nombres,
-            "total_envios": total_envios,
-            "cantidad_envios": len(envios),
-            "total_extras_producto": total_extras_producto,
-            "total_extras_comuna": total_extras_comuna,
+            "user_nombres": user_nombres_map.get(seller.id, []),
+            "total_envios": t_envios,
+            "cantidad_envios": cant,
+            "total_extras_producto": t_ep,
+            "total_extras_comuna": t_ec,
             "total_retiros": total_retiros,
             "total_ajustes": total_ajustes,
             "subtotal": subtotal,
             "iva": iva,
-            "total_con_iva": total_con_iva,
+            "total_con_iva": subtotal + iva,
         })
 
     return sorted(resultados, key=lambda x: x["seller_nombre"])
@@ -113,55 +135,69 @@ def _calcular_retiro_driver(driver, retiros: list) -> int:
 
 
 def calcular_liquidacion_drivers(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
-    """Calcula el pago a cada driver para una semana específica."""
+    """Calcula el pago a cada driver para una semana específica. Optimizado con bulk queries."""
     drivers = db.query(Driver).filter(Driver.activo == True).all()
+    drivers_map = {d.id: d for d in drivers}
+
+    # Bulk: envio aggregates (separamos contratado/no-contratado en Python)
+    envio_rows = db.query(
+        Envio.driver_id,
+        func.sum(Envio.costo_driver).label("t_envios"),
+        func.sum(Envio.pago_extra_manual).label("t_pago_extra"),
+        func.sum(Envio.extra_producto_driver).label("t_extras_prod"),
+        func.sum(Envio.extra_comuna_driver).label("t_extras_com"),
+        func.count(Envio.id).label("cant"),
+    ).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+    ).group_by(Envio.driver_id).all()
+
+    envio_agg = {r.driver_id: (r.t_envios or 0, r.t_pago_extra or 0, r.t_extras_prod or 0, r.t_extras_com or 0, r.cant) for r in envio_rows}
+
+    # Bulk: retiros
+    all_retiros = db.query(Retiro).filter(
+        Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
+    ).all()
+    retiros_map: dict[int, list] = {}
+    for r in all_retiros:
+        retiros_map.setdefault(r.driver_id, []).append(r)
+
+    driver_ids_con_retiros = set(retiros_map.keys())
+
+    # Bulk: ajustes
+    ajuste_rows = db.query(
+        AjusteLiquidacion.entidad_id,
+        func.sum(AjusteLiquidacion.monto).label("total"),
+    ).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
+        AjusteLiquidacion.semana == semana, AjusteLiquidacion.mes == mes, AjusteLiquidacion.anio == anio,
+    ).group_by(AjusteLiquidacion.entidad_id).all()
+    ajuste_agg = {r.entidad_id: (r.total or 0) for r in ajuste_rows}
+
     resultados = []
-
     for driver in drivers:
-        envios = db.query(Envio).filter(
-            Envio.driver_id == driver.id,
-            Envio.semana == semana,
-            Envio.mes == mes,
-            Envio.anio == anio,
-        ).all()
-
-        retiros = db.query(Retiro).filter(
-            Retiro.driver_id == driver.id,
-            Retiro.semana == semana,
-            Retiro.mes == mes,
-            Retiro.anio == anio,
-        ).all()
-
-        if not envios and not retiros:
+        has_envios = driver.id in envio_agg
+        has_retiros = driver.id in driver_ids_con_retiros
+        if not has_envios and not has_retiros:
             continue
 
-        total_envios = sum(e.costo_driver for e in envios)
-        pago_extra_envios = sum(e.pago_extra_manual for e in envios)
+        t_envios, t_pago_extra, t_ep, t_ec, cant = envio_agg.get(driver.id, (0, 0, 0, 0, 0))
         if driver.contratado:
             total_extras_producto = 0
             total_extras_comuna = 0
         else:
-            total_extras_producto = sum(e.extra_producto_driver for e in envios) + pago_extra_envios
-            total_extras_comuna = sum(e.extra_comuna_driver for e in envios)
+            total_extras_producto = t_ep + t_pago_extra
+            total_extras_comuna = t_ec
 
+        retiros = retiros_map.get(driver.id, [])
         total_retiros = _calcular_retiro_driver(driver, retiros)
-
-        ajustes = db.query(AjusteLiquidacion).filter(
-            AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
-            AjusteLiquidacion.entidad_id == driver.id,
-            AjusteLiquidacion.semana == semana,
-            AjusteLiquidacion.mes == mes,
-            AjusteLiquidacion.anio == anio,
-        ).all()
-        total_ajustes = sum(a.monto for a in ajustes)
-
-        total = total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
+        total_ajustes = ajuste_agg.get(driver.id, 0)
+        total = t_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
 
         resultados.append({
             "driver_id": driver.id,
             "driver_nombre": driver.nombre,
-            "total_envios": total_envios,
-            "cantidad_envios": len(envios),
+            "total_envios": t_envios,
+            "cantidad_envios": cant,
             "total_extras_producto": total_extras_producto,
             "total_extras_comuna": total_extras_comuna,
             "total_retiros": total_retiros,
@@ -206,9 +242,7 @@ def _calcular_costo_retiro_para_seller(db: Session, seller_id: int, retiros_sell
 
 def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List[dict]:
     """
-    Calcula la rentabilidad por seller para una semana.
-    Ingreso = cobros al seller (envíos + extras + retiros).
-    Costos  = entregas drivers + retiros drivers + comisiones pickup.
+    Calcula la rentabilidad por seller para una semana. Optimizado con bulk queries.
     """
     from app.models import Pickup, RecepcionPaquete
 
@@ -217,63 +251,84 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
         pickup_seller_map[p.id] = p.seller_id
 
     sellers = db.query(Seller).filter(Seller.activo == True).all()
+
+    # Bulk: all drivers for contratado check
+    all_drivers = db.query(Driver).all()
+    drivers_map = {d.id: d for d in all_drivers}
+
+    # Bulk: envíos por seller (ingreso + costo driver)
+    envios = db.query(Envio).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+    ).all()
+
+    envios_by_seller: dict[int, list] = {}
+    for e in envios:
+        envios_by_seller.setdefault(e.seller_id, []).append(e)
+
+    # Bulk: retiros
+    all_retiros = db.query(Retiro).filter(
+        Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
+    ).all()
+
+    retiros_suc_by_seller: dict[int, list] = {}
+    retiros_by_seller: dict[int, list] = {}
+    for r in all_retiros:
+        if r.seller_id:
+            retiros_by_seller.setdefault(r.seller_id, []).append(r)
+            if r.sucursal_id:
+                retiros_suc_by_seller.setdefault(r.seller_id, []).append(r)
+
+    # Bulk: recepciones
+    envio_ids = [e.id for e in envios]
+    all_recepciones = db.query(RecepcionPaquete).filter(
+        RecepcionPaquete.envio_id.in_(envio_ids),
+        RecepcionPaquete.semana == semana,
+        RecepcionPaquete.mes == mes,
+        RecepcionPaquete.anio == anio,
+    ).all() if envio_ids else []
+
+    recep_by_envio: dict[int, list] = {}
+    for r in all_recepciones:
+        recep_by_envio.setdefault(r.envio_id, []).append(r)
+
+    # Bulk: user_nombres
+    user_rows = db.query(Envio.seller_id, Envio.user_nombre).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+        Envio.user_nombre.isnot(None),
+    ).distinct().all()
+    user_nombres_map: dict[int, list] = {}
+    for r in user_rows:
+        user_nombres_map.setdefault(r.seller_id, []).append(r.user_nombre)
+    for k in user_nombres_map:
+        user_nombres_map[k] = sorted(user_nombres_map[k])
+
     resultados = []
-
     for seller in sellers:
-        envios = db.query(Envio).filter(
-            Envio.seller_id == seller.id,
-            Envio.semana == semana,
-            Envio.mes == mes,
-            Envio.anio == anio,
-        ).all()
-
-        if not envios:
+        seller_envios = envios_by_seller.get(seller.id, [])
+        if not seller_envios:
             continue
 
-        envio_ids = [e.id for e in envios]
-
-        user_nombres = sorted({e.user_nombre for e in envios if e.user_nombre})
         ingreso = sum(
             e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller
-            for e in envios
+            for e in seller_envios
         )
-        ingreso += _calcular_retiro_seller(seller, envios)
+        ingreso += _calcular_retiro_seller(seller, seller_envios)
+        ingreso += sum(r.tarifa_seller for r in retiros_suc_by_seller.get(seller.id, []))
 
-        retiros_sucursal = db.query(Retiro).filter(
-            Retiro.seller_id == seller.id,
-            Retiro.sucursal_id.isnot(None),
-            Retiro.semana == semana,
-            Retiro.mes == mes,
-            Retiro.anio == anio,
-        ).all()
-        ingreso += sum(r.tarifa_seller for r in retiros_sucursal)
-
-        def _costo_envio_driver(e):
-            driver_e = db.get(Driver, e.driver_id) if e.driver_id else None
+        costo_drivers = 0
+        for e in seller_envios:
+            driver_e = drivers_map.get(e.driver_id)
             es_contratado = getattr(driver_e, 'contratado', False) if driver_e else False
             extra_p = 0 if es_contratado else e.extra_producto_driver
             extra_c = 0 if es_contratado else e.extra_comuna_driver
-            return e.costo_driver + e.pago_extra_manual + extra_p + extra_c
+            costo_drivers += e.costo_driver + e.pago_extra_manual + extra_p + extra_c
 
-        costo_drivers = sum(_costo_envio_driver(e) for e in envios)
-
-        retiros = db.query(Retiro).filter(
-            Retiro.seller_id == seller.id,
-            Retiro.semana == semana,
-            Retiro.mes == mes,
-            Retiro.anio == anio,
-        ).all()
+        retiros = retiros_by_seller.get(seller.id, [])
         costo_retiros = _calcular_costo_retiro_para_seller(db, seller.id, retiros, semana, mes, anio)
 
         costo_pickup = 0
-        if envio_ids:
-            recepciones = db.query(RecepcionPaquete).filter(
-                RecepcionPaquete.envio_id.in_(envio_ids),
-                RecepcionPaquete.semana == semana,
-                RecepcionPaquete.mes == mes,
-                RecepcionPaquete.anio == anio,
-            ).all()
-            for r in recepciones:
+        for e in seller_envios:
+            for r in recep_by_envio.get(e.id, []):
                 own_seller = pickup_seller_map.get(r.pickup_id)
                 if own_seller and own_seller == seller.id:
                     continue
@@ -286,7 +341,7 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
         resultados.append({
             "seller_id": seller.id,
             "seller_nombre": seller.nombre,
-            "user_nombres": user_nombres,
+            "user_nombres": user_nombres_map.get(seller.id, []),
             "ingreso": ingreso,
             "costo_drivers": costo_drivers,
             "costo_retiros": costo_retiros,

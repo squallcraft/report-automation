@@ -125,6 +125,8 @@ class Envio(Base):
         Index("ix_envios_periodo", "semana", "mes", "anio"),
         Index("ix_envios_seller_periodo", "seller_id", "mes", "anio"),
         Index("ix_envios_driver_periodo", "driver_id", "mes", "anio"),
+        Index("ix_envios_empresa", "empresa"),
+        Index("ix_envios_comuna", "comuna"),
     )
 
     id = Column(Integer, primary_key=True, index=True)

@@ -221,8 +221,11 @@ export default function Envios() {
     tracking_id: { type: 'text', value: colFilters.tracking_id, placeholder: 'Filtrar...' },
   }), [sellersEnPeriodo, driversEnPeriodo, colFilters, empresaOptions])
 
+  const openEditCb = useCallback((row) => openEdit(row), [])
+  const openProductoCb = useCallback((row) => openProductoModal(row), [])
+
   const sm = 'text-[11px]'
-  const columns = [
+  const columns = useMemo(() => [
     { key: 'fecha_entrega', label: 'Fecha', className: sm, render: (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString('es-CL') : '—' },
     { key: 'seller_nombre', label: 'Seller', render: (v) => v || '—' },
     { key: 'driver_nombre', label: 'Driver', className: sm, render: (v) => v || '—' },
@@ -255,7 +258,7 @@ export default function Envios() {
               </span>
             ) : (
               <button
-                onClick={(e) => { e.stopPropagation(); openEdit(row) }}
+                onClick={(e) => { e.stopPropagation(); openEditCb(row) }}
                 className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
                 title="Editar extras manuales"
               >
@@ -264,7 +267,7 @@ export default function Envios() {
             )}
             {row.codigo_producto && !bloqueado && (
               <button
-                onClick={(e) => { e.stopPropagation(); openProductoModal(row) }}
+                onClick={(e) => { e.stopPropagation(); openProductoCb(row) }}
                 className="p-1 rounded text-gray-500 hover:bg-gray-100 hover:text-green-600 transition-colors"
                 title="Crear producto extra"
               >
@@ -275,7 +278,7 @@ export default function Envios() {
         )
       },
     },
-  ]
+  ], [openEditCb, openProductoCb])
 
   return (
     <div>

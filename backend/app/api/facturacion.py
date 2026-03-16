@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 from app.database import get_db
 from app.config import get_settings
@@ -118,11 +118,58 @@ def tabla_facturacion(
     _=Depends(require_admin_or_administracion),
 ):
     """
-    Retorna la tabla mensual de facturación:
-    una fila por seller con su monto neto por semana, subtotal y total+IVA.
+    Tabla mensual de facturación. Optimizado con queries bulk.
     """
     semanas = _semanas_del_mes(db, mes, anio)
     sellers = db.query(Seller).filter(Seller.activo == True).order_by(Seller.nombre).all()
+
+    # --- Bulk queries ---
+    envio_rows = db.query(
+        Envio.seller_id, Envio.semana,
+        func.sum(Envio.cobro_seller + Envio.cobro_extra_manual).label("t_envios"),
+        func.sum(Envio.extra_producto_seller).label("t_extras_prod"),
+        func.sum(Envio.extra_comuna_seller).label("t_extras_com"),
+        func.count(Envio.id).label("cant"),
+        func.count(func.distinct(Envio.fecha_entrega)).label("dias"),
+    ).filter(Envio.mes == mes, Envio.anio == anio).group_by(Envio.seller_id, Envio.semana).all()
+
+    envio_agg = {}
+    for r in envio_rows:
+        envio_agg[(r.seller_id, r.semana)] = (r.t_envios or 0, r.t_extras_prod or 0, r.t_extras_com or 0, r.cant, r.dias)
+
+    seller_ids_con_envios = {r.seller_id for r in envio_rows}
+
+    ajuste_rows = db.query(
+        AjusteLiquidacion.entidad_id, AjusteLiquidacion.semana,
+        func.sum(AjusteLiquidacion.monto).label("total"),
+    ).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
+        AjusteLiquidacion.mes == mes, AjusteLiquidacion.anio == anio,
+    ).group_by(AjusteLiquidacion.entidad_id, AjusteLiquidacion.semana).all()
+
+    ajuste_agg = {(r.entidad_id, r.semana): (r.total or 0) for r in ajuste_rows}
+
+    all_pagos = db.query(PagoSemanaSeller).filter(
+        PagoSemanaSeller.mes == mes, PagoSemanaSeller.anio == anio,
+    ).all()
+    pagos_map = {(p.seller_id, p.semana): p for p in all_pagos}
+
+    facturas_map = {f.seller_id: f for f in db.query(FacturaMensualSeller).filter(
+        FacturaMensualSeller.mes == mes, FacturaMensualSeller.anio == anio,
+    ).all()}
+
+    # --- Helper con lookup en memoria ---
+    def _monto_semanal(seller, semana):
+        key = (seller.id, semana)
+        if key not in envio_agg:
+            return 0
+        t_env, t_ep, t_ec, cant, dias = envio_agg[key]
+        total_retiros = 0
+        if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
+            if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
+                total_retiros = seller.tarifa_retiro * dias
+        t_aj = ajuste_agg.get(key, 0)
+        return t_env + t_ep + t_ec + total_retiros + t_aj
 
     result = []
     for seller in sellers:
@@ -136,22 +183,14 @@ def tabla_facturacion(
 
         subtotal = 0
         for sem in semanas:
-            pago = db.query(PagoSemanaSeller).filter(
-                PagoSemanaSeller.seller_id == seller.id,
-                PagoSemanaSeller.semana == sem,
-                PagoSemanaSeller.mes == mes,
-                PagoSemanaSeller.anio == anio,
-            ).first()
-
+            pago = pagos_map.get((seller.id, sem))
             if pago and pago.monto_override is not None:
                 monto = pago.monto_override
             else:
-                monto = _get_monto_semanal_seller(db, seller.id, sem, mes, anio)
+                monto = _monto_semanal(seller, sem)
 
             estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
             editable = pago.monto_override is not None if pago else False
-
-            # Feb 2026 semanas 1-3 → editable
             is_feb_override = (mes == 2 and anio == 2026 and sem <= 3)
 
             row["semanas"][str(sem)] = {
@@ -168,22 +207,12 @@ def tabla_facturacion(
         row["iva"] = int(subtotal * 0.19)
         row["total_con_iva"] = subtotal + row["iva"]
 
-        # Factura mensual si existe
-        factura = db.query(FacturaMensualSeller).filter(
-            FacturaMensualSeller.seller_id == seller.id,
-            FacturaMensualSeller.mes == mes,
-            FacturaMensualSeller.anio == anio,
-        ).first()
+        factura = facturas_map.get(seller.id)
         row["factura_estado"] = factura.estado if factura else None
         row["factura_folio"] = factura.folio_haulmer if factura else None
 
-        # Incluir si: tiene monto, tiene factura emitida, o tiene al menos un envío en el mes (para no ocultar clientes con data)
-        tiene_envios_mes = db.query(Envio).filter(
-            Envio.seller_id == seller.id,
-            Envio.mes == mes,
-            Envio.anio == anio,
-        ).first() is not None
-        if subtotal > 0 or (factura and factura.estado != EstadoFacturaEnum.PENDIENTE.value) or tiene_envios_mes:
+        tiene_envios = seller.id in seller_ids_con_envios
+        if subtotal > 0 or (factura and factura.estado != EstadoFacturaEnum.PENDIENTE.value) or tiene_envios:
             result.append(row)
 
     return {"semanas_disponibles": semanas, "sellers": result}
@@ -289,9 +318,11 @@ def listar_facturas(
         FacturaMensualSeller.mes == mes,
         FacturaMensualSeller.anio == anio,
     ).all()
+    sids = {f.seller_id for f in facturas}
+    sellers_map = {s.id: s for s in db.query(Seller).filter(Seller.id.in_(sids)).all()} if sids else {}
     result = []
     for f in facturas:
-        seller = db.get(Seller, f.seller_id)
+        seller = sellers_map.get(f.seller_id)
         result.append({
             "id": f.id,
             "seller_id": f.seller_id,
@@ -657,9 +688,11 @@ def historial_facturas(
             )
         )
     rows = q.order_by(FacturaMensualSeller.anio.desc(), FacturaMensualSeller.mes.desc()).limit(limite).all()
+    sids = {f.seller_id for f in rows}
+    sellers_map = {s.id: s for s in db.query(Seller).filter(Seller.id.in_(sids)).all()} if sids else {}
     result = []
     for f in rows:
-        seller = db.get(Seller, f.seller_id)
+        seller = sellers_map.get(f.seller_id)
         result.append({
             "id": f.id,
             "seller_id": f.seller_id,

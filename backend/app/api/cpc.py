@@ -153,29 +153,73 @@ def tabla_cpc(
 ):
     """
     Tabla mensual CPC agrupada por jefe de flota (Opción A).
-    - Drivers con jefe: se consolidan bajo el jefe → 1 pago TEF al jefe.
-    - Drivers sin jefe: aparecen individualmente.
+    Optimizado: usa queries bulk en vez de N+1.
     """
     semanas = _semanas_del_mes(db, mes, anio)
     drivers = db.query(Driver).filter(Driver.activo == True).order_by(Driver.nombre).all()
+    drivers_map = {d.id: d for d in drivers}
+
+    # --- Bulk queries (reemplaza cientos de queries individuales) ---
+    envio_rows = db.query(
+        Envio.driver_id, Envio.semana,
+        func.sum(Envio.costo_driver + Envio.pago_extra_manual).label("t_envios"),
+        func.sum(Envio.extra_producto_driver).label("t_extras_prod"),
+        func.sum(Envio.extra_comuna_driver).label("t_extras_com"),
+    ).filter(Envio.mes == mes, Envio.anio == anio).group_by(Envio.driver_id, Envio.semana).all()
+
+    envio_agg = {}
+    for r in envio_rows:
+        envio_agg[(r.driver_id, r.semana)] = (r.t_envios or 0, r.t_extras_prod or 0, r.t_extras_com or 0)
+
+    all_retiros = db.query(Retiro).filter(Retiro.mes == mes, Retiro.anio == anio).all()
+    retiros_map: dict[tuple, list] = {}
+    for r in all_retiros:
+        retiros_map.setdefault((r.driver_id, r.semana), []).append(r)
+
+    ajuste_rows = db.query(
+        AjusteLiquidacion.entidad_id, AjusteLiquidacion.semana,
+        func.sum(AjusteLiquidacion.monto).label("total"),
+    ).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
+        AjusteLiquidacion.mes == mes, AjusteLiquidacion.anio == anio,
+    ).group_by(AjusteLiquidacion.entidad_id, AjusteLiquidacion.semana).all()
+
+    ajuste_agg = {(r.entidad_id, r.semana): (r.total or 0) for r in ajuste_rows}
+
+    all_pagos = db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.mes == mes, PagoSemanaDriver.anio == anio,
+    ).all()
+    pagos_map = {(p.driver_id, p.semana): p for p in all_pagos}
+
+    # --- Helpers con lookup en memoria ---
+    def _monto_semanal(driver_id, semana):
+        if (driver_id, semana) not in envio_agg:
+            return 0
+        t_env, t_ep, t_ec = envio_agg[(driver_id, semana)]
+        retiros = retiros_map.get((driver_id, semana), [])
+        driver = drivers_map.get(driver_id)
+        t_ret = _calcular_retiro_driver(driver, retiros) if driver else sum(r.tarifa_driver for r in retiros)
+        t_aj = ajuste_agg.get((driver_id, semana), 0)
+        return t_env + t_ep + t_ec + t_ret + t_aj
+
+    def _monto_consolidado(driver_id, semana):
+        monto = _monto_semanal(driver_id, semana)
+        for d in drivers:
+            if d.jefe_flota_id == driver_id and d.activo:
+                monto += _monto_semanal(d.id, semana)
+        return monto
 
     def _build_driver_semanas(driver: Driver, es_jefe: bool = False) -> tuple[dict, int]:
         semanas_data = {}
         subtotal = 0
         for sem in semanas:
-            pago = db.query(PagoSemanaDriver).filter(
-                PagoSemanaDriver.driver_id == driver.id,
-                PagoSemanaDriver.semana == sem,
-                PagoSemanaDriver.mes == mes,
-                PagoSemanaDriver.anio == anio,
-            ).first()
-
+            pago = pagos_map.get((driver.id, sem))
             if pago and pago.monto_override is not None:
                 monto = pago.monto_override
             elif es_jefe:
-                monto = _get_monto_consolidado_driver(db, driver.id, sem, mes, anio)
+                monto = _monto_consolidado(driver.id, sem)
             else:
-                monto = _get_monto_semanal_driver(db, driver.id, sem, mes, anio)
+                monto = _monto_semanal(driver.id, sem)
 
             estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
             semanas_data[str(sem)] = {
@@ -188,20 +232,14 @@ def tabla_cpc(
             subtotal += monto
         return semanas_data, subtotal
 
-    # Separar jefes y subordinados
+    # --- Separar jefes y subordinados ---
     jefes: dict[int, Driver] = {}
     subordinados_por_jefe: dict[int, list[Driver]] = {}
     independientes: list[Driver] = []
 
     for driver in drivers:
         if driver.jefe_flota_id:
-            jid = driver.jefe_flota_id
-            if jid not in subordinados_por_jefe:
-                subordinados_por_jefe[jid] = []
-            subordinados_por_jefe[jid].append(driver)
-        else:
-            # Es jefe o independiente — se determina si tiene subordinados después
-            pass
+            subordinados_por_jefe.setdefault(driver.jefe_flota_id, []).append(driver)
 
     for driver in drivers:
         if driver.id in subordinados_por_jefe:
@@ -211,14 +249,10 @@ def tabla_cpc(
 
     result = []
 
-    # Jefes de flota: consolidan el monto de su flota completa
     for jefe_id, jefe in sorted(jefes.items(), key=lambda x: x[1].nombre):
         subs = subordinados_por_jefe.get(jefe_id, [])
-
-        # Monto consolidado (jefe + subordinados) calculado en _build_driver_semanas con es_jefe=True
         semanas_consolidado, subtotal_consolidado = _build_driver_semanas(jefe, es_jefe=True)
 
-        # Detalle de subordinados (para expandir en UI)
         detalle_subordinados = []
         for sub in sorted(subs, key=lambda d: d.nombre):
             sub_semanas, sub_subtotal = _build_driver_semanas(sub)
@@ -244,7 +278,6 @@ def tabla_cpc(
                 "subordinados": detalle_subordinados,
             })
 
-    # Drivers independientes (sin jefe ni subordinados)
     for driver in independientes:
         semanas_data, subtotal = _build_driver_semanas(driver)
         if subtotal > 0:
@@ -261,9 +294,7 @@ def tabla_cpc(
                 "subordinados": [],
             })
 
-    # Ordenar por nombre
     result.sort(key=lambda r: r["driver_nombre"])
-
     return {"semanas_disponibles": semanas, "drivers": result}
 
 

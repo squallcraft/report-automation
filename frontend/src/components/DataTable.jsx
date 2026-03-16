@@ -1,5 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+
+const ROW_HEIGHT = 33
+const OVERSCAN = 20
 
 export default function DataTable({
   columns, data, onRowClick, emptyMessage = 'No hay datos',
@@ -9,12 +13,13 @@ export default function DataTable({
 }) {
   const [localSortKey, setLocalSortKey] = useState(null)
   const [localSortDir, setLocalSortDir] = useState('asc')
+  const parentRef = useRef(null)
 
   const isServerSort = !!onSort
   const activeSortKey = isServerSort ? externalSortKey : localSortKey
   const activeSortDir = isServerSort ? externalSortDir : localSortDir
 
-  const handleSort = (key) => {
+  const handleSort = useCallback((key) => {
     if (!sortable) return
     if (key === 'actions' || key === 'acciones') return
 
@@ -29,7 +34,7 @@ export default function DataTable({
         setLocalSortDir('asc')
       }
     }
-  }
+  }, [sortable, isServerSort, activeSortKey, activeSortDir, onSort, localSortKey])
 
   const sorted = useMemo(() => {
     if (!sortable || isServerSort || !localSortKey || !data) return data
@@ -52,6 +57,15 @@ export default function DataTable({
   const displayData = isServerSort ? data : sorted
 
   const hasFilters = columnFilters && onColumnFilterChange
+  const useVirtual = maxHeight && displayData && displayData.length > 100
+
+  const rowVirtualizer = useVirtualizer({
+    count: displayData?.length || 0,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+    enabled: !!useVirtual,
+  })
 
   if (!data || data.length === 0) {
     return (
@@ -61,11 +75,22 @@ export default function DataTable({
     )
   }
 
+  const virtualItems = useVirtual ? rowVirtualizer.getVirtualItems() : null
+  const totalSize = useVirtual ? rowVirtualizer.getTotalSize() : 0
+  const paddingTop = virtualItems?.length > 0 ? virtualItems[0].start : 0
+  const paddingBottom = virtualItems?.length > 0
+    ? totalSize - virtualItems[virtualItems.length - 1].end
+    : 0
+
   const scrollStyle = maxHeight ? { maxHeight, overflowY: 'auto' } : {}
 
   return (
     <div className="card overflow-hidden p-0 h-full flex flex-col">
-      <div className={`overflow-x-auto -mx-4 sm:mx-0 ${maxHeight ? '' : 'flex-1 overflow-y-auto'}`} style={scrollStyle}>
+      <div
+        ref={parentRef}
+        className={`overflow-x-auto -mx-4 sm:mx-0 ${maxHeight ? '' : 'flex-1 overflow-y-auto'}`}
+        style={scrollStyle}
+      >
         <table className="w-full text-xs sm:text-sm min-w-[480px]">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-gray-200 bg-gray-50">
@@ -128,25 +153,54 @@ export default function DataTable({
             )}
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {displayData.map((row, idx) => (
-              <tr
-                key={row.id || idx}
-                onClick={() => onRowClick?.(row)}
-                className={`transition-colors ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap text-xs sm:text-sm
-                      ${col.align === 'right' ? 'text-right' : ''}
-                      ${col.align === 'center' ? 'text-center' : ''}
-                      ${col.className || ''}`}
-                  >
-                    {col.render ? col.render(row[col.key], row) : row[col.key]}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {useVirtual ? (
+              <>
+                {paddingTop > 0 && <tr><td style={{ height: paddingTop }} /></tr>}
+                {virtualItems.map((virtualRow) => {
+                  const row = displayData[virtualRow.index]
+                  return (
+                    <tr
+                      key={row.id ?? virtualRow.index}
+                      onClick={() => onRowClick?.(row)}
+                      className={`transition-colors ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
+                    >
+                      {columns.map((col) => (
+                        <td
+                          key={col.key}
+                          className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap text-xs sm:text-sm
+                            ${col.align === 'right' ? 'text-right' : ''}
+                            ${col.align === 'center' ? 'text-center' : ''}
+                            ${col.className || ''}`}
+                        >
+                          {col.render ? col.render(row[col.key], row) : row[col.key]}
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+                {paddingBottom > 0 && <tr><td style={{ height: paddingBottom }} /></tr>}
+              </>
+            ) : (
+              displayData.map((row, idx) => (
+                <tr
+                  key={row.id || idx}
+                  onClick={() => onRowClick?.(row)}
+                  className={`transition-colors ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
+                >
+                  {columns.map((col) => (
+                    <td
+                      key={col.key}
+                      className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap text-xs sm:text-sm
+                        ${col.align === 'right' ? 'text-right' : ''}
+                        ${col.align === 'center' ? 'text-center' : ''}
+                        ${col.className || ''}`}
+                    >
+                      {col.render ? col.render(row[col.key], row) : row[col.key]}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

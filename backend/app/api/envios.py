@@ -29,10 +29,8 @@ SELLER_HIDDEN = {"costo_driver", "extra_producto_driver", "extra_comuna_driver",
 DRIVER_HIDDEN = {"cobro_seller", "extra_producto_seller", "extra_comuna_seller", "cobro_extra_manual", "costo_orden"}
 
 
-def _enrich_envio(envio, db, rol=None) -> dict:
+def _enrich_envio(envio, seller=None, driver=None, rol=None) -> dict:
     data = {c.name: getattr(envio, c.name) for c in envio.__table__.columns}
-    seller = db.get(Seller, envio.seller_id) if envio.seller_id else None
-    driver = db.get(Driver, envio.driver_id) if envio.driver_id else None
     data["seller_nombre"] = seller.nombre if seller else envio.seller_nombre_raw
     data["driver_nombre"] = driver.nombre if driver else envio.driver_nombre_raw
 
@@ -44,6 +42,17 @@ def _enrich_envio(envio, db, rol=None) -> dict:
             data[k] = 0
 
     return data
+
+
+def _enrich_envios_bulk(envios, db, rol=None):
+    seller_ids = {e.seller_id for e in envios if e.seller_id}
+    driver_ids = {e.driver_id for e in envios if e.driver_id}
+    sellers_map = {s.id: s for s in db.query(Seller).filter(Seller.id.in_(seller_ids)).all()} if seller_ids else {}
+    drivers_map = {d.id: d for d in db.query(Driver).filter(Driver.id.in_(driver_ids)).all()} if driver_ids else {}
+    return [
+        _enrich_envio(e, seller=sellers_map.get(e.seller_id), driver=drivers_map.get(e.driver_id), rol=rol)
+        for e in envios
+    ]
 
 
 def _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, is_admin=True, meses=None):
@@ -154,7 +163,7 @@ def listar_envios(
         query = query.order_by(sort_expr.desc())
 
     envios = query.offset(offset).limit(limit).all()
-    return [_enrich_envio(e, db, rol=user["rol"]) for e in envios]
+    return _enrich_envios_bulk(envios, db, rol=user["rol"])
 
 
 @router.get("/count")
@@ -196,7 +205,9 @@ def obtener_envio(envio_id: int, db: Session = Depends(get_db), user=Depends(get
         pickup = db.query(Pickup).get(user["id"])
         if not pickup or not pickup.seller_id or envio.seller_id != pickup.seller_id:
             raise HTTPException(status_code=403, detail="No autorizado")
-    return _enrich_envio(envio, db, rol=user["rol"])
+    seller = db.get(Seller, envio.seller_id) if envio.seller_id else None
+    driver = db.get(Driver, envio.driver_id) if envio.driver_id else None
+    return _enrich_envio(envio, seller=seller, driver=driver, rol=user["rol"])
 
 
 @router.put("/{envio_id}", response_model=EnvioOut)
@@ -234,4 +245,6 @@ def actualizar_envio(
               entidad="envio", entidad_id=envio_id, cambios=cambios,
               metadata={"tracking": envio.tracking_id})
 
-    return _enrich_envio(envio, db)
+    seller = db.get(Seller, envio.seller_id) if envio.seller_id else None
+    driver = db.get(Driver, envio.driver_id) if envio.driver_id else None
+    return _enrich_envio(envio, seller=seller, driver=driver)
