@@ -11,7 +11,7 @@ from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
     Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
-    PagoSemanaDriver, EstadoPagoEnum, RecepcionPaquete,
+    PagoSemanaDriver, PagoCartola, EstadoPagoEnum, RecepcionPaquete,
     MovimientoFinanciero, CategoriaFinanciera,
 )
 from app.schemas import DashboardStats
@@ -49,15 +49,10 @@ def obtener_stats(
         Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual
     ), 0)).filter(*base_filter).scalar()
 
-    # Total pagado = suma de monto_neto de semanas marcadas como PAGADO en PagoSemanaDriver
-    # Excluye subordinados de jefes de flota (su monto ya está consolidado en el registro del jefe)
-    total_pagado = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0)).filter(
-        PagoSemanaDriver.mes == mes,
-        PagoSemanaDriver.anio == anio,
-        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
-        ~PagoSemanaDriver.driver_id.in_(
-            db.query(Driver.id).filter(Driver.jefe_flota_id.isnot(None))
-        ),
+    # Total pagado = suma real de pagos a drivers registrados (cartola + manual)
+    total_pagado = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
+        PagoCartola.mes == mes,
+        PagoCartola.anio == anio,
     ).scalar()
 
     # Costo calculado (liquidado) — usado para el margen
