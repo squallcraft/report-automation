@@ -186,9 +186,6 @@ def tabla_facturacion(
             pago = pagos_map.get((seller.id, sem))
             if pago and pago.monto_override is not None:
                 monto = pago.monto_override
-            elif pago and pago.estado == EstadoPagoEnum.PAGADO.value and pago.monto_neto is not None:
-                # Semana cerrada: usar monto_neto guardado al pago, no recalcular
-                monto = pago.monto_neto
             else:
                 monto = _monto_semanal(seller, sem)
 
