@@ -152,6 +152,18 @@ export default function Trabajadores() {
     { key: 'sueldo_bruto', label: 'Sueldo Bruto', align: 'right', render: (v) => fmt(v) },
     { key: 'afp', label: 'AFP', render: (v, row) => row.afp ? `${row.afp} (${fmt(row.costo_afp)})` : '—' },
     { key: 'sistema_salud', label: 'Salud', render: (v, row) => row.sistema_salud ? `${row.sistema_salud} (${fmt(row.costo_salud)})` : '—' },
+    { key: 'fecha_ingreso', label: 'Antigüedad', render: (v) => {
+      if (!v) return '—'
+      const ingreso = new Date(v + 'T12:00:00')
+      const hoy = new Date()
+      let anios = hoy.getFullYear() - ingreso.getFullYear()
+      let meses = hoy.getMonth() - ingreso.getMonth()
+      if (meses < 0) { anios--; meses += 12 }
+      if (anios > 0 && meses > 0) return `${anios}a ${meses}m`
+      if (anios > 0) return `${anios} año${anios > 1 ? 's' : ''}`
+      if (meses > 0) return `${meses} mes${meses > 1 ? 'es' : ''}`
+      return 'Reciente'
+    }},
     { key: 'banco', label: 'Banco', render: (v) => v || '—' },
     { key: 'actions', label: '', render: (_, row) => (
       <div className="flex gap-1">
