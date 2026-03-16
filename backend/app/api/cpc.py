@@ -927,6 +927,7 @@ def cartola_confirmar(
     db.flush()
 
     grabados = 0
+    pagados_driver_semana: set[int] = set()  # driver_ids ya marcados como pagados esta carga
     for item in body.items:
         if item.driver_id <= 0 or item.monto <= 0:
             continue
@@ -963,6 +964,21 @@ def cartola_confirmar(
             pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
         elif not pago_sem.fecha_pago:
             pago_sem.fecha_pago = date.today()
+
+        # Marcar envíos del driver (y subordinados) como pagados — solo la primera vez por driver
+        if item.driver_id not in pagados_driver_semana:
+            pagados_driver_semana.add(item.driver_id)
+            sub_ids = [s.id for s in db.query(Driver).filter(
+                Driver.jefe_flota_id == item.driver_id, Driver.activo == True,
+            ).all()]
+            for did in [item.driver_id] + sub_ids:
+                db.query(Envio).filter(
+                    Envio.driver_id == did,
+                    Envio.semana == body.semana,
+                    Envio.mes == body.mes,
+                    Envio.anio == body.anio,
+                    Envio.is_pagado_driver == False,
+                ).update({"is_pagado_driver": True}, synchronize_session=False)
 
         # Guardar alias si viene nombre_extraido y no coincide exactamente con el nombre del driver
         if item.nombre_extraido:
