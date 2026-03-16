@@ -9,6 +9,8 @@ class EmpresaEnum(str, Enum):
     ECOURIER = "ECOURIER"
     TERCERIZADO = "TERCERIZADO"
     OVIEDO = "OVIEDO"
+    VALPARAISO = "VALPARAISO"
+    MELIPILLA = "MELIPILLA"
 
 
 class TipoEntidadEnum(str, Enum):
