@@ -208,7 +208,8 @@ def require_permission(slug: str) -> Callable:
     """
     Factory de dependencias. Verifica que el usuario tenga el permiso `slug`.
     ADMIN siempre pasa. ADMINISTRACION necesita el slug en su lista de permisos.
-    Uso: @router.get("/ruta", dependencies=[require_permission("ingesta")])
+    Uso: current_user=Depends(require_permission("sellers:editar"))
+         o bien: dependencies=[Depends(require_permission("ingesta"))]
     """
     def _check(current_user: dict = Depends(get_current_user)) -> dict:
         if current_user["rol"] == RolEnum.ADMIN:
@@ -216,4 +217,4 @@ def require_permission(slug: str) -> Callable:
         if slug not in current_user.get("permisos", []):
             raise HTTPException(status_code=403, detail=f"Sin permiso para acceder a esta sección")
         return current_user
-    return Depends(_check)
+    return _check

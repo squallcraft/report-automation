@@ -27,7 +27,7 @@ def listar_trabajadores(
     activo: Optional[bool] = None,
     q: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=require_permission("trabajadores:ver"),
+    _=Depends(require_permission("trabajadores:ver")),
 ):
     query = db.query(Trabajador)
     if activo is not None:
@@ -41,7 +41,7 @@ def listar_trabajadores(
 def obtener_trabajador(
     trabajador_id: int,
     db: Session = Depends(get_db),
-    _=require_permission("trabajadores:ver"),
+    _=Depends(require_permission("trabajadores:ver")),
 ):
     t = db.get(Trabajador, trabajador_id)
     if not t:
@@ -111,7 +111,7 @@ def eliminar_trabajador(
 def listar_pagos(
     trabajador_id: int,
     db: Session = Depends(get_db),
-    _=require_permission("trabajadores:ver"),
+    _=Depends(require_permission("trabajadores:ver")),
 ):
     pagos = db.query(PagoTrabajador).filter(
         PagoTrabajador.trabajador_id == trabajador_id,
@@ -173,7 +173,7 @@ async def cartola_preview(
     anio: int = Query(...),
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=require_permission("trabajadores:editar"),
+    _=Depends(require_permission("trabajadores:editar")),
 ):
     from app.api.cpc import _parsear_cartola
 
@@ -229,7 +229,7 @@ def cartola_confirmar(
     body: ConfirmarCartolaTrabajadorRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=require_permission("trabajadores:editar"),
+    current_user=Depends(require_permission("trabajadores:editar")),
 ):
     grabados = 0
     for item in body.items:
@@ -259,7 +259,7 @@ def cartola_confirmar(
 def costos_mensuales(
     anio: int = Query(...),
     db: Session = Depends(get_db),
-    _=require_permission("trabajadores:ver"),
+    _=Depends(require_permission("trabajadores:ver")),
 ):
     """Total pagado a trabajadores por mes para un año."""
     rows = db.query(

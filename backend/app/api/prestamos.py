@@ -92,7 +92,7 @@ def listar_prestamos(
     estado: Optional[str] = None,
     tipo: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=require_permission("prestamos:ver"),
+    _=Depends(require_permission("prestamos:ver")),
 ):
     query = db.query(Prestamo)
     if estado:
@@ -107,7 +107,7 @@ def listar_prestamos(
 def obtener_prestamo(
     prestamo_id: int,
     db: Session = Depends(get_db),
-    _=require_permission("prestamos:ver"),
+    _=Depends(require_permission("prestamos:ver")),
 ):
     p = db.get(Prestamo, prestamo_id)
     if not p:
@@ -223,7 +223,7 @@ def cancelar_prestamo(
 def prestamos_por_trabajador(
     trabajador_id: int,
     db: Session = Depends(get_db),
-    _=require_permission("prestamos:ver"),
+    _=Depends(require_permission("prestamos:ver")),
 ):
     prestamos = db.query(Prestamo).filter(
         Prestamo.tipo_beneficiario == TipoBeneficiarioEnum.TRABAJADOR.value,
@@ -236,7 +236,7 @@ def prestamos_por_trabajador(
 def prestamos_por_driver(
     driver_id: int,
     db: Session = Depends(get_db),
-    _=require_permission("prestamos:ver"),
+    _=Depends(require_permission("prestamos:ver")),
 ):
     prestamos = db.query(Prestamo).filter(
         Prestamo.tipo_beneficiario == TipoBeneficiarioEnum.DRIVER.value,
@@ -252,7 +252,7 @@ def cuotas_pendientes(
     mes: int = Query(...),
     anio: int = Query(...),
     db: Session = Depends(get_db),
-    _=require_permission("prestamos:ver"),
+    _=Depends(require_permission("prestamos:ver")),
 ):
     """Devuelve cuotas pendientes del período, agrupadas por beneficiario."""
     cuotas = db.query(CuotaPrestamo).join(Prestamo).filter(

@@ -37,7 +37,7 @@ def listar_ajustes(
     anio: Optional[int] = None,
     tipo: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=require_permission("ajustes:ver"),
+    _=Depends(require_permission("ajustes:ver")),
 ):
     query = db.query(AjusteLiquidacion)
     if semana is not None:
@@ -56,7 +56,7 @@ def listar_ajustes(
 def crear_ajuste(
     data: AjusteCreate,
     db: Session = Depends(get_db),
-    admin=require_permission("ajustes:editar"),
+    admin=Depends(require_permission("ajustes:editar")),
 ):
     if data.tipo == TipoEntidadEnum.SELLER:
         entidad = db.get(Seller, data.entidad_id)
@@ -81,7 +81,7 @@ def crear_ajuste(
 
 
 @router.delete("/{ajuste_id}")
-def eliminar_ajuste(ajuste_id: int, db: Session = Depends(get_db), _=require_permission("ajustes:editar")):
+def eliminar_ajuste(ajuste_id: int, db: Session = Depends(get_db), _=Depends(require_permission("ajustes:editar"))):
     ajuste = db.query(AjusteLiquidacion).get(ajuste_id)
     if not ajuste:
         raise HTTPException(status_code=404, detail="Ajuste no encontrado")
@@ -109,7 +109,7 @@ def listar_bonificaciones(
     mes: Optional[int] = None,
     anio: Optional[int] = None,
     db: Session = Depends(get_db),
-    _=require_permission("ajustes:ver"),
+    _=Depends(require_permission("ajustes:ver")),
 ):
     """Lista bonificaciones (ajustes positivos) de trabajadores."""
     query = db.query(AjusteLiquidacion).filter(
@@ -143,7 +143,7 @@ def listar_bonificaciones(
 def crear_bonificacion(
     data: BonificacionCreate,
     db: Session = Depends(get_db),
-    admin=require_permission("ajustes:editar"),
+    admin=Depends(require_permission("ajustes:editar")),
 ):
     """Crea una bonificación (ajuste positivo) para un trabajador en un mes."""
     trabajador = db.get(Trabajador, data.trabajador_id)

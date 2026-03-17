@@ -127,7 +127,7 @@ def semanas_cerradas(
     mes: int,
     anio: int,
     db: Session = Depends(get_db),
-    _=require_permission("retiros:ver"),
+    _=Depends(require_permission("retiros:ver")),
 ):
     """
     Retorna qué (driver_id, semana), (seller_id, semana) y (pickup_id, semana) están cerradas (PAGADO)
@@ -184,7 +184,7 @@ def listar_retiros(
     mes: Optional[int] = None,
     anio: Optional[int] = None,
     db: Session = Depends(get_db),
-    _=require_permission("retiros:ver"),
+    _=Depends(require_permission("retiros:ver")),
 ):
     query = db.query(Retiro)
     if semana is not None:
@@ -282,7 +282,7 @@ def descargar_plantilla_retiros():
 async def preview_retiros(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _=require_permission("retiros:editar"),
+    _=Depends(require_permission("retiros:editar")),
 ):
     """Parsea Excel de retiros y retorna un preview con matches propuestos. No graba nada."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -455,7 +455,7 @@ def confirmar_retiros(
     body: ConfirmarRetirosRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=require_permission("retiros:editar"),
+    current_user=Depends(require_permission("retiros:editar")),
 ):
     """Crea retiros confirmados y guarda aliases de homologación."""
     ingesta_id = str(uuid.uuid4())[:8]
@@ -588,14 +588,14 @@ async def importar_retiros(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=require_permission("retiros:editar"),
+    current_user=Depends(require_permission("retiros:editar")),
 ):
     """Legacy: importa retiros directamente sin preview."""
     raise HTTPException(status_code=410, detail="Use /importar/preview + /importar/confirmar")
 
 
 @router.post("", response_model=RetiroOut, status_code=201)
-def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get_db), current_user=require_permission("retiros:editar")):
+def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("retiros:editar"))):
     if not data.seller_id and not data.pickup_id and not data.sucursal_id:
         raise HTTPException(status_code=400, detail="Debe especificar seller, pickup o sucursal")
     if data.seller_id:
@@ -634,7 +634,7 @@ def editar_retiro(
     data: RetiroUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=require_permission("retiros:editar"),
+    current_user=Depends(require_permission("retiros:editar")),
 ):
     retiro = db.get(Retiro, retiro_id)
     if not retiro:
@@ -681,7 +681,7 @@ def eliminar_retiros_batch(
     ids: List[int],
     request: Request,
     db: Session = Depends(get_db),
-    current_user=require_permission("retiros:editar"),
+    current_user=Depends(require_permission("retiros:editar")),
 ):
     """Elimina múltiples retiros por lista de IDs."""
     if not ids:
@@ -716,7 +716,7 @@ def eliminar_retiros_batch(
 
 
 @router.delete("/{retiro_id}")
-def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_db), current_user=require_permission("retiros:editar")):
+def eliminar_retiro(retiro_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("retiros:editar"))):
     retiro = db.get(Retiro, retiro_id)
     if not retiro:
         raise HTTPException(status_code=404, detail="Retiro no encontrado")
