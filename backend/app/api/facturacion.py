@@ -1011,6 +1011,10 @@ def cartola_seller_confirmar(
 
     grabados = 0
     alias_guardados = set()
+    # Rastrear PagoSemanaSeller ya procesados en este request para evitar
+    # duplicados cuando el mismo seller+semana aparece más de una vez en la cartola
+    pago_sem_cache: dict[tuple, object] = {}
+
     for item in body.items:
         if item.seller_id <= 0 or item.monto <= 0:
             continue
@@ -1029,12 +1033,15 @@ def cartola_seller_confirmar(
 
         # Propagar estado PAGADO y fecha_pago al PagoSemanaSeller
         from app.models import PagoSemanaSeller
-        pago_sem = db.query(PagoSemanaSeller).filter(
-            PagoSemanaSeller.seller_id == item.seller_id,
-            PagoSemanaSeller.semana == item.semana,
-            PagoSemanaSeller.mes == body.mes,
-            PagoSemanaSeller.anio == body.anio,
-        ).first()
+        cache_key = (item.seller_id, item.semana)
+        pago_sem = pago_sem_cache.get(cache_key)
+        if pago_sem is None:
+            pago_sem = db.query(PagoSemanaSeller).filter(
+                PagoSemanaSeller.seller_id == item.seller_id,
+                PagoSemanaSeller.semana == item.semana,
+                PagoSemanaSeller.mes == body.mes,
+                PagoSemanaSeller.anio == body.anio,
+            ).first()
         if not pago_sem:
             monto_sistema = _get_monto_semanal_seller(db, item.seller_id, item.semana, body.mes, body.anio)
             pago_sem = PagoSemanaSeller(
@@ -1042,6 +1049,8 @@ def cartola_seller_confirmar(
                 mes=body.mes, anio=body.anio, monto_neto=monto_sistema,
             )
             db.add(pago_sem)
+            db.flush()  # flush inmediato para que el cache lo encuentre en la siguiente iteración
+        pago_sem_cache[cache_key] = pago_sem
         pago_sem.estado = EstadoPagoEnum.PAGADO.value
         if item.fecha:
             pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
