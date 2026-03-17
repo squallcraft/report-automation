@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X } from 'lucide-react'
+import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X, RotateCcw } from 'lucide-react'
 import Modal from '../../components/Modal'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -15,6 +15,116 @@ function fmt(v) {
   if (!v) return '$0'
   return `$${Math.abs(v).toLocaleString('es-CL')}`
 }
+
+// ---------------------------------------------------------------------------
+// Modal Revertir Pagos Seller
+// ---------------------------------------------------------------------------
+
+function ModalRevertirPagos({ seller, mes, anio, semanasConPago, onClose, onRevertido }) {
+  const MESES_LABEL = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+  const [semanas, setSemanas] = useState(semanasConPago.map(s => s.semana))
+  const [motivo, setMotivo] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  const toggleSemana = (sem) => {
+    setSemanas(prev => prev.includes(sem) ? prev.filter(s => s !== sem) : [...prev, sem])
+  }
+
+  const confirmar = async () => {
+    if (!semanas.length) return toast.error('Selecciona al menos una semana')
+    if (!motivo.trim()) return toast.error('El motivo es obligatorio')
+    setGuardando(true)
+    try {
+      await api.post('/facturacion/revertir-pagos-seller', {
+        seller_id: seller.seller_id,
+        semanas,
+        mes,
+        anio,
+        motivo: motivo.trim(),
+      })
+      toast.success(`Pagos revertidos para ${seller.seller_nombre}`)
+      onRevertido()
+      onClose()
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al revertir pagos')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <RotateCcw size={18} className="text-orange-500" />
+            <h2 className="font-semibold text-gray-900">Revertir pagos</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-4 space-y-5">
+          <div>
+            <p className="text-sm text-gray-600">Seller: <span className="font-medium text-gray-900">{seller.seller_nombre}</span></p>
+            <p className="text-xs text-gray-400">{MESES_LABEL[mes]} {anio}</p>
+          </div>
+
+          {/* Selección de semanas */}
+          <div>
+            <p className="text-xs font-medium text-gray-700 mb-2">Semanas a revertir</p>
+            <div className="flex flex-wrap gap-2">
+              {semanasConPago.map(({ semana, monto }) => (
+                <label key={semana} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${semanas.includes(semana) ? 'border-orange-400 bg-orange-50 text-orange-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  <input
+                    type="checkbox"
+                    checked={semanas.includes(semana)}
+                    onChange={() => toggleSemana(semana)}
+                    className="accent-orange-500"
+                  />
+                  <span>Sem {semana}</span>
+                  <span className="font-mono text-xs">{fmt(monto)}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Motivo */}
+          <div>
+            <label className="text-xs font-medium text-gray-700 block mb-1">
+              Motivo <span className="text-red-500">*</span>
+              <span className="text-gray-400 font-normal ml-1">(quedará registrado en auditoría)</span>
+            </label>
+            <textarea
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-400"
+              rows={3}
+              placeholder="Ej: Monto cargado a semana incorrecta, se debe dividir entre sem 1 y sem 2"
+              value={motivo}
+              onChange={e => setMotivo(e.target.value)}
+            />
+          </div>
+
+          {/* Aviso */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex gap-2 text-xs text-amber-800">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span>Se eliminarán los registros de pago de las semanas seleccionadas y su estado volverá a <strong>Pendiente</strong>. Podrás volver a cargar la cartola correctamente.</span>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="btn btn-secondary">Cancelar</button>
+          <button
+            onClick={confirmar}
+            disabled={guardando || !semanas.length || !motivo.trim()}
+            className="btn btn-primary bg-orange-500 hover:bg-orange-600 border-orange-500 flex items-center gap-2"
+          >
+            {guardando ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+            {guardando ? 'Revirtiendo...' : 'Confirmar reversión'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 // ---------------------------------------------------------------------------
 // Modal Cartola Sellers
@@ -285,6 +395,7 @@ export default function Facturacion() {
   const [modalCartola, setModalCartola] = useState(false)
   const [grupoPagoModal, setGrupoPagoModal] = useState(null)
   const [pagosAcumulados, setPagosAcumulados] = useState({})
+  const [modalRevertir, setModalRevertir] = useState(null) // { seller, semanasConPago }
   const [historialMes, setHistorialMes] = useState(0)       // 0 = todos los meses
   const [historialSearch, setHistorialSearch] = useState('')
   const [facturarSemana, setFacturarSemana] = useState('mes')   // 'mes' | '1'..'5'
@@ -785,8 +896,27 @@ export default function Facturacion() {
                     </td>
                   )}
                   <td className="py-2 px-3">
-                    <span className="font-medium text-gray-800">{s.seller_nombre}</span>
-                    {s.rut && <span className="text-xs text-gray-400 ml-2">{s.rut}</span>}
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <span className="font-medium text-gray-800">{s.seller_nombre}</span>
+                        {s.rut && <span className="text-xs text-gray-400 ml-2">{s.rut}</span>}
+                      </div>
+                      {tab === 'pagos' && (() => {
+                        const semanasConPago = semanasVisibles
+                          .filter(sem => (pagosAcumulados[String(s.seller_id)]?.[String(sem)] || 0) > 0)
+                          .map(sem => ({ semana: sem, monto: pagosAcumulados[String(s.seller_id)]?.[String(sem)] || 0 }))
+                        if (!semanasConPago.length) return null
+                        return (
+                          <button
+                            title="Revertir pagos"
+                            onClick={() => setModalRevertir({ seller: s, semanasConPago })}
+                            className="text-gray-300 hover:text-orange-500 transition-colors ml-1"
+                          >
+                            <RotateCcw size={13} />
+                          </button>
+                        )
+                      })()}
+                    </div>
                   </td>
                   {semanasVisibles.map(sem => {
                     const semData = s.semanas[String(sem)] || { monto_neto: 0, estado: 'PENDIENTE', editable: false }
@@ -1037,6 +1167,21 @@ export default function Facturacion() {
           onClose={() => setModalCartola(false)}
           onConfirmado={() => {
             // Recargar tabla de sellers (estados) Y pagos acumulados (montos recibidos)
+            recargar()
+            api.get('/facturacion/pagos-acumulados', { params: { mes, anio } })
+              .then(res => setPagosAcumulados(res.data || {}))
+              .catch(() => {})
+          }}
+        />
+      )}
+      {modalRevertir && (
+        <ModalRevertirPagos
+          seller={modalRevertir.seller}
+          mes={mes}
+          anio={anio}
+          semanasConPago={modalRevertir.semanasConPago}
+          onClose={() => setModalRevertir(null)}
+          onRevertido={() => {
             recargar()
             api.get('/facturacion/pagos-acumulados', { params: { mes, anio } })
               .then(res => setPagosAcumulados(res.data || {}))

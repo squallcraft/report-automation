@@ -1093,3 +1093,94 @@ def cartola_seller_confirmar(
     audit(db, "carga_cartola_seller", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
     db.commit()
     return {"ok": True, "grabados": grabados}
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: revertir pagos de un seller (semanas seleccionadas)
+# ---------------------------------------------------------------------------
+
+class RevertirPagosSellerRequest(BaseModel):
+    seller_id: int
+    semanas: List[int]
+    mes: int
+    anio: int
+    motivo: str
+
+
+@router.post("/revertir-pagos-seller")
+def revertir_pagos_seller(
+    body: RevertirPagosSellerRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_administracion),
+):
+    """Revierte pagos de semanas seleccionadas de un seller: elimina PagoCartolaSeller
+    y vuelve PagoSemanaSeller a PENDIENTE. Registra motivo en auditoría."""
+    if not body.semanas:
+        raise HTTPException(status_code=400, detail="Debes seleccionar al menos una semana")
+    if not body.motivo or not body.motivo.strip():
+        raise HTTPException(status_code=400, detail="El motivo es obligatorio")
+
+    seller = db.get(Seller, body.seller_id)
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller no encontrado")
+
+    revertidas = []
+    montos_eliminados = {}
+
+    for semana in body.semanas:
+        # Sumar monto que se va a eliminar (para auditoría)
+        pagos_cartola = db.query(PagoCartolaSeller).filter(
+            PagoCartolaSeller.seller_id == body.seller_id,
+            PagoCartolaSeller.semana == semana,
+            PagoCartolaSeller.mes == body.mes,
+            PagoCartolaSeller.anio == body.anio,
+        ).all()
+
+        if not pagos_cartola:
+            continue
+
+        monto_total = sum(p.monto for p in pagos_cartola)
+        montos_eliminados[semana] = monto_total
+
+        # Eliminar todos los registros de PagoCartolaSeller (cartola y manual)
+        db.query(PagoCartolaSeller).filter(
+            PagoCartolaSeller.seller_id == body.seller_id,
+            PagoCartolaSeller.semana == semana,
+            PagoCartolaSeller.mes == body.mes,
+            PagoCartolaSeller.anio == body.anio,
+        ).delete()
+
+        # Revertir PagoSemanaSeller a PENDIENTE
+        pago_sem = db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == body.seller_id,
+            PagoSemanaSeller.semana == semana,
+            PagoSemanaSeller.mes == body.mes,
+            PagoSemanaSeller.anio == body.anio,
+        ).first()
+        if pago_sem:
+            pago_sem.estado = EstadoPagoEnum.PENDIENTE.value
+            pago_sem.fecha_pago = None
+
+        revertidas.append(semana)
+
+    if not revertidas:
+        raise HTTPException(status_code=400, detail="No se encontraron pagos registrados en las semanas seleccionadas")
+
+    audit(
+        db, "revertir_pagos_seller",
+        usuario=current_user,
+        request=request,
+        entidad="seller",
+        entidad_id=body.seller_id,
+        metadata={
+            "seller_nombre": seller.nombre,
+            "mes": body.mes,
+            "anio": body.anio,
+            "semanas_revertidas": revertidas,
+            "montos_eliminados": montos_eliminados,
+            "motivo": body.motivo.strip(),
+        }
+    )
+    db.commit()
+    return {"ok": True, "semanas_revertidas": revertidas}
