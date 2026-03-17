@@ -1028,23 +1028,37 @@ def pagos_acumulados(
     """
     Retorna monto total pagado por driver_id y semana para el mes/año dado.
     { driver_id: { "1": monto, "2": monto, ... } }
+    
+    Prioridad: si existe cartola real, solo suma esos. Si solo hay manual, usa manual.
     """
-    rows = db.query(
-        PagoCartola.driver_id,
-        PagoCartola.semana,
-        func.sum(PagoCartola.monto).label("total"),
-    ).filter(
+    # Obtener todos los registros del mes
+    all_rows = db.query(PagoCartola).filter(
         PagoCartola.mes == mes,
         PagoCartola.anio == anio,
-    ).group_by(PagoCartola.driver_id, PagoCartola.semana).all()
+    ).all()
+
+    from collections import defaultdict
+    cartola_totals: dict[tuple, int] = defaultdict(int)
+    manual_totals: dict[tuple, int] = defaultdict(int)
+    tiene_cartola: set[tuple] = set()
+
+    for r in all_rows:
+        key = (r.driver_id, r.semana)
+        if r.fuente == "cartola":
+            cartola_totals[key] += r.monto
+            tiene_cartola.add(key)
+        else:
+            manual_totals[key] += r.monto
 
     resultado: dict[str, dict[str, int]] = {}
-    for r in rows:
-        did = str(r.driver_id)
-        sem = str(r.semana)
+    processed_keys = set(cartola_totals.keys()) | set(manual_totals.keys())
+    for key in processed_keys:
+        driver_id, semana = key
+        did = str(driver_id)
         if did not in resultado:
             resultado[did] = {}
-        resultado[did][sem] = r.total
+        total = cartola_totals[key] if key in tiene_cartola else manual_totals[key]
+        resultado[did][str(semana)] = total
 
     return resultado
 

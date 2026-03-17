@@ -807,24 +807,44 @@ def pagos_acumulados_sellers(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Suma de PagoCartolaSeller por seller y semana para el mes."""
+    """Suma de PagoCartolaSeller por seller y semana para el mes.
+    
+    Prioridad: si existe al menos un registro fuente='cartola', solo suma esos.
+    Si no hay cartola, suma los de fuente='manual' (pago marcado manualmente).
+    Esto evita doblar el monto cuando coexisten ambas fuentes para la misma semana.
+    """
     from sqlalchemy import func
 
-    rows = db.query(
-        PagoCartolaSeller.seller_id,
-        PagoCartolaSeller.semana,
-        func.sum(PagoCartolaSeller.monto).label("total"),
-    ).filter(
+    # Obtener todos los registros del mes
+    rows = db.query(PagoCartolaSeller).filter(
         PagoCartolaSeller.mes == mes,
         PagoCartolaSeller.anio == anio,
-    ).group_by(PagoCartolaSeller.seller_id, PagoCartolaSeller.semana).all()
+    ).all()
+
+    # Agrupar por (seller_id, semana) distinguiendo fuente
+    from collections import defaultdict
+    cartola_totals: dict[tuple, int] = defaultdict(int)
+    manual_totals: dict[tuple, int] = defaultdict(int)
+    tiene_cartola: set[tuple] = set()
+
+    for r in rows:
+        key = (r.seller_id, r.semana)
+        if r.fuente == "cartola":
+            cartola_totals[key] += r.monto
+            tiene_cartola.add(key)
+        else:
+            manual_totals[key] += r.monto
 
     resultado = {}
-    for r in rows:
-        sid = str(r.seller_id)
+    processed_keys = set(cartola_totals.keys()) | set(manual_totals.keys())
+    for key in processed_keys:
+        seller_id, semana = key
+        sid = str(seller_id)
         if sid not in resultado:
             resultado[sid] = {}
-        resultado[sid][str(r.semana)] = r.total
+        # Usar cartola si existe, si no usar manual
+        total = cartola_totals[key] if key in tiene_cartola else manual_totals[key]
+        resultado[sid][str(semana)] = total
 
     return resultado
 

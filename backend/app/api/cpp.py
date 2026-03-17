@@ -621,22 +621,33 @@ def pagos_acumulados_pickups(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    rows = db.query(
-        PagoCartolaPickup.pickup_id,
-        PagoCartolaPickup.semana,
-        func.sum(PagoCartolaPickup.monto).label("total"),
-    ).filter(
+    rows = db.query(PagoCartolaPickup).filter(
         PagoCartolaPickup.mes == mes,
         PagoCartolaPickup.anio == anio,
-    ).group_by(PagoCartolaPickup.pickup_id, PagoCartolaPickup.semana).all()
+    ).all()
+
+    from collections import defaultdict
+    cartola_totals: dict[tuple, int] = defaultdict(int)
+    manual_totals: dict[tuple, int] = defaultdict(int)
+    tiene_cartola: set[tuple] = set()
+
+    for r in rows:
+        key = (r.pickup_id, r.semana)
+        if r.fuente == "cartola":
+            cartola_totals[key] += r.monto
+            tiene_cartola.add(key)
+        else:
+            manual_totals[key] += r.monto
 
     resultado: dict[str, dict[str, int]] = {}
-    for r in rows:
-        pid = str(r.pickup_id)
-        sem = str(r.semana)
+    processed_keys = set(cartola_totals.keys()) | set(manual_totals.keys())
+    for key in processed_keys:
+        pickup_id, semana = key
+        pid = str(pickup_id)
         if pid not in resultado:
             resultado[pid] = {}
-        resultado[pid][sem] = r.total
+        total = cartola_totals[key] if key in tiene_cartola else manual_totals[key]
+        resultado[pid][str(semana)] = total
     return resultado
 
 
