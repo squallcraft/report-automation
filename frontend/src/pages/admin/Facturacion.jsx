@@ -1036,6 +1036,8 @@ export default function Facturacion() {
           mes={mes} anio={anio}
           onClose={() => setModalCartola(false)}
           onConfirmado={() => {
+            // Recargar tabla de sellers (estados) Y pagos acumulados (montos recibidos)
+            recargar()
             api.get('/facturacion/pagos-acumulados', { params: { mes, anio } })
               .then(res => setPagosAcumulados(res.data || {}))
               .catch(() => {})
