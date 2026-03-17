@@ -11,7 +11,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import pandas as pd
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion, require_driver, get_current_user, hash_password
+from app.auth import require_admin, require_admin_or_administracion, require_permission, require_driver, get_current_user, hash_password
 from app.models import Driver, RolEnum, Retiro, PagoSemanaDriver, EstadoPagoEnum
 from app.schemas import DriverCreate, DriverUpdate, DriverOut
 from app.services.audit import registrar as audit
@@ -233,7 +233,7 @@ async def importar_homologacion(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("drivers:editar")),
 ):
     """
     Importa plantilla de homologación.
@@ -317,7 +317,7 @@ async def importar_tarifas(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("drivers:editar")),
 ):
     """
     Importa plantilla de tarifas.
@@ -397,7 +397,7 @@ async def importar_tarifas(
 
 
 @router.get("/plantilla/bancaria/descargar")
-def descargar_plantilla_bancaria(db: Session = Depends(get_db), _=Depends(require_admin)):
+def descargar_plantilla_bancaria(db: Session = Depends(get_db), _=Depends(require_admin_or_administracion)):
     """Plantilla Excel con drivers para completar datos bancarios."""
     wb = Workbook()
     ws = wb.active
@@ -450,7 +450,7 @@ async def importar_bancaria(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("drivers:editar")),
 ):
     """Importa datos bancarios de drivers desde Excel."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -518,7 +518,7 @@ def obtener_driver(driver_id: int, db: Session = Depends(get_db), _=Depends(requ
 
 
 @router.post("", response_model=DriverOut, status_code=201)
-def crear_driver(data: DriverCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def crear_driver(data: DriverCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("drivers:editar"))):
     existing = db.query(Driver).filter(Driver.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un driver con ese nombre")
@@ -543,7 +543,7 @@ def crear_driver(data: DriverCreate, request: Request, db: Session = Depends(get
 @router.put("/{driver_id}", response_model=DriverOut)
 def actualizar_driver(
     driver_id: int, data: DriverUpdate, request: Request,
-    db: Session = Depends(get_db), current_user=Depends(require_admin),
+    db: Session = Depends(get_db), current_user=Depends(require_permission("drivers:editar")),
 ):
     driver = db.query(Driver).get(driver_id)
     if not driver:
@@ -601,7 +601,7 @@ def actualizar_driver(
 
 
 @router.delete("/{driver_id}")
-def eliminar_driver(driver_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def eliminar_driver(driver_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("drivers:editar"))):
     driver = db.query(Driver).get(driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")

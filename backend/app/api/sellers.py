@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import pandas as pd
 
 from app.database import get_db
-from app.auth import require_admin, require_admin_or_administracion, hash_password
+from app.auth import require_admin, require_admin_or_administracion, require_permission, hash_password
 from app.models import Seller, Sucursal
 from app.schemas import SellerCreate, SellerUpdate, SellerOut, SucursalCreate, SucursalOut
 from app.services.audit import registrar as audit
@@ -340,7 +340,7 @@ def obtener_seller(seller_id: int, db: Session = Depends(get_db), _=Depends(requ
 
 
 @router.post("", response_model=SellerOut, status_code=201)
-def crear_seller(data: SellerCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def crear_seller(data: SellerCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("sellers:editar"))):
     existing = db.query(Seller).filter(Seller.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un seller con ese nombre")
@@ -365,7 +365,7 @@ def crear_seller(data: SellerCreate, request: Request, db: Session = Depends(get
 @router.put("/{seller_id}", response_model=SellerOut)
 def actualizar_seller(
     seller_id: int, data: SellerUpdate, request: Request,
-    db: Session = Depends(get_db), current_user=Depends(require_admin),
+    db: Session = Depends(get_db), current_user=Depends(require_permission("sellers:editar")),
 ):
     seller = db.query(Seller).get(seller_id)
     if not seller:
@@ -400,7 +400,7 @@ def actualizar_seller(
 
 
 @router.delete("/{seller_id}")
-def eliminar_seller(seller_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def eliminar_seller(seller_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("sellers:editar"))):
     seller = db.query(Seller).get(seller_id)
     if not seller:
         raise HTTPException(status_code=404, detail="Seller no encontrado")
@@ -427,7 +427,7 @@ def listar_sucursales(seller_id: int, db: Session = Depends(get_db), _=Depends(r
 @router.post("/{seller_id}/sucursales", response_model=SucursalOut, status_code=201)
 def crear_sucursal(
     seller_id: int, data: SucursalCreate, request: Request,
-    db: Session = Depends(get_db), current_user=Depends(require_admin),
+    db: Session = Depends(get_db), current_user=Depends(require_permission("sellers:editar")),
 ):
     seller = db.query(Seller).get(seller_id)
     if not seller:
@@ -447,7 +447,7 @@ def crear_sucursal(
 @router.put("/{seller_id}/sucursales/{suc_id}", response_model=SucursalOut)
 def actualizar_sucursal(
     seller_id: int, suc_id: int, data: SucursalCreate, request: Request,
-    db: Session = Depends(get_db), current_user=Depends(require_admin),
+    db: Session = Depends(get_db), current_user=Depends(require_permission("sellers:editar")),
 ):
     suc = db.query(Sucursal).filter(Sucursal.id == suc_id, Sucursal.seller_id == seller_id).first()
     if not suc:
@@ -467,7 +467,7 @@ def actualizar_sucursal(
 @router.delete("/{seller_id}/sucursales/{suc_id}")
 def eliminar_sucursal(
     seller_id: int, suc_id: int, request: Request,
-    db: Session = Depends(get_db), current_user=Depends(require_admin),
+    db: Session = Depends(get_db), current_user=Depends(require_permission("sellers:editar")),
 ):
     suc = db.query(Sucursal).filter(Sucursal.id == suc_id, Sucursal.seller_id == seller_id).first()
     if not suc:

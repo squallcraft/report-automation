@@ -54,7 +54,7 @@ def crear_trabajador(
     data: TrabajadorCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("trabajadores:editar")),
 ):
     t = Trabajador(**data.model_dump())
     db.add(t)
@@ -73,7 +73,7 @@ def actualizar_trabajador(
     data: TrabajadorUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("trabajadores:editar")),
 ):
     t = db.get(Trabajador, trabajador_id)
     if not t:
@@ -93,7 +93,7 @@ def eliminar_trabajador(
     trabajador_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("trabajadores:editar")),
 ):
     t = db.get(Trabajador, trabajador_id)
     if not t:
@@ -140,7 +140,7 @@ def registrar_pago_manual(
     body: PagoManualRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("trabajadores:editar")),
 ):
     t = db.get(Trabajador, trabajador_id)
     if not t:

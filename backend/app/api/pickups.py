@@ -17,7 +17,7 @@ import pandas as pd
 
 from app.database import get_db
 from app.auth import (
-    require_admin, require_admin_or_administracion, require_pickup,
+    require_admin, require_admin_or_administracion, require_permission, require_pickup,
     hash_password, get_current_user,
 )
 from app.config import get_settings
@@ -197,7 +197,7 @@ def obtener_pickup(pickup_id: int, db: Session = Depends(get_db), _=Depends(requ
 
 
 @router.post("", response_model=PickupOut, status_code=201)
-def crear_pickup(data: PickupCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def crear_pickup(data: PickupCreate, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("pickups:editar"))):
     existing = db.query(Pickup).filter(Pickup.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ya existe un pickup con ese nombre")
@@ -217,7 +217,7 @@ def crear_pickup(data: PickupCreate, request: Request, db: Session = Depends(get
 @router.put("/{pickup_id}", response_model=PickupOut)
 def actualizar_pickup(
     pickup_id: int, data: PickupUpdate, request: Request,
-    db: Session = Depends(get_db), current_user=Depends(require_admin),
+    db: Session = Depends(get_db), current_user=Depends(require_permission("pickups:editar")),
 ):
     pickup = db.get(Pickup, pickup_id)
     if not pickup:
@@ -241,7 +241,7 @@ def actualizar_pickup(
 
 
 @router.delete("/{pickup_id}")
-def eliminar_pickup(pickup_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+def eliminar_pickup(pickup_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("pickups:editar"))):
     pickup = db.get(Pickup, pickup_id)
     if not pickup:
         raise HTTPException(status_code=404, detail="Pickup no encontrado")
@@ -284,7 +284,7 @@ def listar_todas_recepciones(
     limit: int = 500,
     offset: int = 0,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=Depends(require_admin_or_administracion),
 ):
     query = _build_recepciones_query(db, semana, mes, anio, pickup_id, search)
 
@@ -326,7 +326,7 @@ def contar_recepciones(
     pickup_id: Optional[int] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=Depends(require_admin_or_administracion),
 ):
     return {"total": _build_recepciones_query(db, semana, mes, anio, pickup_id, search).count()}
 
@@ -406,7 +406,7 @@ async def importar_recepciones(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("pickups:editar")),
 ):
     """Importa recepciones de paquetes desde Excel. Vincula pedido a envíos existentes."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
@@ -540,7 +540,7 @@ def importar_desde_trackingtech(
     fecha_inicio: str = Query(..., description="Fecha inicio YYYYMMDD"),
     fecha_fin: str = Query(..., description="Fecha fin YYYYMMDD"),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("pickups:editar")),
 ):
     """
     Importa recepciones de paquetes desde la API TrackingTech.
