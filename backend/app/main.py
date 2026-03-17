@@ -148,6 +148,8 @@ with engine.connect() as conn:
         pmt_cols = [c["name"] for c in insp.get_columns("pagos_mes_trabajadores")]
         if "bonificaciones" not in pmt_cols:
             safe_exec("ALTER TABLE pagos_mes_trabajadores ADD COLUMN bonificaciones INTEGER NOT NULL DEFAULT 0")
+        if "monto_pagado" not in pmt_cols:
+            safe_exec("ALTER TABLE pagos_mes_trabajadores ADD COLUMN monto_pagado INTEGER NOT NULL DEFAULT 0")
 
     # ── Migración: cartola_cargas se crea via create_all ──
     # ── Migración: carga_id en pagos_cartola_drivers y pagos_cartola_sellers ──

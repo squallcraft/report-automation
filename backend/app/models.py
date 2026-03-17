@@ -798,7 +798,8 @@ class PagoMesTrabajador(Base):
     descuento_cuotas = Column(Integer, nullable=False, default=0)   # suma cuotas préstamo descontadas
     descuento_ajustes = Column(Integer, nullable=False, default=0)  # suma ajustes negativos
     monto_neto = Column(Integer, nullable=False, default=0)         # monto_bruto + bonificaciones - descuentos
-    estado = Column(String, nullable=False, default="PENDIENTE")    # PENDIENTE / PAGADO
+    monto_pagado = Column(Integer, nullable=False, default=0)       # suma acumulada de pagos efectivos realizados
+    estado = Column(String, nullable=False, default="PENDIENTE")    # PENDIENTE / PARCIAL / PAGADO
     fecha_pago = Column(Date, nullable=True)
     nota = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

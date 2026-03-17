@@ -3,11 +3,17 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   Users, Download, Upload, FileText, X, Check, AlertCircle,
-  DollarSign, Lock, Calendar, RotateCcw, CreditCard,
+  DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle,
 } from 'lucide-react'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+const ESTADO_CONFIG = {
+  PENDIENTE: { cls: 'bg-amber-100 text-amber-800', label: 'PENDIENTE' },
+  PARCIAL:   { cls: 'bg-blue-100 text-blue-800',   label: 'PARCIAL'   },
+  PAGADO:    { cls: 'bg-green-100 text-green-800',  label: 'PAGADO'    },
+}
 
 function fmt(v) {
   if (!v && v !== 0) return '$0'
@@ -16,17 +22,13 @@ function fmt(v) {
 
 function StatsCard({ icon: Icon, label, value, sub, color = 'blue' }) {
   const colors = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    purple: 'bg-purple-50 text-purple-600',
-    amber: 'bg-amber-50 text-amber-600',
+    blue: 'bg-blue-50 text-blue-600', green: 'bg-green-50 text-green-600',
+    purple: 'bg-purple-50 text-purple-600', amber: 'bg-amber-50 text-amber-600',
     red: 'bg-red-50 text-red-600',
   }
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
-      <div className={`p-2 rounded-lg ${colors[color]}`}>
-        <Icon size={18} />
-      </div>
+      <div className={`p-2 rounded-lg ${colors[color]}`}><Icon size={18} /></div>
       <div className="min-w-0">
         <p className="text-xs text-gray-500 font-medium">{label}</p>
         <p className="text-lg font-bold text-gray-900 truncate">{value}</p>
@@ -37,28 +39,35 @@ function StatsCard({ icon: Icon, label, value, sub, color = 'blue' }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Modal pago manual — equivalente al flujo CPC manual
+// Modal pago manual — soporta pagos parciales
 // ─────────────────────────────────────────────────────────────────
 function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirmado }) {
   const hoy = new Date().toISOString().split('T')[0]
-  // El pago físico suele ser el mes siguiente al de la nómina
+  const saldoPendiente = trabajador.saldo ?? trabajador.monto_neto ?? 0
+  const esParcial = trabajador.estado === 'PARCIAL'
+
   const [fecha, setFecha] = useState(hoy)
-  const [monto, setMonto] = useState(trabajador.monto_neto || 0)
+  const [monto, setMonto] = useState(saldoPendiente)
   const [nota, setNota] = useState('')
+  const [forzarCierre, setForzarCierre] = useState(false)
   const [guardando, setGuardando] = useState(false)
+
+  const montoNum = Number(monto) || 0
+  const quedaSaldo = saldoPendiente - montoNum
+  const seraCompleto = montoNum >= saldoPendiente || forzarCierre
 
   const confirmar = async (e) => {
     e.preventDefault()
     if (!fecha) return toast.error('Ingresa la fecha de pago')
-    if (!monto || Number(monto) <= 0) return toast.error('El monto debe ser mayor a 0')
+    if (montoNum <= 0) return toast.error('El monto debe ser mayor a 0')
     setGuardando(true)
     try {
-      await api.put(
-        `/trabajadores/pago-mes/${trabajador.id}`,
-        { estado: 'PAGADO', fecha_pago: fecha, nota: nota || null },
+      await api.post(
+        `/trabajadores/pago-manual`,
+        { trabajador_id: trabajador.id, monto: montoNum, fecha_pago: fecha, nota: nota || null, forzar_cierre: forzarCierre },
         { params: { mes: mesNomina, anio: anioNomina } }
       )
-      toast.success(`Pago registrado — ${trabajador.nombre}`)
+      toast.success(seraCompleto ? `Nómina completada — ${trabajador.nombre}` : `Pago parcial registrado — ${trabajador.nombre}`)
       onConfirmado()
       onClose()
     } catch (err) {
@@ -71,7 +80,9 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
-            <h2 className="text-base font-bold text-gray-900">Registrar Pago Manual</h2>
+            <h2 className="text-base font-bold text-gray-900">
+              {esParcial ? 'Agregar Pago Parcial' : 'Registrar Pago'}
+            </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Nómina <span className="font-semibold text-gray-700">{MESES[mesNomina]} {anioNomina}</span>
             </p>
@@ -80,7 +91,7 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
         </div>
 
         <form onSubmit={confirmar} className="px-6 py-5 space-y-4">
-          {/* Resumen del trabajador */}
+          {/* Resumen */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-500">Trabajador</span>
@@ -96,27 +107,37 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
               <span className="text-gray-500">Sueldo bruto</span>
               <span className="text-gray-700">{fmt(trabajador.sueldo_bruto)}</span>
             </div>
-            {trabajador.bonificaciones > 0 && (
+            {(trabajador.bonificaciones || 0) > 0 && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Bonificaciones</span>
                 <span className="text-green-600">+{fmt(trabajador.bonificaciones)}</span>
               </div>
             )}
-            {trabajador.descuento_cuotas > 0 && (
+            {(trabajador.descuento_cuotas || 0) > 0 && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Cuotas préstamo</span>
                 <span className="text-red-600">-{fmt(trabajador.descuento_cuotas)}</span>
               </div>
             )}
-            {trabajador.descuento_ajustes > 0 && (
+            {(trabajador.descuento_ajustes || 0) > 0 && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Ajustes</span>
                 <span className="text-amber-600">-{fmt(trabajador.descuento_ajustes)}</span>
               </div>
             )}
             <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
-              <span className="text-gray-700">Líquido a pagar</span>
+              <span className="text-gray-700">Total líquido</span>
               <span className="text-gray-900">{fmt(trabajador.monto_neto)}</span>
+            </div>
+            {esParcial && (
+              <div className="flex justify-between text-blue-700 font-semibold">
+                <span>Ya pagado</span>
+                <span>{fmt(trabajador.monto_pagado)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-indigo-700 font-semibold">
+              <span>Saldo pendiente</span>
+              <span>{fmt(saldoPendiente)}</span>
             </div>
             {trabajador.banco && (
               <div className="flex justify-between text-xs text-gray-400 mt-1">
@@ -126,37 +147,56 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
             )}
           </div>
 
+          {/* Monto a pagar ahora */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Monto a pagar ahora
+            </label>
+            <input
+              type="number"
+              className="input-field w-full"
+              value={monto}
+              onChange={e => setMonto(e.target.value)}
+              min={1}
+              required
+            />
+            {montoNum > 0 && montoNum < saldoPendiente && (
+              <p className="text-xs text-blue-600 mt-1">
+                Quedará saldo de {fmt(quedaSaldo)} → estado <strong>PARCIAL</strong>
+              </p>
+            )}
+            {montoNum >= saldoPendiente && (
+              <p className="text-xs text-green-600 mt-1">Nómina quedará completamente <strong>PAGADA</strong></p>
+            )}
+          </div>
+
           {/* Fecha real del pago */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Fecha real del pago
               <span className="ml-1 text-xs font-normal text-gray-400">(puede ser mes siguiente al de la nómina)</span>
             </label>
-            <input
-              type="date"
-              className="input-field w-full"
-              value={fecha}
-              onChange={e => setFecha(e.target.value)}
-              required
-            />
+            <input type="date" className="input-field w-full" value={fecha} onChange={e => setFecha(e.target.value)} required />
           </div>
 
-          {/* Nota opcional */}
+          {/* Forzar cierre si el monto es menor pero se quiere marcar pagado */}
+          {montoNum > 0 && montoNum < saldoPendiente && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={forzarCierre} onChange={e => setForzarCierre(e.target.checked)} className="w-4 h-4 accent-primary-600" />
+              Marcar como PAGADO de todas formas (diferencia aceptada)
+            </label>
+          )}
+
+          {/* Nota */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nota <span className="text-gray-400 font-normal">(opcional)</span></label>
-            <input
-              type="text"
-              className="input-field w-full"
-              value={nota}
-              onChange={e => setNota(e.target.value)}
-              placeholder="Ej: Transferencia Banco Chile"
-            />
+            <input type="text" className="input-field w-full" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej: Transferencia Banco Chile" />
           </div>
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
             <button type="submit" disabled={guardando} className="btn-primary flex-1 flex items-center justify-center gap-2">
-              <Check size={16} /> {guardando ? 'Guardando...' : 'Confirmar pago'}
+              <Check size={16} /> {guardando ? 'Guardando...' : seraCompleto ? 'Confirmar pago' : 'Registrar parcial'}
             </button>
           </div>
         </form>
@@ -183,9 +223,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
     try {
       const form = new FormData()
       form.append('archivo', archivo)
-      const { data } = await api.post('/trabajadores/cartola-trabajadores/preview', form, {
-        params: { mes, anio },
-      })
+      const { data } = await api.post('/trabajadores/cartola-trabajadores/preview', form, { params: { mes, anio } })
       setPreview(data)
       setTodosTrabajadores(data.trabajadores || [])
       setItems(data.items.map(it => ({
@@ -199,16 +237,12 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
     } finally { setCargando(false) }
   }
 
-  const toggleItem = (idx) =>
-    setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
+  const toggleItem = (idx) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
 
   const cambiarTrabajador = (idx, tid) => {
     const t = todosTrabajadores.find(x => x.id === Number(tid))
     setItems(prev => prev.map((it, i) => i === idx ? {
-      ...it,
-      trabajador_id_sel: t ? t.id : null,
-      trabajador_nombre_sel: t ? t.nombre : null,
-      incluir: t != null,
+      ...it, trabajador_id_sel: t ? t.id : null, trabajador_nombre_sel: t ? t.nombre : null, incluir: t != null,
     } : it))
   }
 
@@ -220,16 +254,12 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
       await api.post('/trabajadores/cartola-trabajadores/confirmar', {
         mes, anio,
         items: seleccionados.map(it => ({
-          trabajador_id: it.trabajador_id_sel,
-          monto: it.monto,
-          fecha: it.fecha,
-          descripcion: it.descripcion,
-          nombre_extraido: it.nombre_extraido,
+          trabajador_id: it.trabajador_id_sel, monto: it.monto,
+          fecha: it.fecha, descripcion: it.descripcion, nombre_extraido: it.nombre_extraido,
         })),
       })
       toast.success(`${seleccionados.length} pagos registrados`)
-      onConfirmado()
-      onClose()
+      onConfirmado(); onClose()
     } catch { toast.error('Error confirmando pagos') }
     finally { setConfirmando(false) }
   }
@@ -254,14 +284,12 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
         <div className="px-6 py-4 border-b border-gray-100 flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Archivo cartola (.xls / .xlsx)</label>
-            <input ref={inputRef} type="file" accept=".xls,.xlsx" className="hidden"
-              onChange={e => setArchivo(e.target.files[0])} />
+            <input ref={inputRef} type="file" accept=".xls,.xlsx" className="hidden" onChange={e => setArchivo(e.target.files[0])} />
             <button onClick={() => inputRef.current.click()} className="btn btn-secondary flex items-center gap-2 text-sm">
               <Upload size={14} /> {archivo ? archivo.name : 'Seleccionar archivo'}
             </button>
           </div>
-          <button onClick={cargarPreview} disabled={cargando || !archivo}
-            className="btn btn-primary text-sm flex items-center gap-2">
+          <button onClick={cargarPreview} disabled={cargando || !archivo} className="btn btn-primary text-sm flex items-center gap-2">
             {cargando ? 'Procesando...' : <><FileText size={14} /> Analizar</>}
           </button>
         </div>
@@ -279,22 +307,20 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                     <th className="py-2 w-8"></th>
                     <th className="py-2 text-left font-medium">Nombre en cartola</th>
                     <th className="py-2 text-left font-medium">Trabajador asignado</th>
-                    <th className="py-2 text-right font-medium pr-4">Monto</th>
-                    <th className="py-2 text-right font-medium pr-4">Ya pagado</th>
-                    <th className="py-2 text-right font-medium pr-4">Líquido</th>
+                    <th className="py-2 text-right font-medium pr-3">Monto</th>
+                    <th className="py-2 text-right font-medium pr-3">Ya pagado</th>
+                    <th className="py-2 text-right font-medium pr-3">Saldo</th>
+                    <th className="py-2 text-right font-medium pr-3">Líquido total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((it, idx) => (
                     <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
                       <td className="py-1.5">
-                        <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)}
-                          className="w-3.5 h-3.5 accent-primary-600" />
+                        <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)} className="w-3.5 h-3.5 accent-primary-600" />
                       </td>
                       <td className="py-1.5 max-w-[180px]">
-                        <span className="truncate block font-medium text-gray-800" title={it.descripcion}>
-                          {it.nombre_extraido}
-                        </span>
+                        <span className="truncate block font-medium text-gray-800" title={it.descripcion}>{it.nombre_extraido}</span>
                         <span className="text-gray-400 text-[10px]">{it.fecha}</span>
                       </td>
                       <td className="py-1.5 min-w-[200px]">
@@ -303,29 +329,24 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                             it.match_confiable && it.trabajador_id_sel === it.trabajador_id
                               ? <Check size={11} className="text-green-600 flex-shrink-0" />
                               : <AlertCircle size={11} className="text-amber-500 flex-shrink-0" />
-                          ) : (
-                            <AlertCircle size={11} className="text-red-400 flex-shrink-0" />
-                          )}
+                          ) : <AlertCircle size={11} className="text-red-400 flex-shrink-0" />}
                           <select
                             className="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white flex-1 min-w-0"
                             value={it.trabajador_id_sel ?? ''}
                             onChange={e => cambiarTrabajador(idx, e.target.value)}
                           >
                             <option value="">— Sin asignar —</option>
-                            {todosTrabajadores.map(t => (
-                              <option key={t.id} value={t.id}>{t.nombre}</option>
-                            ))}
+                            {todosTrabajadores.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
                           </select>
                           {it.trabajador_id_sel === it.trabajador_id && it.score > 0 && (
-                            <span className="text-[10px] text-gray-400 flex-shrink-0">
-                              ({Math.round(it.score * 100)}%)
-                            </span>
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">({Math.round(it.score * 100)}%)</span>
                           )}
                         </div>
                       </td>
-                      <td className="py-1.5 text-right font-mono pr-4">{fmt(it.monto)}</td>
-                      <td className="py-1.5 text-right font-mono text-blue-600 pr-4">{it.ya_pagado > 0 ? fmt(it.ya_pagado) : '—'}</td>
-                      <td className="py-1.5 text-right font-mono text-gray-600 pr-4">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
+                      <td className="py-1.5 text-right font-mono pr-3">{fmt(it.monto)}</td>
+                      <td className="py-1.5 text-right font-mono text-blue-600 pr-3">{it.ya_pagado > 0 ? fmt(it.ya_pagado) : '—'}</td>
+                      <td className="py-1.5 text-right font-mono text-indigo-600 pr-3">{it.saldo > 0 ? fmt(it.saldo) : <span className="text-green-600">✓</span>}</td>
+                      <td className="py-1.5 text-right font-mono text-gray-500 pr-3">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -355,65 +376,69 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 function TrabajadorRow({ t, mes, anio, onPagoManual, onReload }) {
   const [revirtiendo, setRevirtiendo] = useState(false)
   const isPagado = t.estado === 'PAGADO'
+  const isParcial = t.estado === 'PARCIAL'
+  const estadoCfg = ESTADO_CONFIG[t.estado] || ESTADO_CONFIG.PENDIENTE
 
   const revertir = async () => {
-    if (!confirm(`¿Revertir el pago de ${t.nombre} para ${MESES[mes]} ${anio}? Se reabrirá el mes.`)) return
+    if (!confirm(`¿Revertir TODOS los pagos de ${t.nombre} para ${MESES[mes]} ${anio}? Se reabrirá el mes.`)) return
     setRevirtiendo(true)
     try {
-      await api.put(
-        `/trabajadores/pago-mes/${t.id}`,
-        { estado: 'PENDIENTE' },
-        { params: { mes, anio } }
-      )
+      await api.put(`/trabajadores/pago-mes/${t.id}`, { estado: 'PENDIENTE' }, { params: { mes, anio } })
       onReload()
     } catch {
-      toast.error('Error revirtiendo pago')
-      onReload()
+      toast.error('Error revirtiendo pago'); onReload()
     } finally { setRevirtiendo(false) }
   }
 
   const updateFechaPago = async (fecha) => {
     if (!fecha || !t.pago_id) return
     try {
-      await api.put(
-        `/trabajadores/pago-mes/${t.id}`,
-        { estado: 'PAGADO', fecha_pago: fecha },
-        { params: { mes, anio } }
-      )
+      await api.put(`/trabajadores/pago-mes/${t.id}`, { estado: 'PAGADO', fecha_pago: fecha }, { params: { mes, anio } })
       onReload()
     } catch { toast.error('Error actualizando fecha') }
   }
 
   return (
-    <tr className={`border-b border-gray-100 text-sm ${isPagado ? 'bg-green-50/40' : ''}`}>
+    <tr className={`border-b border-gray-100 text-sm ${isPagado ? 'bg-green-50/40' : isParcial ? 'bg-blue-50/30' : ''}`}>
       <td className="py-2 px-3 font-medium text-gray-900">{t.nombre}</td>
       <td className="py-2 px-3 text-gray-500 text-xs">{t.cargo || '—'}</td>
       <td className="py-2 px-3 text-right font-mono">{fmt(t.sueldo_bruto)}</td>
-      {/* Bonificaciones */}
       <td className="py-2 px-3 text-right font-mono text-green-600">
         {(t.bonificaciones || 0) > 0 ? `+${fmt(t.bonificaciones)}` : '—'}
       </td>
-      {/* Descuento cuotas */}
       <td className="py-2 px-3 text-right font-mono text-red-600">
         {(t.descuento_cuotas || 0) > 0 ? `-${fmt(t.descuento_cuotas)}` : '—'}
       </td>
-      {/* Ajustes negativos */}
       <td className="py-2 px-3 text-right font-mono text-amber-600">
         {(t.descuento_ajustes || 0) > 0 ? `-${fmt(t.descuento_ajustes)}` : '—'}
       </td>
       <td className="py-2 px-3 text-right font-mono font-semibold text-gray-900">{fmt(t.monto_neto)}</td>
-      {/* Estado / acción */}
+      {/* Ya pagado */}
+      <td className="py-2 px-3 text-right font-mono text-blue-600">
+        {(t.monto_pagado || 0) > 0 ? fmt(t.monto_pagado) : '—'}
+      </td>
+      {/* Saldo */}
+      <td className="py-2 px-3 text-right font-mono">
+        {isPagado
+          ? <span className="text-green-600 text-xs">✓</span>
+          : <span className={isParcial ? 'text-indigo-600 font-semibold' : 'text-gray-500'}>{fmt(t.saldo)}</span>
+        }
+      </td>
+      {/* Estado */}
       <td className="py-2 px-3">
-        {isPagado ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            <Lock size={10} /> PAGADO
-          </span>
-        ) : (
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${estadoCfg.cls}`}>
+          {isPagado && <Lock size={9} />}
+          {estadoCfg.label}
+        </span>
+      </td>
+      {/* Acciones */}
+      <td className="py-2 px-3">
+        {!isPagado && (
           <button
             onClick={() => onPagoManual(t)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors"
           >
-            <CreditCard size={10} /> Pagar
+            <CreditCard size={10} /> {isParcial ? 'Agregar pago' : 'Pagar'}
           </button>
         )}
       </td>
@@ -435,13 +460,9 @@ function TrabajadorRow({ t, mes, anio, onPagoManual, onReload }) {
       </td>
       {/* Revertir */}
       <td className="py-2 px-3">
-        {isPagado && (
-          <button
-            onClick={revertir}
-            disabled={revirtiendo}
-            title="Revertir pago"
-            className="p-1 rounded text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-          >
+        {(isPagado || isParcial) && (
+          <button onClick={revertir} disabled={revirtiendo} title="Revertir todos los pagos"
+            className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
             <RotateCcw size={13} />
           </button>
         )}
@@ -460,16 +481,15 @@ export default function PagosTrabajadores() {
   const [data, setData] = useState([])
   const [cargando, setCargando] = useState(false)
   const [modalCartola, setModalCartola] = useState(false)
-  const [modalPago, setModalPago] = useState(null) // trabajador a pagar manualmente
+  const [modalPago, setModalPago] = useState(null)
 
   const cargar = async () => {
     setCargando(true)
     try {
       const { data: res } = await api.get('/trabajadores/pagos-mes', { params: { mes, anio } })
       setData(res.items || [])
-    } catch {
-      toast.error('Error cargando pagos')
-    } finally { setCargando(false) }
+    } catch { toast.error('Error cargando pagos') }
+    finally { setCargando(false) }
   }
 
   useEffect(() => { cargar() }, [mes, anio])
@@ -479,10 +499,8 @@ export default function PagosTrabajadores() {
       const res = await api.get('/trabajadores/plantilla-bancaria-trabajadores',
         { params: { mes, anio }, responseType: 'blob' })
       const url = URL.createObjectURL(new Blob([res.data]))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `nomina_${mes}_${anio}.xlsx`
-      a.click()
+      const a = document.createElement('a'); a.href = url
+      a.download = `nomina_${mes}_${anio}.xlsx`; a.click()
       URL.revokeObjectURL(url)
     } catch { toast.error('Error descargando plantilla') }
   }
@@ -490,10 +508,11 @@ export default function PagosTrabajadores() {
   const resumen = useMemo(() => {
     const activos = data.length
     const pagados = data.filter(t => t.estado === 'PAGADO').length
+    const parciales = data.filter(t => t.estado === 'PARCIAL').length
     const totalBruto = data.reduce((s, t) => s + (t.sueldo_bruto || 0), 0)
     const totalLiquido = data.reduce((s, t) => s + (t.monto_neto || 0), 0)
-    const totalPendiente = data.filter(t => t.estado !== 'PAGADO').reduce((s, t) => s + (t.monto_neto || 0), 0)
-    return { activos, pagados, totalBruto, totalLiquido, totalPendiente }
+    const totalSaldo = data.filter(t => t.estado !== 'PAGADO').reduce((s, t) => s + (t.saldo || 0), 0)
+    return { activos, pagados, parciales, totalBruto, totalLiquido, totalSaldo }
   }, [data])
 
   const anos = []
@@ -504,9 +523,7 @@ export default function PagosTrabajadores() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-100 rounded-xl">
-            <Users size={22} className="text-indigo-600" />
-          </div>
+          <div className="p-2 bg-indigo-100 rounded-xl"><Users size={22} className="text-indigo-600" /></div>
           <div>
             <h1 className="text-xl font-bold text-gray-900">Pagos Trabajadores</h1>
             <p className="text-sm text-gray-500">
@@ -515,7 +532,6 @@ export default function PagosTrabajadores() {
           </div>
         </div>
 
-        {/* Selector de período */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500 font-medium">Nómina de:</span>
@@ -535,12 +551,15 @@ export default function PagosTrabajadores() {
         </div>
       </div>
 
-      {/* Stats cards */}
+      {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatsCard icon={Users} label="Trabajadores" value={`${resumen.pagados}/${resumen.activos} pagados`} color="blue" />
+        <StatsCard icon={Users} label="Estado pagos"
+          value={`${resumen.pagados} pagados`}
+          sub={`${resumen.parciales} parciales · ${resumen.activos - resumen.pagados - resumen.parciales} pendientes`}
+          color="blue" />
         <StatsCard icon={DollarSign} label="Costo bruto total" value={fmt(resumen.totalBruto)} sub={MESES[mes]} color="purple" />
         <StatsCard icon={DollarSign} label="Líquido total" value={fmt(resumen.totalLiquido)} sub="Después de descuentos" color="green" />
-        <StatsCard icon={Calendar} label="Pendiente de pago" value={fmt(resumen.totalPendiente)} sub="Trabajadores no pagados" color="amber" />
+        <StatsCard icon={Calendar} label="Saldo por pagar" value={fmt(resumen.totalSaldo)} sub="Pendientes + parciales" color="amber" />
       </div>
 
       {/* Tabla */}
@@ -564,12 +583,15 @@ export default function PagosTrabajadores() {
                 <tr className="text-xs text-gray-500 border-b border-gray-200 bg-gray-50">
                   <th className="py-2 px-3 text-left font-medium">Nombre</th>
                   <th className="py-2 px-3 text-left font-medium">Cargo</th>
-                  <th className="py-2 px-3 text-right font-medium">Sueldo Bruto</th>
+                  <th className="py-2 px-3 text-right font-medium">Bruto</th>
                   <th className="py-2 px-3 text-right font-medium text-green-600">Bonif.</th>
                   <th className="py-2 px-3 text-right font-medium text-red-500">Cuotas</th>
                   <th className="py-2 px-3 text-right font-medium text-amber-500">Ajustes</th>
                   <th className="py-2 px-3 text-right font-medium">Líquido</th>
+                  <th className="py-2 px-3 text-right font-medium text-blue-600">Ya pagado</th>
+                  <th className="py-2 px-3 text-right font-medium text-indigo-600">Saldo</th>
                   <th className="py-2 px-3 text-left font-medium">Estado</th>
+                  <th className="py-2 px-3 text-left font-medium">Acción</th>
                   <th className="py-2 px-3 text-left font-medium">Fecha Pago Real</th>
                   <th className="py-2 px-3 text-left font-medium">Cuenta</th>
                   <th className="py-2 px-3 w-8"></th>
@@ -577,14 +599,7 @@ export default function PagosTrabajadores() {
               </thead>
               <tbody>
                 {data.map(t => (
-                  <TrabajadorRow
-                    key={t.id}
-                    t={t}
-                    mes={mes}
-                    anio={anio}
-                    onPagoManual={setModalPago}
-                    onReload={cargar}
-                  />
+                  <TrabajadorRow key={t.id} t={t} mes={mes} anio={anio} onPagoManual={setModalPago} onReload={cargar} />
                 ))}
               </tbody>
               <tfoot>
@@ -601,7 +616,11 @@ export default function PagosTrabajadores() {
                     {fmt(data.reduce((s, t) => s + (t.descuento_ajustes || 0), 0))}
                   </td>
                   <td className="py-2 px-3 text-right font-mono">{fmt(resumen.totalLiquido)}</td>
-                  <td colSpan={4}></td>
+                  <td className="py-2 px-3 text-right font-mono text-blue-600">
+                    {fmt(data.reduce((s, t) => s + (t.monto_pagado || 0), 0))}
+                  </td>
+                  <td className="py-2 px-3 text-right font-mono text-indigo-600">{fmt(resumen.totalSaldo)}</td>
+                  <td colSpan={5}></td>
                 </tr>
               </tfoot>
             </table>
@@ -609,7 +628,6 @@ export default function PagosTrabajadores() {
         )}
       </div>
 
-      {/* Modal pago manual */}
       {modalPago && (
         <ModalPagoManual
           trabajador={modalPago}
@@ -620,14 +638,8 @@ export default function PagosTrabajadores() {
         />
       )}
 
-      {/* Modal cartola */}
       {modalCartola && (
-        <ModalCartola
-          mes={mes}
-          anio={anio}
-          onClose={() => setModalCartola(false)}
-          onConfirmado={cargar}
-        />
+        <ModalCartola mes={mes} anio={anio} onClose={() => setModalCartola(false)} onConfirmado={cargar} />
       )}
     </div>
   )

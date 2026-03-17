@@ -1,9 +1,15 @@
 """
 API Pagos Trabajadores: control mensual de nómina.
 Flujo equivalente a CPC (drivers) pero mensual y para trabajadores de planta.
+
+Estado del mes:
+  PENDIENTE → aún no se ha registrado ningún pago
+  PARCIAL   → se han registrado pagos pero la suma < monto_neto
+  PAGADO    → suma de pagos >= monto_neto (mes cerrado)
 """
 import io
 import re
+from calendar import monthrange
 from datetime import date
 from difflib import SequenceMatcher
 from typing import Optional, List
@@ -62,11 +68,10 @@ def _extraer_nombre_cartola(descripcion: str) -> str:
 def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: int) -> dict:
     """
     Calcula el monto neto a pagar a un trabajador para el mes/año dado.
-    Devuelve dict con monto_bruto, descuento_cuotas, descuento_ajustes, monto_neto.
+    Devuelve dict con monto_bruto, descuento_cuotas, descuento_ajustes, bonificaciones, monto_neto.
     """
     monto_bruto = trabajador.sueldo_bruto or 0
 
-    # Sumar cuotas de préstamo pendientes del mes
     cuotas = db.query(CuotaPrestamo).join(Prestamo).filter(
         Prestamo.trabajador_id == trabajador.id,
         Prestamo.estado == EstadoPrestamoEnum.ACTIVO.value,
@@ -76,7 +81,6 @@ def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: in
     ).all()
     descuento_cuotas = sum(c.monto for c in cuotas)
 
-    # Sumar ajustes negativos del mes
     ajustes_neg = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == "TRABAJADOR",
         AjusteLiquidacion.entidad_id == trabajador.id,
@@ -86,7 +90,6 @@ def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: in
     ).all()
     descuento_ajustes = abs(sum(a.monto for a in ajustes_neg))
 
-    # Sumar bonificaciones (ajustes positivos) del mes
     ajustes_pos = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == "TRABAJADOR",
         AjusteLiquidacion.entidad_id == trabajador.id,
@@ -107,6 +110,91 @@ def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: in
     }
 
 
+def _suma_pagado(db: Session, trabajador_id: int, mes: int, anio: int) -> int:
+    """Suma todos los PagoTrabajador ya registrados para ese mes."""
+    result = db.query(func.sum(PagoTrabajador.monto)).filter(
+        PagoTrabajador.trabajador_id == trabajador_id,
+        PagoTrabajador.mes == mes,
+        PagoTrabajador.anio == anio,
+    ).scalar()
+    return result or 0
+
+
+def _estado_segun_pagos(monto_pagado: int, monto_neto: int) -> str:
+    """Determina PENDIENTE / PARCIAL / PAGADO según cuánto se ha pagado vs. el total."""
+    if monto_pagado <= 0:
+        return "PENDIENTE"
+    if monto_pagado < monto_neto:
+        return "PARCIAL"
+    return "PAGADO"
+
+
+def _upsert_pago_mes(
+    db: Session,
+    trabajador: Trabajador,
+    mes: int,
+    anio: int,
+    monto_nuevo_pago: int,
+    fecha_pago: date,
+    forzar_cerrado: bool = False,
+) -> PagoMesTrabajador:
+    """
+    Actualiza (o crea) el registro PagoMesTrabajador sumando monto_nuevo_pago.
+    - Si el mes ya estaba PAGADO, no vuelve a congelar montos ni descuenta cuotas.
+    - Si con el nuevo pago la suma alcanza monto_neto → estado PAGADO.
+    - Si no llega → estado PARCIAL.
+    - forzar_cerrado=True fuerza PAGADO independiente del monto (pago manual "confirmar todo").
+    Retorna (pago_mes, es_primera_vez_pagado).
+    """
+    pago_mes = db.query(PagoMesTrabajador).filter(
+        PagoMesTrabajador.trabajador_id == trabajador.id,
+        PagoMesTrabajador.mes == mes,
+        PagoMesTrabajador.anio == anio,
+    ).first()
+
+    ya_cerrado = pago_mes is not None and pago_mes.estado == "PAGADO"
+
+    if ya_cerrado:
+        # Mes ya cerrado: sólo actualizamos monto_pagado acumulado
+        pago_mes.monto_pagado = (pago_mes.monto_pagado or 0) + monto_nuevo_pago
+        return pago_mes, False
+
+    # Calcular/obtener montos
+    if pago_mes is None:
+        montos = _calcular_monto_neto(db, trabajador, mes, anio)
+        pago_mes = PagoMesTrabajador(
+            trabajador_id=trabajador.id,
+            mes=mes,
+            anio=anio,
+            monto_pagado=0,
+            **montos,
+        )
+        db.add(pago_mes)
+        db.flush()
+    elif pago_mes.estado in ("PENDIENTE", "PARCIAL"):
+        # Actualizar montos en tiempo real mientras no esté cerrado
+        montos = _calcular_monto_neto(db, trabajador, mes, anio)
+        pago_mes.monto_bruto = montos["monto_bruto"]
+        pago_mes.bonificaciones = montos["bonificaciones"]
+        pago_mes.descuento_cuotas = montos["descuento_cuotas"]
+        pago_mes.descuento_ajustes = montos["descuento_ajustes"]
+        pago_mes.monto_neto = montos["monto_neto"]
+
+    # Acumular pago
+    pago_mes.monto_pagado = (pago_mes.monto_pagado or 0) + monto_nuevo_pago
+    pago_mes.fecha_pago = fecha_pago
+
+    # Determinar nuevo estado
+    if forzar_cerrado or pago_mes.monto_pagado >= pago_mes.monto_neto:
+        pago_mes.estado = "PAGADO"
+        es_primera_vez_pagado = True
+    else:
+        pago_mes.estado = "PARCIAL"
+        es_primera_vez_pagado = False
+
+    return pago_mes, es_primera_vez_pagado
+
+
 # ──────────────────────────────────────────────────────────
 # GET /trabajadores/pagos-mes
 # ──────────────────────────────────────────────────────────
@@ -120,18 +208,15 @@ def listar_pagos_mes(
 ):
     """
     Devuelve lista de todos los trabajadores activos con su estado de pago del mes.
-    Si no existe PagoMesTrabajador para el mes, calcula el monto en tiempo real.
+    Incluye monto_pagado acumulado y saldo pendiente.
     """
-    from calendar import monthrange
     ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
 
-    # Solo trabajadores activos cuya fecha_ingreso sea anterior o igual al último día del mes consultado
     trabajadores = db.query(Trabajador).filter(
         Trabajador.activo == True,
         (Trabajador.fecha_ingreso == None) | (Trabajador.fecha_ingreso <= ultimo_dia_mes),
     ).order_by(Trabajador.nombre).all()
 
-    # Cargar registros de pago del mes de una vez
     pagos_map = {
         p.trabajador_id: p
         for p in db.query(PagoMesTrabajador).filter(
@@ -143,16 +228,21 @@ def listar_pagos_mes(
     resultado = []
     for t in trabajadores:
         pago = pagos_map.get(t.id)
+
         if pago and pago.estado == "PAGADO":
+            # Mes cerrado: usar valores congelados
             montos = {
                 "monto_bruto": pago.monto_bruto,
-                "bonificaciones": getattr(pago, 'bonificaciones', 0),
+                "bonificaciones": pago.bonificaciones,
                 "descuento_cuotas": pago.descuento_cuotas,
                 "descuento_ajustes": pago.descuento_ajustes,
                 "monto_neto": pago.monto_neto,
             }
         else:
             montos = _calcular_monto_neto(db, t, mes, anio)
+
+        monto_pagado = pago.monto_pagado if pago else 0
+        saldo = max(0, montos["monto_neto"] - monto_pagado)
 
         resultado.append({
             "id": t.id,
@@ -168,6 +258,8 @@ def listar_pagos_mes(
             "numero_cuenta": t.numero_cuenta,
             "rut": t.rut,
             **montos,
+            "monto_pagado": monto_pagado,
+            "saldo": saldo,
             "pago_id": pago.id if pago else None,
             "estado": pago.estado if pago else "PENDIENTE",
             "fecha_pago": str(pago.fecha_pago) if pago and pago.fecha_pago else None,
@@ -178,11 +270,100 @@ def listar_pagos_mes(
 
 
 # ──────────────────────────────────────────────────────────
-# PUT /trabajadores/pago-mes/{trabajador_id}
+# POST /trabajadores/pago-manual  (nuevo: agrega un pago parcial o completo)
+# ──────────────────────────────────────────────────────────
+
+class PagoManualRequest(BaseModel):
+    trabajador_id: int
+    monto: int                        # monto efectivamente pagado ahora
+    fecha_pago: Optional[str] = None
+    nota: Optional[str] = None
+    forzar_cierre: bool = False       # True = marcar PAGADO aunque monto < monto_neto
+
+
+@router.post("/pago-manual")
+def registrar_pago_manual(
+    body: PagoManualRequest,
+    request: Request,
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_administracion),
+):
+    """
+    Registra un pago manual (parcial o completo) para un trabajador en el mes.
+    Puede llamarse múltiples veces: cada llamada acumula el monto_pagado.
+    Cuando monto_pagado >= monto_neto (o forzar_cierre=True) → estado PAGADO.
+    """
+    trabajador = db.get(Trabajador, body.trabajador_id)
+    if not trabajador:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    if body.monto <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+
+    if trabajador.fecha_ingreso:
+        ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
+        if trabajador.fecha_ingreso > ultimo_dia_mes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{trabajador.nombre} ingresó el {trabajador.fecha_ingreso} — no puede tener nómina en {mes}/{anio}"
+            )
+
+    fecha_pago = _parse_fecha(body.fecha_pago) if body.fecha_pago else date.today()
+
+    # Registrar PagoTrabajador individual
+    pago_t = PagoTrabajador(
+        trabajador_id=body.trabajador_id,
+        mes=mes,
+        anio=anio,
+        monto=body.monto,
+        fecha_pago=str(fecha_pago),
+        descripcion=f"Nómina {mes}/{anio}" + (f" — {body.nota}" if body.nota else ""),
+        fuente="manual",
+    )
+    db.add(pago_t)
+    db.flush()
+
+    # Upsert PagoMesTrabajador acumulativo
+    pago_mes, se_cerro = _upsert_pago_mes(
+        db, trabajador, mes, anio,
+        monto_nuevo_pago=body.monto,
+        fecha_pago=fecha_pago,
+        forzar_cerrado=body.forzar_cierre,
+    )
+
+    if body.nota:
+        pago_mes.nota = body.nota
+
+    db.flush()
+
+    # Si se cerró en este pago → descontar cuotas y asiento contable
+    if se_cerro:
+        _descontar_cuotas(db, body.trabajador_id, mes, anio)
+        asiento_pago_trabajador(db, pago_mes)
+
+    audit(db, "pago_manual_trabajador", usuario=current_user, request=request,
+          entidad="pago_mes_trabajador", entidad_id=pago_mes.id,
+          metadata={"trabajador_id": body.trabajador_id, "mes": mes, "anio": anio,
+                    "monto": body.monto, "estado_resultante": pago_mes.estado})
+
+    db.commit()
+    return {
+        "ok": True,
+        "pago_id": pago_mes.id,
+        "estado": pago_mes.estado,
+        "monto_pagado": pago_mes.monto_pagado,
+        "saldo": max(0, pago_mes.monto_neto - pago_mes.monto_pagado),
+        "monto_neto": pago_mes.monto_neto,
+    }
+
+
+# ──────────────────────────────────────────────────────────
+# PUT /trabajadores/pago-mes/{trabajador_id}  (revertir / actualizar fecha)
 # ──────────────────────────────────────────────────────────
 
 class ActualizarPagoMesRequest(BaseModel):
-    estado: str  # PENDIENTE / PAGADO
+    estado: str                       # PENDIENTE = revertir
     fecha_pago: Optional[str] = None
     nota: Optional[str] = None
 
@@ -197,20 +378,14 @@ def actualizar_pago_mes(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin_or_administracion),
 ):
-    """Marca el pago mensual de un trabajador como PAGADO o PENDIENTE."""
+    """
+    Actualiza estado del mes:
+    - PENDIENTE: revierte todo (borra PagoTrabajador del mes, resetea monto_pagado)
+    - PAGADO con fecha: sólo actualiza fecha_pago si ya estaba PAGADO
+    """
     trabajador = db.get(Trabajador, trabajador_id)
     if not trabajador:
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
-
-    # Validar que el mes consultado no sea anterior a la fecha de ingreso
-    if trabajador.fecha_ingreso:
-        from calendar import monthrange
-        ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
-        if trabajador.fecha_ingreso > ultimo_dia_mes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"{trabajador.nombre} ingresó el {trabajador.fecha_ingreso} — no puede tener nómina en {mes}/{anio}"
-            )
 
     pago = db.query(PagoMesTrabajador).filter(
         PagoMesTrabajador.trabajador_id == trabajador_id,
@@ -218,76 +393,40 @@ def actualizar_pago_mes(
         PagoMesTrabajador.anio == anio,
     ).first()
 
-    ya_estaba_pagado = pago is not None and pago.estado == "PAGADO"
+    if body.estado == "PENDIENTE":
+        # Revertir: borrar todos los PagoTrabajador del mes y resetear registro
+        db.query(PagoTrabajador).filter(
+            PagoTrabajador.trabajador_id == trabajador_id,
+            PagoTrabajador.mes == mes,
+            PagoTrabajador.anio == anio,
+        ).delete(synchronize_session=False)
 
-    if not pago:
-        montos = _calcular_monto_neto(db, trabajador, mes, anio)
-        pago = PagoMesTrabajador(
-            trabajador_id=trabajador_id,
-            mes=mes,
-            anio=anio,
-            **montos,
-        )
-        db.add(pago)
-    elif not ya_estaba_pagado:
-        # Actualizar montos en tiempo real sólo si aún PENDIENTE
-        montos = _calcular_monto_neto(db, trabajador, mes, anio)
-    else:
-        # Ya cerrado: usar montos congelados
-        montos = {
-            "monto_bruto": pago.monto_bruto,
-            "bonificaciones": pago.bonificaciones,
-            "descuento_cuotas": pago.descuento_cuotas,
-            "descuento_ajustes": pago.descuento_ajustes,
-            "monto_neto": pago.monto_neto,
-        }
+        if pago:
+            pago.estado = "PENDIENTE"
+            pago.monto_pagado = 0
+            pago.fecha_pago = None
+            if body.nota is not None:
+                pago.nota = body.nota
 
-    pago.estado = body.estado
-
-    if body.estado == "PAGADO":
-        if not ya_estaba_pagado:
-            # Primera vez que se marca PAGADO: congelar montos, crear registros
-            pago.monto_bruto = montos["monto_bruto"]
-            pago.bonificaciones = montos["bonificaciones"]
-            pago.descuento_cuotas = montos["descuento_cuotas"]
-            pago.descuento_ajustes = montos["descuento_ajustes"]
-            pago.monto_neto = montos["monto_neto"]
-            pago.fecha_pago = _parse_fecha(body.fecha_pago) if body.fecha_pago else date.today()
-
-            # Crear PagoTrabajador como registro de pago
-            pago_t = PagoTrabajador(
-                trabajador_id=trabajador_id,
-                mes=mes,
-                anio=anio,
-                monto=montos["monto_neto"],
-                fecha_pago=str(pago.fecha_pago),
-                descripcion=f"Nómina {mes}/{anio}",
-                fuente="manual",
-            )
-            db.add(pago_t)
-            db.flush()
-
-            # Descontar cuotas de préstamo
-            _descontar_cuotas(db, trabajador_id, mes, anio)
-
-            # Asiento contable
-            asiento_pago_trabajador(db, pago)
-        else:
-            # Ya estaba PAGADO: sólo actualizar fecha si se envía una nueva
+    elif body.estado == "PAGADO":
+        if pago and pago.estado == "PAGADO":
+            # Solo actualizar fecha
             if body.fecha_pago:
                 pago.fecha_pago = _parse_fecha(body.fecha_pago)
-    else:
-        pago.fecha_pago = None
-
-    if body.nota is not None:
-        pago.nota = body.nota
+            if body.nota is not None:
+                pago.nota = body.nota
 
     audit(db, "actualizar_pago_mes_trabajador", usuario=current_user, request=request,
-          entidad="pago_mes_trabajador", entidad_id=pago.id,
+          entidad="pago_mes_trabajador", entidad_id=pago.id if pago else None,
           metadata={"trabajador_id": trabajador_id, "mes": mes, "anio": anio, "estado": body.estado})
 
     db.commit()
-    return {"ok": True, "pago_id": pago.id, "estado": pago.estado, "monto_neto": pago.monto_neto}
+    return {
+        "ok": True,
+        "pago_id": pago.id if pago else None,
+        "estado": pago.estado if pago else "PENDIENTE",
+        "monto_pagado": pago.monto_pagado if pago else 0,
+    }
 
 
 def _descontar_cuotas(db: Session, trabajador_id: int, mes: int, anio: int):
@@ -321,8 +460,7 @@ def plantilla_bancaria_trabajadores(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Genera plantilla Excel TEF con los trabajadores PENDIENTES del mes."""
-    from calendar import monthrange
+    """Genera plantilla Excel TEF con los trabajadores con saldo pendiente del mes."""
     ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
     trabajadores = db.query(Trabajador).filter(
         Trabajador.activo == True,
@@ -334,7 +472,6 @@ def plantilla_bancaria_trabajadores(
         for p in db.query(PagoMesTrabajador).filter(
             PagoMesTrabajador.mes == mes,
             PagoMesTrabajador.anio == anio,
-            PagoMesTrabajador.estado == "PAGADO",
         ).all()
     }
 
@@ -343,18 +480,23 @@ def plantilla_bancaria_trabajadores(
     ws.title = f"Nomina {mes}-{anio}"
 
     headers = ["Nombre", "RUT", "Banco", "Tipo Cuenta", "Número Cuenta", "AFP", "Costo AFP",
-               "Sistema Salud", "Costo Salud", "Sueldo Bruto", "Descuento Cuotas", "Monto Neto"]
+               "Sistema Salud", "Costo Salud", "Sueldo Bruto", "Ya Pagado", "Saldo a Pagar"]
     ws.append(headers)
 
     for t in trabajadores:
-        if t.id in pagos_map:
-            continue  # ya pagado
+        pago = pagos_map.get(t.id)
+        if pago and pago.estado == "PAGADO":
+            continue  # completamente pagado
         montos = _calcular_monto_neto(db, t, mes, anio)
+        ya_pagado = pago.monto_pagado if pago else 0
+        saldo = max(0, montos["monto_neto"] - ya_pagado)
+        if saldo <= 0:
+            continue
         ws.append([
             t.nombre, t.rut or "", t.banco or "", t.tipo_cuenta or "", t.numero_cuenta or "",
             t.afp or "", t.costo_afp or 0,
             t.sistema_salud or "", t.costo_salud or 0,
-            montos["monto_bruto"], montos["descuento_cuotas"], montos["monto_neto"],
+            montos["monto_bruto"], ya_pagado, saldo,
         ])
 
     buf = io.BytesIO()
@@ -372,11 +514,6 @@ def plantilla_bancaria_trabajadores(
 # ──────────────────────────────────────────────────────────
 
 def _parsear_cartola_trabajadores(archivo_bytes: bytes) -> list[dict]:
-    """
-    Lee el .xls/.xlsx de cartola Banco de Chile.
-    Retorna lista de {fecha, descripcion, monto, nombre_extraido}.
-    Solo incluye cargos de "Traspaso A:" (pagos emitidos).
-    """
     try:
         df = pd.read_excel(io.BytesIO(archivo_bytes), header=None)
     except Exception as exc:
@@ -393,8 +530,8 @@ def _parsear_cartola_trabajadores(archivo_bytes: bytes) -> list[dict]:
         raise HTTPException(status_code=400, detail="No se encontró encabezado de movimientos en la cartola.")
 
     header_vals = [str(df.iloc[header_row, c]).strip().lower() for c in range(df.shape[1])]
-    idx_fecha = next((i for i, v in enumerate(header_vals) if "fecha" in v), None)
-    idx_desc  = next((i for i, v in enumerate(header_vals) if "descripci" in v), None)
+    idx_fecha  = next((i for i, v in enumerate(header_vals) if "fecha" in v), None)
+    idx_desc   = next((i for i, v in enumerate(header_vals) if "descripci" in v), None)
     idx_cargos = next((i for i, v in enumerate(header_vals) if "cargos" in v), None)
 
     if idx_cargos is None:
@@ -445,16 +582,12 @@ async def cartola_preview(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """
-    Parsea la cartola bancaria y retorna preview con matches propuestos contra trabajadores.
-    No escribe nada en BD.
-    """
     contenido = await archivo.read()
     movimientos = _parsear_cartola_trabajadores(contenido)
 
     trabajadores = db.query(Trabajador).filter(Trabajador.activo == True).all()
 
-    # Pagos ya registrados este mes
+    # Pagos ya registrados este mes (acumulados)
     pagados_existentes: dict[int, int] = {}
     for p in db.query(PagoTrabajador).filter(
         PagoTrabajador.mes == mes,
@@ -476,6 +609,9 @@ async def cartola_preview(
 
         match_confiable = mejor_score >= 0.55
         montos = _calcular_monto_neto(db, mejor, mes, anio) if mejor else {}
+        ya_pagado = pagados_existentes.get(mejor.id, 0) if mejor else 0
+        liquidado = montos.get("monto_neto", 0)
+        saldo = max(0, liquidado - ya_pagado)
 
         resultado.append({
             "descripcion": mov["descripcion"],
@@ -486,8 +622,9 @@ async def cartola_preview(
             "trabajador_nombre": mejor.nombre if mejor else None,
             "score": round(mejor_score, 2),
             "match_confiable": match_confiable,
-            "ya_pagado": pagados_existentes.get(mejor.id, 0) if mejor else 0,
-            "liquidado": montos.get("monto_neto", 0),
+            "ya_pagado": ya_pagado,
+            "liquidado": liquidado,
+            "saldo": saldo,
         })
 
     todos = [{"id": t.id, "nombre": t.nombre} for t in sorted(trabajadores, key=lambda x: x.nombre)]
@@ -521,10 +658,7 @@ def cartola_confirmar(
 ):
     """
     Confirma los pagos de la cartola para trabajadores.
-    - Crea PagoTrabajador por cada ítem.
-    - Upsert PagoMesTrabajador con estado PAGADO.
-    - Descuenta cuotas de préstamo del mes.
-    - Crea asiento contable de egreso nómina.
+    Acumula monto_pagado. Si suma >= monto_neto → PAGADO, si no → PARCIAL.
     """
     carga = CartolaCarga(
         tipo="trabajador",
@@ -552,7 +686,7 @@ def cartola_confirmar(
 
         fecha_pago_date = _parse_fecha(item.fecha) if item.fecha else date.today()
 
-        # Registro de pago efectivo
+        # Registro de pago efectivo individual
         pago_t = PagoTrabajador(
             trabajador_id=item.trabajador_id,
             mes=body.mes,
@@ -563,42 +697,20 @@ def cartola_confirmar(
             fuente="cartola",
         )
         db.add(pago_t)
+        db.flush()
         grabados += 1
 
-        # Upsert PagoMesTrabajador
-        pago_mes = db.query(PagoMesTrabajador).filter(
-            PagoMesTrabajador.trabajador_id == item.trabajador_id,
-            PagoMesTrabajador.mes == body.mes,
-            PagoMesTrabajador.anio == body.anio,
-        ).first()
-
-        montos = _calcular_monto_neto(db, trabajador, body.mes, body.anio)
-
-        if not pago_mes:
-            pago_mes = PagoMesTrabajador(
-                trabajador_id=item.trabajador_id,
-                mes=body.mes,
-                anio=body.anio,
-                **montos,
-            )
-            db.add(pago_mes)
-        else:
-            pago_mes.monto_bruto = montos["monto_bruto"]
-            pago_mes.bonificaciones = montos["bonificaciones"]
-            pago_mes.descuento_cuotas = montos["descuento_cuotas"]
-            pago_mes.descuento_ajustes = montos["descuento_ajustes"]
-            pago_mes.monto_neto = montos["monto_neto"]
-
-        pago_mes.estado = "PAGADO"
-        pago_mes.fecha_pago = fecha_pago_date
-
+        # Upsert acumulativo
+        pago_mes, se_cerro = _upsert_pago_mes(
+            db, trabajador, body.mes, body.anio,
+            monto_nuevo_pago=item.monto,
+            fecha_pago=fecha_pago_date,
+        )
         db.flush()
 
-        # Descontar cuotas de préstamo
-        _descontar_cuotas(db, item.trabajador_id, body.mes, body.anio)
-
-        # Asiento contable
-        asiento_pago_trabajador(db, pago_mes)
+        if se_cerro:
+            _descontar_cuotas(db, item.trabajador_id, body.mes, body.anio)
+            asiento_pago_trabajador(db, pago_mes)
 
     audit(db, "carga_cartola_trabajador", usuario=current_user, request=request,
           entidad="cartola_carga", entidad_id=carga.id,
