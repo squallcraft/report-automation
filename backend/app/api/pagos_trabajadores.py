@@ -122,7 +122,14 @@ def listar_pagos_mes(
     Devuelve lista de todos los trabajadores activos con su estado de pago del mes.
     Si no existe PagoMesTrabajador para el mes, calcula el monto en tiempo real.
     """
-    trabajadores = db.query(Trabajador).filter(Trabajador.activo == True).order_by(Trabajador.nombre).all()
+    from calendar import monthrange
+    ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
+
+    # Solo trabajadores activos cuya fecha_ingreso sea anterior o igual al último día del mes consultado
+    trabajadores = db.query(Trabajador).filter(
+        Trabajador.activo == True,
+        (Trabajador.fecha_ingreso == None) | (Trabajador.fecha_ingreso <= ultimo_dia_mes),
+    ).order_by(Trabajador.nombre).all()
 
     # Cargar registros de pago del mes de una vez
     pagos_map = {
@@ -194,6 +201,16 @@ def actualizar_pago_mes(
     trabajador = db.get(Trabajador, trabajador_id)
     if not trabajador:
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+
+    # Validar que el mes consultado no sea anterior a la fecha de ingreso
+    if trabajador.fecha_ingreso:
+        from calendar import monthrange
+        ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
+        if trabajador.fecha_ingreso > ultimo_dia_mes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{trabajador.nombre} ingresó el {trabajador.fecha_ingreso} — no puede tener nómina en {mes}/{anio}"
+            )
 
     pago = db.query(PagoMesTrabajador).filter(
         PagoMesTrabajador.trabajador_id == trabajador_id,
@@ -305,7 +322,12 @@ def plantilla_bancaria_trabajadores(
     _=Depends(require_admin_or_administracion),
 ):
     """Genera plantilla Excel TEF con los trabajadores PENDIENTES del mes."""
-    trabajadores = db.query(Trabajador).filter(Trabajador.activo == True).order_by(Trabajador.nombre).all()
+    from calendar import monthrange
+    ultimo_dia_mes = date(anio, mes, monthrange(anio, mes)[1])
+    trabajadores = db.query(Trabajador).filter(
+        Trabajador.activo == True,
+        (Trabajador.fecha_ingreso == None) | (Trabajador.fecha_ingreso <= ultimo_dia_mes),
+    ).order_by(Trabajador.nombre).all()
 
     pagos_map = {
         p.trabajador_id: p
