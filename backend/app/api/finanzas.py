@@ -49,6 +49,10 @@ from app.schemas import (
 
 router = APIRouter(prefix="/finanzas", tags=["Finanzas"])
 
+# ID fijo de la categoría "Sueldos" — se excluye de MovimientoFinanciero
+# en transacciones porque los sueldos aparecen vía PagoTrabajador directamente
+_CAT_SUELDOS_ID = 7
+
 UPLOAD_DIR = os.path.join(get_settings().UPLOAD_DIR, "documentos_financieros")
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
 
@@ -349,6 +353,7 @@ def dashboard_consolidado(
         *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
         MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "EGRESO",
+        MovimientoFinanciero.categoria_id != _CAT_SUELDOS_ID,
     ).scalar()
     movs_cobrados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
         *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
@@ -420,6 +425,7 @@ def flujo_caja_proyectado(
     # Movimientos manuales agrupados por semana según su fecha_pago real
     movs_manuales = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
         *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
+        MovimientoFinanciero.categoria_id != _CAT_SUELDOS_ID,
     ).all()
     manual_por_semana: dict[int, dict] = defaultdict(lambda: {"INGRESO": 0, "EGRESO": 0})
     for m in movs_manuales:
@@ -524,12 +530,13 @@ def resumen_anual(
         # Devengo para ingresos/costos operacionales (liquidaciones)
         ingreso_op, costo_op = _operacional_mes(db, mes, anio)
 
-        # Movimientos manuales por fecha_pago real
+        # Movimientos manuales por fecha_pago real (excluye sueldos, que vienen vía PagoTrabajador)
         rows = db.query(
             CategoriaFinanciera.tipo,
             sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0).label("total"),
         ).join(CategoriaFinanciera).filter(
             *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
+            MovimientoFinanciero.categoria_id != _CAT_SUELDOS_ID,
         ).group_by(CategoriaFinanciera.tipo).all()
         manual = {"INGRESO": 0, "EGRESO": 0}
         for r in rows:
@@ -618,8 +625,10 @@ def listar_transacciones(
     txns = []
 
     # 1. Movimientos manuales — filtrar por fecha_pago real
+    # Excluir categoría Sueldos (id=7): esos aparecen vía PagoTrabajador para evitar duplicados
     movs = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
         *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
+        MovimientoFinanciero.categoria_id != _CAT_SUELDOS_ID,
     ).all()
     for m in movs:
         fecha = _fmt_fecha(m.fecha_pago) or _fmt_fecha(m.created_at.date() if m.created_at else None)
