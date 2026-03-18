@@ -32,6 +32,8 @@ const FUENTE_BADGE = {
   Manual: 'bg-blue-100 text-blue-700',
   Driver: 'bg-purple-100 text-purple-700',
   Seller: 'bg-emerald-100 text-emerald-700',
+  Pickup: 'bg-orange-100 text-orange-700',
+  'Nómina': 'bg-rose-100 text-rose-700',
 }
 
 const initialForm = {
@@ -545,9 +547,18 @@ function DashboardTab({ dashData, flujoCaja, transacciones, onDownloadDoc }) {
                 <th className="py-2 pr-3">Fecha</th><th className="py-2 pr-3">Descripción</th><th className="py-2 pr-3">Fuente</th><th className="py-2 pr-3 text-right">Monto</th><th className="py-2 pr-3 text-center">Estado</th><th className="py-2 w-10"></th>
               </tr></thead>
               <tbody>
-                {transacciones.map(t => (
+                {transacciones.map(t => {
+                  // Formatear fecha a dd/mm/yyyy
+                  let fechaDisplay = '—'
+                  if (t.fecha) {
+                    try {
+                      const [y, m, d] = t.fecha.split('T')[0].split('-')
+                      fechaDisplay = `${d}/${m}/${y}`
+                    } catch { fechaDisplay = t.fecha }
+                  }
+                  return (
                   <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 pr-3 text-gray-500">{t.fecha || '—'}</td>
+                    <td className="py-2 pr-3 text-gray-500 whitespace-nowrap">{fechaDisplay}</td>
                     <td className="py-2 pr-3 font-medium text-gray-900">{t.descripcion}</td>
                     <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${FUENTE_BADGE[t.fuente] || 'bg-gray-100 text-gray-700'}`}>{t.fuente}</span></td>
                     <td className={`py-2 pr-3 text-right font-medium ${t.tipo === 'INGRESO' ? 'text-green-600' : 'text-red-600'}`}>
@@ -558,7 +569,8 @@ function DashboardTab({ dashData, flujoCaja, transacciones, onDownloadDoc }) {
                     <td className="py-2 pr-3 text-center"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_BADGE[t.estado] || 'bg-gray-100'}`}>{t.estado}</span></td>
                     <td className="py-2">{t.tiene_documento && <button onClick={() => onDownloadDoc(t.id.replace('mov-', ''))} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Download size={14} /></button>}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
