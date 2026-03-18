@@ -971,7 +971,18 @@ def cartola_confirmar(
                 mes=body.mes, anio=body.anio, monto_neto=monto_sistema,
             )
             db.add(pago_sem)
-        pago_sem.estado = EstadoPagoEnum.PAGADO.value
+        db.flush()
+        total_pagado = db.query(func.coalesce(func.sum(PagoCartola.monto), 0)).filter(
+            PagoCartola.driver_id == item.driver_id,
+            PagoCartola.semana == body.semana,
+            PagoCartola.mes == body.mes,
+            PagoCartola.anio == body.anio,
+        ).scalar()
+        monto_objetivo = pago_sem.monto_override if pago_sem.monto_override is not None else pago_sem.monto_neto
+        if total_pagado >= monto_objetivo and monto_objetivo > 0:
+            pago_sem.estado = EstadoPagoEnum.PAGADO.value
+        elif total_pagado > 0:
+            pago_sem.estado = EstadoPagoEnum.INCOMPLETO.value
         if item.fecha:
             pago_sem.fecha_pago = _parse_fecha(item.fecha) if isinstance(item.fecha, str) else item.fecha
         elif not pago_sem.fecha_pago:

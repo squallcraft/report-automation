@@ -25,6 +25,7 @@ function pct(current, prev) {
 const ESTADO_BADGE = {
   PENDIENTE: 'bg-amber-100 text-amber-800',
   PAGADO: 'bg-green-100 text-green-800',
+  INCOMPLETO: 'bg-orange-100 text-orange-800',
   VENCIDO: 'bg-red-100 text-red-800',
 }
 

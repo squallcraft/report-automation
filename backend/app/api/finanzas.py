@@ -652,6 +652,13 @@ def listar_transacciones(
     for p in pagos_d:
         driver = db.get(Driver, p.driver_id)
         fecha = _fmt_fecha(p.fecha_pago)
+        pago_sem = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == p.driver_id,
+            PagoSemanaDriver.semana == p.semana,
+            PagoSemanaDriver.mes == p.mes,
+            PagoSemanaDriver.anio == p.anio,
+        ).first()
+        estado_real = pago_sem.estado if pago_sem else "PAGADO"
         txns.append({
             "id": f"drv-{p.id}",
             "fecha": fecha,
@@ -660,7 +667,7 @@ def listar_transacciones(
             "fuente": "Driver",
             "categoria": "Pago Driver",
             "monto": p.monto,
-            "estado": "PAGADO",
+            "estado": estado_real,
             "tiene_documento": False,
         })
 
@@ -672,6 +679,13 @@ def listar_transacciones(
     for c in cobros_s:
         seller = db.get(Seller, c.seller_id)
         fecha = _fmt_fecha(c.fecha_pago)
+        pago_sem_s = db.query(PagoSemanaSeller).filter(
+            PagoSemanaSeller.seller_id == c.seller_id,
+            PagoSemanaSeller.semana == c.semana,
+            PagoSemanaSeller.mes == c.mes,
+            PagoSemanaSeller.anio == c.anio,
+        ).first()
+        estado_sel = pago_sem_s.estado if pago_sem_s else "PAGADO"
         txns.append({
             "id": f"sel-{c.id}",
             "fecha": fecha,
@@ -680,7 +694,7 @@ def listar_transacciones(
             "fuente": "Seller",
             "categoria": "Cobro Seller",
             "monto": c.monto,
-            "estado": "PAGADO",
+            "estado": estado_sel,
             "tiene_documento": False,
         })
 
@@ -692,6 +706,13 @@ def listar_transacciones(
     for p in pagos_p:
         pickup = db.get(Pickup, p.pickup_id)
         fecha = _fmt_fecha(p.fecha_pago)
+        pago_sem_p = db.query(PagoSemanaPickup).filter(
+            PagoSemanaPickup.pickup_id == p.pickup_id,
+            PagoSemanaPickup.semana == p.semana,
+            PagoSemanaPickup.mes == p.mes,
+            PagoSemanaPickup.anio == p.anio,
+        ).first()
+        estado_pku = pago_sem_p.estado if pago_sem_p else "PAGADO"
         txns.append({
             "id": f"pku-{p.id}",
             "fecha": fecha,
@@ -700,7 +721,7 @@ def listar_transacciones(
             "fuente": "Pickup",
             "categoria": "Pago Pickup",
             "monto": p.monto,
-            "estado": "PAGADO",
+            "estado": estado_pku,
             "tiene_documento": False,
         })
 
