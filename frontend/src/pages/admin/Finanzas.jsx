@@ -539,12 +539,15 @@ function DashboardTab({ dashData, flujoCaja, transacciones, onDownloadDoc }) {
 
       {/* Transacciones recientes */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Transacciones Recientes</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">Transacciones Recientes</h3>
+          <span className="text-xs text-gray-400 italic">Ordenadas por fecha real de pago</span>
+        </div>
         {transacciones.length === 0 ? <p className="text-gray-400 text-sm">Sin transacciones este período</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-left text-gray-500 text-xs uppercase border-b">
-                <th className="py-2 pr-3">Fecha</th><th className="py-2 pr-3">Descripción</th><th className="py-2 pr-3">Fuente</th><th className="py-2 pr-3 text-right">Monto</th><th className="py-2 pr-3 text-center">Estado</th><th className="py-2 w-10"></th>
+                <th className="py-2 pr-3">Fecha Pago</th><th className="py-2 pr-3">Descripción</th><th className="py-2 pr-3">Fuente</th><th className="py-2 pr-3 text-right">Monto</th><th className="py-2 pr-3 text-center">Estado</th><th className="py-2 w-10"></th>
               </tr></thead>
               <tbody>
                 {transacciones.map(t => {

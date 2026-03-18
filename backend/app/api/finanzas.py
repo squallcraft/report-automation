@@ -8,7 +8,7 @@ import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc
+from sqlalchemy import func as sqlfunc, extract, cast, Date
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion
@@ -96,7 +96,8 @@ def _get_descendant_ids(db: Session, cat_id: int) -> list:
 
 
 def _operacional_mes(db: Session, mes: int, anio: int):
-    """Ingresos = liquidaciones sellers. Costos = MAX(liquidaciones, pagos reales) drivers + pickups."""
+    """Ingresos = liquidaciones sellers. Costos = MAX(liquidaciones, pagos reales) drivers + pickups.
+    Usa mes/anio de devengo (campo mes/anio de cada tabla) — para Estado Ecourier."""
     ingreso_sellers = db.query(
         sqlfunc.coalesce(sqlfunc.sum(PagoSemanaSeller.monto_neto), 0)
     ).filter(PagoSemanaSeller.mes == mes, PagoSemanaSeller.anio == anio).scalar()
@@ -127,7 +128,7 @@ def _operacional_mes(db: Session, mes: int, anio: int):
 
 
 def _manual_mes(db: Session, mes: int, anio: int):
-    """Totales de movimientos manuales (no operacionales) del mes."""
+    """Totales de movimientos manuales (no operacionales) del mes — por devengo (campo mes/anio)."""
     rows = db.query(
         CategoriaFinanciera.tipo,
         sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0).label("total"),
@@ -139,6 +140,17 @@ def _manual_mes(db: Session, mes: int, anio: int):
     for r in rows:
         result[r.tipo] = int(r.total)
     return result
+
+
+def _fp_mes_anio(col, mes: int, anio: int):
+    """Filtro SQLAlchemy: fecha_pago cuyo mes y año coincidan con los dados.
+    Usado para flujo de caja por fecha real de pago (caja), no por devengo.
+    col debe ser una columna de tipo Date o String en formato yyyy-mm-dd.
+    """
+    return [
+        extract("month", cast(col, Date)) == mes,
+        extract("year", cast(col, Date)) == anio,
+    ]
 
 
 # ── Categorías ──
@@ -296,30 +308,36 @@ def dashboard_consolidado(
                             + max(semanas[w]["costo_pk_liq"], semanas[w]["costo_pk_real"])}
                   for w in sorted(semanas.keys())]
 
-    # Flujo de caja real: por mes/anio del período (más confiable que parsear fecha_pago)
+    # Flujo de caja real: por fecha_pago real de cada transacción
     cobros_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaSeller.monto), 0)).filter(
-        PagoCartolaSeller.mes == mes, PagoCartolaSeller.anio == anio,
+        PagoCartolaSeller.fuente == "cartola",
+        *_fp_mes_anio(PagoCartolaSeller.fecha_pago, mes, anio),
     ).scalar()
     pagos_drivers_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
-        PagoCartola.mes == mes, PagoCartola.anio == anio,
+        PagoCartola.fuente == "cartola",
+        *_fp_mes_anio(PagoCartola.fecha_pago, mes, anio),
     ).scalar()
     pagos_pickups_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)).filter(
-        PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
+        PagoCartolaPickup.fuente == "cartola",
+        *_fp_mes_anio(PagoCartolaPickup.fecha_pago, mes, anio),
+    ).scalar()
+    pagos_nomina_reales = db.query(sqlfunc.coalesce(sqlfunc.sum(PagoTrabajador.monto), 0)).filter(
+        *_fp_mes_anio(PagoTrabajador.fecha_pago, mes, anio),
     ).scalar()
     movs_pagados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
+        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
         MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "EGRESO",
     ).scalar()
     movs_cobrados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
+        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
         MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "INGRESO",
     ).scalar()
 
     flujo_caja = {
         "entradas": int(cobros_reales) + int(movs_cobrados),
-        "salidas": int(pagos_drivers_reales) + int(pagos_pickups_reales) + int(movs_pagados),
+        "salidas": int(pagos_drivers_reales) + int(pagos_pickups_reales) + int(movs_pagados) + int(pagos_nomina_reales),
     }
     flujo_caja["neto"] = flujo_caja["entradas"] - flujo_caja["salidas"]
 
@@ -357,16 +375,8 @@ def flujo_caja_proyectado(
     semanas_data = []
     saldo_acumulado = 0
 
-    # Movimientos manuales agrupados por semana según su fecha_pago real
-    # Si no tienen fecha_pago, se asignan a semana 1 como fallback
-    movs_manuales = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
-    ).all()
-
-    # Mapa semana → {INGRESO, EGRESO} para movimientos manuales
-    manual_por_semana: dict[int, dict] = defaultdict(lambda: {"INGRESO": 0, "EGRESO": 0})
+    # Construir mapa fecha → semana para el mes
     cal_semanas = db.query(CalendarioSemanas).filter_by(mes=mes, anio=anio).all()
-    # Construir mapa fecha → semana
     fecha_semana_map: dict = {}
     for cs in cal_semanas:
         d = cs.fecha_inicio
@@ -374,38 +384,60 @@ def flujo_caja_proyectado(
             fecha_semana_map[d] = cs.semana
             d = d + timedelta(days=1)
 
+    def _semana_de_fecha(fp) -> int:
+        """Devuelve semana (1-5) según fecha_pago real. Fallback: semana 1."""
+        if not fp:
+            return 1
+        if isinstance(fp, str):
+            try:
+                from datetime import date as _d
+                fp = _d.fromisoformat(fp.split("T")[0])
+            except Exception:
+                return 1
+        return fecha_semana_map.get(fp, 1)
+
+    # Movimientos manuales agrupados por semana según su fecha_pago real
+    movs_manuales = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
+        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+    ).all()
+    manual_por_semana: dict[int, dict] = defaultdict(lambda: {"INGRESO": 0, "EGRESO": 0})
     for m in movs_manuales:
         tipo = m.categoria.tipo if m.categoria else None
         if not tipo:
             continue
-        fp = m.fecha_pago
-        semana_manual = fecha_semana_map.get(fp, 1) if fp else 1
-        manual_por_semana[semana_manual][tipo] += m.monto
+        manual_por_semana[_semana_de_fecha(m.fecha_pago)][tipo] += m.monto
 
-    # Costo nómina trabajadores para el mes (se asigna como egreso de semana 1)
-    costo_nomina = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoMesTrabajador.monto_neto), 0)).filter(
-        PagoMesTrabajador.mes == mes, PagoMesTrabajador.anio == anio,
-    ).scalar())
+    # Nómina de trabajadores: cada PagoTrabajador individual según su fecha_pago real
+    pagos_nomina = db.query(PagoTrabajador).filter(
+        *_fp_mes_anio(PagoTrabajador.fecha_pago, mes, anio),
+    ).all()
+    nomina_por_semana: dict[int, int] = defaultdict(int)
+    for pt in pagos_nomina:
+        nomina_por_semana[_semana_de_fecha(pt.fecha_pago)] += pt.monto
 
     for s in range(1, 6):
+        # Ingresos sellers: liquidación por semana (devengo — no hay fecha_pago en PagoSemanaSeller)
         ingreso_sellers = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaSeller.monto_neto), 0)).filter(
             PagoSemanaSeller.semana == s, PagoSemanaSeller.mes == mes, PagoSemanaSeller.anio == anio,
         ).scalar())
 
+        # Drivers: cartola filtrada por fecha_pago real
+        costo_drivers_real = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
+            PagoCartola.semana == s, PagoCartola.fuente == "cartola",
+            *_fp_mes_anio(PagoCartola.fecha_pago, mes, anio),
+        ).scalar())
+        # Si no hay cartola, usar liquidación (devengo)
         costo_drivers_liq = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaDriver.monto_neto), 0)).filter(
             PagoSemanaDriver.semana == s, PagoSemanaDriver.mes == mes, PagoSemanaDriver.anio == anio,
         ).scalar())
-        costo_drivers_real = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)).filter(
-            PagoCartola.semana == s, PagoCartola.mes == mes, PagoCartola.anio == anio,
-            PagoCartola.fuente == "cartola",
-        ).scalar())
 
+        # Pickups: igual
+        costo_pickups_real = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)).filter(
+            PagoCartolaPickup.semana == s, PagoCartolaPickup.fuente == "cartola",
+            *_fp_mes_anio(PagoCartolaPickup.fecha_pago, mes, anio),
+        ).scalar())
         costo_pickups_liq = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoSemanaPickup.monto_neto), 0)).filter(
             PagoSemanaPickup.semana == s, PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio,
-        ).scalar())
-        costo_pickups_real = int(db.query(sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)).filter(
-            PagoCartolaPickup.semana == s, PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
-            PagoCartolaPickup.fuente == "cartola",
         ).scalar())
 
         manual_s = manual_por_semana.get(s, {"INGRESO": 0, "EGRESO": 0})
@@ -414,10 +446,8 @@ def flujo_caja_proyectado(
             max(costo_drivers_liq, costo_drivers_real)
             + max(costo_pickups_liq, costo_pickups_real)
             + manual_s["EGRESO"]
+            + nomina_por_semana.get(s, 0)
         )
-        # Nómina de trabajadores en semana 1
-        if s == 1:
-            egresos += costo_nomina
 
         neto = ingresos - egresos
         saldo_acumulado += neto
@@ -465,25 +495,55 @@ def resumen_anual(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Resumen mensual consolidado para todo un año, con todas las fuentes."""
+    """Resumen mensual consolidado para todo un año, usando fecha_pago real (flujo de caja)."""
     meses = []
     acumulado_neto = 0
 
     for mes in range(1, 13):
+        # Devengo para ingresos/costos operacionales (liquidaciones)
         ingreso_op, costo_op = _operacional_mes(db, mes, anio)
-        manual = _manual_mes(db, mes, anio)
 
+        # Movimientos manuales por fecha_pago real
+        rows = db.query(
+            CategoriaFinanciera.tipo,
+            sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0).label("total"),
+        ).join(CategoriaFinanciera).filter(
+            *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+        ).group_by(CategoriaFinanciera.tipo).all()
+        manual = {"INGRESO": 0, "EGRESO": 0}
+        for r in rows:
+            manual[r.tipo] = int(r.total)
+
+        # Cobros sellers por fecha_pago real
         cobros_sellers = int(db.query(
             sqlfunc.coalesce(sqlfunc.sum(PagoCartolaSeller.monto), 0)
-        ).filter(PagoCartolaSeller.mes == mes, PagoCartolaSeller.anio == anio).scalar())
+        ).filter(
+            PagoCartolaSeller.fuente == "cartola",
+            *_fp_mes_anio(PagoCartolaSeller.fecha_pago, mes, anio),
+        ).scalar())
 
+        # Pagos drivers por fecha_pago real
         pagos_drivers = int(db.query(
             sqlfunc.coalesce(sqlfunc.sum(PagoCartola.monto), 0)
-        ).filter(PagoCartola.mes == mes, PagoCartola.anio == anio).scalar())
+        ).filter(
+            PagoCartola.fuente == "cartola",
+            *_fp_mes_anio(PagoCartola.fecha_pago, mes, anio),
+        ).scalar())
 
+        # Pagos pickups por fecha_pago real
         pagos_pickups = int(db.query(
             sqlfunc.coalesce(sqlfunc.sum(PagoCartolaPickup.monto), 0)
-        ).filter(PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio).scalar())
+        ).filter(
+            PagoCartolaPickup.fuente == "cartola",
+            *_fp_mes_anio(PagoCartolaPickup.fecha_pago, mes, anio),
+        ).scalar())
+
+        # Nómina trabajadores por fecha_pago real
+        pagos_nomina = int(db.query(
+            sqlfunc.coalesce(sqlfunc.sum(PagoTrabajador.monto), 0)
+        ).filter(
+            *_fp_mes_anio(PagoTrabajador.fecha_pago, mes, anio),
+        ).scalar())
 
         total_ingresos = ingreso_op + manual["INGRESO"]
         total_egresos = costo_op + manual["EGRESO"]
@@ -503,6 +563,7 @@ def resumen_anual(
             "cobros_sellers": cobros_sellers,
             "pagos_drivers": pagos_drivers,
             "pagos_pickups": pagos_pickups,
+            "pagos_nomina": pagos_nomina,
         })
 
     totales = {
@@ -512,6 +573,7 @@ def resumen_anual(
         "cobros_sellers": sum(m["cobros_sellers"] for m in meses),
         "pagos_drivers": sum(m["pagos_drivers"] for m in meses),
         "pagos_pickups": sum(m["pagos_pickups"] for m in meses),
+        "pagos_nomina": sum(m["pagos_nomina"] for m in meses),
     }
 
     return {"anio": anio, "meses": meses, "totales": totales}
@@ -527,11 +589,16 @@ def listar_transacciones(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
+    """
+    Lista todas las transacciones cuya fecha_pago real cae en el mes/anio dado.
+    Esto refleja el flujo de caja real (cuándo salió/entró el dinero),
+    independientemente del mes contable (devengo) al que pertenezca cada registro.
+    """
     txns = []
 
-    # 1. Movimientos manuales — fecha real desde fecha_pago
+    # 1. Movimientos manuales — filtrar por fecha_pago real
     movs = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
-        MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
+        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
     ).all()
     for m in movs:
         fecha = _fmt_fecha(m.fecha_pago) or _fmt_fecha(m.created_at.date() if m.created_at else None)
@@ -547,10 +614,10 @@ def listar_transacciones(
             "tiene_documento": bool(m.documento_path),
         })
 
-    # 2. Pagos a drivers — usar fecha_pago real del PagoSemanaDriver
+    # 2. Pagos a drivers — filtrar por fecha_pago real del PagoSemanaDriver
     pagos_d = db.query(PagoSemanaDriver).filter(
-        PagoSemanaDriver.mes == mes, PagoSemanaDriver.anio == anio,
         PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
+        *_fp_mes_anio(PagoSemanaDriver.fecha_pago, mes, anio),
     ).all()
     for p in pagos_d:
         driver = db.get(Driver, p.driver_id)
@@ -567,10 +634,10 @@ def listar_transacciones(
             "tiene_documento": False,
         })
 
-    # 3. Cobros de sellers — usar fecha_pago real del registro de cartola
+    # 3. Cobros de sellers — filtrar por fecha_pago real de cartola
     cobros_s = db.query(PagoCartolaSeller).filter(
-        PagoCartolaSeller.mes == mes, PagoCartolaSeller.anio == anio,
         PagoCartolaSeller.fuente == "cartola",
+        *_fp_mes_anio(PagoCartolaSeller.fecha_pago, mes, anio),
     ).all()
     for c in cobros_s:
         seller = db.get(Seller, c.seller_id)
@@ -587,10 +654,10 @@ def listar_transacciones(
             "tiene_documento": False,
         })
 
-    # 4. Pagos a pickups — usar fecha_pago real
+    # 4. Pagos a pickups — filtrar por fecha_pago real
     pagos_p = db.query(PagoSemanaPickup).filter(
-        PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio,
         PagoSemanaPickup.estado == EstadoPagoEnum.PAGADO.value,
+        *_fp_mes_anio(PagoSemanaPickup.fecha_pago, mes, anio),
     ).all()
     for p in pagos_p:
         pickup = db.get(Pickup, p.pickup_id)
@@ -607,17 +674,17 @@ def listar_transacciones(
             "tiene_documento": False,
         })
 
-    # 5. Pagos a trabajadores — usar fecha_pago real
+    # 5. Pagos a trabajadores — filtrar por fecha_pago real
     pagos_t = db.query(PagoTrabajador).filter(
-        PagoTrabajador.mes == mes, PagoTrabajador.anio == anio,
+        *_fp_mes_anio(PagoTrabajador.fecha_pago, mes, anio),
     ).all()
     for pt in pagos_t:
         trabajador = db.get(Trabajador, pt.trabajador_id)
-        fecha = _fmt_fecha(pt.fecha_pago) or _fmt_fecha(pt.created_at.date() if pt.created_at else None)
+        fecha = _fmt_fecha(pt.fecha_pago)
         txns.append({
             "id": f"trb-{pt.id}",
             "fecha": fecha,
-            "descripcion": f"Nómina — {trabajador.nombre if trabajador else 'Trabajador'}",
+            "descripcion": f"Nómina {pt.mes}/{pt.anio} — {trabajador.nombre if trabajador else 'Trabajador'}",
             "tipo": "EGRESO",
             "fuente": "Nómina",
             "categoria": "Pago Nómina",
