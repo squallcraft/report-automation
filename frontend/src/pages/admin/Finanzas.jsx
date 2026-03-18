@@ -678,6 +678,7 @@ function TransaccionesTable({ transacciones, onDownloadDoc }) {
       )}
     </div>
   )
+}
 
 // ── Detalle Tab ──
 
