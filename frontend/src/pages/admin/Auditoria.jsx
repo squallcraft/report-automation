@@ -51,14 +51,25 @@ function ChangesViewer({ cambios }) {
   if (!cambios || Object.keys(cambios).length === 0) return null
   return (
     <div className="mt-1 space-y-0.5">
-      {Object.entries(cambios).map(([campo, vals]) => (
-        <div key={campo} className="text-[10px] font-mono">
-          <span className="text-gray-500">{campo}: </span>
-          <span className="text-red-500 line-through">{JSON.stringify(vals.antes)}</span>
-          <span className="text-gray-400"> → </span>
-          <span className="text-emerald-600">{JSON.stringify(vals.despues)}</span>
-        </div>
-      ))}
+      {Object.entries(cambios).map(([campo, vals]) => {
+        // Algunos registros guardan cambios como objeto plano {campo: valor}
+        // en vez de {campo: {antes, despues}}
+        const isDetalle = vals !== null && typeof vals === 'object' && ('antes' in vals || 'despues' in vals)
+        return (
+          <div key={campo} className="text-[10px] font-mono">
+            <span className="text-gray-500">{campo}: </span>
+            {isDetalle ? (
+              <>
+                <span className="text-red-500 line-through">{JSON.stringify(vals.antes)}</span>
+                <span className="text-gray-400"> → </span>
+                <span className="text-emerald-600">{JSON.stringify(vals.despues)}</span>
+              </>
+            ) : (
+              <span className="text-emerald-600">{JSON.stringify(vals)}</span>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -644,9 +644,8 @@ def listar_transacciones(
             "tiene_documento": bool(m.documento_path),
         })
 
-    # 2. Pagos a drivers — usar PagoCartola (tiene fecha_pago real)
+    # 2. Pagos a drivers — cartola y manual
     pagos_d = db.query(PagoCartola).filter(
-        PagoCartola.fuente == "cartola",
         *_fp_mes_anio(PagoCartola.fecha_pago, mes, anio),
     ).all()
     for p in pagos_d:
@@ -671,9 +670,8 @@ def listar_transacciones(
             "tiene_documento": False,
         })
 
-    # 3. Cobros de sellers — filtrar por fecha_pago real de cartola
+    # 3. Cobros de sellers — cartola y manual
     cobros_s = db.query(PagoCartolaSeller).filter(
-        PagoCartolaSeller.fuente == "cartola",
         *_fp_mes_anio(PagoCartolaSeller.fecha_pago, mes, anio),
     ).all()
     for c in cobros_s:
@@ -698,9 +696,8 @@ def listar_transacciones(
             "tiene_documento": False,
         })
 
-    # 4. Pagos a pickups — usar PagoCartolaPickup (tiene fecha_pago real)
+    # 4. Pagos a pickups — cartola y manual
     pagos_p = db.query(PagoCartolaPickup).filter(
-        PagoCartolaPickup.fuente == "cartola",
         *_fp_mes_anio(PagoCartolaPickup.fecha_pago, mes, anio),
     ).all()
     for p in pagos_p:
