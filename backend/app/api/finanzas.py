@@ -8,7 +8,7 @@ import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc, extract, cast, Date
+from sqlalchemy import func as sqlfunc, extract, cast, Date, case
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion
@@ -145,11 +145,32 @@ def _manual_mes(db: Session, mes: int, anio: int):
 def _fp_mes_anio(col, mes: int, anio: int):
     """Filtro SQLAlchemy: fecha_pago cuyo mes y año coincidan con los dados.
     Usado para flujo de caja por fecha real de pago (caja), no por devengo.
-    col debe ser una columna de tipo Date o String en formato yyyy-mm-dd.
+    Maneja columnas String con formato dd/mm/yyyy o yyyy-mm-dd.
+    Usa CASE WHEN en SQL para normalizar el formato antes de castear a DATE.
+    """
+    # Normaliza: si contiene '/' y empieza con dd (len<=2 antes del primer '/'), convierte dd/mm/yyyy → yyyy-mm-dd
+    safe_date = case(
+        (col.like("__/__/____"),
+         sqlfunc.concat(
+             sqlfunc.split_part(col, "/", 3), "-",
+             sqlfunc.lpad(sqlfunc.split_part(col, "/", 2), 2, "0"), "-",
+             sqlfunc.lpad(sqlfunc.split_part(col, "/", 1), 2, "0"),
+         )),
+        else_=col,
+    )
+    return [
+        extract("month", cast(safe_date, Date)) == mes,
+        extract("year", cast(safe_date, Date)) == anio,
+    ]
+
+
+def _fp_mes_anio_date(col, mes: int, anio: int):
+    """Igual a _fp_mes_anio pero para columnas que ya son tipo Date (no String).
+    Evita el CASE WHEN innecesario.
     """
     return [
-        extract("month", cast(col, Date)) == mes,
-        extract("year", cast(col, Date)) == anio,
+        extract("month", col) == mes,
+        extract("year", col) == anio,
     ]
 
 
@@ -325,12 +346,12 @@ def dashboard_consolidado(
         *_fp_mes_anio(PagoTrabajador.fecha_pago, mes, anio),
     ).scalar()
     movs_pagados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+        *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
         MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "EGRESO",
     ).scalar()
     movs_cobrados = db.query(sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0)).join(CategoriaFinanciera).filter(
-        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+        *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
         MovimientoFinanciero.estado == EstadoMovimientoEnum.PAGADO.value,
         CategoriaFinanciera.tipo == "INGRESO",
     ).scalar()
@@ -398,7 +419,7 @@ def flujo_caja_proyectado(
 
     # Movimientos manuales agrupados por semana según su fecha_pago real
     movs_manuales = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
-        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+        *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
     ).all()
     manual_por_semana: dict[int, dict] = defaultdict(lambda: {"INGRESO": 0, "EGRESO": 0})
     for m in movs_manuales:
@@ -508,7 +529,7 @@ def resumen_anual(
             CategoriaFinanciera.tipo,
             sqlfunc.coalesce(sqlfunc.sum(MovimientoFinanciero.monto), 0).label("total"),
         ).join(CategoriaFinanciera).filter(
-            *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+            *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
         ).group_by(CategoriaFinanciera.tipo).all()
         manual = {"INGRESO": 0, "EGRESO": 0}
         for r in rows:
@@ -598,7 +619,7 @@ def listar_transacciones(
 
     # 1. Movimientos manuales — filtrar por fecha_pago real
     movs = db.query(MovimientoFinanciero).join(CategoriaFinanciera).filter(
-        *_fp_mes_anio(MovimientoFinanciero.fecha_pago, mes, anio),
+        *_fp_mes_anio_date(MovimientoFinanciero.fecha_pago, mes, anio),
     ).all()
     for m in movs:
         fecha = _fmt_fecha(m.fecha_pago) or _fmt_fecha(m.created_at.date() if m.created_at else None)
@@ -614,14 +635,14 @@ def listar_transacciones(
             "tiene_documento": bool(m.documento_path),
         })
 
-    # 2. Pagos a drivers — filtrar por fecha_pago real del PagoSemanaDriver
-    pagos_d = db.query(PagoSemanaDriver).filter(
-        PagoSemanaDriver.estado == EstadoPagoEnum.PAGADO.value,
-        *_fp_mes_anio(PagoSemanaDriver.fecha_pago, mes, anio),
+    # 2. Pagos a drivers — usar PagoCartola (tiene fecha_pago real)
+    pagos_d = db.query(PagoCartola).filter(
+        PagoCartola.fuente == "cartola",
+        *_fp_mes_anio(PagoCartola.fecha_pago, mes, anio),
     ).all()
     for p in pagos_d:
         driver = db.get(Driver, p.driver_id)
-        fecha = _fmt_fecha(p.fecha_pago) or _fmt_fecha(p.updated_at.date() if p.updated_at else None)
+        fecha = _fmt_fecha(p.fecha_pago)
         txns.append({
             "id": f"drv-{p.id}",
             "fecha": fecha,
@@ -629,7 +650,7 @@ def listar_transacciones(
             "tipo": "EGRESO",
             "fuente": "Driver",
             "categoria": "Pago Driver",
-            "monto": p.monto_neto,
+            "monto": p.monto,
             "estado": "PAGADO",
             "tiene_documento": False,
         })
@@ -654,14 +675,14 @@ def listar_transacciones(
             "tiene_documento": False,
         })
 
-    # 4. Pagos a pickups — filtrar por fecha_pago real
-    pagos_p = db.query(PagoSemanaPickup).filter(
-        PagoSemanaPickup.estado == EstadoPagoEnum.PAGADO.value,
-        *_fp_mes_anio(PagoSemanaPickup.fecha_pago, mes, anio),
+    # 4. Pagos a pickups — usar PagoCartolaPickup (tiene fecha_pago real)
+    pagos_p = db.query(PagoCartolaPickup).filter(
+        PagoCartolaPickup.fuente == "cartola",
+        *_fp_mes_anio(PagoCartolaPickup.fecha_pago, mes, anio),
     ).all()
     for p in pagos_p:
         pickup = db.get(Pickup, p.pickup_id)
-        fecha = _fmt_fecha(p.fecha_pago) or _fmt_fecha(p.updated_at.date() if p.updated_at else None)
+        fecha = _fmt_fecha(p.fecha_pago)
         txns.append({
             "id": f"pku-{p.id}",
             "fecha": fecha,
@@ -669,7 +690,7 @@ def listar_transacciones(
             "tipo": "EGRESO",
             "fuente": "Pickup",
             "categoria": "Pago Pickup",
-            "monto": p.monto_neto,
+            "monto": p.monto,
             "estado": "PAGADO",
             "tiene_documento": False,
         })
