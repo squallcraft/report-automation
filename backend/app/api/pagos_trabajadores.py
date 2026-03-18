@@ -28,9 +28,56 @@ from app.models import (
     Trabajador, PagoTrabajador, PagoMesTrabajador,
     Prestamo, CuotaPrestamo, AjusteLiquidacion,
     CartolaCarga, EstadoPrestamoEnum,
+    MovimientoFinanciero, CategoriaFinanciera,
 )
 from app.services.audit import registrar as audit
 from app.services.contabilidad import asiento_pago_trabajador
+
+# ID fijo de la categoría "Sueldos" en categorias_financieras
+_CAT_SUELDOS_ID = 7
+
+
+def _registrar_movimiento_sueldo(
+    db: Session,
+    trabajador: "Trabajador",
+    pago: "PagoTrabajador",
+):
+    """Crea un MovimientoFinanciero en categoría Sueldos para cada pago de nómina.
+    Esto asegura que el pago aparezca en Estado Ecourier (Detalle).
+    Se llama SOLO cuando se registra un PagoTrabajador nuevo.
+    """
+    from datetime import date as _date
+    cat = db.get(CategoriaFinanciera, _CAT_SUELDOS_ID)
+    if cat is None:
+        cat = db.query(CategoriaFinanciera).filter(
+            CategoriaFinanciera.nombre.ilike("sueldos")
+        ).first()
+    if cat is None:
+        return
+
+    fecha_pago = pago.fecha_pago
+    if isinstance(fecha_pago, str):
+        try:
+            fecha_pago = _parse_fecha(fecha_pago)
+        except Exception:
+            fecha_pago = _date.today()
+    elif fecha_pago is None:
+        fecha_pago = _date.today()
+
+    mov = MovimientoFinanciero(
+        categoria_id=cat.id,
+        nombre=f"Sueldo {trabajador.nombre} ({pago.mes}/{pago.anio})",
+        descripcion="Pago nómina generado automáticamente desde módulo Pagos Trabajadores",
+        monto=pago.monto,
+        moneda="CLP",
+        mes=pago.mes,
+        anio=pago.anio,
+        fecha_pago=fecha_pago,
+        estado="PAGADO",
+        recurrente=False,
+    )
+    db.add(mov)
+
 
 router = APIRouter(prefix="/trabajadores", tags=["PagosTrabajadores"])
 
@@ -355,6 +402,7 @@ def registrar_pago_manual(
     )
     db.add(pago_t)
     db.flush()
+    _registrar_movimiento_sueldo(db, trabajador, pago_t)
 
     # Upsert PagoMesTrabajador acumulativo — con las cuotas que el usuario eligió pagar
     pago_mes, se_cerro = _upsert_pago_mes(
@@ -742,6 +790,7 @@ def cartola_confirmar(
         )
         db.add(pago_t)
         db.flush()
+        _registrar_movimiento_sueldo(db, trabajador, pago_t)
         grabados += 1
 
         # Upsert acumulativo
