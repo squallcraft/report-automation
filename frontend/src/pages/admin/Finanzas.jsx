@@ -2,10 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import {
-  Plus, Trash2, Edit2, ChevronRight, ChevronDown,
+  Plus, Trash2, Edit2, ChevronRight, ChevronDown, ChevronLeft,
   Copy, TrendingUp, TrendingDown, Minus, Check, X,
   FileText, Upload, Download, Paperclip, ArrowUpRight, ArrowDownRight,
-  BookOpen, RefreshCw,
+  BookOpen, RefreshCw, Search,
 } from 'lucide-react'
 import Modal from '../../components/Modal'
 
@@ -538,20 +538,76 @@ function DashboardTab({ dashData, flujoCaja, transacciones, onDownloadDoc }) {
       )}
 
       {/* Transacciones recientes */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-gray-700">Transacciones Recientes</h3>
-          <span className="text-xs text-gray-400 italic">Ordenadas por fecha real de pago</span>
+      <TransaccionesTable transacciones={transacciones} onDownloadDoc={onDownloadDoc} />
+    </div>
+  )
+}
+
+const PAGE_SIZE = 20
+
+function TransaccionesTable({ transacciones, onDownloadDoc }) {
+  const [busqueda, setBusqueda] = useState('')
+  const [pagina, setPagina] = useState(1)
+
+  const filtradas = useMemo(() => {
+    if (!busqueda.trim()) return transacciones
+    const q = busqueda.toLowerCase()
+    return transacciones.filter(t =>
+      (t.descripcion || '').toLowerCase().includes(q) ||
+      (t.fuente || '').toLowerCase().includes(q) ||
+      (t.categoria || '').toLowerCase().includes(q) ||
+      (t.fecha || '').includes(q)
+    )
+  }, [transacciones, busqueda])
+
+  const totalPaginas = Math.max(1, Math.ceil(filtradas.length / PAGE_SIZE))
+  const paginaActual = Math.min(pagina, totalPaginas)
+  const inicio = (paginaActual - 1) * PAGE_SIZE
+  const pagina_items = filtradas.slice(inicio, inicio + PAGE_SIZE)
+
+  // Reset page when search changes
+  const handleBusqueda = (v) => { setBusqueda(v); setPagina(1) }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 className="text-sm font-semibold text-gray-700">
+          Transacciones Recientes
+          {busqueda && <span className="ml-2 text-xs font-normal text-gray-400">{filtradas.length} resultados</span>}
+        </h3>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 italic hidden sm:block">Ordenadas por fecha real de pago</span>
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={busqueda}
+              onChange={e => handleBusqueda(e.target.value)}
+              placeholder="Buscar..."
+              className="pl-7 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 w-44"
+            />
+          </div>
         </div>
-        {transacciones.length === 0 ? <p className="text-gray-400 text-sm">Sin transacciones este período</p> : (
+      </div>
+
+      {filtradas.length === 0 ? (
+        <p className="text-gray-400 text-sm py-4 text-center">
+          {busqueda ? 'Sin resultados para esa búsqueda' : 'Sin transacciones este período'}
+        </p>
+      ) : (
+        <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-left text-gray-500 text-xs uppercase border-b">
-                <th className="py-2 pr-3">Fecha Pago</th><th className="py-2 pr-3">Descripción</th><th className="py-2 pr-3">Fuente</th><th className="py-2 pr-3 text-right">Monto</th><th className="py-2 pr-3 text-center">Estado</th><th className="py-2 w-10"></th>
+                <th className="py-2 pr-3">Fecha Pago</th>
+                <th className="py-2 pr-3">Descripción</th>
+                <th className="py-2 pr-3">Fuente</th>
+                <th className="py-2 pr-3 text-right">Monto</th>
+                <th className="py-2 pr-3 text-center">Estado</th>
+                <th className="py-2 w-10"></th>
               </tr></thead>
               <tbody>
-                {transacciones.map(t => {
-                  // La fecha ya viene en ISO yyyy-mm-dd desde el backend
+                {pagina_items.map(t => {
                   let fechaDisplay = '—'
                   if (t.fecha) {
                     try {
@@ -561,28 +617,67 @@ function DashboardTab({ dashData, flujoCaja, transacciones, onDownloadDoc }) {
                     } catch { fechaDisplay = t.fecha }
                   }
                   return (
-                  <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2 pr-3 text-gray-500 whitespace-nowrap">{fechaDisplay}</td>
-                    <td className="py-2 pr-3 font-medium text-gray-900">{t.descripcion}</td>
-                    <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${FUENTE_BADGE[t.fuente] || 'bg-gray-100 text-gray-700'}`}>{t.fuente}</span></td>
-                    <td className={`py-2 pr-3 text-right font-medium ${t.tipo === 'INGRESO' ? 'text-green-600' : 'text-red-600'}`}>
-                      <span className="inline-flex items-center gap-1">
-                        {t.tipo === 'INGRESO' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}{fmt(t.monto)}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 text-center"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_BADGE[t.estado] || 'bg-gray-100'}`}>{t.estado}</span></td>
-                    <td className="py-2">{t.tiene_documento && <button onClick={() => onDownloadDoc(t.id.replace('mov-', ''))} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Download size={14} /></button>}</td>
-                  </tr>
+                    <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50">
+                      <td className="py-2 pr-3 text-gray-500 whitespace-nowrap">{fechaDisplay}</td>
+                      <td className="py-2 pr-3 font-medium text-gray-900">{t.descripcion}</td>
+                      <td className="py-2 pr-3"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${FUENTE_BADGE[t.fuente] || 'bg-gray-100 text-gray-700'}`}>{t.fuente}</span></td>
+                      <td className={`py-2 pr-3 text-right font-medium ${t.tipo === 'INGRESO' ? 'text-green-600' : 'text-red-600'}`}>
+                        <span className="inline-flex items-center gap-1">
+                          {t.tipo === 'INGRESO' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}{fmt(t.monto)}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-center"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_BADGE[t.estado] || 'bg-gray-100'}`}>{t.estado}</span></td>
+                      <td className="py-2">{t.tiene_documento && <button onClick={() => onDownloadDoc(t.id.replace('mov-', ''))} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Download size={14} /></button>}</td>
+                    </tr>
                   )
                 })}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+
+          {/* Paginación */}
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-2">
+              <span className="text-xs text-gray-400">
+                {inicio + 1}–{Math.min(inicio + PAGE_SIZE, filtradas.length)} de {filtradas.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPagina(p => Math.max(1, p - 1))}
+                  disabled={paginaActual === 1}
+                  className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                {Array.from({ length: totalPaginas }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPaginas || Math.abs(p - paginaActual) <= 1)
+                  .reduce((acc, p, i, arr) => {
+                    if (i > 0 && p - arr[i - 1] > 1) acc.push('...')
+                    acc.push(p)
+                    return acc
+                  }, [])
+                  .map((p, i) => p === '...'
+                    ? <span key={`e${i}`} className="px-1 text-xs text-gray-400">…</span>
+                    : <button key={p} onClick={() => setPagina(p)}
+                        className={`w-7 h-7 text-xs rounded ${paginaActual === p ? 'bg-blue-600 text-white font-bold' : 'hover:bg-gray-100 text-gray-600'}`}>
+                        {p}
+                      </button>
+                  )
+                }
+                <button
+                  onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))}
+                  disabled={paginaActual === totalPaginas}
+                  className="p-1.5 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
-}
 
 // ── Detalle Tab ──
 
