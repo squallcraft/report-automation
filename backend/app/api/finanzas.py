@@ -1,5 +1,5 @@
 from typing import List, Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import os
 import uuid
@@ -13,6 +13,23 @@ from sqlalchemy import func as sqlfunc
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion
 from app.config import get_settings
+
+
+def _fmt_fecha(valor) -> str:
+    """Normaliza cualquier valor de fecha a string ISO yyyy-mm-dd para el frontend."""
+    if not valor:
+        return ""
+    if isinstance(valor, (date, datetime)):
+        return valor.strftime("%Y-%m-%d")
+    s = str(valor).strip()
+    if "/" in s:
+        parts = s.split("/")
+        if len(parts) == 3:
+            if len(parts[0]) <= 2:   # dd/mm/yyyy
+                return f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+            else:                     # yyyy/mm/dd (raro pero por si acaso)
+                return f"{parts[0]}-{parts[1].zfill(2)}-{parts[2].zfill(2)}"
+    return s  # ya es ISO u otro formato
 from app.models import (
     CategoriaFinanciera, MovimientoFinanciero, EstadoMovimientoEnum,
     PagoSemanaDriver, PagoSemanaSeller, PagoSemanaPickup,
@@ -351,7 +368,6 @@ def flujo_caja_proyectado(
     cal_semanas = db.query(CalendarioSemanas).filter_by(mes=mes, anio=anio).all()
     # Construir mapa fecha → semana
     fecha_semana_map: dict = {}
-    from datetime import timedelta
     for cs in cal_semanas:
         d = cs.fecha_inicio
         while d <= cs.fecha_fin:
@@ -518,9 +534,7 @@ def listar_transacciones(
         MovimientoFinanciero.mes == mes, MovimientoFinanciero.anio == anio,
     ).all()
     for m in movs:
-        fecha = str(m.fecha_pago) if m.fecha_pago else (
-            str(m.created_at.date()) if m.created_at else ""
-        )
+        fecha = _fmt_fecha(m.fecha_pago) or _fmt_fecha(m.created_at.date() if m.created_at else None)
         txns.append({
             "id": f"mov-{m.id}",
             "fecha": fecha,
@@ -540,9 +554,7 @@ def listar_transacciones(
     ).all()
     for p in pagos_d:
         driver = db.get(Driver, p.driver_id)
-        fecha = str(p.fecha_pago) if p.fecha_pago else (
-            str(p.updated_at.date()) if p.updated_at else ""
-        )
+        fecha = _fmt_fecha(p.fecha_pago) or _fmt_fecha(p.updated_at.date() if p.updated_at else None)
         txns.append({
             "id": f"drv-{p.id}",
             "fecha": fecha,
@@ -562,7 +574,7 @@ def listar_transacciones(
     ).all()
     for c in cobros_s:
         seller = db.get(Seller, c.seller_id)
-        fecha = str(c.fecha_pago) if c.fecha_pago else ""
+        fecha = _fmt_fecha(c.fecha_pago)
         txns.append({
             "id": f"sel-{c.id}",
             "fecha": fecha,
@@ -582,9 +594,7 @@ def listar_transacciones(
     ).all()
     for p in pagos_p:
         pickup = db.get(Pickup, p.pickup_id)
-        fecha = str(p.fecha_pago) if p.fecha_pago else (
-            str(p.updated_at.date()) if p.updated_at else ""
-        )
+        fecha = _fmt_fecha(p.fecha_pago) or _fmt_fecha(p.updated_at.date() if p.updated_at else None)
         txns.append({
             "id": f"pku-{p.id}",
             "fecha": fecha,
@@ -603,9 +613,7 @@ def listar_transacciones(
     ).all()
     for pt in pagos_t:
         trabajador = db.get(Trabajador, pt.trabajador_id)
-        fecha = str(pt.fecha_pago) if pt.fecha_pago else (
-            str(pt.created_at.date()) if pt.created_at else ""
-        )
+        fecha = _fmt_fecha(pt.fecha_pago) or _fmt_fecha(pt.created_at.date() if pt.created_at else None)
         txns.append({
             "id": f"trb-{pt.id}",
             "fecha": fecha,

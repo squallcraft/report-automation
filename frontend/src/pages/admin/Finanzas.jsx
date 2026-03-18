@@ -548,12 +548,13 @@ function DashboardTab({ dashData, flujoCaja, transacciones, onDownloadDoc }) {
               </tr></thead>
               <tbody>
                 {transacciones.map(t => {
-                  // Formatear fecha a dd/mm/yyyy
+                  // La fecha ya viene en ISO yyyy-mm-dd desde el backend
                   let fechaDisplay = '—'
                   if (t.fecha) {
                     try {
-                      const [y, m, d] = t.fecha.split('T')[0].split('-')
-                      fechaDisplay = `${d}/${m}/${y}`
+                      const parts = t.fecha.split('T')[0].split('-')
+                      if (parts.length === 3) fechaDisplay = `${parts[2]}/${parts[1]}/${parts[0]}`
+                      else fechaDisplay = t.fecha
                     } catch { fechaDisplay = t.fecha }
                   }
                   return (

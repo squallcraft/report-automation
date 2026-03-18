@@ -23,6 +23,24 @@ from app.services.liquidacion import calcular_liquidacion_sellers, calcular_liqu
 from app.services.pdf_generator import generar_pdf_seller, generar_pdf_driver
 from app.api.liquidacion import _driver_detail, _daily_breakdown, _productos_envios
 
+
+def _fmt_fecha(valor) -> str:
+    """Normaliza cualquier valor de fecha a string ISO yyyy-mm-dd."""
+    if not valor:
+        return ""
+    from datetime import date as _date, datetime as _dt
+    if isinstance(valor, (_date, _dt)):
+        return valor.strftime("%Y-%m-%d")
+    s = str(valor).strip()
+    if "/" in s:
+        parts = s.split("/")
+        if len(parts) == 3:
+            if len(parts[0]) <= 2:
+                return f"{parts[2]}-{parts[1].zfill(2)}-{parts[0].zfill(2)}"
+            else:
+                return f"{parts[0]}-{parts[1].zfill(2)}-{parts[2].zfill(2)}"
+    return s
+
 router = APIRouter(prefix="/portal", tags=["Portal"])
 
 MESES = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -350,7 +368,7 @@ def seller_ganancias(
     pagos = [
         {
             "id": p.id,
-            "fecha_pago": p.fecha_pago,
+            "fecha_pago": _fmt_fecha(p.fecha_pago),
             "semana": p.semana,
             "monto": p.monto,
             "fuente": p.fuente,
@@ -702,7 +720,7 @@ def driver_ganancias(
     pagos = [
         {
             "id": p.id,
-            "fecha_pago": p.fecha_pago,
+            "fecha_pago": _fmt_fecha(p.fecha_pago),
             "semana": p.semana,
             "monto": p.monto,
             "fuente": p.fuente,
