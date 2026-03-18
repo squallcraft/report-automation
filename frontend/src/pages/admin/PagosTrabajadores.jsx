@@ -43,8 +43,29 @@ function StatsCard({ icon: Icon, label, value, sub, color = 'blue' }) {
 // ─────────────────────────────────────────────────────────────────
 function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirmado }) {
   const hoy = new Date().toISOString().split('T')[0]
-  const saldoPendiente = trabajador.saldo ?? trabajador.monto_neto ?? 0
-  const esParcial = trabajador.estado === 'PARCIAL'
+
+  // Cuotas activas del mes (pueden estar o no seleccionadas para este pago)
+  const cuotasDisponibles = trabajador.cuotas_detalle || []
+  const [cuotasSeleccionadas, setCuotasSeleccionadas] = useState(
+    () => new Set(cuotasDisponibles.map(c => c.id))  // por defecto todas seleccionadas
+  )
+
+  // Recalcular descuento y líquido según cuotas seleccionadas
+  const descuentoCuotasElegido = cuotasDisponibles
+    .filter(c => cuotasSeleccionadas.has(c.id))
+    .reduce((s, c) => s + c.monto, 0)
+
+  const montoNetoConCuotas = Math.max(
+    0,
+    (trabajador.monto_bruto || 0)
+    + (trabajador.bonificaciones || 0)
+    - descuentoCuotasElegido
+    - (trabajador.descuento_ajustes || 0)
+  )
+
+  const yaEsParcial = trabajador.estado === 'PARCIAL'
+  const montoYaPagado = trabajador.monto_pagado || 0
+  const saldoPendiente = Math.max(0, montoNetoConCuotas - montoYaPagado)
 
   const [fecha, setFecha] = useState(hoy)
   const [monto, setMonto] = useState(saldoPendiente)
@@ -52,9 +73,22 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
   const [forzarCierre, setForzarCierre] = useState(false)
   const [guardando, setGuardando] = useState(false)
 
+  // Recalcular monto sugerido cuando cambian las cuotas
+  useEffect(() => {
+    setMonto(saldoPendiente)
+  }, [saldoPendiente])
+
   const montoNum = Number(monto) || 0
   const quedaSaldo = saldoPendiente - montoNum
   const seraCompleto = montoNum >= saldoPendiente || forzarCierre
+
+  const toggleCuota = (id) => {
+    setCuotasSeleccionadas(prev => {
+      const s = new Set(prev)
+      s.has(id) ? s.delete(id) : s.add(id)
+      return s
+    })
+  }
 
   const confirmar = async (e) => {
     e.preventDefault()
@@ -64,7 +98,14 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
     try {
       await api.post(
         `/trabajadores/pago-manual`,
-        { trabajador_id: trabajador.id, monto: montoNum, fecha_pago: fecha, nota: nota || null, forzar_cierre: forzarCierre },
+        {
+          trabajador_id: trabajador.id,
+          monto: montoNum,
+          fecha_pago: fecha,
+          nota: nota || null,
+          forzar_cierre: forzarCierre,
+          cuotas_a_pagar: cuotasDisponibles.length > 0 ? [...cuotasSeleccionadas] : null,
+        },
         { params: { mes: mesNomina, anio: anioNomina } }
       )
       toast.success(seraCompleto ? `Nómina completada — ${trabajador.nombre}` : `Pago parcial registrado — ${trabajador.nombre}`)
@@ -81,7 +122,7 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-base font-bold text-gray-900">
-              {esParcial ? 'Agregar Pago Parcial' : 'Registrar Pago'}
+              {yaEsParcial ? 'Agregar Pago Parcial' : 'Registrar Pago'}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Nómina <span className="font-semibold text-gray-700">{MESES[mesNomina]} {anioNomina}</span>
@@ -91,7 +132,7 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
         </div>
 
         <form onSubmit={confirmar} className="px-6 py-5 space-y-4">
-          {/* Resumen */}
+          {/* Resumen liquidación */}
           <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-500">Trabajador</span>
@@ -105,18 +146,12 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
             )}
             <div className="flex justify-between">
               <span className="text-gray-500">Sueldo bruto</span>
-              <span className="text-gray-700">{fmt(trabajador.sueldo_bruto)}</span>
+              <span className="text-gray-700">{fmt(trabajador.monto_bruto || trabajador.sueldo_bruto)}</span>
             </div>
             {(trabajador.bonificaciones || 0) > 0 && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Bonificaciones</span>
                 <span className="text-green-600">+{fmt(trabajador.bonificaciones)}</span>
-              </div>
-            )}
-            {(trabajador.descuento_cuotas || 0) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Cuotas préstamo</span>
-                <span className="text-red-600">-{fmt(trabajador.descuento_cuotas)}</span>
               </div>
             )}
             {(trabajador.descuento_ajustes || 0) > 0 && (
@@ -125,14 +160,43 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
                 <span className="text-amber-600">-{fmt(trabajador.descuento_ajustes)}</span>
               </div>
             )}
+
+            {/* Cuotas de préstamo — checkbox por cuota */}
+            {cuotasDisponibles.length > 0 && (
+              <div className="border-t border-gray-200 pt-2 space-y-1.5">
+                <p className="text-xs font-medium text-gray-600 mb-1">Cuotas de préstamo</p>
+                {cuotasDisponibles.map(c => (
+                  <label key={c.id} className="flex items-center justify-between gap-2 cursor-pointer group">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={cuotasSeleccionadas.has(c.id)}
+                        onChange={() => toggleCuota(c.id)}
+                        className="w-3.5 h-3.5 accent-red-500"
+                      />
+                      <span className={`text-xs ${cuotasSeleccionadas.has(c.id) ? 'text-red-700' : 'text-gray-400 line-through'}`}>
+                        {c.motivo || `Préstamo #${c.prestamo_id}`}
+                        {c.saldo_prestamo != null && (
+                          <span className="ml-1 text-gray-400">(saldo {fmt(c.saldo_prestamo)})</span>
+                        )}
+                      </span>
+                    </div>
+                    <span className={`text-xs font-mono font-semibold ${cuotasSeleccionadas.has(c.id) ? 'text-red-600' : 'text-gray-300'}`}>
+                      {cuotasSeleccionadas.has(c.id) ? `-${fmt(c.monto)}` : fmt(c.monto)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+
             <div className="flex justify-between border-t border-gray-200 pt-2 font-semibold">
               <span className="text-gray-700">Total líquido</span>
-              <span className="text-gray-900">{fmt(trabajador.monto_neto)}</span>
+              <span className="text-gray-900">{fmt(montoNetoConCuotas)}</span>
             </div>
-            {esParcial && (
+            {yaEsParcial && (
               <div className="flex justify-between text-blue-700 font-semibold">
                 <span>Ya pagado</span>
-                <span>{fmt(trabajador.monto_pagado)}</span>
+                <span>{fmt(montoYaPagado)}</span>
               </div>
             )}
             <div className="flex justify-between text-indigo-700 font-semibold">
@@ -165,7 +229,7 @@ function ModalPagoManual({ trabajador, mesNomina, anioNomina, onClose, onConfirm
                 Quedará saldo de {fmt(quedaSaldo)} → estado <strong>PARCIAL</strong>
               </p>
             )}
-            {montoNum >= saldoPendiente && (
+            {montoNum >= saldoPendiente && saldoPendiente > 0 && (
               <p className="text-xs text-green-600 mt-1">Nómina quedará completamente <strong>PAGADA</strong></p>
             )}
           </div>

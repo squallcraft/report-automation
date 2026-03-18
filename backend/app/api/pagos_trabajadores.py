@@ -112,21 +112,49 @@ def _extraer_nombre_cartola(descripcion: str) -> str:
     return descripcion.strip()
 
 
-def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: int) -> dict:
+def _calcular_monto_neto(
+    db: Session,
+    trabajador: Trabajador,
+    mes: int,
+    anio: int,
+    cuotas_ids_incluir: Optional[List[int]] = None,
+) -> dict:
     """
     Calcula el monto neto a pagar a un trabajador para el mes/año dado.
-    Devuelve dict con monto_bruto, descuento_cuotas, descuento_ajustes, bonificaciones, monto_neto.
+    cuotas_ids_incluir: si se pasa, solo descuenta esas cuotas (None = todas las activas del mes).
+    Devuelve dict con monto_bruto, descuento_cuotas, descuento_ajustes, bonificaciones, monto_neto,
+    y cuotas_detalle (lista de dicts con id/monto/motivo/prestamo_id).
     """
     monto_bruto = trabajador.sueldo_bruto or 0
 
-    cuotas = db.query(CuotaPrestamo).join(Prestamo).filter(
+    cuotas_query = db.query(CuotaPrestamo).join(Prestamo).filter(
         Prestamo.trabajador_id == trabajador.id,
         Prestamo.estado == EstadoPrestamoEnum.ACTIVO.value,
         CuotaPrestamo.mes == mes,
         CuotaPrestamo.anio == anio,
         CuotaPrestamo.pagado == False,
-    ).all()
-    descuento_cuotas = sum(c.monto for c in cuotas)
+    )
+    todas_cuotas = cuotas_query.all()
+
+    # Si se especificaron IDs, solo contar esas cuotas en el descuento
+    if cuotas_ids_incluir is not None:
+        cuotas_para_descontar = [c for c in todas_cuotas if c.id in cuotas_ids_incluir]
+    else:
+        cuotas_para_descontar = todas_cuotas
+
+    descuento_cuotas = sum(c.monto for c in cuotas_para_descontar)
+
+    cuotas_detalle = [
+        {
+            "id": c.id,
+            "prestamo_id": c.prestamo_id,
+            "monto": c.monto,
+            "motivo": c.prestamo.motivo if c.prestamo else None,
+            "monto_total_prestamo": c.prestamo.monto_total if c.prestamo else None,
+            "saldo_prestamo": c.prestamo.saldo_pendiente if c.prestamo else None,
+        }
+        for c in todas_cuotas
+    ]
 
     ajustes_neg = db.query(AjusteLiquidacion).filter(
         AjusteLiquidacion.tipo == "TRABAJADOR",
@@ -154,6 +182,7 @@ def _calcular_monto_neto(db: Session, trabajador: Trabajador, mes: int, anio: in
         "descuento_cuotas": descuento_cuotas,
         "descuento_ajustes": descuento_ajustes,
         "monto_neto": monto_neto,
+        "cuotas_detalle": cuotas_detalle,
     }
 
 
@@ -184,7 +213,8 @@ def _upsert_pago_mes(
     monto_nuevo_pago: int,
     fecha_pago: date,
     forzar_cerrado: bool = False,
-) -> PagoMesTrabajador:
+    cuotas_ids_incluir: Optional[List[int]] = None,
+) -> tuple:
     """
     Actualiza (o crea) el registro PagoMesTrabajador sumando monto_nuevo_pago.
     - Si el mes ya estaba PAGADO, no vuelve a congelar montos ni descuenta cuotas.
@@ -208,24 +238,25 @@ def _upsert_pago_mes(
 
     # Calcular/obtener montos
     if pago_mes is None:
-        montos = _calcular_monto_neto(db, trabajador, mes, anio)
+        montos_calc = _calcular_monto_neto(db, trabajador, mes, anio, cuotas_ids_incluir)
+        montos_orm = {k: v for k, v in montos_calc.items() if k != "cuotas_detalle"}
         pago_mes = PagoMesTrabajador(
             trabajador_id=trabajador.id,
             mes=mes,
             anio=anio,
             monto_pagado=0,
-            **montos,
+            **montos_orm,
         )
         db.add(pago_mes)
         db.flush()
     elif pago_mes.estado in ("PENDIENTE", "PARCIAL"):
         # Actualizar montos en tiempo real mientras no esté cerrado
-        montos = _calcular_monto_neto(db, trabajador, mes, anio)
-        pago_mes.monto_bruto = montos["monto_bruto"]
-        pago_mes.bonificaciones = montos["bonificaciones"]
-        pago_mes.descuento_cuotas = montos["descuento_cuotas"]
-        pago_mes.descuento_ajustes = montos["descuento_ajustes"]
-        pago_mes.monto_neto = montos["monto_neto"]
+        montos_calc = _calcular_monto_neto(db, trabajador, mes, anio, cuotas_ids_incluir)
+        pago_mes.monto_bruto = montos_calc["monto_bruto"]
+        pago_mes.bonificaciones = montos_calc["bonificaciones"]
+        pago_mes.descuento_cuotas = montos_calc["descuento_cuotas"]
+        pago_mes.descuento_ajustes = montos_calc["descuento_ajustes"]
+        pago_mes.monto_neto = montos_calc["monto_neto"]
 
     # Acumular pago
     pago_mes.monto_pagado = (pago_mes.monto_pagado or 0) + monto_nuevo_pago
@@ -284,6 +315,7 @@ def listar_pagos_mes(
                 "descuento_cuotas": pago.descuento_cuotas,
                 "descuento_ajustes": pago.descuento_ajustes,
                 "monto_neto": pago.monto_neto,
+                "cuotas_detalle": [],  # mes cerrado, cuotas ya procesadas
             }
         else:
             montos = _calcular_monto_neto(db, t, mes, anio)
@@ -322,10 +354,11 @@ def listar_pagos_mes(
 
 class PagoManualRequest(BaseModel):
     trabajador_id: int
-    monto: int                        # monto efectivamente pagado ahora
+    monto: int                              # monto efectivamente pagado ahora
     fecha_pago: Optional[str] = None
     nota: Optional[str] = None
-    forzar_cierre: bool = False       # True = marcar PAGADO aunque monto < monto_neto
+    forzar_cierre: bool = False             # True = marcar PAGADO aunque monto < monto_neto
+    cuotas_a_pagar: Optional[List[int]] = None  # IDs de CuotaPrestamo a descontar; None = todas
 
 
 @router.post("/pago-manual")
@@ -372,12 +405,13 @@ def registrar_pago_manual(
     db.flush()
     _registrar_movimiento_sueldo(db, trabajador, pago_t)
 
-    # Upsert PagoMesTrabajador acumulativo
+    # Upsert PagoMesTrabajador acumulativo — con las cuotas que el usuario eligió pagar
     pago_mes, se_cerro = _upsert_pago_mes(
         db, trabajador, mes, anio,
         monto_nuevo_pago=body.monto,
         fecha_pago=fecha_pago,
         forzar_cerrado=body.forzar_cierre,
+        cuotas_ids_incluir=body.cuotas_a_pagar,
     )
 
     if body.nota:
@@ -385,9 +419,9 @@ def registrar_pago_manual(
 
     db.flush()
 
-    # Si se cerró en este pago → descontar cuotas y asiento contable
+    # Si se cerró en este pago → descontar cuotas seleccionadas y asiento contable
     if se_cerro:
-        _descontar_cuotas(db, body.trabajador_id, mes, anio)
+        _descontar_cuotas(db, body.trabajador_id, mes, anio, cuotas_ids=body.cuotas_a_pagar)
         asiento_pago_trabajador(db, pago_mes)
 
     audit(db, "pago_manual_trabajador", usuario=current_user, request=request,
@@ -477,15 +511,26 @@ def actualizar_pago_mes(
     }
 
 
-def _descontar_cuotas(db: Session, trabajador_id: int, mes: int, anio: int):
-    """Marca como pagadas las cuotas de préstamo del trabajador para el mes."""
-    cuotas = db.query(CuotaPrestamo).join(Prestamo).filter(
+def _descontar_cuotas(
+    db: Session,
+    trabajador_id: int,
+    mes: int,
+    anio: int,
+    cuotas_ids: Optional[List[int]] = None,
+):
+    """Marca como pagadas las cuotas de préstamo del trabajador para el mes.
+    Si cuotas_ids se especifica, solo marca esas cuotas. None = todas las del mes.
+    """
+    q = db.query(CuotaPrestamo).join(Prestamo).filter(
         Prestamo.trabajador_id == trabajador_id,
         Prestamo.estado == EstadoPrestamoEnum.ACTIVO.value,
         CuotaPrestamo.mes == mes,
         CuotaPrestamo.anio == anio,
         CuotaPrestamo.pagado == False,
-    ).all()
+    )
+    if cuotas_ids is not None:
+        q = q.filter(CuotaPrestamo.id.in_(cuotas_ids))
+    cuotas = q.all()
 
     for cuota in cuotas:
         cuota.pagado = True
