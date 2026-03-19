@@ -658,9 +658,9 @@ export default function CPC() {
   }
 
   const totalesGenerales = useMemo(() => {
-    if (!drivers.length) return { neto: 0, pagado: 0 }
+    if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0 }
     const activas = filterSemanas.size > 0 ? filterSemanas : null
-    return drivers.reduce((acc, d) => {
+    const sums = drivers.reduce((acc, d) => {
       let neto = 0, pagado = 0
       const dPagados = pagados[String(d.driver_id)] || {}
       Object.entries(d.semanas || {}).forEach(([sem, s]) => {
@@ -670,6 +670,7 @@ export default function CPC() {
       })
       return { neto: acc.neto + neto, pagado: acc.pagado + pagado }
     }, { neto: 0, pagado: 0 })
+    return { ...sums, porPagar: sums.neto - sums.pagado }
   }, [drivers, filterSemanas, pagados])
 
   const estadoConteo = useMemo(() => {
@@ -770,7 +771,7 @@ export default function CPC() {
       </div>
 
       {drivers.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
           <div className="card bg-blue-50 border-blue-200 text-center">
             <p className="text-xs text-blue-600 font-medium">Total Egresos</p>
             <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
@@ -778,6 +779,10 @@ export default function CPC() {
           <div className="card bg-emerald-50 border-emerald-200 text-center">
             <p className="text-xs text-emerald-600 font-medium">Total Pagado</p>
             <p className="text-lg font-bold text-emerald-800">{fmt(totalesGenerales.pagado)}</p>
+          </div>
+          <div className="card bg-violet-50 border-violet-200 text-center">
+            <p className="text-xs text-violet-600 font-medium">Por pagar</p>
+            <p className="text-lg font-bold text-violet-800">{fmt(totalesGenerales.porPagar)}</p>
           </div>
           <div className="card bg-green-50 border-green-200 text-center">
             <p className="text-xs text-green-600 font-medium">Semanas Pagadas</p>
