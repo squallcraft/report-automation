@@ -10,7 +10,7 @@ const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
-export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBack, isPortal = false }) {
+export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBack, isPortal = false, subDriverId = null }) {
   const navigate = useNavigate()
   const [period, setPeriod] = useState(initialPeriod)
   const [data, setData] = useState(null)
@@ -23,11 +23,13 @@ export default function LiquidacionDetalle({ tipo, entityId, initialPeriod, onBa
     const url = isPortal && tipo === 'driver'
       ? `/portal/driver/liquidacion`
       : `/liquidacion/detalle/${tipo}/${entityId}`
-    api.get(url, { params: period })
+    const params = { ...period }
+    if (isPortal && tipo === 'driver' && subDriverId) params.sub_driver_id = subDriverId
+    api.get(url, { params })
       .then(({ data }) => setData(data))
       .catch(() => toast.error('Error al cargar detalle'))
       .finally(() => setLoading(false))
-  }, [tipo, entityId, period, isPortal])
+  }, [tipo, entityId, period, isPortal, subDriverId])
 
   useEffect(() => {
     const handleClickOutside = (e) => {

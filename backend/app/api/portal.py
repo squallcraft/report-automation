@@ -397,6 +397,7 @@ def driver_liquidacion(
     semana: int = Query(...),
     mes: int = Query(...),
     anio: int = Query(...),
+    sub_driver_id: Optional[int] = Query(None, description="ID de subordinado (solo jefes de flota)"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_driver),
 ):
@@ -406,15 +407,29 @@ def driver_liquidacion(
             detail="Solo puedes ver información desde la semana 4 de febrero 2026 en adelante.",
         )
     driver_id = current_user["id"]
-    detail = _driver_detail(db, driver_id, mes, anio)
-    driver = db.get(Driver, driver_id)
+
+    # Si se pide un subordinado, verificar que el solicitante es su jefe
+    if sub_driver_id and sub_driver_id != driver_id:
+        sub = db.query(Driver).filter(
+            Driver.id == sub_driver_id,
+            Driver.jefe_flota_id == driver_id,
+            Driver.activo == True,
+        ).first()
+        if not sub:
+            raise HTTPException(status_code=403, detail="No tienes acceso a la liquidación de este conductor.")
+        target_id = sub_driver_id
+    else:
+        target_id = driver_id
+
+    detail = _driver_detail(db, target_id, mes, anio)
+    driver = db.get(Driver, target_id)
     es_contratado = getattr(driver, 'contratado', False) if driver else False
     envios_semana = db.query(Envio).filter(
-        Envio.driver_id == driver_id, Envio.semana == semana,
+        Envio.driver_id == target_id, Envio.semana == semana,
         Envio.mes == mes, Envio.anio == anio,
     ).order_by(Envio.fecha_entrega).all()
     retiros_semana = db.query(Retiro).filter(
-        Retiro.driver_id == driver_id, Retiro.semana == semana,
+        Retiro.driver_id == target_id, Retiro.semana == semana,
         Retiro.mes == mes, Retiro.anio == anio,
     ).all()
     detail["daily"] = _daily_breakdown(
@@ -423,6 +438,17 @@ def driver_liquidacion(
         semana, mes, anio, is_seller=False, db=db, contratado=es_contratado, driver=driver,
     )
     detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
+
+    # Incluir lista de subordinados si el driver autenticado es jefe
+    subordinados = db.query(Driver).filter(
+        Driver.jefe_flota_id == driver_id,
+        Driver.activo == True,
+    ).order_by(Driver.nombre).all()
+    detail["es_jefe"] = len(subordinados) > 0
+    detail["subordinados"] = [{"id": s.id, "nombre": s.nombre} for s in subordinados]
+    detail["conductor_id"] = target_id
+    detail["conductor_nombre"] = driver.nombre if driver else ""
+
     return detail
 
 
