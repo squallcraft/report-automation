@@ -682,6 +682,24 @@ export default function Facturacion() {
     }, { neto: 0, iva: 0, total: 0 })
   }, [sellers, filterSemanas])
 
+  /** Suma recibida en cartola (misma vista: sellers filtrados × semanas visibles) — solo CPS / tab pagos */
+  const totalRecibidoCartola = useMemo(() => {
+    if (!sellers.length) return 0
+    let total = 0
+    for (const s of sellers) {
+      for (const sem of semanasVisibles) {
+        total += pagosAcumulados[String(s.seller_id)]?.[String(sem)] || 0
+      }
+    }
+    return total
+  }, [sellers, semanasVisibles, pagosAcumulados])
+
+  const porIngresar = useMemo(() => {
+    const neto = totalesGenerales.neto - totalRecibidoCartola
+    const conIva = neto + Math.round(neto * 0.19)
+    return { neto, conIva }
+  }, [totalesGenerales.neto, totalRecibidoCartola])
+
   return (
     <div className="flex flex-col h-full gap-4">
       <div className="flex items-center justify-between">
@@ -798,7 +816,7 @@ export default function Facturacion() {
       )}
 
       {sellers.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className={`grid gap-4 ${tab === 'pagos' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
           <div className="card bg-blue-50 border-blue-200 text-center">
             <p className="text-xs text-blue-600 font-medium">Subtotal Neto</p>
             <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
@@ -811,6 +829,13 @@ export default function Facturacion() {
             <p className="text-xs text-green-600 font-medium">Total con IVA</p>
             <p className="text-lg font-bold text-green-800">{fmt(totalesGenerales.total)}</p>
           </div>
+          {tab === 'pagos' && (
+            <div className="card bg-violet-50 border-violet-200 text-center">
+              <p className="text-xs text-violet-600 font-medium">Por ingresar</p>
+              <p className="text-lg font-bold text-violet-800">{fmt(porIngresar.neto)}</p>
+              <p className="text-[11px] text-violet-600/90 mt-1 font-mono">Con IVA: {fmt(porIngresar.conIva)}</p>
+            </div>
+          )}
         </div>
       )}
 
