@@ -365,6 +365,13 @@ export default function Retiros() {
     return drivers.filter(d => ids.has(d.id))
   }, [retiros, drivers])
 
+  const resumen = useMemo(() => ({
+    cantidad: retiros.length,
+    ingreso: retiros.reduce((acc, r) => acc + (r.tarifa_seller || 0), 0),
+    costo: retiros.reduce((acc, r) => acc + (r.tarifa_driver || 0), 0),
+    drivers: new Set(retiros.map(r => r.driver_id).filter(Boolean)).size,
+  }), [retiros])
+
   useEffect(() => { load() }, [period])
 
   const load = () => {
@@ -582,6 +589,26 @@ export default function Retiros() {
 
       <div className="card mb-6">
         <PeriodSelector {...period} onChange={setPeriod} />
+      </div>
+
+      {/* Tarjetas resumen */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Cantidad de retiros</p>
+          <p className="text-2xl font-bold text-gray-900">{resumen.cantidad}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Conductores con retiro</p>
+          <p className="text-2xl font-bold text-gray-900">{resumen.drivers}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Ingreso por retiros</p>
+          <p className="text-2xl font-bold text-green-600">{fmt(resumen.ingreso)}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Costo de retiros</p>
+          <p className="text-2xl font-bold text-red-600">{fmt(resumen.costo)}</p>
+        </div>
       </div>
 
       {/* Barra de acciones batch */}
