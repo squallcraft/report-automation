@@ -926,3 +926,18 @@ class LineaAsiento(Base):
 
     asiento = relationship("AsientoContable", back_populates="lineas")
     cuenta = relationship("CuentaContable", back_populates="lineas")
+
+
+class GrokAnalisis(Base):
+    __tablename__ = "grok_analisis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(Text, nullable=False)
+    pregunta = Column(Text, nullable=False)
+    respuesta = Column(Text, nullable=False)
+    contextos = Column(JSON, default=list)
+    mes = Column(Integer)
+    anio = Column(Integer)
+    tab = Column(String(50))
+    tokens_total = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -5,6 +5,7 @@ import {
   BarChart3, TrendingUp, TrendingDown, Minus, Users, Truck, Store,
   DollarSign, Target, AlertTriangle, Brain, Send, X,
   Loader2, Info, Activity, Zap, ShieldCheck,
+  BookOpen, Bookmark, Trash2, ChevronDown, ChevronRight,
 } from 'lucide-react'
 
 // ─── Design tokens (dark theme) ───────────────────────────────────────────────
@@ -646,14 +647,27 @@ function TabSalud({ mes, anio }) {
 // ─── GROK PANEL ───────────────────────────────────────────────────────────────
 
 function GrokPanel({ open, onClose, mes, anio, activeTab }) {
+  const [view, setView] = useState('chat')  // 'chat' | 'historial'
   const [pregunta, setPregunta] = useState('')
   const [contextos, setContextos] = useState({ pnl: true, unit: false, rent: false, ccc: false })
   const [loading, setLoading] = useState(false)
-  const [historial, setHistorial] = useState([])
+  const [chat, setChat] = useState([])
+  const [savedList, setSavedList] = useState([])
+  const [loadingHist, setLoadingHist] = useState(false)
+  const [expanded, setExpanded] = useState(null)
   const endRef = useRef(null)
 
   const ctxLabels = { pnl: `P&L ${MESES_S[mes]} ${anio}`, unit: 'Unit Economics', rent: 'Rentabilidad', ccc: 'CCC / Liquidez' }
   const estimatedTokens = Object.values(contextos).filter(Boolean).length * 400 + 200
+
+  const cargarHistorial = async () => {
+    setLoadingHist(true)
+    try {
+      const { data } = await api.get('/bi/grok/historial')
+      setSavedList(data)
+    } catch { toast.error('Error cargando historial') }
+    finally { setLoadingHist(false) }
+  }
 
   const enviar = async () => {
     if (!pregunta.trim()) return
@@ -663,23 +677,67 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     if (contextos.unit) ctxBlocks.push('Unit economics por zona: revenue/envío, cost/envío, margen/envío.')
     if (contextos.rent) ctxBlocks.push('Rentabilidad por seller con margen % y envíos.')
     if (contextos.ccc) ctxBlocks.push('CCC: capital atrapado y sellers con deuda pendiente (solo 2026).')
+    const q = pregunta.trim()
     try {
-      const { data } = await api.post('/bi/grok', { pregunta: pregunta.trim(), contexto: ctxBlocks })
-      setHistorial(prev => [...prev, { q: pregunta, a: data.respuesta, t: data.tokens }])
+      const { data } = await api.post('/bi/grok', { pregunta: q, contexto: ctxBlocks })
+      setChat(prev => [...prev, { q, a: data.respuesta, t: data.tokens, saved: false, ctxBlocks }])
       setPregunta('')
     } catch { toast.error('Error conectando con Grok') }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [historial])
+  const guardar = async (idx) => {
+    const h = chat[idx]
+    if (h.saved) return
+    try {
+      await api.post('/bi/grok/guardar', {
+        pregunta: h.q,
+        respuesta: h.a,
+        contextos: h.ctxBlocks || [],
+        mes, anio,
+        tab: activeTab,
+        tokens_total: h.t?.total_tokens || 0,
+      })
+      setChat(prev => prev.map((x, i) => i === idx ? { ...x, saved: true } : x))
+      toast.success('Análisis guardado')
+      if (view === 'historial') cargarHistorial()
+    } catch { toast.error('Error guardando análisis') }
+  }
+
+  const eliminar = async (id) => {
+    try {
+      await api.delete(`/bi/grok/historial/${id}`)
+      setSavedList(prev => prev.filter(x => x.id !== id))
+      if (expanded === id) setExpanded(null)
+    } catch { toast.error('Error eliminando análisis') }
+  }
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chat])
+  useEffect(() => { if (view === 'historial') cargarHistorial() }, [view])
+
+  const TABS_LABEL = { pnl: 'P&L', unit: 'Unit Economics', rent: 'Rentabilidad', costos: 'Costos', yoy: 'YoY', salud: 'Salud' }
+
   if (!open) return null
+
+  const btnTab = (v, label, Icon) => (
+    <button onClick={() => setView(v)} style={{
+      display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px',
+      background: view === v ? C.accentDim : 'transparent',
+      border: `1px solid ${view === v ? C.accent : C.border}`,
+      borderRadius: 20, color: view === v ? C.accent : C.muted,
+      fontSize: 12, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+    }}>
+      <Icon size={13} /> {label}
+    </button>
+  )
 
   return (
     <div style={{
-      position: 'fixed', inset: '0 0 0 auto', width: 420, background: '#111', zIndex: 50,
+      position: 'fixed', inset: '0 0 0 auto', width: 440, background: '#111', zIndex: 50,
       display: 'flex', flexDirection: 'column', borderLeft: `1px solid ${C.borderStrong}`,
       boxShadow: '-8px 0 32px rgba(0,0,0,0.6)',
     }}>
+      {/* Header */}
       <div style={{ padding: '14px 18px', borderBottom: `1px solid ${C.borderStrong}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ background: C.accentDim, padding: 6, borderRadius: 8, display: 'flex' }}><Brain size={16} style={{ color: C.accent }} /></div>
@@ -688,77 +746,177 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
             <p style={{ color: C.dimmed, fontSize: 10, marginTop: 2 }}>Analista financiero</p>
           </div>
         </div>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.muted, padding: 4, borderRadius: 6 }}
-          onMouseEnter={e => e.currentTarget.style.color = C.text}
-          onMouseLeave={e => e.currentTarget.style.color = C.muted}>
-          <X size={18} />
-        </button>
-      </div>
-
-      <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}` }}>
-        <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 8 }}>Contexto a inyectar:</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {Object.entries(ctxLabels).map(([k, label]) => (
-            <button key={k} onClick={() => setContextos(prev => ({ ...prev, [k]: !prev[k] }))}
-              style={{
-                fontSize: 11, padding: '4px 10px', borderRadius: 20, cursor: 'pointer', transition: 'all 0.15s',
-                border: `1px solid ${contextos[k] ? C.accent : C.border}`,
-                background: contextos[k] ? C.accentDim : 'transparent',
-                color: contextos[k] ? C.accent : C.dimmed,
-              }}>
-              {contextos[k] ? '✓ ' : ''}{label}
-            </button>
-          ))}
-        </div>
-        <p style={{ color: C.dimmed, fontSize: 10, marginTop: 8 }}>~{estimatedTokens} tokens estimados</p>
-      </div>
-
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {historial.length === 0 && (
-          <div style={{ color: C.dimmed, fontSize: 13, textAlign: 'center', marginTop: 40 }}>
-            <Brain size={32} style={{ color: C.borderStrong, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
-            Hazle una pregunta a Grok sobre los datos del período.
-          </div>
-        )}
-        {historial.map((h, i) => (
-          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.text }}>{h.q}</div>
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{h.a}</div>
-            {h.t && <p style={{ color: C.dimmed, fontSize: 10, textAlign: 'right' }}>Tokens: {h.t.total_tokens || '—'}</p>}
-          </div>
-        ))}
-        {loading && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.dimmed, fontSize: 13 }}>
-            <Loader2 size={14} style={{ color: C.accent, animation: 'spin 1s linear infinite' }} />
-            Grok está analizando...
-          </div>
-        )}
-        <div ref={endRef} />
-      </div>
-
-      <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.border}` }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input value={pregunta} onChange={e => setPregunta(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviar()}
-            placeholder="Pregunta sobre los datos..."
-            disabled={loading}
-            style={{
-              flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-              padding: '9px 12px', fontSize: 13, color: C.text, outline: 'none',
-            }}
-            onFocus={e => e.target.style.borderColor = C.accent}
-            onBlur={e => e.target.style.borderColor = C.border}
-          />
-          <button onClick={enviar} disabled={loading || !pregunta.trim()}
-            style={{
-              background: pregunta.trim() ? C.accent : C.surface, border: 'none', borderRadius: 8,
-              padding: '9px 14px', cursor: pregunta.trim() ? 'pointer' : 'default',
-              color: pregunta.trim() ? '#fff' : C.dimmed, transition: 'all 0.15s',
-            }}>
-            <Send size={15} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {btnTab('chat', 'Chat', Brain)}
+          {btnTab('historial', 'Índice', BookOpen)}
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.muted, padding: 4, borderRadius: 6, marginLeft: 4 }}
+            onMouseEnter={e => e.currentTarget.style.color = C.text}
+            onMouseLeave={e => e.currentTarget.style.color = C.muted}>
+            <X size={18} />
           </button>
         </div>
       </div>
+
+      {/* ── CHAT VIEW ── */}
+      {view === 'chat' && (
+        <>
+          <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}` }}>
+            <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 8 }}>Contexto a inyectar:</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {Object.entries(ctxLabels).map(([k, label]) => (
+                <button key={k} onClick={() => setContextos(prev => ({ ...prev, [k]: !prev[k] }))}
+                  style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 20, cursor: 'pointer', transition: 'all 0.15s',
+                    border: `1px solid ${contextos[k] ? C.accent : C.border}`,
+                    background: contextos[k] ? C.accentDim : 'transparent',
+                    color: contextos[k] ? C.accent : C.dimmed,
+                  }}>
+                  {contextos[k] ? '✓ ' : ''}{label}
+                </button>
+              ))}
+            </div>
+            <p style={{ color: C.dimmed, fontSize: 10, marginTop: 8 }}>~{estimatedTokens} tokens estimados</p>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {chat.length === 0 && (
+              <div style={{ color: C.dimmed, fontSize: 13, textAlign: 'center', marginTop: 40 }}>
+                <Brain size={32} style={{ color: C.borderStrong, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
+                Hazle una pregunta a Grok sobre los datos del período.
+              </div>
+            )}
+            {chat.map((h, i) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.text }}>{h.q}</div>
+                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{h.a}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  {h.t && <p style={{ color: C.dimmed, fontSize: 10 }}>Tokens: {h.t.total_tokens || '—'}</p>}
+                  <button onClick={() => guardar(i)} disabled={h.saved}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '4px 10px',
+                      borderRadius: 20, cursor: h.saved ? 'default' : 'pointer', transition: 'all 0.15s',
+                      border: `1px solid ${h.saved ? C.border : C.accent}`,
+                      background: h.saved ? 'transparent' : C.accentDim,
+                      color: h.saved ? C.dimmed : C.accent,
+                    }}>
+                    <Bookmark size={11} fill={h.saved ? C.dimmed : 'none'} />
+                    {h.saved ? 'Guardado' : 'Guardar análisis'}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.dimmed, fontSize: 13 }}>
+                <Loader2 size={14} style={{ color: C.accent, animation: 'spin 1s linear infinite' }} />
+                Grok está analizando...
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+
+          <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={pregunta} onChange={e => setPregunta(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviar()}
+                placeholder="Pregunta sobre los datos..."
+                disabled={loading}
+                style={{
+                  flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+                  padding: '9px 12px', fontSize: 13, color: C.text, outline: 'none',
+                }}
+                onFocus={e => e.target.style.borderColor = C.accent}
+                onBlur={e => e.target.style.borderColor = C.border}
+              />
+              <button onClick={enviar} disabled={loading || !pregunta.trim()}
+                style={{
+                  background: pregunta.trim() ? C.accent : C.surface, border: 'none', borderRadius: 8,
+                  padding: '9px 14px', cursor: pregunta.trim() ? 'pointer' : 'default',
+                  color: pregunta.trim() ? '#fff' : C.dimmed, transition: 'all 0.15s',
+                }}>
+                <Send size={15} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── HISTORIAL VIEW ── */}
+      {view === 'historial' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {loadingHist ? (
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 60 }}>
+              <Loader2 size={24} style={{ color: C.accent, animation: 'spin 1s linear infinite' }} />
+            </div>
+          ) : savedList.length === 0 ? (
+            <div style={{ color: C.dimmed, fontSize: 13, textAlign: 'center', marginTop: 60 }}>
+              <BookOpen size={32} style={{ color: C.borderStrong, display: 'block', margin: '0 auto 12px' }} />
+              No hay análisis guardados aún.<br />
+              <span style={{ fontSize: 11 }}>Usa el botón "Guardar análisis" en el chat.</span>
+            </div>
+          ) : (
+            <>
+              <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 6 }}>{savedList.length} análisis guardados</p>
+              {savedList.map(item => {
+                const isOpen = expanded === item.id
+                const fecha = item.created_at ? new Date(item.created_at).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }) : ''
+                return (
+                  <div key={item.id} style={{ background: C.card, border: `1px solid ${isOpen ? C.accent + '55' : C.border}`, borderRadius: 10, overflow: 'hidden', transition: 'border-color 0.15s' }}>
+                    <div onClick={() => setExpanded(isOpen ? null : item.id)}
+                      style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'flex-start', gap: 8 }}
+                      onMouseEnter={e => e.currentTarget.style.background = C.cardHover}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <div style={{ paddingTop: 2, color: C.accent, flexShrink: 0 }}>
+                        {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ color: C.text, fontSize: 13, fontWeight: 500, lineHeight: 1.3, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.titulo}
+                        </p>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {item.mes && item.anio && (
+                            <span style={{ fontSize: 10, color: C.dimmed, background: C.surface, padding: '1px 6px', borderRadius: 10 }}>
+                              {MESES_S[item.mes]} {item.anio}
+                            </span>
+                          )}
+                          {item.tab && (
+                            <span style={{ fontSize: 10, color: C.dimmed, background: C.surface, padding: '1px 6px', borderRadius: 10 }}>
+                              {TABS_LABEL[item.tab] || item.tab}
+                            </span>
+                          )}
+                          {fecha && <span style={{ fontSize: 10, color: C.dimmed }}>{fecha}</span>}
+                        </div>
+                      </div>
+                      <button onClick={e => { e.stopPropagation(); eliminar(item.id) }}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.dimmed, padding: 4, borderRadius: 6, flexShrink: 0 }}
+                        onMouseEnter={e => e.currentTarget.style.color = C.red}
+                        onMouseLeave={e => e.currentTarget.style.color = C.dimmed}
+                        title="Eliminar">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div style={{ borderTop: `1px solid ${C.border}`, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: C.text }}>
+                          {item.pregunta}
+                        </div>
+                        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}>
+                          {item.respuesta}
+                        </div>
+                        {item.contextos?.length > 0 && (
+                          <p style={{ fontSize: 10, color: C.dimmed }}>Contexto: {item.contextos.length} bloques inyectados</p>
+                        )}
+                        {item.tokens_total > 0 && (
+                          <p style={{ fontSize: 10, color: C.dimmed }}>Tokens usados: {item.tokens_total.toLocaleString('es-CL')}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

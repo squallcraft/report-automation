@@ -10,7 +10,7 @@ from app.models import (
     CategoriaFinanciera, MovimientoFinanciero,
     PagoSemanaSeller, PagoSemanaDriver, PagoSemanaPickup,
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
-    PagoTrabajador, CalendarioSemanas,
+    PagoTrabajador, CalendarioSemanas, GrokAnalisis,
 )
 
 router = APIRouter(prefix="/bi", tags=["Business Intelligence"])
@@ -627,3 +627,84 @@ async def grok_query(
     answer = data["choices"][0]["message"]["content"]
     usage = data.get("usage", {})
     return {"respuesta": answer, "tokens": usage}
+
+
+# ════════════════════════════════════════════════════
+#  GROK — Guardar / Historial de análisis
+# ════════════════════════════════════════════════════
+
+class GuardarAnalisisRequest(BaseModel):
+    titulo: str = ""
+    pregunta: str
+    respuesta: str
+    contextos: List[str] = []
+    mes: int
+    anio: int
+    tab: str = ""
+    tokens_total: int = 0
+
+
+@router.post("/grok/guardar")
+def guardar_analisis(
+    req: GuardarAnalisisRequest,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    titulo = req.titulo.strip() or req.pregunta[:80]
+    analisis = GrokAnalisis(
+        titulo=titulo,
+        pregunta=req.pregunta,
+        respuesta=req.respuesta,
+        contextos=req.contextos,
+        mes=req.mes,
+        anio=req.anio,
+        tab=req.tab,
+        tokens_total=req.tokens_total,
+    )
+    db.add(analisis)
+    db.commit()
+    db.refresh(analisis)
+    return {"ok": True, "id": analisis.id}
+
+
+@router.get("/grok/historial")
+def listar_historial(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    rows = (
+        db.query(GrokAnalisis)
+        .order_by(GrokAnalisis.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "titulo": r.titulo,
+            "pregunta": r.pregunta,
+            "respuesta": r.respuesta,
+            "contextos": r.contextos,
+            "mes": r.mes,
+            "anio": r.anio,
+            "tab": r.tab,
+            "tokens_total": r.tokens_total,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.delete("/grok/historial/{analisis_id}")
+def eliminar_analisis(
+    analisis_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    row = db.query(GrokAnalisis).filter(GrokAnalisis.id == analisis_id).first()
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Análisis no encontrado")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
