@@ -17,6 +17,62 @@ router = APIRouter(prefix="/bi", tags=["Business Intelligence"])
 
 MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
+# ── BI Seller Groups — solo para análisis BI, sin efecto en el resto del sistema ─
+# Clave: fragmento del nombre en minúsculas  →  Valor: nombre del grupo
+_BI_SELLER_GROUPS: dict[str, str] = {
+    "nuevo genesis":              "Nuevo Genesis",
+    "comercial element":          "Nuevo Genesis",
+    "rebon":                      "Nuevo Genesis",
+    " yan":                       "Nuevo Genesis",   # espacio antes para no capturar "Tanya" etc.
+    "sofozy":                     "Nuevo Genesis",
+    "equipo alca":                "Alca",
+    "alca computaci":             "Alca",            # cubre "Sociedad Comercial Alca Computación"
+    "sociedad computacional alca":"Alca",
+}
+
+
+def _bi_group_seller(nombre: str) -> str:
+    """Devuelve el nombre de grupo BI para un seller, o el nombre original si no aplica."""
+    if not nombre:
+        return nombre or "Sin nombre"
+    n_low = " " + nombre.lower()   # espacio inicial para que el truco de " yan" funcione
+    for key, group in _BI_SELLER_GROUPS.items():
+        if key in n_low:
+            return group
+    return nombre
+
+
+def _merge_seller_groups(sellers: list) -> list:
+    """
+    Combina los sellers de un mismo grupo BI en una sola fila y recalcula márgenes.
+    Solo suma campos numéricos conocidos; preserva el resto del primer seller del grupo.
+    """
+    NUM_FIELDS = ("envios", "revenue", "revenue_envios", "revenue_retiros",
+                  "cost", "cost_envios", "cost_retiros")
+    group_map: dict = {}
+    for s in sellers:
+        gname = _bi_group_seller(s["nombre"])
+        if gname not in group_map:
+            group_map[gname] = {**s, "nombre": gname}
+        else:
+            g = group_map[gname]
+            for f in NUM_FIELDS:
+                g[f] = g.get(f, 0) + s.get(f, 0)
+
+    merged = []
+    for g in group_map.values():
+        rev  = g.get("revenue", 0)
+        cost = g.get("cost", 0)
+        env  = g.get("envios", 0)
+        margin = rev - cost
+        g["margin"]     = margin
+        g["margin_pct"] = round(margin / rev * 100, 1) if rev else 0
+        if env:
+            g["rev_envio"]  = round(g.get("revenue_envios", rev) / env)
+            g["cost_envio"] = round(g.get("cost_envios", cost) / env)
+        merged.append(g)
+    return merged
+
 
 def _env_filters(q, mes, anio, empresa=None, zona=None):
     q = q.filter(Envio.mes == mes, Envio.anio == anio, Envio.estado_entrega == 'delivered')
@@ -299,6 +355,10 @@ def rentabilidad_sellers(
             "rev_envio": round(rev / env) if env > 0 else 0,
             "cost_envio": round(cost / env) if env > 0 else 0,
         })
+    sellers.sort(key=lambda x: x["margin"], reverse=True)
+
+    # ── Agrupar sellers por grupo BI (Nuevo Genesis, Alca, etc.) ────────────
+    sellers = _merge_seller_groups(sellers)
     sellers.sort(key=lambda x: x["margin"], reverse=True)
 
     total_rev = sum(s["revenue"] for s in sellers)
@@ -617,14 +677,32 @@ def salud_comercial(
     ).all()
 
     total_rev = sum(int(s.revenue) for s in sellers_rev)
+    # ── Aplicar grupos BI antes de construir ranking ─────────────────────────
+    raw_ranking: list = []
+    for s in sellers_rev:
+        raw_ranking.append({
+            "id": s.id, "nombre": s.nombre,
+            "revenue": int(s.revenue), "envios": int(s.envios),
+        })
+    # Merge groups
+    grp_map: dict = {}
+    for r in raw_ranking:
+        gname = _bi_group_seller(r["nombre"])
+        if gname not in grp_map:
+            grp_map[gname] = {"nombre": gname, "revenue": 0, "envios": 0}
+        grp_map[gname]["revenue"] += r["revenue"]
+        grp_map[gname]["envios"]  += r["envios"]
+    grouped_list = sorted(grp_map.values(), key=lambda x: x["revenue"], reverse=True)
+    total_rev = sum(g["revenue"] for g in grouped_list)
+
     acum = 0
     ranking = []
-    for i, s in enumerate(sellers_rev):
-        rev = int(s.revenue)
+    for i, g in enumerate(grouped_list):
+        rev = g["revenue"]
         acum += rev
         ranking.append({
-            "rank": i + 1, "id": s.id, "nombre": s.nombre,
-            "revenue": rev, "envios": int(s.envios),
+            "rank": i + 1, "id": None, "nombre": g["nombre"],
+            "revenue": rev, "envios": g["envios"],
             "pct": round(rev / total_rev * 100, 1) if total_rev > 0 else 0,
             "pct_acum": round(acum / total_rev * 100, 1) if total_rev > 0 else 0,
         })
@@ -674,8 +752,9 @@ def salud_comercial(
         e2 = cnt_map.get(sid, {}).get((m2, a2), 0)
         e3 = cnt_map.get(sid, {}).get((m3, a3), 0)
         if e1 > 0 and e0 < e1 * 0.7:
+            nombre = _bi_group_seller(seller_names.get(sid, f"ID {sid}"))
             en_riesgo.append({
-                "id": sid, "nombre": seller_names.get(sid, f"ID {sid}"),
+                "id": sid, "nombre": nombre,
                 "envios": [e3, e2, e1, e0],
                 "tendencia_pct": round((e0 - e1) / e1 * 100, 1) if e1 > 0 else 0,
             })
