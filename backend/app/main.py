@@ -213,6 +213,12 @@ with engine.connect() as conn:
         if "fecha_pago" not in pd_cols:
             safe_exec("ALTER TABLE pagos_semana_drivers ADD COLUMN fecha_pago DATE")
 
+    # ── Migración: tipo_pago en sellers ──
+    if "sellers" in insp.get_table_names():
+        sel_cols = [c["name"] for c in insp.get_columns("sellers")]
+        if "tipo_pago" not in sel_cols:
+            safe_exec("ALTER TABLE sellers ADD COLUMN tipo_pago TEXT NOT NULL DEFAULT 'semanal'")
+
     # ── Migración: tablas CPP (pagos pickups) y facturas pickups se crean via create_all ──
 
     # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────

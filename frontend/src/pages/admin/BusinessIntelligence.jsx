@@ -135,10 +135,11 @@ function DarkTable({ columns, data, maxH = 400 }) {
   )
 }
 
-function BarChart({ data, labelKey, bars, colors, height = 180 }) {
+function BarChart({ data, labelKey, bars, barLabels, colors, height = 180 }) {
+  const [tooltip, setTooltip] = useState(null)
   const max = Math.max(...data.flatMap(d => bars.map(b => Math.abs(d[b] || 0))), 1)
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div style={{ overflowX: 'auto', position: 'relative' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, minHeight: height, minWidth: data.length * 52 }}>
         {data.map((d, i) => (
           <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 40 }}>
@@ -146,12 +147,26 @@ function BarChart({ data, labelKey, bars, colors, height = 180 }) {
               {bars.map((b, j) => {
                 const v = d[b] || 0
                 const h = Math.max((Math.abs(v) / max) * (height - 24), 2)
+                const label = barLabels?.[j] || b
                 return (
-                  <div key={j} title={`${b}: ${fmtFull(v)}`}
-                    style={{ height: h, minWidth: 9, borderRadius: '3px 3px 0 0', background: colors[j], opacity: 0.85, transition: 'opacity 0.15s' }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                    onMouseLeave={e => e.currentTarget.style.opacity = '0.85'}
-                  />
+                  <div key={j} style={{ position: 'relative' }}
+                    onMouseEnter={() => setTooltip({ col: i, bar: j, label, value: fmtFull(v), sublabel: d[labelKey] })}
+                    onMouseLeave={() => setTooltip(null)}>
+                    <div style={{ height: h, minWidth: 9, borderRadius: '3px 3px 0 0', background: colors[j], opacity: tooltip?.col === i && tooltip?.bar === j ? 1 : 0.8, transition: 'opacity 0.1s', cursor: 'default' }} />
+                    {tooltip?.col === i && tooltip?.bar === j && (
+                      <div style={{
+                        position: 'absolute', bottom: h + 6, left: '50%', transform: 'translateX(-50%)',
+                        background: '#111', border: `1px solid ${C.borderStrong}`, borderRadius: 6,
+                        padding: '5px 9px', whiteSpace: 'nowrap', zIndex: 20,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                        pointerEvents: 'none',
+                      }}>
+                        <p style={{ color: colors[j], fontSize: 10, margin: 0, fontWeight: 600 }}>{label}</p>
+                        <p style={{ color: C.text, fontSize: 12, margin: '2px 0 0', fontWeight: 700 }}>{tooltip.value}</p>
+                        <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 8, height: 8, background: '#111', border: `1px solid ${C.borderStrong}`, borderTop: 'none', borderLeft: 'none', transform: 'translateX(-50%) rotate(45deg)' }} />
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
@@ -191,6 +206,51 @@ function InfoBanner({ children, type = 'amber' }) {
   )
 }
 
+const GLOSSARY = {
+  'Revenue': 'Ingresos brutos operacionales: suma del cobro al seller más extras cobrados (bulto, comuna).',
+  'Ingresos': 'Total de ingresos del período: revenue operacional + ingresos de software + otros.',
+  'Egresos': 'Total de egresos del período: costo drivers + pickups + remuneraciones + servicios + otros.',
+  'Resultado': 'Utilidad operacional neta: Ingresos − Egresos. Positivo = ganancia, negativo = pérdida.',
+  'Margen %': 'Porcentaje de utilidad sobre los ingresos: Resultado / Ingresos × 100.',
+  'Margen neto': 'Porcentaje de utilidad sobre los ingresos totales del período.',
+  'CPD': 'Costo Por Despacho: promedio que paga E-Courier al driver por cada envío entregado.',
+  'Rev/envío': 'Revenue promedio por envío: cuánto cobra E-Courier al seller por cada paquete.',
+  'Payout %': 'Porcentaje del revenue que se destina a pagar al driver. Menor = más eficiente.',
+  'CCC': 'Cash Conversion Cycle: días promedio entre que se entrega el paquete y se recibe el pago del seller.',
+  'Capital atrapado': 'Dinero en cuentas por cobrar pendientes de pago: revenue entregado pero no cobrado aún.',
+  'HHI': 'Índice Herfindahl-Hirschman: concentración del revenue. <0.15 = diversificado · 0.15–0.25 = moderado · >0.25 = alta concentración.',
+  'Top 5': 'Los 5 sellers con mayor revenue acumulado en el período. Su % muestra cuánto del total representan.',
+  'Δ YoY': 'Variación año sobre año: diferencia porcentual entre el valor actual (2026) y el período equivalente del año anterior (2025).',
+  'Margen promedio': 'Promedio ponderado del margen operacional de todos los sellers o drivers activos en el período.',
+  'Envíos': 'Cantidad total de paquetes entregados (estado: delivered) en el período.',
+  'Resultado': 'Revenue − Costo total del período. Indica si la operación fue rentable.',
+  'Contratado': 'Driver con vínculo laboral directo: la empresa paga sueldo, combustible y mantención de vehículo.',
+  'Tercerizado': 'Driver independiente: la empresa paga una tarifa por envío, sin costos de nómina.',
+}
+
+function InfoTooltip({ term }) {
+  const [show, setShow] = useState(false)
+  const def = GLOSSARY[term]
+  if (!def) return null
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <Info size={11} style={{ color: C.dimmed, cursor: 'help' }} />
+      {show && (
+        <div style={{
+          position: 'absolute', bottom: 18, left: '50%', transform: 'translateX(-50%)',
+          background: '#111', border: `1px solid ${C.borderStrong}`, borderRadius: 8,
+          padding: '8px 12px', width: 220, zIndex: 50,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)', pointerEvents: 'none',
+        }}>
+          <p style={{ color: C.accent, fontSize: 11, fontWeight: 700, margin: '0 0 4px' }}>{term}</p>
+          <p style={{ color: C.muted, fontSize: 11, margin: 0, lineHeight: 1.5 }}>{def}</p>
+        </div>
+      )}
+    </span>
+  )
+}
+
 // ─── TAB COMPONENTS ───────────────────────────────────────────────────────────
 
 function TabPnL({ mes, anio, empresa, zona }) {
@@ -210,10 +270,10 @@ function TabPnL({ mes, anio, empresa, zona }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <KpiCard label="Ingresos" value={fmt(r.total_ingresos)} prevVal={r.total_ingresos_ant} color="green" />
-        <KpiCard label="Egresos" value={fmt(r.total_egresos)} prevVal={r.total_egresos_ant} color="red" invert />
-        <KpiCard label="Resultado" value={fmt(r.resultado)} prevVal={r.resultado_ant} color={r.resultado >= 0 ? 'green' : 'red'} accent={r.resultado > 0} />
-        <KpiCard label="Margen neto" value={`${r.margen}%`} sub={`${r.envios.toLocaleString()} envíos`} color="blue" />
+        <KpiCard label={<span>Ingresos<InfoTooltip term="Ingresos" /></span>} value={fmt(r.total_ingresos)} prevVal={r.total_ingresos_ant} color="green" />
+        <KpiCard label={<span>Egresos<InfoTooltip term="Egresos" /></span>} value={fmt(r.total_egresos)} prevVal={r.total_egresos_ant} color="red" invert />
+        <KpiCard label={<span>Resultado<InfoTooltip term="Resultado" /></span>} value={fmt(r.resultado)} prevVal={r.resultado_ant} color={r.resultado >= 0 ? 'green' : 'red'} accent={r.resultado > 0} />
+        <KpiCard label={<span>Margen neto<InfoTooltip term="Margen neto" /></span>} value={`${r.margen}%`} sub={`${r.envios.toLocaleString()} envíos`} color="blue" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -261,7 +321,7 @@ function TabPnL({ mes, anio, empresa, zona }) {
       {!ccc && anio < 2026 && <InfoBanner>CCC solo disponible para 2026 — sin datos de pagos para años anteriores.</InfoBanner>}
 
       <DarkCard title={`P&L Mensual ${anio}`} icon={BarChart3}>
-        <BarChart data={chart} labelKey="label" bars={['ingresos', 'egresos', 'resultado']} colors={[C.green, C.red, C.accent]} />
+        <BarChart data={chart} labelKey="label" bars={['ingresos', 'egresos', 'resultado']} barLabels={['Ingresos', 'Egresos', 'Resultado']} colors={[C.green, C.red, C.accent]} />
         <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
           {[['Ingresos', C.green], ['Egresos', C.red], ['Resultado', C.accent]].map(([l, c]) => (
             <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.muted }}>
@@ -309,7 +369,7 @@ function TabUnitEconomics({ mes, anio }) {
       </DarkCard>
 
       <DarkCard title={`Evolución ${anio}`} icon={Activity}>
-        <BarChart data={chart} labelKey="label" bars={['rev_envio', 'cost_envio', 'margen_envio']} colors={[C.green, C.red, C.accent]} height={150} />
+        <BarChart data={chart} labelKey="label" bars={['rev_envio', 'cost_envio', 'margen_envio']} barLabels={['Rev/Envío', 'Costo/Envío', 'Margen/Envío']} colors={[C.green, C.red, C.accent]} height={150} />
       </DarkCard>
     </div>
   )
@@ -321,16 +381,24 @@ function TabRentabilidad({ mes, anio }) {
   const [dData, setDData] = useState(null)
   const [pData, setPData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [errors, setErrors] = useState({})
 
   useEffect(() => {
     setLoading(true)
+    setErrors({})
     const p = { mes, anio }
-    Promise.all([
+    Promise.allSettled([
       api.get('/bi/rentabilidad/sellers', { params: p }),
       api.get('/bi/rentabilidad/drivers', { params: p }),
       api.get('/bi/rentabilidad/pickups', { params: p }),
-    ]).then(([s, d, pk]) => { setSData(s.data); setDData(d.data); setPData(pk.data) })
-      .catch(() => toast.error('Error')).finally(() => setLoading(false))
+    ]).then(([s, d, pk]) => {
+      if (s.status === 'fulfilled') setSData(s.value.data)
+      else setErrors(e => ({ ...e, sellers: true }))
+      if (d.status === 'fulfilled') setDData(d.value.data)
+      else setErrors(e => ({ ...e, drivers: true }))
+      if (pk.status === 'fulfilled') setPData(pk.value.data)
+      else setErrors(e => ({ ...e, pickups: true }))
+    }).finally(() => setLoading(false))
   }, [mes, anio])
 
   if (loading) return <DarkLoader />
@@ -351,9 +419,9 @@ function TabRentabilidad({ mes, anio }) {
           </button>
         ))}
       </div>
-      {subTab === 'sellers' && sData && <RentSellers data={sData} />}
-      {subTab === 'drivers' && dData && <RentDrivers data={dData} />}
-      {subTab === 'pickups' && pData && <RentPickups data={pData} />}
+      {subTab === 'sellers' && (errors.sellers ? <InfoBanner type="blue">Error cargando datos de sellers.</InfoBanner> : sData ? <RentSellers data={sData} /> : null)}
+      {subTab === 'drivers' && (errors.drivers ? <InfoBanner type="blue">Error cargando datos de drivers.</InfoBanner> : dData ? <RentDrivers data={dData} /> : null)}
+      {subTab === 'pickups' && (errors.pickups ? <InfoBanner type="blue">Error cargando datos de pickups.</InfoBanner> : pData ? <RentPickups data={pData} /> : null)}
     </div>
   )
 }
@@ -363,8 +431,8 @@ function RentSellers({ data }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         <KpiCard label="Sellers activos" value={data.total_sellers} />
-        <KpiCard label="Revenue total" value={fmt(data.total_revenue)} color="green" />
-        <KpiCard label="Margen promedio" value={`${data.avg_margin_pct}%`} color="blue" />
+        <KpiCard label={<span>Revenue total<InfoTooltip term="Revenue" /></span>} value={fmt(data.total_revenue)} color="green" />
+        <KpiCard label={<span>Margen promedio<InfoTooltip term="Margen promedio" /></span>} value={`${data.avg_margin_pct}%`} color="blue" />
         <KpiCard label="Top Seller" value={data.best?.nombre?.split(' ')[0] || '—'} sub={data.best ? `Margen ${data.best.margin_pct}%` : ''} color="amber" />
       </div>
       <DarkCard title="Ranking Sellers" noPad>
@@ -593,7 +661,7 @@ function TabYoY({ mes: mesProp }) {
       </DarkCard>
 
       <DarkCard title={`Revenue mensual por año`} icon={BarChart3}>
-        <BarChart data={data.chart} labelKey="label" bars={['revenue_2024', 'revenue_2025', 'revenue_2026']} colors={[C.dimmed, C.blue, C.accent]} />
+        <BarChart data={data.chart} labelKey="label" bars={['revenue_2024', 'revenue_2025', 'revenue_2026']} barLabels={['Revenue 2024', 'Revenue 2025', 'Revenue 2026']} colors={[C.dimmed, C.blue, C.accent]} />
         <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
           {[['2024', C.dimmed], ['2025', C.blue], ['2026', C.accent]].map(([l, c]) => (
             <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: C.muted }}>
@@ -1006,7 +1074,7 @@ export default function BusinessIntelligence() {
         {/* Filtros */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {[
-            { label: 'Mes', val: mes, set: v => setMes(+v), opts: MESES.slice(1).map((m, i) => ({ v: i + 1, l: m })) },
+            { label: 'Mes', val: mes, set: v => { const n = +v; setMes(n); if (n === 0) setTab('yoy') }, opts: [{ v: 0, l: 'Todos los meses' }, ...MESES.slice(1).map((m, i) => ({ v: i + 1, l: m }))] },
             { label: 'Año', val: anio, set: v => setAnio(+v), opts: [2024, 2025, 2026].map(y => ({ v: y, l: y })) },
             { label: 'Empresa', val: empresa, set: setEmpresa, opts: [{ v: '', l: 'Todas' }, { v: 'ECOURIER', l: 'ECOURIER' }, { v: 'OVIEDO', l: 'OVIEDO' }] },
             { label: 'Zona', val: zona, set: setZona, opts: [{ v: '', l: 'Todas' }, { v: 'santiago', l: 'Santiago' }, { v: 'valparaiso', l: 'Valparaíso' }, { v: 'melipilla', l: 'Melipilla' }] },

@@ -448,44 +448,56 @@ def yoy(
     _=Depends(require_admin_or_administracion),
 ):
     years = [2024, 2025, 2026]
+
+    # ── Single query for all envios grouped by anio + mes ──────────────────────
+    env_rows = db.query(
+        Envio.anio,
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver), 0).label("cost"),
+    ).filter(
+        Envio.anio.in_(years),
+        Envio.estado_entrega == 'delivered',
+    ).group_by(Envio.anio, Envio.mes).all()
+
+    # Build matrix: env_matrix[anio][mes] = {revenue, cost, envios}
+    env_matrix = {y: {m: {"revenue": 0, "cost": 0, "envios": 0} for m in range(0, 13)} for y in years}
+    for r in env_rows:
+        env_matrix[r.anio][r.mes] = {"revenue": int(r.revenue), "cost": int(r.cost), "envios": int(r.envios)}
+        # Accumulate into month 0 (annual total)
+        env_matrix[r.anio][0]["revenue"] += int(r.revenue)
+        env_matrix[r.anio][0]["cost"] += int(r.cost)
+        env_matrix[r.anio][0]["envios"] += int(r.envios)
+
+    # ── Manual totals per year (for the requested month or full year) ───────────
+    def _manual_for(y, m):
+        if m == 0:
+            result = {"INGRESO": {}, "EGRESO": {}}
+            for mm in range(1, 13):
+                mn = _manual_totals(db, mm, y)
+                for tipo in ("INGRESO", "EGRESO"):
+                    for cat, val in mn[tipo].items():
+                        result[tipo][cat] = result[tipo].get(cat, 0) + val
+            return result
+        return _manual_totals(db, m, y)
+
+    # ── Header KPIs for selected mes ───────────────────────────────────────────
     data = {}
-
-    def _op_anio(y):
-        """Sum all months of a year when mes=0."""
-        if mes != 0:
-            return _op_from_envios(db, mes, y)
-        totals = {"envios": 0, "cobro_seller": 0, "extra_seller": 0, "costo_driver": 0, "extra_driver": 0}
-        for m in range(1, 13):
-            op = _op_from_envios(db, m, y)
-            for k in totals:
-                totals[k] += op[k]
-        return totals
-
-    def _manual_anio(y):
-        if mes != 0:
-            return _manual_totals(db, mes, y)
-        result = {"INGRESO": {}, "EGRESO": {}}
-        for m in range(1, 13):
-            mn = _manual_totals(db, m, y)
-            for tipo in ("INGRESO", "EGRESO"):
-                for cat, val in mn[tipo].items():
-                    result[tipo][cat] = result[tipo].get(cat, 0) + val
-        return result
-
     for y in years:
-        op = _op_anio(y)
-        manual = _manual_anio(y)
-        rev = op["cobro_seller"] + op["extra_seller"] + sum(manual["INGRESO"].values())
-        cost = op["costo_driver"] + op["extra_driver"] + sum(manual["EGRESO"].values())
+        op = env_matrix[y][mes]
+        manual = _manual_for(y, mes)
+        rev = op["revenue"] + sum(manual["INGRESO"].values())
+        cost = op["cost"] + sum(manual["EGRESO"].values())
         if mes != 0:
-            sellers_activos = db.query(F.count(F.distinct(Envio.seller_id))).filter(
+            sellers_q = db.query(F.count(F.distinct(Envio.seller_id))).filter(
                 Envio.mes == mes, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
-            drivers_activos = db.query(F.count(F.distinct(Envio.driver_id))).filter(
+            drivers_q = db.query(F.count(F.distinct(Envio.driver_id))).filter(
                 Envio.mes == mes, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
         else:
-            sellers_activos = db.query(F.count(F.distinct(Envio.seller_id))).filter(
+            sellers_q = db.query(F.count(F.distinct(Envio.seller_id))).filter(
                 Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
-            drivers_activos = db.query(F.count(F.distinct(Envio.driver_id))).filter(
+            drivers_q = db.query(F.count(F.distinct(Envio.driver_id))).filter(
                 Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
         data[y] = {
             "anio": y, "envios": op["envios"], "revenue": rev, "cost": cost,
@@ -493,20 +505,18 @@ def yoy(
             "margen_pct": round((rev - cost) / rev * 100, 1) if rev > 0 else 0,
             "rev_envio": round(rev / op["envios"]) if op["envios"] > 0 else 0,
             "cpd": round(cost / op["envios"]) if op["envios"] > 0 else 0,
-            "sellers_activos": sellers_activos or 0,
-            "drivers_activos": drivers_activos or 0,
+            "sellers_activos": sellers_q or 0,
+            "drivers_activos": drivers_q or 0,
         }
 
+    # ── Monthly chart (always all 12 months) ────────────────────────────────────
     chart = []
     for m in range(1, 13):
         row = {"mes": m, "label": MESES[m]}
         for y in years:
-            op = _op_from_envios(db, m, y)
-            mn = _manual_totals(db, m, y)
-            rev = op["cobro_seller"] + op["extra_seller"] + sum(mn["INGRESO"].values())
-            cost = op["costo_driver"] + op["extra_driver"] + sum(mn["EGRESO"].values())
-            row[f"revenue_{y}"] = rev
-            row[f"resultado_{y}"] = rev - cost
+            op = env_matrix[y][m]
+            row[f"revenue_{y}"] = op["revenue"]
+            row[f"resultado_{y}"] = op["revenue"] - op["cost"]
             row[f"envios_{y}"] = op["envios"]
         chart.append(row)
 
