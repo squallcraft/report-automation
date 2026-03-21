@@ -107,18 +107,60 @@ function DarkCard({ title, icon: Icon, children, noPad = false }) {
 }
 
 function DarkTable({ columns, data, maxH = 400 }) {
+  const [sortCol, setSortCol] = useState(null)
+  const [sortDir, setSortDir] = useState('desc')
+
+  const sorted = useMemo(() => {
+    if (sortCol === null) return data
+    const col = columns[sortCol]
+    if (!col.sortVal && !col.key) return data
+    return [...data].sort((a, b) => {
+      const va = col.sortVal ? col.sortVal(a) : a[col.key]
+      const vb = col.sortVal ? col.sortVal(b) : b[col.key]
+      if (va === vb) return 0
+      if (sortDir === 'asc') return va < vb ? -1 : 1
+      return va > vb ? -1 : 1
+    })
+  }, [data, sortCol, sortDir, columns])
+
+  const handleSort = (i) => {
+    const col = columns[i]
+    if (!col.sortVal && !col.key) return
+    if (sortCol === i) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(i); setSortDir('desc') }
+  }
+
   return (
     <div style={{ overflowY: 'auto', maxHeight: maxH }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead style={{ position: 'sticky', top: 0, background: C.surface, zIndex: 1 }}>
           <tr>
-            {columns.map((c, i) => (
-              <th key={i} style={{ padding: '8px 12px', textAlign: c.align === 'right' ? 'right' : 'left', color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${C.border}` }}>{c.label}</th>
-            ))}
+            {columns.map((c, i) => {
+              const sortable = !!(c.sortVal || c.key)
+              const isActive = sortCol === i
+              return (
+                <th key={i} onClick={sortable ? () => handleSort(i) : undefined} style={{
+                  padding: '8px 12px', textAlign: c.align === 'right' ? 'right' : 'left',
+                  color: isActive ? C.accent : C.muted, fontSize: 10, fontWeight: 600,
+                  textTransform: 'uppercase', letterSpacing: '0.06em',
+                  borderBottom: `1px solid ${C.border}`,
+                  cursor: sortable ? 'pointer' : 'default',
+                  userSelect: 'none', whiteSpace: 'nowrap',
+                  transition: 'color 0.15s',
+                }}>
+                  {c.label}
+                  {sortable && (
+                    <span style={{ marginLeft: 4, opacity: isActive ? 1 : 0.25, fontSize: 9 }}>
+                      {isActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                    </span>
+                  )}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
-          {data.map((row, i) => (
+          {sorted.map((row, i) => (
             <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}
               onMouseEnter={e => e.currentTarget.style.background = C.cardHover}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
@@ -311,9 +353,9 @@ function TabPnL({ mes, anio, empresa, zona }) {
             <DarkTable columns={[
               { label: '#', render: (_, i) => <span style={{ color: C.dimmed }}>{i + 1}</span> },
               { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-              { label: 'Facturado', align: 'right', render: r => <span style={{ color: C.muted }}>{fmtFull(r.facturado)}</span> },
-              { label: 'Cobrado', align: 'right', render: r => <span style={{ color: C.green }}>{fmtFull(r.cobrado)}</span> },
-              { label: 'Pendiente', align: 'right', render: r => <span style={{ color: C.red, fontWeight: 600 }}>{fmtFull(r.pendiente)}</span> },
+              { label: 'Facturado', align: 'right', sortVal: r => r.facturado, render: r => <span style={{ color: C.muted }}>{fmtFull(r.facturado)}</span> },
+              { label: 'Cobrado', align: 'right', sortVal: r => r.cobrado, render: r => <span style={{ color: C.green }}>{fmtFull(r.cobrado)}</span> },
+              { label: 'Pendiente', align: 'right', sortVal: r => r.pendiente, render: r => <span style={{ color: C.red, fontWeight: 600 }}>{fmtFull(r.pendiente)}</span> },
             ]} data={ccc.top_slow} maxH={240} />
           )}
         </DarkCard>
@@ -357,11 +399,11 @@ function TabUnitEconomics({ mes, anio }) {
       <DarkCard title="Unit Economics por Zona" icon={Target} noPad>
         <DarkTable columns={[
           { label: 'Zona', key: 'zona', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.zona}</span> },
-          { label: 'Envíos', align: 'right', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Rev/env', align: 'right', render: r => <span style={{ color: C.green }}>{fmtFull(r.rev_envio)}</span> },
-          { label: 'Cost/env', align: 'right', render: r => <span style={{ color: C.red }}>{fmtFull(r.cost_envio)}</span> },
-          { label: 'Margen/env', align: 'right', render: r => <span style={{ color: C.blue }}>{fmtFull(r.margen_envio)}</span> },
-          { label: 'Margen %', align: 'right', render: r => {
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Rev/env', align: 'right', sortVal: r => r.rev_envio, render: r => <span style={{ color: C.green }}>{fmtFull(r.rev_envio)}</span> },
+          { label: 'Cost/env', align: 'right', sortVal: r => r.cost_envio, render: r => <span style={{ color: C.red }}>{fmtFull(r.cost_envio)}</span> },
+          { label: 'Margen/env', align: 'right', sortVal: r => r.margen_envio, render: r => <span style={{ color: C.blue }}>{fmtFull(r.margen_envio)}</span> },
+          { label: 'Margen %', align: 'right', sortVal: r => r.margen_pct, render: r => {
             const col = r.margen_pct >= 25 ? C.green : r.margen_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 600 }}>{r.margen_pct}%</span>
           }},
@@ -438,17 +480,17 @@ function RentSellers({ data }) {
       <DarkCard title="Ranking Sellers" noPad>
         <DarkTable columns={[
           { label: '#', render: (_, i) => <span style={{ color: C.dimmed, fontSize: 12 }}>{i + 1}</span> },
-          { label: 'Seller', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Tipo pago', render: r => {
+          { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Tipo pago', key: 'tipo_pago', render: r => {
             const colors = { mensual: C.blue, quincenal: '#a78bfa', semanal: C.dimmed }
             const c = colors[r.tipo_pago] || C.dimmed
             return <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, border: `1px solid ${c}44`, color: c, background: `${c}15` }}>{r.tipo_pago}</span>
           }},
-          { label: 'Envíos', align: 'right', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
-          { label: 'Costo', align: 'right', render: r => <span style={{ color: C.muted }}>{fmt(r.cost)}</span> },
-          { label: 'Margen', align: 'right', render: r => <span style={{ color: C.green, fontWeight: 600 }}>{fmt(r.margin)}</span> },
-          { label: '%', align: 'right', render: r => {
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
+          { label: 'Costo', align: 'right', sortVal: r => r.cost, render: r => <span style={{ color: C.muted }}>{fmt(r.cost)}</span> },
+          { label: 'Margen', align: 'right', sortVal: r => r.margin, render: r => <span style={{ color: C.green, fontWeight: 600 }}>{fmt(r.margin)}</span> },
+          { label: '%', align: 'right', sortVal: r => r.margin_pct, render: r => {
             const col = r.margin_pct >= 25 ? C.green : r.margin_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 700 }}>{r.margin_pct}%</span>
           }},
@@ -469,15 +511,15 @@ function RentDrivers({ data }) {
       <DarkCard title="Ranking Drivers" noPad>
         <DarkTable columns={[
           { label: '#', render: (_, i) => <span style={{ color: C.dimmed, fontSize: 12 }}>{i + 1}</span> },
-          { label: 'Driver', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Tipo', render: r => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, border: `1px solid ${r.contratado ? C.accent : C.dimmed}44`, color: r.contratado ? C.accent : C.dimmed, background: `${r.contratado ? C.accent : C.dimmed}15` }}>{r.contratado ? 'Contratado' : 'Tercerizado'}</span> },
-          { label: 'Envíos', align: 'right', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
-          { label: 'Margen %', align: 'right', render: r => {
+          { label: 'Driver', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Tipo', key: 'contratado', render: r => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, border: `1px solid ${r.contratado ? C.accent : C.dimmed}44`, color: r.contratado ? C.accent : C.dimmed, background: `${r.contratado ? C.accent : C.dimmed}15` }}>{r.contratado ? 'Contratado' : 'Tercerizado'}</span> },
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
+          { label: 'Margen %', align: 'right', sortVal: r => r.margin_pct, render: r => {
             const col = r.margin_pct >= 25 ? C.green : r.margin_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 700 }}>{r.margin_pct}%</span>
           }},
-          { label: 'Payout %', align: 'right', render: r => <span style={{ color: C.muted }}>{r.payout_pct}%</span> },
+          { label: 'Payout %', align: 'right', sortVal: r => r.payout_pct, render: r => <span style={{ color: C.muted }}>{r.payout_pct}%</span> },
         ]} data={data.drivers} />
       </DarkCard>
     </div>
@@ -487,17 +529,25 @@ function RentDrivers({ data }) {
 function RentPickups({ data }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         <KpiCard label="Pickups activos" value={data.pickups.length} />
-        <KpiCard label="Envíos vía pickup" value={data.pickups.reduce((a, p) => a + p.envios, 0).toLocaleString()} />
+        <KpiCard label="Recepciones" value={(data.total_recepciones || 0).toLocaleString()} />
+        <KpiCard label="Revenue total" value={fmt(data.total_revenue || 0)} color="green" />
+        <KpiCard label="Costo total" value={fmt(data.total_costo || 0)} color="red" />
       </div>
-      <DarkCard title="Detalle Pickups" noPad>
+      <DarkCard title="Detalle Pickups (como puntos de recepción)" noPad>
         <DarkTable columns={[
           { label: '#', render: (_, i) => <span style={{ color: C.dimmed }}>{i + 1}</span> },
-          { label: 'Pickup', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Envíos', align: 'right', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Costo total', align: 'right', render: r => <span style={{ color: C.red }}>{fmtFull(r.costo)}</span> },
-          { label: 'Com/paq', align: 'right', render: r => <span style={{ color: C.muted }}>{fmtFull(r.comision_unitaria)}</span> },
+          { label: 'Pickup', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Recepciones', align: 'right', sortVal: r => r.recepciones, render: r => <span style={{ color: C.muted }}>{r.recepciones.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.green }}>{fmtFull(r.revenue)}</span> },
+          { label: 'Costo', align: 'right', sortVal: r => r.costo, render: r => <span style={{ color: C.red }}>{fmtFull(r.costo)}</span> },
+          { label: 'Margen', align: 'right', sortVal: r => r.margin, render: r => <span style={{ color: r.margin >= 0 ? C.green : C.red, fontWeight: 600 }}>{fmtFull(r.margin)}</span> },
+          { label: 'Margen %', align: 'right', sortVal: r => r.margin_pct, render: r => {
+            const col = r.margin_pct >= 25 ? C.green : r.margin_pct >= 0 ? C.amber : C.red
+            return <span style={{ color: col, fontWeight: 700 }}>{r.margin_pct}%</span>
+          }},
+          { label: 'Com/unid', align: 'right', sortVal: r => r.comision_unitaria, render: r => <span style={{ color: C.muted }}>{fmtFull(r.comision_unitaria)}</span> },
         ]} data={data.pickups} />
       </DarkCard>
     </div>
@@ -698,12 +748,12 @@ function TabSalud({ mes, anio }) {
 
       <DarkCard title="Pareto — Ranking Sellers (Top 30)" noPad>
         <DarkTable columns={[
-          { label: '#', render: r => <span style={{ color: C.dimmed }}>{r.rank}</span> },
-          { label: 'Seller', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Envíos', align: 'right', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
-          { label: '% del total', align: 'right', render: r => <span style={{ color: C.muted }}>{r.pct}%</span> },
-          { label: '% acumulado', align: 'right', render: row => (
+          { label: '#', sortVal: r => r.rank, render: r => <span style={{ color: C.dimmed }}>{r.rank}</span> },
+          { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
+          { label: '% del total', align: 'right', sortVal: r => r.pct, render: r => <span style={{ color: C.muted }}>{r.pct}%</span> },
+          { label: '% acumulado', align: 'right', sortVal: r => r.pct_acum, render: row => (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
               <div style={{ width: 64 }}><ProgressBar value={row.pct_acum} max={100} color={row.pct_acum < 50 ? C.accent : row.pct_acum < 80 ? C.amber : C.red} /></div>
               <span style={{ color: C.muted, fontSize: 12, minWidth: 32, textAlign: 'right' }}>{row.pct_acum}%</span>
@@ -723,12 +773,12 @@ function TabSalud({ mes, anio }) {
       {r.en_riesgo.length > 0 && (
         <DarkCard title="Sellers en riesgo — caída >30%" icon={AlertTriangle} noPad>
           <DarkTable columns={[
-            { label: 'Seller', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-            { label: 'M-3', align: 'right', render: r => <span style={{ color: C.dimmed }}>{r.envios[0]}</span> },
-            { label: 'M-2', align: 'right', render: r => <span style={{ color: C.dimmed }}>{r.envios[1]}</span> },
-            { label: 'M-1', align: 'right', render: r => <span style={{ color: C.muted }}>{r.envios[2]}</span> },
-            { label: 'Actual', align: 'right', render: r => <span style={{ color: C.text, fontWeight: 600 }}>{r.envios[3]}</span> },
-            { label: 'Tendencia', align: 'right', render: r => <span style={{ color: C.red, fontWeight: 700 }}>{r.tendencia_pct}%</span> },
+            { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+            { label: 'M-3', align: 'right', sortVal: r => r.envios[0], render: r => <span style={{ color: C.dimmed }}>{r.envios[0]}</span> },
+            { label: 'M-2', align: 'right', sortVal: r => r.envios[1], render: r => <span style={{ color: C.dimmed }}>{r.envios[1]}</span> },
+            { label: 'M-1', align: 'right', sortVal: r => r.envios[2], render: r => <span style={{ color: C.muted }}>{r.envios[2]}</span> },
+            { label: 'Actual', align: 'right', sortVal: r => r.envios[3], render: r => <span style={{ color: C.text, fontWeight: 600 }}>{r.envios[3]}</span> },
+            { label: 'Tendencia', align: 'right', sortVal: r => r.tendencia_pct, render: r => <span style={{ color: C.red, fontWeight: 700 }}>{r.tendencia_pct}%</span> },
           ]} data={r.en_riesgo} />
         </DarkCard>
       )}

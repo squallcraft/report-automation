@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
-    Envio, Seller, Driver, Pickup,
+    Envio, Seller, Driver, Pickup, RecepcionPaquete,
     CategoriaFinanciera, MovimientoFinanciero,
     PagoSemanaSeller, PagoSemanaDriver, PagoSemanaPickup,
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
@@ -352,32 +352,62 @@ def rentabilidad_pickups(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    q = db.query(
-        Pickup.id, Pickup.nombre, Pickup.comision_paquete,
-        F.count(Envio.id).label("envios"),
-        F.coalesce(F.sum(Envio.cobro_seller), 0).label("revenue_envios"),
-    ).join(Envio, Envio.seller_id == Pickup.seller_id
-    ).filter(Envio.mes == mes, Envio.anio == anio, Envio.estado_entrega == 'delivered',
-             Pickup.seller_id.isnot(None)
-    ).group_by(Pickup.id, Pickup.nombre, Pickup.comision_paquete)
-    rows = q.all()
+    # ── Pickups como puntos de recepción — fuente correcta ────────────────────
+    # Usamos RecepcionPaquete (no seller_id) para contar paquetes RECIBIDOS
+    rows = db.query(
+        Pickup.id, Pickup.nombre,
+        F.count(RecepcionPaquete.id).label("recepciones"),
+        F.coalesce(F.sum(
+            case((Envio.id.isnot(None),
+                  Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller),
+                 else_=0)
+        ), 0).label("revenue"),
+        F.coalesce(F.sum(RecepcionPaquete.comision), 0).label("costo_comisiones"),
+    ).join(RecepcionPaquete, RecepcionPaquete.pickup_id == Pickup.id
+    ).outerjoin(Envio, Envio.id == RecepcionPaquete.envio_id
+    ).filter(
+        RecepcionPaquete.mes == mes,
+        RecepcionPaquete.anio == anio,
+    ).group_by(Pickup.id, Pickup.nombre
+    ).all()
+
+    # Bulk fetch PagoSemanaPickup para costo real pagado
+    pagos = {
+        r.pickup_id: int(r.total)
+        for r in db.query(
+            PagoSemanaPickup.pickup_id,
+            F.coalesce(F.sum(PagoSemanaPickup.monto_neto), 0).label("total"),
+        ).filter(PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio
+        ).group_by(PagoSemanaPickup.pickup_id).all()
+    }
 
     pickups_out = []
     for r in rows:
-        env = int(r.envios)
-        costo_pickup = env * (r.comision_paquete or 200)
-        pago_pickup = int(db.query(
-            F.coalesce(F.sum(PagoSemanaPickup.monto_neto), 0)
-        ).filter(PagoSemanaPickup.pickup_id == r.id, PagoSemanaPickup.mes == mes, PagoSemanaPickup.anio == anio).scalar())
-        costo_real = max(costo_pickup, pago_pickup)
+        recepciones = int(r.recepciones)
+        costo_comisiones = int(r.costo_comisiones)
+        pago_pickup = pagos.get(r.id, 0)
+        costo_real = max(costo_comisiones, pago_pickup)
+        revenue = int(r.revenue)
+        margin = revenue - costo_real
+        margin_pct = round(margin / revenue * 100, 1) if revenue > 0 else 0
         pickups_out.append({
             "id": r.id, "nombre": r.nombre,
-            "envios": env, "costo": costo_real,
-            "comision_unitaria": r.comision_paquete or 200,
+            "recepciones": recepciones,
+            "revenue": revenue,
+            "costo": costo_real,
+            "margin": margin,
+            "margin_pct": margin_pct,
+            "comision_unitaria": round(costo_comisiones / recepciones) if recepciones > 0 else 0,
         })
-    pickups_out.sort(key=lambda x: x["envios"], reverse=True)
+    pickups_out.sort(key=lambda x: x["recepciones"], reverse=True)
 
-    return {"periodo": {"mes": mes, "anio": anio}, "pickups": pickups_out}
+    return {
+        "periodo": {"mes": mes, "anio": anio},
+        "total_recepciones": sum(p["recepciones"] for p in pickups_out),
+        "total_revenue": sum(p["revenue"] for p in pickups_out),
+        "total_costo": sum(p["costo"] for p in pickups_out),
+        "pickups": pickups_out,
+    }
 
 
 # ════════════════════════════════════════════════════
