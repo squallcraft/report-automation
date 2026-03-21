@@ -153,6 +153,7 @@ function DarkTable({ columns, data, maxH = 400 }) {
                     </span>
                   )}
                 </th>
+              )
             })}
           </tr>
         </thead>
