@@ -26,6 +26,7 @@ _BI_SELLER_GROUPS: dict[str, str] = {
     " yan":                       "Nuevo Genesis",   # espacio antes para no capturar "Tanya" etc.
     "sofozy":                     "Nuevo Genesis",
     "equipo alca":                "Alca",
+    "alcaplus":                   "Alca",            # covers "EquipoAlcaplus"
     "alca computaci":             "Alca",            # cubre "Sociedad Comercial Alca Computación"
     "sociedad computacional alca":"Alca",
 }
