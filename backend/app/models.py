@@ -60,6 +60,7 @@ class Seller(Base):
     min_paquetes_retiro_gratis = Column(Integer, default=0)
     usa_pickup = Column(Boolean, default=False)
     mensual = Column(Boolean, default=False)
+    tipo_pago = Column(String, default="semanal")
     rut = Column(String, nullable=True)
     giro = Column(String, nullable=True)
     activo = Column(Boolean, default=True)

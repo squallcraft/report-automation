@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -38,6 +38,11 @@ const adminMenu = [
       { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
       { to: '/admin/ajustes', icon: CircleDollarSign, label: 'Ajustes / Préstamos', permiso: 'ajustes' },
       { to: '/admin/pagos-trabajadores', icon: Briefcase, label: 'Pagos Nómina', permiso: 'pagos-trabajadores' },
+    ],
+  },
+  {
+    group: 'Análisis', icon: BarChart3, children: [
+      { to: '/admin/bi', icon: BarChart3, label: 'Business Intelligence', permiso: 'finanzas' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
@@ -133,7 +138,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [pickupProfile, setPickupProfile] = useState(null)
-  const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true })
+  const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true, 'Análisis': true })
 
   const toggleGroup = (name) => setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }))
 

@@ -57,6 +57,7 @@ class SellerBase(BaseModel):
     min_paquetes_retiro_gratis: int = 0
     usa_pickup: bool = False
     mensual: bool = False
+    tipo_pago: str = "semanal"
     rut: Optional[str] = None
     giro: Optional[str] = None
     activo: bool = True
@@ -80,6 +81,7 @@ class SellerUpdate(BaseModel):
     min_paquetes_retiro_gratis: Optional[int] = None
     usa_pickup: Optional[bool] = None
     mensual: Optional[bool] = None
+    tipo_pago: Optional[str] = None
     rut: Optional[str] = None
     giro: Optional[str] = None
     activo: Optional[bool] = None

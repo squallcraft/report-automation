@@ -447,10 +447,12 @@ def generar_facturas(
                         factura_obj.respuesta_api = {k: v for k, v in resp.items() if k in ("FOLIO", "folio", "RESOLUCION")}
 
     # Fase 4: marcar envíos de sellers facturados como is_facturado
+    # IMPORTANTE: solo marcar las semanas incluidas en esta factura, no todo el mes
     for sid in seller_ids:
         envios_seller = db.query(Envio).filter(
             Envio.seller_id == sid,
             Envio.mes == mes, Envio.anio == anio,
+            Envio.semana.in_(semanas),
             Envio.is_facturado == False,
         ).all()
         for e in envios_seller:
@@ -600,9 +602,12 @@ def generar_facturas_stream(
                     advertencias.append(adv_msg)
                 yield f"event: progress\ndata: {json.dumps({'current': i + 1, 'total': total, 'seller_nombre': seller_nombre or '—'})}\n\n"
             # Fase 4: marcar envíos de sellers facturados
+            # IMPORTANTE: solo marcar las semanas incluidas en esta factura, no todo el mes
             for sid in seller_ids:
                 for e in db.query(Envio).filter(
-                    Envio.seller_id == sid, Envio.mes == mes, Envio.anio == anio, Envio.is_facturado == False,
+                    Envio.seller_id == sid, Envio.mes == mes, Envio.anio == anio,
+                    Envio.semana.in_(semanas),
+                    Envio.is_facturado == False,
                 ).all():
                     e.is_facturado = True
                     e.sync_estado_financiero()
@@ -1184,3 +1189,40 @@ def revertir_pagos_seller(
     )
     db.commit()
     return {"ok": True, "semanas_revertidas": revertidas}
+
+
+@router.post("/fix-is-facturado")
+def fix_is_facturado(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    semana_desde: int = Query(..., description="Semana desde la que revertir is_facturado (inclusive)"),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """
+    Corrige envíos marcados incorrectamente como is_facturado=true.
+    Revierte a false todos los envíos de semana >= semana_desde para el mes/anio dado.
+    Solo afecta envíos de origen='ingesta'.
+    """
+    envios = db.query(Envio).filter(
+        Envio.mes == mes,
+        Envio.anio == anio,
+        Envio.semana >= semana_desde,
+        Envio.is_facturado == True,
+        Envio.origen == 'ingesta',
+    ).all()
+
+    count = 0
+    for e in envios:
+        e.is_facturado = False
+        e.sync_estado_financiero()
+        count += 1
+
+    db.commit()
+    return {
+        "ok": True,
+        "envios_corregidos": count,
+        "mes": mes,
+        "anio": anio,
+        "semana_desde": semana_desde,
+    }
