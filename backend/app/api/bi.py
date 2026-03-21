@@ -533,6 +533,7 @@ def salud_comercial(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
+    # ── Concentración de revenue ────────────────────────────────────────────────
     sellers_rev = db.query(
         Seller.id, Seller.nombre,
         F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
@@ -560,13 +561,15 @@ def salud_comercial(
     top10_pct = ranking[9]["pct_acum"] if len(ranking) >= 10 else 100
     hhi = sum((s["pct"] / 100) ** 2 for s in ranking)
 
+    # ── Retención / Churn — usando 4 meses previos ─────────────────────────────
     m1, a1 = (mes - 1, anio) if mes > 1 else (12, anio - 1)
     m2, a2 = (m1 - 1, a1) if m1 > 1 else (12, a1 - 1)
     m3, a3 = (m2 - 1, a2) if m2 > 1 else (12, a2 - 1)
 
     def _active_seller_ids(m, a):
         return set(r[0] for r in db.query(F.distinct(Envio.seller_id)).filter(
-            Envio.mes == m, Envio.anio == a, Envio.estado_entrega == 'delivered', Envio.seller_id.isnot(None)).all())
+            Envio.mes == m, Envio.anio == a, Envio.estado_entrega == 'delivered',
+            Envio.seller_id.isnot(None)).all())
 
     current_ids = _active_seller_ids(mes, anio)
     prev_ids = _active_seller_ids(m1, a1)
@@ -574,28 +577,57 @@ def salud_comercial(
     churn = prev_ids - current_ids
     retencion = round(len(current_ids - nuevos) / len(prev_ids) * 100, 1) if prev_ids else 100
 
-    def _seller_envios(sid, m, a):
-        return db.query(F.count(Envio.id)).filter(
-            Envio.seller_id == sid, Envio.mes == m, Envio.anio == a, Envio.estado_entrega == 'delivered').scalar() or 0
+    # ── Sellers en riesgo — 1 bulk query instead of N×4 queries ───────────────
+    risk_months = [(mes, anio), (m1, a1), (m2, a2), (m3, a3)]
+    bulk = db.query(
+        Envio.seller_id, Envio.mes, Envio.anio,
+        F.count(Envio.id).label("cnt"),
+    ).filter(
+        Envio.seller_id.in_(list(current_ids)),
+        Envio.estado_entrega == 'delivered',
+        text(f"(envios.mes, envios.anio) IN ({','.join(f'({m},{a})' for m,a in risk_months)})"),
+    ).group_by(Envio.seller_id, Envio.mes, Envio.anio).all()
+
+    # Build lookup: {seller_id: {(mes, anio): cnt}}
+    cnt_map: dict = {}
+    for r in bulk:
+        cnt_map.setdefault(r.seller_id, {})[(r.mes, r.anio)] = int(r.cnt)
+
+    seller_names = {r.id: r.nombre for r in db.query(Seller.id, Seller.nombre).filter(Seller.id.in_(list(current_ids))).all()}
 
     en_riesgo = []
     for sid in current_ids:
-        e3 = _seller_envios(sid, m3, a3)
-        e2 = _seller_envios(sid, m2, a2)
-        e1 = _seller_envios(sid, m1, a1)
-        e0 = _seller_envios(sid, mes, anio)
+        e0 = cnt_map.get(sid, {}).get((mes, anio), 0)
+        e1 = cnt_map.get(sid, {}).get((m1, a1), 0)
+        e2 = cnt_map.get(sid, {}).get((m2, a2), 0)
+        e3 = cnt_map.get(sid, {}).get((m3, a3), 0)
         if e1 > 0 and e0 < e1 * 0.7:
-            nombre = db.query(Seller.nombre).filter(Seller.id == sid).scalar()
-            en_riesgo.append({"id": sid, "nombre": nombre, "envios": [e3, e2, e1, e0],
-                              "tendencia_pct": round((e0 - e1) / e1 * 100, 1) if e1 > 0 else 0})
+            en_riesgo.append({
+                "id": sid, "nombre": seller_names.get(sid, f"ID {sid}"),
+                "envios": [e3, e2, e1, e0],
+                "tendencia_pct": round((e0 - e1) / e1 * 100, 1) if e1 > 0 else 0,
+            })
     en_riesgo.sort(key=lambda x: x["tendencia_pct"])
 
+    # ── Sellers activos por mes (last 3 years) — 1 GROUP BY query ─────────────
+    years_range = [anio - 2, anio - 1, anio]
+    activos_rows = db.query(
+        Envio.mes, Envio.anio,
+        F.count(F.distinct(Envio.seller_id)).label("activos"),
+    ).filter(
+        Envio.anio.in_(years_range),
+        Envio.estado_entrega == 'delivered',
+    ).group_by(Envio.mes, Envio.anio).all()
+
+    activos_lookup = {(r.mes, r.anio): int(r.activos) for r in activos_rows}
     activos_por_mes = []
     for m in range(1, 13):
-        for y in [anio - 2, anio - 1, anio]:
-            cnt = db.query(F.count(F.distinct(Envio.seller_id))).filter(
-                Envio.mes == m, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar() or 0
-            activos_por_mes.append({"mes": m, "anio": y, "label": f"{MESES[m]} {y}", "activos": cnt})
+        for y in years_range:
+            activos_por_mes.append({
+                "mes": m, "anio": y,
+                "label": f"{MESES[m]} {y}",
+                "activos": activos_lookup.get((m, y), 0),
+            })
 
     return {
         "periodo": {"mes": mes, "anio": anio},
