@@ -146,13 +146,13 @@ function DarkTable({ columns, data, maxH = 400 }) {
                   transition: 'color 0.15s',
                 }}>
                   {c.label}
+                  {c.tooltip && <ColTooltip text={c.tooltip} />}
                   {sortable && (
                     <span style={{ marginLeft: 4, opacity: isActive ? 1 : 0.25, fontSize: 9 }}>
                       {isActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
                     </span>
                   )}
                 </th>
-              )
             })}
           </tr>
         </thead>
@@ -267,6 +267,27 @@ const GLOSSARY = {
   'Tercerizado': 'Driver independiente: la empresa paga una tarifa por envío, sin costos de nómina.',
 }
 
+function ColTooltip({ text }) {
+  const [show, setShow] = useState(false)
+  if (!text) return null
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', marginLeft: 3, verticalAlign: 'middle' }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <Info size={10} style={{ color: C.dimmed, cursor: 'help' }} />
+      {show && (
+        <div style={{
+          position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
+          background: '#111', border: `1px solid ${C.borderStrong}`, borderRadius: 8,
+          padding: '8px 12px', width: 230, zIndex: 100,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)', pointerEvents: 'none',
+        }}>
+          <p style={{ color: C.muted, fontSize: 11, margin: 0, lineHeight: 1.6 }}>{text}</p>
+        </div>
+      )}
+    </span>
+  )
+}
+
 function InfoTooltip({ term }) {
   const [show, setShow] = useState(false)
   const def = GLOSSARY[term]
@@ -349,10 +370,10 @@ function TabPnL({ mes, anio, empresa, zona }) {
           {ccc.top_slow.length > 0 && (
             <DarkTable columns={[
               { label: '#', render: (_, i) => <span style={{ color: C.dimmed }}>{i + 1}</span> },
-              { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-              { label: 'Facturado', align: 'right', sortVal: r => r.facturado, render: r => <span style={{ color: C.muted }}>{fmtFull(r.facturado)}</span> },
-              { label: 'Cobrado', align: 'right', sortVal: r => r.cobrado, render: r => <span style={{ color: C.green }}>{fmtFull(r.cobrado)}</span> },
-              { label: 'Pendiente', align: 'right', sortVal: r => r.pendiente, render: r => <span style={{ color: C.red, fontWeight: 600 }}>{fmtFull(r.pendiente)}</span> },
+              { label: 'Seller', key: 'nombre', tooltip: 'Seller con mayor deuda pendiente de cobro en el período.', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+              { label: 'Facturado', align: 'right', sortVal: r => r.facturado, tooltip: 'Total facturado a este seller: monto cobrado según facturas emitidas.', render: r => <span style={{ color: C.muted }}>{fmtFull(r.facturado)}</span> },
+              { label: 'Cobrado', align: 'right', sortVal: r => r.cobrado, tooltip: 'Monto efectivamente recibido (confirmado en cartola bancaria).', render: r => <span style={{ color: C.green }}>{fmtFull(r.cobrado)}</span> },
+              { label: 'Pendiente', align: 'right', sortVal: r => r.pendiente, tooltip: 'Facturado − Cobrado: dinero aún no recibido de este seller. Cuánto nos debe.', render: r => <span style={{ color: C.red, fontWeight: 600 }}>{fmtFull(r.pendiente)}</span> },
             ]} data={ccc.top_slow} maxH={240} />
           )}
         </DarkCard>
@@ -395,12 +416,12 @@ function TabUnitEconomics({ mes, anio }) {
 
       <DarkCard title="Unit Economics por Zona" icon={Target} noPad>
         <DarkTable columns={[
-          { label: 'Zona', key: 'zona', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.zona}</span> },
-          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Rev/env', align: 'right', sortVal: r => r.rev_envio, render: r => <span style={{ color: C.green }}>{fmtFull(r.rev_envio)}</span> },
-          { label: 'Cost/env', align: 'right', sortVal: r => r.cost_envio, render: r => <span style={{ color: C.red }}>{fmtFull(r.cost_envio)}</span> },
-          { label: 'Margen/env', align: 'right', sortVal: r => r.margen_envio, render: r => <span style={{ color: C.blue }}>{fmtFull(r.margen_envio)}</span> },
-          { label: 'Margen %', align: 'right', sortVal: r => r.margen_pct, render: r => {
+          { label: 'Zona', key: 'zona', tooltip: 'Zona geográfica de entrega (ej: Santiago, Valparaíso). Agrupación de comunas.', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.zona}</span> },
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, tooltip: 'Cantidad de paquetes entregados en esta zona durante el período.', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Rev/env', align: 'right', sortVal: r => r.rev_envio, tooltip: 'Revenue promedio por envío: cuánto cobra E-Courier al seller por cada paquete en esta zona.', render: r => <span style={{ color: C.green }}>{fmtFull(r.rev_envio)}</span> },
+          { label: 'Cost/env', align: 'right', sortVal: r => r.cost_envio, tooltip: 'Costo promedio por envío: cuánto paga E-Courier al driver por cada entrega en esta zona.', render: r => <span style={{ color: C.red }}>{fmtFull(r.cost_envio)}</span> },
+          { label: 'Margen/env', align: 'right', sortVal: r => r.margen_envio, tooltip: 'Ganancia neta promedio por envío en esta zona: Rev/env − Cost/env.', render: r => <span style={{ color: C.blue }}>{fmtFull(r.margen_envio)}</span> },
+          { label: 'Margen %', align: 'right', sortVal: r => r.margen_pct, tooltip: 'Porcentaje de margen sobre el revenue de la zona: Margen / Revenue × 100.', render: r => {
             const col = r.margen_pct >= 25 ? C.green : r.margen_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 600 }}>{r.margen_pct}%</span>
           }},
@@ -477,17 +498,17 @@ function RentSellers({ data }) {
       <DarkCard title="Ranking Sellers" noPad>
         <DarkTable columns={[
           { label: '#', render: (_, i) => <span style={{ color: C.dimmed, fontSize: 12 }}>{i + 1}</span> },
-          { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Tipo pago', key: 'tipo_pago', render: r => {
+          { label: 'Seller', key: 'nombre', tooltip: 'Nombre del seller (cliente B2B).', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Tipo pago', key: 'tipo_pago', tooltip: 'Frecuencia de pago acordada con el seller: semanal, quincenal o mensual.', render: r => {
             const colors = { mensual: C.blue, quincenal: '#a78bfa', semanal: C.dimmed }
             const c = colors[r.tipo_pago] || C.dimmed
             return <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, border: `1px solid ${c}44`, color: c, background: `${c}15` }}>{r.tipo_pago}</span>
           }},
-          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
-          { label: 'Costo', align: 'right', sortVal: r => r.cost, render: r => <span style={{ color: C.muted }}>{fmt(r.cost)}</span> },
-          { label: 'Margen', align: 'right', sortVal: r => r.margin, render: r => <span style={{ color: C.green, fontWeight: 600 }}>{fmt(r.margin)}</span> },
-          { label: '%', align: 'right', sortVal: r => r.margin_pct, render: r => {
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, tooltip: 'Cantidad de paquetes entregados de este seller en el período.', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, tooltip: 'Ingresos totales: cobro por envíos + extras cobrados + ingresos por retiros de este seller.', render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
+          { label: 'Costo', align: 'right', sortVal: r => r.cost, tooltip: 'Costos totales: pago a drivers por envíos + extras pagados + costo de retiros asociados.', render: r => <span style={{ color: C.muted }}>{fmt(r.cost)}</span> },
+          { label: 'Margen', align: 'right', sortVal: r => r.margin, tooltip: 'Revenue − Costo. Ganancia bruta que genera este seller para E-Courier.', render: r => <span style={{ color: C.green, fontWeight: 600 }}>{fmt(r.margin)}</span> },
+          { label: '%', align: 'right', sortVal: r => r.margin_pct, tooltip: 'Margen sobre revenue: (Revenue − Costo) / Revenue × 100. Verde ≥25%, naranja 0–25%, rojo negativo.', render: r => {
             const col = r.margin_pct >= 25 ? C.green : r.margin_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 700 }}>{r.margin_pct}%</span>
           }},
@@ -508,15 +529,15 @@ function RentDrivers({ data }) {
       <DarkCard title="Ranking Drivers" noPad>
         <DarkTable columns={[
           { label: '#', render: (_, i) => <span style={{ color: C.dimmed, fontSize: 12 }}>{i + 1}</span> },
-          { label: 'Driver', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Tipo', key: 'contratado', render: r => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, border: `1px solid ${r.contratado ? C.accent : C.dimmed}44`, color: r.contratado ? C.accent : C.dimmed, background: `${r.contratado ? C.accent : C.dimmed}15` }}>{r.contratado ? 'Contratado' : 'Tercerizado'}</span> },
-          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
-          { label: 'Margen %', align: 'right', sortVal: r => r.margin_pct, render: r => {
+          { label: 'Driver', key: 'nombre', tooltip: 'Nombre del conductor.', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Tipo', key: 'contratado', tooltip: 'Contratado = conductor en planilla (sueldo fijo + vehículo). Tercerizado = conductor independiente (pago por envío).', render: r => <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, border: `1px solid ${r.contratado ? C.accent : C.dimmed}44`, color: r.contratado ? C.accent : C.dimmed, background: `${r.contratado ? C.accent : C.dimmed}15` }}>{r.contratado ? 'Contratado' : 'Tercerizado'}</span> },
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, tooltip: 'Cantidad de paquetes entregados por este conductor en el período.', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, tooltip: 'Revenue generado por los envíos de este driver (cobro al seller) + ingresos por retiros que realizó.', render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
+          { label: 'Margen %', align: 'right', sortVal: r => r.margin_pct, tooltip: 'Margen bruto: (Revenue − Costo driver) / Revenue × 100. Nota: para contratados no incluye sueldo ni combustible.', render: r => {
             const col = r.margin_pct >= 25 ? C.green : r.margin_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 700 }}>{r.margin_pct}%</span>
           }},
-          { label: 'Payout %', align: 'right', sortVal: r => r.payout_pct, render: r => <span style={{ color: C.muted }}>{r.payout_pct}%</span> },
+          { label: 'Payout %', align: 'right', sortVal: r => r.payout_pct, tooltip: 'Porcentaje del revenue que se paga al conductor (costo / revenue × 100). Menor = más eficiente para la empresa.', render: r => <span style={{ color: C.muted }}>{r.payout_pct}%</span> },
         ]} data={data.drivers} />
       </DarkCard>
     </div>
@@ -535,16 +556,16 @@ function RentPickups({ data }) {
       <DarkCard title="Detalle Pickups (como puntos de recepción)" noPad>
         <DarkTable columns={[
           { label: '#', render: (_, i) => <span style={{ color: C.dimmed }}>{i + 1}</span> },
-          { label: 'Pickup', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Recepciones', align: 'right', sortVal: r => r.recepciones, render: r => <span style={{ color: C.muted }}>{r.recepciones.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.green }}>{fmtFull(r.revenue)}</span> },
-          { label: 'Costo', align: 'right', sortVal: r => r.costo, render: r => <span style={{ color: C.red }}>{fmtFull(r.costo)}</span> },
-          { label: 'Margen', align: 'right', sortVal: r => r.margin, render: r => <span style={{ color: r.margin >= 0 ? C.green : C.red, fontWeight: 600 }}>{fmtFull(r.margin)}</span> },
-          { label: 'Margen %', align: 'right', sortVal: r => r.margin_pct, render: r => {
+          { label: 'Pickup', key: 'nombre', tooltip: 'Nombre del punto de recepción (sucursal física que recibe paquetes de sellers).', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Recepciones', align: 'right', sortVal: r => r.recepciones, tooltip: 'Cantidad de paquetes recibidos por este pickup durante el período (fuente: tabla recepciones_paquetes).', render: r => <span style={{ color: C.muted }}>{r.recepciones.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, tooltip: 'Ingresos totales: cobro al seller por paquetes recepcionados + ingresos por retiros vinculados a este pickup.', render: r => <span style={{ color: C.green }}>{fmtFull(r.revenue)}</span> },
+          { label: 'Costo', align: 'right', sortVal: r => r.costo, tooltip: 'Costos totales: comisiones pagadas al pickup por recepción + costo de retiros asociados.', render: r => <span style={{ color: C.red }}>{fmtFull(r.costo)}</span> },
+          { label: 'Margen', align: 'right', sortVal: r => r.margin, tooltip: 'Revenue − Costo: ganancia bruta generada por este punto de recepción.', render: r => <span style={{ color: r.margin >= 0 ? C.green : C.red, fontWeight: 600 }}>{fmtFull(r.margin)}</span> },
+          { label: 'Margen %', align: 'right', sortVal: r => r.margin_pct, tooltip: 'Porcentaje de margen sobre el revenue: Margen / Revenue × 100.', render: r => {
             const col = r.margin_pct >= 25 ? C.green : r.margin_pct >= 0 ? C.amber : C.red
             return <span style={{ color: col, fontWeight: 700 }}>{r.margin_pct}%</span>
           }},
-          { label: 'Com/unid', align: 'right', sortVal: r => r.comision_unitaria, render: r => <span style={{ color: C.muted }}>{fmtFull(r.comision_unitaria)}</span> },
+          { label: 'Com/unid', align: 'right', sortVal: r => r.comision_unitaria, tooltip: 'Comisión promedio pagada al pickup por cada paquete recepcionado.', render: r => <span style={{ color: C.muted }}>{fmtFull(r.comision_unitaria)}</span> },
         ]} data={data.pickups} />
       </DarkCard>
     </div>
@@ -745,12 +766,12 @@ function TabSalud({ mes, anio }) {
 
       <DarkCard title="Pareto — Ranking Sellers (Top 30)" noPad>
         <DarkTable columns={[
-          { label: '#', sortVal: r => r.rank, render: r => <span style={{ color: C.dimmed }}>{r.rank}</span> },
-          { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-          { label: 'Envíos', align: 'right', sortVal: r => r.envios, render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
-          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
-          { label: '% del total', align: 'right', sortVal: r => r.pct, render: r => <span style={{ color: C.muted }}>{r.pct}%</span> },
-          { label: '% acumulado', align: 'right', sortVal: r => r.pct_acum, render: row => (
+          { label: '#', sortVal: r => r.rank, tooltip: 'Posición en el ranking ordenada por revenue descendente.', render: r => <span style={{ color: C.dimmed }}>{r.rank}</span> },
+          { label: 'Seller', key: 'nombre', tooltip: 'Nombre del seller.', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+          { label: 'Envíos', align: 'right', sortVal: r => r.envios, tooltip: 'Cantidad de paquetes entregados en el período.', render: r => <span style={{ color: C.muted }}>{r.envios.toLocaleString()}</span> },
+          { label: 'Revenue', align: 'right', sortVal: r => r.revenue, tooltip: 'Revenue total generado por este seller en el período.', render: r => <span style={{ color: C.text }}>{fmt(r.revenue)}</span> },
+          { label: '% del total', align: 'right', sortVal: r => r.pct, tooltip: 'Participación de este seller sobre el revenue total de todos los sellers (Pareto).', render: r => <span style={{ color: C.muted }}>{r.pct}%</span> },
+          { label: '% acumulado', align: 'right', sortVal: r => r.pct_acum, tooltip: 'Suma acumulada del % de los sellers hasta esta posición. Ej: si el top 5 tiene 70%, esos 5 sellers generan el 70% del revenue total.', render: row => (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
               <div style={{ width: 64 }}><ProgressBar value={row.pct_acum} max={100} color={row.pct_acum < 50 ? C.accent : row.pct_acum < 80 ? C.amber : C.red} /></div>
               <span style={{ color: C.muted, fontSize: 12, minWidth: 32, textAlign: 'right' }}>{row.pct_acum}%</span>
@@ -770,12 +791,12 @@ function TabSalud({ mes, anio }) {
       {r.en_riesgo.length > 0 && (
         <DarkCard title="Sellers en riesgo — caída >30%" icon={AlertTriangle} noPad>
           <DarkTable columns={[
-            { label: 'Seller', key: 'nombre', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
-            { label: 'M-3', align: 'right', sortVal: r => r.envios[0], render: r => <span style={{ color: C.dimmed }}>{r.envios[0]}</span> },
-            { label: 'M-2', align: 'right', sortVal: r => r.envios[1], render: r => <span style={{ color: C.dimmed }}>{r.envios[1]}</span> },
-            { label: 'M-1', align: 'right', sortVal: r => r.envios[2], render: r => <span style={{ color: C.muted }}>{r.envios[2]}</span> },
-            { label: 'Actual', align: 'right', sortVal: r => r.envios[3], render: r => <span style={{ color: C.text, fontWeight: 600 }}>{r.envios[3]}</span> },
-            { label: 'Tendencia', align: 'right', sortVal: r => r.tendencia_pct, render: r => <span style={{ color: C.red, fontWeight: 700 }}>{r.tendencia_pct}%</span> },
+            { label: 'Seller', key: 'nombre', tooltip: 'Seller cuyas entregas cayeron más del 30% respecto al mes anterior.', render: r => <span style={{ color: C.text, fontWeight: 500 }}>{r.nombre}</span> },
+            { label: 'M-3', align: 'right', sortVal: r => r.envios[0], tooltip: 'Envíos hace 3 meses.', render: r => <span style={{ color: C.dimmed }}>{r.envios[0]}</span> },
+            { label: 'M-2', align: 'right', sortVal: r => r.envios[1], tooltip: 'Envíos hace 2 meses.', render: r => <span style={{ color: C.dimmed }}>{r.envios[1]}</span> },
+            { label: 'M-1', align: 'right', sortVal: r => r.envios[2], tooltip: 'Envíos el mes anterior (base de comparación para calcular la caída).', render: r => <span style={{ color: C.muted }}>{r.envios[2]}</span> },
+            { label: 'Actual', align: 'right', sortVal: r => r.envios[3], tooltip: 'Envíos en el mes seleccionado (período activo).', render: r => <span style={{ color: C.text, fontWeight: 600 }}>{r.envios[3]}</span> },
+            { label: 'Tendencia', align: 'right', sortVal: r => r.tendencia_pct, tooltip: 'Variación % entre M-1 y Actual: (Actual − M-1) / M-1 × 100. Solo aparecen sellers con caída >30%.', render: r => <span style={{ color: C.red, fontWeight: 700 }}>{r.tendencia_pct}%</span> },
           ]} data={r.en_riesgo} />
         </DarkCard>
       )}
