@@ -42,10 +42,7 @@ const MESES_S = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Se
 
 function fmt(v) {
   if (v == null) return '$0'
-  const abs = Math.abs(v)
-  if (abs >= 1_000_000) return `${v < 0 ? '-' : ''}$${(abs / 1_000_000).toFixed(1)}M`
-  if (abs >= 1_000) return `${v < 0 ? '-' : ''}$${(abs / 1_000).toFixed(0)}K`
-  return `${v < 0 ? '-' : ''}$${abs.toLocaleString('es-CL')}`
+  return `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString('es-CL')}`
 }
 function fmtFull(v) {
   if (v == null) return '$0'

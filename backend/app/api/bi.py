@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.auth import require_admin_or_administracion
 from app.models import (
-    Envio, Seller, Driver, Pickup, RecepcionPaquete,
+    Envio, Seller, Driver, Pickup, RecepcionPaquete, Retiro,
     CategoriaFinanciera, MovimientoFinanciero,
     PagoSemanaSeller, PagoSemanaDriver, PagoSemanaPickup,
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
@@ -270,17 +270,32 @@ def rentabilidad_sellers(
     ).having(F.count(Envio.id) >= min_envios)
     rows = q.all()
 
+    # ── Retiros por seller — ingreso (tarifa_seller) y costo (tarifa_driver) ──
+    retiro_rows = db.query(
+        Retiro.seller_id,
+        F.coalesce(F.sum(Retiro.tarifa_seller), 0).label("ret_ingreso"),
+        F.coalesce(F.sum(Retiro.tarifa_driver), 0).label("ret_costo"),
+    ).filter(Retiro.mes == mes, Retiro.anio == anio, Retiro.seller_id.isnot(None)
+    ).group_by(Retiro.seller_id).all()
+    ret_map = {r.seller_id: (int(r.ret_ingreso), int(r.ret_costo)) for r in retiro_rows}
+
     sellers = []
     for r in rows:
         env = int(r.envios)
         rev = int(r.revenue)
         cost = int(r.cost)
-        margin = rev - cost
+        ret_ing, ret_cos = ret_map.get(r.id, (0, 0))
+        total_rev = rev + ret_ing
+        total_cost = cost + ret_cos
+        margin = total_rev - total_cost
         sellers.append({
             "id": r.id, "nombre": r.nombre, "zona": r.zona, "empresa": r.empresa,
             "tipo_pago": r.tipo_pago,
-            "envios": env, "revenue": rev, "cost": cost, "margin": margin,
-            "margin_pct": round(margin / rev * 100, 1) if rev > 0 else 0,
+            "envios": env,
+            "revenue": total_rev, "revenue_envios": rev, "revenue_retiros": ret_ing,
+            "cost": total_cost, "cost_envios": cost, "cost_retiros": ret_cos,
+            "margin": margin,
+            "margin_pct": round(margin / total_rev * 100, 1) if total_rev > 0 else 0,
             "rev_envio": round(rev / env) if env > 0 else 0,
             "cost_envio": round(cost / env) if env > 0 else 0,
         })
@@ -323,17 +338,32 @@ def rentabilidad_drivers(
     q = q.group_by(Driver.id, Driver.nombre, Driver.contratado)
     rows = q.all()
 
+    # ── Retiros por driver — ingreso (tarifa_seller) y costo (tarifa_driver) ──
+    retiro_rows = db.query(
+        Retiro.driver_id,
+        F.coalesce(F.sum(Retiro.tarifa_seller), 0).label("ret_ingreso"),
+        F.coalesce(F.sum(Retiro.tarifa_driver), 0).label("ret_costo"),
+    ).filter(Retiro.mes == mes, Retiro.anio == anio, Retiro.driver_id.isnot(None)
+    ).group_by(Retiro.driver_id).all()
+    ret_map = {r.driver_id: (int(r.ret_ingreso), int(r.ret_costo)) for r in retiro_rows}
+
     drivers = []
     for r in rows:
         env = int(r.envios)
         rev = int(r.revenue)
         cost = int(r.cost)
-        margin = rev - cost
-        payout_pct = round(cost / rev * 100, 1) if rev > 0 else 0
+        ret_ing, ret_cos = ret_map.get(r.id, (0, 0))
+        total_rev = rev + ret_ing
+        total_cost = cost + ret_cos
+        margin = total_rev - total_cost
+        payout_pct = round(total_cost / total_rev * 100, 1) if total_rev > 0 else 0
         drivers.append({
             "id": r.id, "nombre": r.nombre, "contratado": r.contratado,
-            "envios": env, "revenue": rev, "cost": cost, "margin": margin,
-            "margin_pct": round(margin / rev * 100, 1) if rev > 0 else 0,
+            "envios": env,
+            "revenue": total_rev, "revenue_envios": rev, "revenue_retiros": ret_ing,
+            "cost": total_cost, "cost_envios": cost, "cost_retiros": ret_cos,
+            "margin": margin,
+            "margin_pct": round(margin / total_rev * 100, 1) if total_rev > 0 else 0,
             "payout_pct": payout_pct,
             "cost_envio": round(cost / env) if env > 0 else 0,
         })
@@ -381,6 +411,15 @@ def rentabilidad_pickups(
         ).group_by(PagoSemanaPickup.pickup_id).all()
     }
 
+    # ── Retiros por pickup — ingreso (tarifa_seller) y costo (tarifa_driver) ─
+    retiro_rows = db.query(
+        Retiro.pickup_id,
+        F.coalesce(F.sum(Retiro.tarifa_seller), 0).label("ret_ingreso"),
+        F.coalesce(F.sum(Retiro.tarifa_driver), 0).label("ret_costo"),
+    ).filter(Retiro.mes == mes, Retiro.anio == anio, Retiro.pickup_id.isnot(None)
+    ).group_by(Retiro.pickup_id).all()
+    ret_map = {r.pickup_id: (int(r.ret_ingreso), int(r.ret_costo)) for r in retiro_rows}
+
     pickups_out = []
     for r in rows:
         recepciones = int(r.recepciones)
@@ -388,13 +427,16 @@ def rentabilidad_pickups(
         pago_pickup = pagos.get(r.id, 0)
         costo_real = max(costo_comisiones, pago_pickup)
         revenue = int(r.revenue)
-        margin = revenue - costo_real
-        margin_pct = round(margin / revenue * 100, 1) if revenue > 0 else 0
+        ret_ing, ret_cos = ret_map.get(r.id, (0, 0))
+        total_rev = revenue + ret_ing
+        total_cost = costo_real + ret_cos
+        margin = total_rev - total_cost
+        margin_pct = round(margin / total_rev * 100, 1) if total_rev > 0 else 0
         pickups_out.append({
             "id": r.id, "nombre": r.nombre,
             "recepciones": recepciones,
-            "revenue": revenue,
-            "costo": costo_real,
+            "revenue": total_rev, "revenue_recepciones": revenue, "revenue_retiros": ret_ing,
+            "costo": total_cost, "costo_recepciones": costo_real, "costo_retiros": ret_cos,
             "margin": margin,
             "margin_pct": margin_pct,
             "comision_unitaria": round(costo_comisiones / recepciones) if recepciones > 0 else 0,
