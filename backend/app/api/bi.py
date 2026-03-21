@@ -449,15 +449,44 @@ def yoy(
 ):
     years = [2024, 2025, 2026]
     data = {}
+
+    def _op_anio(y):
+        """Sum all months of a year when mes=0."""
+        if mes != 0:
+            return _op_from_envios(db, mes, y)
+        totals = {"envios": 0, "cobro_seller": 0, "extra_seller": 0, "costo_driver": 0, "extra_driver": 0}
+        for m in range(1, 13):
+            op = _op_from_envios(db, m, y)
+            for k in totals:
+                totals[k] += op[k]
+        return totals
+
+    def _manual_anio(y):
+        if mes != 0:
+            return _manual_totals(db, mes, y)
+        result = {"INGRESO": {}, "EGRESO": {}}
+        for m in range(1, 13):
+            mn = _manual_totals(db, m, y)
+            for tipo in ("INGRESO", "EGRESO"):
+                for cat, val in mn[tipo].items():
+                    result[tipo][cat] = result[tipo].get(cat, 0) + val
+        return result
+
     for y in years:
-        op = _op_from_envios(db, mes, y)
-        manual = _manual_totals(db, mes, y)
+        op = _op_anio(y)
+        manual = _manual_anio(y)
         rev = op["cobro_seller"] + op["extra_seller"] + sum(manual["INGRESO"].values())
         cost = op["costo_driver"] + op["extra_driver"] + sum(manual["EGRESO"].values())
-        sellers_activos = db.query(F.count(F.distinct(Envio.seller_id))).filter(
-            Envio.mes == mes, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
-        drivers_activos = db.query(F.count(F.distinct(Envio.driver_id))).filter(
-            Envio.mes == mes, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
+        if mes != 0:
+            sellers_activos = db.query(F.count(F.distinct(Envio.seller_id))).filter(
+                Envio.mes == mes, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
+            drivers_activos = db.query(F.count(F.distinct(Envio.driver_id))).filter(
+                Envio.mes == mes, Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
+        else:
+            sellers_activos = db.query(F.count(F.distinct(Envio.seller_id))).filter(
+                Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
+            drivers_activos = db.query(F.count(F.distinct(Envio.driver_id))).filter(
+                Envio.anio == y, Envio.estado_entrega == 'delivered').scalar()
         data[y] = {
             "anio": y, "envios": op["envios"], "revenue": rev, "cost": cost,
             "resultado": rev - cost,

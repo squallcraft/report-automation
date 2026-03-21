@@ -176,7 +176,7 @@ function DarkLoader() {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '80px 0' }}>
       <Loader2 size={28} style={{ color: C.accent, animation: 'spin 1s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } } @keyframes grokPulse { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8) } 40% { opacity: 1; transform: scale(1) } }`}</style>
     </div>
   )
 }
@@ -503,13 +503,22 @@ function TabCostos({ mes, anio }) {
   )
 }
 
-function TabYoY({ mes }) {
+function TabYoY({ mes: mesProp }) {
+  const [mesYoY, setMesYoY] = useState(mesProp)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => { setMesYoY(mesProp) }, [mesProp])
+
   useEffect(() => {
     setLoading(true)
-    api.get('/bi/yoy', { params: { mes } }).then(r => setData(r.data)).catch(() => toast.error('Error')).finally(() => setLoading(false))
-  }, [mes])
+    // mes=0 → anual (backend suma todos los meses)
+    api.get('/bi/yoy', { params: { mes: mesYoY } })
+      .then(r => setData(r.data))
+      .catch(() => toast.error('Error'))
+      .finally(() => setLoading(false))
+  }, [mesYoY])
+
   if (loading) return <DarkLoader />
   if (!data) return null
 
@@ -523,15 +532,30 @@ function TabYoY({ mes }) {
     return <span style={{ color: d >= 0 ? C.green : C.red, fontWeight: 600 }}>{d > 0 ? '+' : ''}{d.toFixed(0)}%</span>
   }
 
+  const periodoLabel = mesYoY === 0 ? 'Anual' : MESES[mesYoY]
+  const selStyle = {
+    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+    color: C.text, padding: '6px 10px', fontSize: 13, outline: 'none', cursor: 'pointer',
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Selector de período propio para YoY */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <p style={{ color: C.dimmed, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Período comparado:</p>
+        <select value={mesYoY} onChange={e => setMesYoY(+e.target.value)} style={selStyle}>
+          <option value={0}>Todos los meses (anual)</option>
+          {MESES.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        <KpiCard label={`Revenue ${MESES[mes]} YoY`} value={y26.revenue && y25.revenue ? `+${((y26.revenue - y25.revenue) / y25.revenue * 100).toFixed(0)}%` : '—'} color="green" />
+        <KpiCard label={`Revenue ${periodoLabel} YoY`} value={y26.revenue && y25.revenue ? `+${((y26.revenue - y25.revenue) / y25.revenue * 100).toFixed(0)}%` : '—'} color="green" />
         <KpiCard label="Δ Margen" value={y26.margen_pct && y25.margen_pct ? `${(y26.margen_pct - y25.margen_pct) > 0 ? '+' : ''}${(y26.margen_pct - y25.margen_pct).toFixed(1)}pp` : '—'} color="blue" />
         <KpiCard label="Δ Envíos" value={y26.envios && y25.envios ? `+${((y26.envios - y25.envios) / y25.envios * 100).toFixed(0)}%` : '—'} sub={y26.envios && y25.envios ? `+${(y26.envios - y25.envios).toLocaleString()} unidades` : ''} />
       </div>
 
-      <DarkCard title={`Comparativa ${MESES[mes]} — 2024 vs 2025 vs 2026`} noPad>
+      <DarkCard title={`Comparativa ${periodoLabel} — 2024 vs 2025 vs 2026`} noPad>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
@@ -678,11 +702,16 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     if (contextos.rent) ctxBlocks.push('Rentabilidad por seller con margen % y envíos.')
     if (contextos.ccc) ctxBlocks.push('CCC: capital atrapado y sellers con deuda pendiente (solo 2026).')
     const q = pregunta.trim()
+    const idx = chat.length
+    setChat(prev => [...prev, { q, a: null, t: null, saved: false, ctxBlocks, pending: true }])
+    setPregunta('')
     try {
       const { data } = await api.post('/bi/grok', { pregunta: q, contexto: ctxBlocks })
-      setChat(prev => [...prev, { q, a: data.respuesta, t: data.tokens, saved: false, ctxBlocks }])
-      setPregunta('')
-    } catch { toast.error('Error conectando con Grok') }
+      setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: data.respuesta, t: data.tokens, pending: false } : x))
+    } catch {
+      setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: '⚠ Error conectando con Grok. Intenta de nuevo.', pending: false } : x))
+      toast.error('Error conectando con Grok')
+    }
     finally { setLoading(false) }
   }
 
@@ -788,29 +817,36 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
             {chat.map((h, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.text }}>{h.q}</div>
-                <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{h.a}</div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  {h.t && <p style={{ color: C.dimmed, fontSize: 10 }}>Tokens: {h.t.total_tokens || '—'}</p>}
-                  <button onClick={() => guardar(i)} disabled={h.saved}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '4px 10px',
-                      borderRadius: 20, cursor: h.saved ? 'default' : 'pointer', transition: 'all 0.15s',
-                      border: `1px solid ${h.saved ? C.border : C.accent}`,
-                      background: h.saved ? 'transparent' : C.accentDim,
-                      color: h.saved ? C.dimmed : C.accent,
-                    }}>
-                    <Bookmark size={11} fill={h.saved ? C.dimmed : 'none'} />
-                    {h.saved ? 'Guardado' : 'Guardar análisis'}
-                  </button>
-                </div>
+                {h.pending ? (
+                  <div style={{ background: C.surface, border: `1px solid ${C.accent}55`, borderRadius: 8, padding: '16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      {[0, 1, 2].map(j => (
+                        <div key={j} style={{ width: 7, height: 7, borderRadius: '50%', background: C.accent, animation: `grokPulse 1.2s ease-in-out ${j * 0.22}s infinite` }} />
+                      ))}
+                    </div>
+                    <span style={{ color: C.muted, fontSize: 12 }}>Grok está analizando tu pregunta...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{h.a}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      {h.t && <p style={{ color: C.dimmed, fontSize: 10 }}>Tokens: {h.t.total_tokens || '—'}</p>}
+                      <button onClick={() => guardar(i)} disabled={h.saved}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '4px 10px',
+                          borderRadius: 20, cursor: h.saved ? 'default' : 'pointer', transition: 'all 0.15s',
+                          border: `1px solid ${h.saved ? C.border : C.accent}`,
+                          background: h.saved ? 'transparent' : C.accentDim,
+                          color: h.saved ? C.dimmed : C.accent,
+                        }}>
+                        <Bookmark size={11} fill={h.saved ? C.dimmed : 'none'} />
+                        {h.saved ? 'Guardado' : 'Guardar análisis'}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
-            {loading && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.dimmed, fontSize: 13 }}>
-                <Loader2 size={14} style={{ color: C.accent, animation: 'spin 1s linear infinite' }} />
-                Grok está analizando...
-              </div>
-            )}
             <div ref={endRef} />
           </div>
 
@@ -950,6 +986,7 @@ export default function BusinessIntelligence() {
     <div style={{ background: C.bg, minHeight: '100vh', margin: '-12px -12px -12px -12px', padding: '28px 28px 80px' }}>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg) } }
+        @keyframes grokPulse { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8) } 40% { opacity: 1; transform: scale(1) } }
         * { box-sizing: border-box; }
         select option { background: #1e1e1e; color: #f0f0f0; }
       `}</style>
