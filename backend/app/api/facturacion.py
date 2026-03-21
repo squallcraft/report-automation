@@ -1197,7 +1197,7 @@ def fix_is_facturado(
     anio: int = Query(...),
     semana_desde: int = Query(..., description="Semana desde la que revertir is_facturado (inclusive)"),
     db: Session = Depends(get_db),
-    _=Depends(require_admin),
+    _=Depends(require_admin_or_administracion),
 ):
     """
     Corrige envíos marcados incorrectamente como is_facturado=true.
