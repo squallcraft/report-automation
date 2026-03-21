@@ -689,6 +689,124 @@ import httpx
 class GrokRequest(BaseModel):
     pregunta: str
     contexto: List[str] = []
+    mes: int = 3
+    anio: int = 2026
+
+
+def _smart_context(db: Session, pregunta: str, mes: int, anio: int) -> str:
+    """
+    Detects drivers, sellers and zones mentioned in the question and fetches
+    real data from the DB.  Always prepends a P&L summary for the period so
+    Grok never has to invent numbers.
+    """
+    lines: list[str] = []
+    q_low = pregunta.lower()
+
+    # ── Resumen operacional base ─────────────────────────────────────────────
+    base = db.query(
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver), 0).label("costo"),
+    ).filter(Envio.mes == mes, Envio.anio == anio, Envio.estado_entrega == 'delivered').first()
+
+    if base and int(base.envios) > 0:
+        rev, cost = int(base.revenue), int(base.costo)
+        lines.append(f"=== DATOS REALES — Período {mes}/{anio} ===")
+        lines.append(f"Envíos entregados: {int(base.envios):,}")
+        lines.append(f"Revenue operacional: ${rev:,}")
+        lines.append(f"Costo drivers: ${cost:,}")
+        lines.append(f"Margen bruto: ${rev - cost:,} ({round((rev - cost) / rev * 100, 1) if rev else 0}%)")
+
+    # ── Detectar conductores ─────────────────────────────────────────────────
+    all_drivers = db.query(Driver.id, Driver.nombre).all()
+    matched_drivers = []
+    for d in all_drivers:
+        parts = [p.strip().lower() for p in d.nombre.split() if len(p.strip()) >= 4]
+        if any(p in q_low for p in parts):
+            matched_drivers.append(d)
+
+    if matched_drivers:
+        driver_rows = db.query(
+            Driver.nombre,
+            Envio.zona,
+            F.count(Envio.id).label("envios"),
+            F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+            F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver), 0).label("costo"),
+        ).join(Driver, Envio.driver_id == Driver.id
+        ).filter(
+            Envio.mes == mes, Envio.anio == anio,
+            Envio.estado_entrega == 'delivered',
+            Driver.id.in_([d.id for d in matched_drivers]),
+        ).group_by(Driver.nombre, Envio.zona).all()
+
+        lines.append(f"\n--- Conductores detectados ({mes}/{anio}) ---")
+        by_driver: dict = {}
+        for r in driver_rows:
+            by_driver.setdefault(r.nombre, []).append(r)
+
+        for dname, rows in sorted(by_driver.items()):
+            total_env = sum(int(r.envios) for r in rows)
+            total_rev = sum(int(r.revenue) for r in rows)
+            total_cost = sum(int(r.costo) for r in rows)
+            mg = total_rev - total_cost
+            lines.append(f"\n{dname}: {total_env} envíos | Revenue ${total_rev:,} | Costo ${total_cost:,} | Margen ${mg:,} ({round(mg / total_rev * 100, 1) if total_rev else 0}%)")
+            for r in sorted(rows, key=lambda x: int(x.envios), reverse=True):
+                rv, c = int(r.revenue), int(r.costo)
+                lines.append(f"  Zona {r.zona or 'Sin zona'}: {int(r.envios)} env | Rev ${rv:,} | Costo ${c:,} | Margen ${rv - c:,}")
+
+    # ── Detectar sellers ─────────────────────────────────────────────────────
+    all_sellers = db.query(Seller.id, Seller.nombre).all()
+    matched_sellers = []
+    for s in all_sellers:
+        parts = [p.strip().lower() for p in s.nombre.split() if len(p.strip()) >= 4]
+        if any(p in q_low for p in parts):
+            matched_sellers.append(s)
+
+    if matched_sellers:
+        seller_rows = db.query(
+            Seller.nombre,
+            F.count(Envio.id).label("envios"),
+            F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+            F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver), 0).label("costo"),
+        ).join(Seller, Envio.seller_id == Seller.id
+        ).filter(
+            Envio.mes == mes, Envio.anio == anio,
+            Envio.estado_entrega == 'delivered',
+            Seller.id.in_([s.id for s in matched_sellers]),
+        ).group_by(Seller.nombre).all()
+
+        lines.append(f"\n--- Sellers detectados ({mes}/{anio}) ---")
+        for r in seller_rows:
+            rv, c = int(r.revenue), int(r.costo)
+            lines.append(f"{r.nombre}: {int(r.envios)} envíos | Revenue ${rv:,} | Costo ${c:,} | Margen ${rv - c:,} ({round((rv - c) / rv * 100, 1) if rv else 0}%)")
+
+    # ── Detectar zonas ───────────────────────────────────────────────────────
+    zone_rows = db.query(
+        Envio.zona,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver), 0).label("costo"),
+    ).filter(
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.estado_entrega == 'delivered',
+        Envio.zona.isnot(None),
+    ).group_by(Envio.zona).all()
+
+    matched_zones = []
+    for r in zone_rows:
+        if not r.zona:
+            continue
+        zona_lower = r.zona.lower()
+        if zona_lower in q_low or any(w in q_low for w in zona_lower.split() if len(w) >= 5):
+            matched_zones.append(r)
+
+    if matched_zones:
+        lines.append(f"\n--- Zonas detectadas ({mes}/{anio}) ---")
+        for r in matched_zones:
+            rv, c = int(r.revenue), int(r.costo)
+            lines.append(f"Zona {r.zona}: {int(r.envios)} envíos | Revenue ${rv:,} | Costo ${c:,} | Margen ${rv - c:,} ({round((rv - c) / rv * 100, 1) if rv else 0}%)")
+
+    return "\n".join(lines)
 
 
 @router.post("/grok")
@@ -701,12 +819,22 @@ async def grok_query(
     api_key = os.environ.get("XAI_API_KEY", "")
     if not api_key:
         return {"error": "XAI_API_KEY no configurada en el servidor"}
+
     system_prompt = (
-        "Eres un analista financiero senior de E-Courier, una empresa chilena de paquetería B2B. "
-        "Respondes en español. Usas moneda CLP. Sé conciso y directo. "
-        "Si te dan contexto numérico, basa tus respuestas en esos datos."
+        "Eres un analista financiero senior de E-Courier, empresa chilena de paquetería B2B. "
+        "Respondes ÚNICAMENTE en español. Moneda: CLP (pesos chilenos). "
+        "REGLA CRÍTICA: Usa EXCLUSIVAMENTE los datos del CONTEXTO FINANCIERO que se te proporciona. "
+        "NUNCA inventes, estimes ni uses números hipotéticos. "
+        "Si los datos exactos están en el contexto, úsalos directamente. "
+        "Si falta algún dato, indica qué información específica no está disponible en lugar de estimarla. "
+        "Sé conciso y directo. Usa formato claro con bullets cuando ayude."
     )
-    context_block = "\n\n".join(req.contexto) if req.contexto else ""
+
+    # Contexto automático desde la DB (siempre presente)
+    smart_ctx = _smart_context(db, req.pregunta, req.mes, req.anio)
+    all_ctx_parts = ([smart_ctx] if smart_ctx else []) + (req.contexto or [])
+    context_block = "\n\n".join(all_ctx_parts)
+
     user_msg = f"CONTEXTO FINANCIERO:\n{context_block}\n\nPREGUNTA: {req.pregunta}" if context_block else req.pregunta
 
     async with httpx.AsyncClient(timeout=60) as client:
@@ -719,7 +847,7 @@ async def grok_query(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_msg},
                 ],
-                "temperature": 0.3,
+                "temperature": 0.2,
             },
         )
     if resp.status_code != 200:

@@ -824,7 +824,7 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     setChat(prev => [...prev, { q, a: null, t: null, saved: false, ctxBlocks, pending: true }])
     setPregunta('')
     try {
-      const { data } = await api.post('/bi/grok', { pregunta: q, contexto: ctxBlocks })
+      const { data } = await api.post('/bi/grok', { pregunta: q, contexto: ctxBlocks, mes, anio })
       setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: data.respuesta, t: data.tokens, pending: false } : x))
     } catch {
       setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: '⚠ Error conectando con Grok. Intenta de nuevo.', pending: false } : x))
