@@ -1114,26 +1114,29 @@ def _generate_snapshot_text(db: Session) -> str:
     # ── Pagos a conductores pendientes (PagoSemanaDriver PENDIENTE/INCOMPLETO) ─
     driver_pend = db.query(
         Driver.nombre,
-        F.sum(PagoSemanaDriver.monto_objetivo).label("monto_obj"),
-        F.sum(PagoSemanaDriver.monto_pagado).label("monto_pag"),
+        F.sum(
+            case((PagoSemanaDriver.monto_override != None, PagoSemanaDriver.monto_override),
+                 else_=PagoSemanaDriver.monto_neto)
+        ).label("monto_total"),
     ).join(Driver, PagoSemanaDriver.driver_id == Driver.id
     ).filter(
         PagoSemanaDriver.mes == mes_actual,
         PagoSemanaDriver.anio == anio_actual,
         PagoSemanaDriver.estado.in_(["PENDIENTE", "INCOMPLETO"]),
     ).group_by(Driver.nombre
-    ).order_by(F.sum(PagoSemanaDriver.monto_objetivo).desc()
+    ).order_by(F.sum(
+        case((PagoSemanaDriver.monto_override != None, PagoSemanaDriver.monto_override),
+             else_=PagoSemanaDriver.monto_neto)
+    ).desc()
     ).limit(10).all()
 
     if driver_pend:
         lines.append(f"\nPagos pendientes a conductores ({hoy.strftime('%b %Y')}):")
         total_drv = 0
         for r in driver_pend:
-            obj = int(r.monto_obj or 0)
-            pag = int(r.monto_pag or 0)
-            por_pagar = obj - pag
-            total_drv += por_pagar
-            lines.append(f"  {r.nombre}: ${por_pagar:,} por pagar (objetivo ${obj:,}, pagado ${pag:,})")
+            monto = int(r.monto_total or 0)
+            total_drv += monto
+            lines.append(f"  {r.nombre}: ${monto:,} pendiente")
         lines.append(f"  TOTAL por pagar conductores: ${total_drv:,}")
 
     # ── Créditos con vencimiento en los próximos 30 días ─────────────────────
