@@ -826,13 +826,24 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
   const [briefUpdated, setBriefUpdated] = useState(null)
   const [savingBrief, setSavingBrief] = useState(false)
 
-  // ── Snapshot ─────────────────────────────────────────────────────────────────
+  // ── Snapshot (flujo de caja) ──────────────────────────────────────────────
   const [snapshot, setSnapshot] = useState(null)
   const [generatingSnap, setGeneratingSnap] = useState(false)
 
+  // ── Memoria anual ─────────────────────────────────────────────────────────
+  const [memorias, setMemorias] = useState({})      // { 2024: {tokens_aprox, generado_en}, ... }
+  const [generandoAnio, setGenerandoAnio] = useState(null)
+
+  // ── Contextos manuales ────────────────────────────────────────────────────
+  const [contextos, setContextos] = useState({ pnl: false, unit: false, rent: false, ccc: false })
+  const ctxLabels = { pnl: `P&L ${MESES_S[mes]} ${anio}`, unit: 'Unit Economics', rent: 'Rentabilidad', ccc: 'CCC / Liquidez' }
+
   const TABS_LABEL = { pnl: 'P&L', unit: 'Unit Economics', rent: 'Rentabilidad', costos: 'Costos', yoy: 'YoY', salud: 'Salud' }
 
-  // ── Carga inicial: brief + snapshot ──────────────────────────────────────────
+  const memoriaActiva = Object.keys(memorias).length > 0
+  const totalTokensMemoria = Object.values(memorias).reduce((s, m) => s + (m.tokens_aprox || 0), 0)
+
+  // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return
     api.get('/bi/grok/brief').then(({ data }) => {
@@ -842,6 +853,11 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     }).catch(() => {})
     api.get('/bi/grok/snapshot').then(({ data }) => {
       setSnapshot(data)
+    }).catch(() => {})
+    api.get('/bi/grok/memoria').then(({ data }) => {
+      const map = {}
+      data.forEach(m => { map[m.anio] = m })
+      setMemorias(map)
     }).catch(() => {})
   }, [open])
 
@@ -875,6 +891,16 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     finally { setGeneratingSnap(false) }
   }
 
+  const generarMemoriaAnio = async (anio) => {
+    setGenerandoAnio(anio)
+    try {
+      const { data } = await api.post(`/bi/grok/memoria/generar/${anio}`)
+      setMemorias(prev => ({ ...prev, [anio]: { tokens_aprox: data.tokens_aprox, generado_en: data.generado_en } }))
+      toast.success(`Memoria ${anio} generada (~${data.tokens_aprox.toLocaleString()} tokens)`)
+    } catch { toast.error(`Error generando memoria ${anio}`) }
+    finally { setGenerandoAnio(null) }
+  }
+
   const nuevaSesion = () => {
     setChat([])
     setSesionHistorial([])
@@ -889,10 +915,18 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     const idx = chat.length
     setChat(prev => [...prev, { q, a: null, t: null, saved: false, pending: true, esPrimero }])
     setPregunta('')
+
+    // Construir contextos manuales seleccionados
+    const ctxActivos = []
+    if (contextos.pnl) ctxActivos.push(`[SOLICITADO] Ver sección P&L ${MESES_S[mes]} ${anio}`)
+    if (contextos.unit) ctxActivos.push(`[SOLICITADO] Ver sección Unit Economics ${MESES_S[mes]} ${anio}`)
+    if (contextos.rent) ctxActivos.push(`[SOLICITADO] Ver sección Rentabilidad ${MESES_S[mes]} ${anio}`)
+    if (contextos.ccc) ctxActivos.push(`[SOLICITADO] Ver sección CCC/Liquidez ${MESES_S[mes]} ${anio}`)
+
     try {
       const { data } = await api.post('/bi/grok', {
         pregunta: q,
-        contexto: [],
+        contexto: ctxActivos,
         mes, anio,
         es_primer_mensaje: esPrimero,
         historial: sesionHistorial,
@@ -1027,14 +1061,18 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
               <div style={{ color: C.dimmed, fontSize: 13, textAlign: 'center', marginTop: 40 }}>
                 <Brain size={32} style={{ color: C.borderStrong, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
                 <p>Hazle una pregunta a Grok.</p>
-                {!briefOrig && (
+                {memoriaActiva ? (
+                  <p style={{ fontSize: 11, marginTop: 10, color: C.accent }}>
+                    ✓ Memoria activa ({totalTokensMemoria.toLocaleString()} tokens) — {Object.keys(memorias).join(', ')}
+                  </p>
+                ) : (
                   <p style={{ fontSize: 11, marginTop: 10, color: C.dimmed }}>
-                    💡 Configura el <button onClick={() => setView('memoria')} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>Brief del negocio</button> para que Grok conozca E-Courier.
+                    💡 Genera la <button onClick={() => setView('memoria')} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>Memoria anual</button> para que Grok conozca el historial completo.
                   </p>
                 )}
-                {!snapshot?.contenido && (
+                {!briefOrig && (
                   <p style={{ fontSize: 11, marginTop: 6, color: C.dimmed }}>
-                    💡 Genera el <button onClick={() => setView('memoria')} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>Snapshot financiero</button> para contexto del negocio hoy.
+                    💡 Configura el <button onClick={() => setView('memoria')} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>Brief del negocio</button> para que Grok conozca E-Courier.
                   </p>
                 )}
               </div>
@@ -1044,7 +1082,7 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
                 <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.text }}>
                   {h.esPrimero && (
                     <span style={{ fontSize: 9, color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: '1px 6px', marginBottom: 6, display: 'inline-block' }}>
-                      + Snapshot y brief inyectados
+                      {memoriaActiva ? `+ Memoria ${Object.keys(memorias).join('/')} inyectada` : '+ Snapshot y brief inyectados'}
                     </span>
                   )}
                   <p>{h.q}</p>
@@ -1083,6 +1121,15 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
           </div>
 
           <div style={{ padding: '12px 18px', borderTop: `1px solid ${C.border}` }}>
+            {/* Checkboxes de contexto adicional */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              {Object.entries(ctxLabels).map(([key, label]) => (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontSize: 11, color: contextos[key] ? C.accent : C.dimmed, background: contextos[key] ? `${C.accent}22` : C.surface, border: `1px solid ${contextos[key] ? C.accent : C.border}`, borderRadius: 20, padding: '3px 10px', transition: 'all 0.15s' }}>
+                  <input type="checkbox" checked={contextos[key]} onChange={e => setContextos(p => ({ ...p, [key]: e.target.checked }))} style={{ display: 'none' }} />
+                  {contextos[key] ? '✓' : '+'} {label}
+                </label>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={pregunta} onChange={e => setPregunta(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviar()}
@@ -1112,13 +1159,57 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
       {view === 'memoria' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* Snapshot */}
+          {/* ── Memoria anual ── */}
+          <div>
+            <p style={{ color: C.text, fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Memoria anual completa</p>
+            <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 14 }}>
+              Genera una sola vez por año. Incluye todos los sellers, drivers, P&L mensual, retiros. Se inyecta completa al inicio de cada sesión.
+              {totalTokensMemoria > 0 && <span style={{ color: C.accent }}> Total: ~{totalTokensMemoria.toLocaleString()} tokens</span>}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[2024, 2025, 2026].map(anioBtn => {
+                const mem = memorias[anioBtn]
+                const generando = generandoAnio === anioBtn
+                return (
+                  <div key={anioBtn} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: C.surface, border: `1px solid ${mem ? C.accent + '55' : C.border}`, borderRadius: 8, padding: '10px 14px' }}>
+                    <div>
+                      <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>
+                        {anioBtn === 2026 ? `${anioBtn} — Tiempo real` : `${anioBtn} — Snapshot histórico`}
+                        {mem && <span style={{ color: C.accent, fontSize: 10, marginLeft: 8 }}>✓ Generado</span>}
+                      </p>
+                      {mem ? (
+                        <p style={{ color: C.dimmed, fontSize: 10, marginTop: 2 }}>
+                          ~{(mem.tokens_aprox || 0).toLocaleString()} tokens · {mem.generado_en ? new Date(mem.generado_en).toLocaleDateString('es-CL') : ''}
+                        </p>
+                      ) : (
+                        <p style={{ color: C.dimmed, fontSize: 10, marginTop: 2 }}>Sin generar</p>
+                      )}
+                    </div>
+                    <button onClick={() => generarMemoriaAnio(anioBtn)} disabled={generando || generandoAnio !== null}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 14px',
+                        borderRadius: 8, cursor: (generando || generandoAnio !== null) ? 'default' : 'pointer',
+                        background: mem ? C.surface : C.accent, border: `1px solid ${mem ? C.border : C.accent}`,
+                        color: mem ? C.text : '#fff', opacity: (generando || generandoAnio !== null) ? 0.6 : 1, whiteSpace: 'nowrap',
+                      }}>
+                      {generando ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
+                      {generando ? 'Generando...' : mem ? 'Regenerar' : 'Generar'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}` }} />
+
+          {/* ── Snapshot flujo de caja ── */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div>
-                <p style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>Snapshot financiero</p>
+                <p style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>Snapshot flujo de caja</p>
                 <p style={{ color: C.dimmed, fontSize: 11, marginTop: 2 }}>
-                  Resumen del negocio hoy: P&L, cobros pendientes, pagos próximos. Se inyecta en el primer mensaje de cada sesión.
+                  Cobros pendientes, pagos próximos 30 días. Se inyecta como complemento al inicio de cada sesión.
                 </p>
               </div>
               <button onClick={generarSnapshot} disabled={generatingSnap}
@@ -1133,18 +1224,17 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
               </button>
             </div>
             {snapshot?.contenido ? (
-              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: 240, overflowY: 'auto' }}>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: 200, overflowY: 'auto' }}>
                 {snapshot.contenido}
-                {snapshot.contenido.endsWith('...') && <span style={{ color: C.dimmed }}> (preview)</span>}
               </div>
             ) : (
               <div style={{ background: C.surface, border: `1px dashed ${C.border}`, borderRadius: 8, padding: '20px', textAlign: 'center', color: C.dimmed, fontSize: 12 }}>
-                Sin snapshot generado. Haz click en "Actualizar" para generarlo.
+                Sin snapshot generado.
               </div>
             )}
-            {snapFecha && (
+            {snapshot?.generado_en && (
               <p style={{ color: C.dimmed, fontSize: 10, marginTop: 6 }}>
-                Generado el {snapFecha} · ~{snapshot?.tokens_aprox || 0} tokens
+                Generado el {new Date(snapshot.generado_en).toLocaleString('es-CL')} · ~{snapshot?.tokens_aprox || 0} tokens
               </p>
             )}
           </div>

@@ -235,6 +235,15 @@ with engine.connect() as conn:
             tokens_aprox INTEGER DEFAULT 0
         )
     """)
+    safe_exec("""
+        CREATE TABLE IF NOT EXISTS grok_memoria (
+            id SERIAL PRIMARY KEY,
+            anio INTEGER NOT NULL UNIQUE,
+            contenido TEXT NOT NULL DEFAULT '',
+            tokens_aprox INTEGER DEFAULT 0,
+            generado_en TIMESTAMP DEFAULT NOW()
+        )
+    """)
     # Seed: insertar fila inicial del brief si no existe
     with engine.connect() as conn:
         try:

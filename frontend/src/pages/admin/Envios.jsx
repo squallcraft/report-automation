@@ -224,11 +224,11 @@ export default function Envios() {
   const openEditCb = useCallback((row) => openEdit(row), [])
   const openProductoCb = useCallback((row) => openProductoModal(row), [])
 
-  const sm = 'text-[11px]'
+  const sm = 'text-[10px]'
   const columns = useMemo(() => [
     { key: 'fecha_entrega', label: 'Fecha', className: sm, render: (v) => v ? new Date(v + 'T12:00:00').toLocaleDateString('es-CL') : '—' },
-    { key: 'seller_nombre', label: 'Seller', render: (v) => v || '—' },
-    { key: 'driver_nombre', label: 'Driver', className: sm, render: (v) => v || '—' },
+    { key: 'seller_nombre', label: 'Seller', className: 'text-[10px] max-w-[110px]', render: (v) => <span className="block truncate max-w-[110px]" title={v || ''}>{v || '—'}</span> },
+    { key: 'driver_nombre', label: 'Driver', className: 'text-[10px] max-w-[100px]', render: (v) => <span className="block truncate max-w-[100px]" title={v || ''}>{v || '—'}</span> },
     { key: 'comuna', label: 'Comuna', render: (v) => v || '—' },
     { key: 'seller_code', label: 'Seller ID', className: sm, render: (v) => v || '—' },
     { key: 'tracking_id', label: 'Tracking', className: sm, render: (v) => v || '—' },

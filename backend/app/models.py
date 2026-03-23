@@ -960,3 +960,14 @@ class GrokSnapshot(Base):
     contenido = Column(Text, nullable=False, default="")
     generado_en = Column(DateTime, default=datetime.utcnow)
     tokens_aprox = Column(Integer, default=0)
+
+
+class GrokMemoria(Base):
+    """Memoria anual completa: sellers, drivers, P&L mensual por año. Generada una vez."""
+    __tablename__ = "grok_memoria"
+
+    id = Column(Integer, primary_key=True, index=True)
+    anio = Column(Integer, nullable=False, unique=True)
+    contenido = Column(Text, nullable=False, default="")
+    tokens_aprox = Column(Integer, default=0)
+    generado_en = Column(DateTime, default=datetime.utcnow)

@@ -11,7 +11,7 @@ from app.models import (
     PagoSemanaSeller, PagoSemanaDriver, PagoSemanaPickup,
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
     PagoTrabajador, CalendarioSemanas, GrokAnalisis,
-    GrokBrief, GrokSnapshot,
+    GrokBrief, GrokSnapshot, GrokMemoria,
 )
 
 router = APIRouter(prefix="/bi", tags=["Business Intelligence"])
@@ -818,7 +818,335 @@ class GrokRequest(BaseModel):
     historial: List[dict] = []  # [{role: "user"|"assistant", content: "..."}]
 
 
-def _smart_context(db: Session, pregunta: str, mes: int, anio: int) -> str:
+# ════════════════════════════════════════════════════
+#  GROK — Memoria anual completa (sellers + drivers + P&L)
+# ════════════════════════════════════════════════════
+
+MESES_FULL = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+
+def _generate_annual_snapshot(db: Session, anio: int) -> str:
+    """
+    Genera texto comprimido con TODO el detalle del año:
+    - P&L mensual
+    - Todos los sellers con breakdown mensual (envíos, revenue, margen)
+    - Todos los drivers con breakdown mensual (envíos, costo)
+    - Retiros mensuales
+    """
+    lines: list[str] = []
+    lines.append(f"══════════════════════════════════")
+    lines.append(f"E-COURIER {anio} — DATOS COMPLETOS")
+    lines.append(f"══════════════════════════════════")
+
+    # ── P&L mensual ──────────────────────────────────────────────────────────
+    pnl_rows = db.query(
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual), 0).label("rev"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual), 0).label("costo"),
+    ).filter(Envio.anio == anio, Envio.estado_entrega == 'delivered'
+    ).group_by(Envio.mes).order_by(Envio.mes).all()
+
+    tot_env = sum(int(r.envios) for r in pnl_rows)
+    tot_rev = sum(int(r.rev) for r in pnl_rows)
+    tot_costo = sum(int(r.costo) for r in pnl_rows)
+    lines.append(f"\nP&L {anio}: {tot_env:,} envíos | Rev ${tot_rev:,} | Costo ${tot_costo:,} | Margen ${tot_rev - tot_costo:,} ({round((tot_rev - tot_costo)/tot_rev*100,1) if tot_rev else 0}%)")
+    lines.append("Mensual:")
+    for r in pnl_rows:
+        rev, costo = int(r.rev), int(r.costo)
+        mg = rev - costo
+        lines.append(f"  {MESES_FULL[r.mes]}: {int(r.envios):,} env | Rev ${rev:,} | Costo ${costo:,} | Mg ${mg:,} ({round(mg/rev*100,1) if rev else 0}%)")
+
+    # ── Retiros mensuales ─────────────────────────────────────────────────────
+    from sqlalchemy import extract as sa_extract
+    ret_rows = db.query(
+        sa_extract('month', Retiro.fecha).label("mes"),
+        F.count(Retiro.id).label("cant"),
+        F.coalesce(F.sum(Retiro.tarifa_seller), 0).label("ing"),
+        F.coalesce(F.sum(Retiro.tarifa_driver), 0).label("costo"),
+    ).filter(sa_extract('year', Retiro.fecha) == anio
+    ).group_by(sa_extract('month', Retiro.fecha)).order_by(sa_extract('month', Retiro.fecha)).all()
+
+    if ret_rows:
+        tot_ing = sum(int(r.ing) for r in ret_rows)
+        tot_rc = sum(int(r.costo) for r in ret_rows)
+        lines.append(f"\nRETIROS {anio}: Ingreso ${tot_ing:,} | Costo ${tot_rc:,} | Margen ${tot_ing - tot_rc:,}")
+        parts = [f"{MESES_FULL[int(r.mes)]}: ${int(r.ing):,}/${int(r.costo):,}" for r in ret_rows]
+        lines.append("  " + " | ".join(parts))
+
+    # ── Sellers — detalle mensual ─────────────────────────────────────────────
+    seller_month = db.query(
+        Seller.nombre,
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual), 0).label("rev"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual), 0).label("costo"),
+    ).join(Seller, Envio.seller_id == Seller.id
+    ).filter(Envio.anio == anio, Envio.estado_entrega == 'delivered'
+    ).group_by(Seller.nombre, Envio.mes
+    ).order_by(Seller.nombre, Envio.mes).all()
+
+    # Agrupar por seller
+    by_seller: dict = {}
+    for r in seller_month:
+        by_seller.setdefault(r.nombre, []).append(r)
+
+    # Calcular totales para ordenar por revenue anual desc
+    seller_totals = {
+        nombre: (sum(int(r.rev) for r in rows), sum(int(r.envios) for r in rows))
+        for nombre, rows in by_seller.items()
+    }
+    sorted_sellers = sorted(by_seller.items(), key=lambda x: seller_totals[x[0]][0], reverse=True)
+
+    lines.append(f"\nSELLERS {anio} ({len(by_seller)} activos):")
+    for nombre, rows in sorted_sellers:
+        tot_rev_s = sum(int(r.rev) for r in rows)
+        tot_env_s = sum(int(r.envios) for r in rows)
+        tot_cost_s = sum(int(r.costo) for r in rows)
+        mg_s = tot_rev_s - tot_cost_s
+        lines.append(f"\n  {nombre}: {tot_env_s:,} env | Rev ${tot_rev_s:,} | Costo ${tot_cost_s:,} | Mg ${mg_s:,} ({round(mg_s/tot_rev_s*100,1) if tot_rev_s else 0}%)")
+        month_parts = []
+        for r in sorted(rows, key=lambda x: x.mes):
+            rv, c = int(r.rev), int(r.costo)
+            month_parts.append(f"{MESES_FULL[r.mes]}:{int(r.envios):,}env/${rv:,}")
+        lines.append("    " + " | ".join(month_parts))
+
+    # ── Drivers — detalle mensual ─────────────────────────────────────────────
+    driver_month = db.query(
+        Driver.nombre,
+        Driver.contratado,
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual), 0).label("rev"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual), 0).label("costo"),
+    ).join(Driver, Envio.driver_id == Driver.id
+    ).filter(Envio.anio == anio, Envio.estado_entrega == 'delivered'
+    ).group_by(Driver.nombre, Driver.contratado, Envio.mes
+    ).order_by(Driver.nombre, Envio.mes).all()
+
+    by_driver: dict = {}
+    for r in driver_month:
+        by_driver.setdefault(r.nombre, {"contratado": r.contratado, "rows": []})["rows"].append(r)
+
+    driver_totals = {
+        nombre: sum(int(r.envios) for r in data["rows"])
+        for nombre, data in by_driver.items()
+    }
+    sorted_drivers = sorted(by_driver.items(), key=lambda x: driver_totals[x[0]], reverse=True)
+
+    lines.append(f"\nDRIVERS {anio} ({len(by_driver)} activos):")
+    for nombre, data in sorted_drivers:
+        rows = data["rows"]
+        tipo = "CONTRATADO" if data["contratado"] else "TERCERIZADO"
+        tot_env_d = sum(int(r.envios) for r in rows)
+        tot_rev_d = sum(int(r.rev) for r in rows)
+        tot_cost_d = sum(int(r.costo) for r in rows)
+        mg_d = tot_rev_d - tot_cost_d
+        lines.append(f"\n  {nombre} [{tipo}]: {tot_env_d:,} env | Rev ${tot_rev_d:,} | Costo ${tot_cost_d:,} | Mg ${mg_d:,}")
+        month_parts = []
+        for r in sorted(rows, key=lambda x: x.mes):
+            month_parts.append(f"{MESES_FULL[r.mes]}:{int(r.envios):,}env/${int(r.costo):,}costo")
+        lines.append("    " + " | ".join(month_parts))
+
+    return "\n".join(lines)
+
+
+def _generate_2026_realtime(db: Session) -> str:
+    """
+    Genera el contexto 2026 en tiempo real: todos los sellers y drivers con detalle
+    mensual YTD + movimientos financieros + deudas próximas + retiros.
+    """
+    from datetime import date, timedelta
+    lines: list[str] = []
+    hoy = date.today()
+    anio = 2026
+
+    lines.append(f"══════════════════════════════════")
+    lines.append(f"E-COURIER 2026 — DATOS EN TIEMPO REAL (hasta {hoy.strftime('%d/%m/%Y')})")
+    lines.append(f"══════════════════════════════════")
+
+    # P&L mensual 2026
+    pnl_rows = db.query(
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual), 0).label("rev"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual), 0).label("costo"),
+    ).filter(Envio.anio == anio, Envio.estado_entrega == 'delivered'
+    ).group_by(Envio.mes).order_by(Envio.mes).all()
+
+    if pnl_rows:
+        tot_rev = sum(int(r.rev) for r in pnl_rows)
+        tot_costo = sum(int(r.costo) for r in pnl_rows)
+        tot_env = sum(int(r.envios) for r in pnl_rows)
+        lines.append(f"\nP&L 2026 YTD: {tot_env:,} envíos | Rev ${tot_rev:,} | Costo ${tot_costo:,} | Margen ${tot_rev-tot_costo:,} ({round((tot_rev-tot_costo)/tot_rev*100,1) if tot_rev else 0}%)")
+        for r in pnl_rows:
+            rv, c = int(r.rev), int(r.costo)
+            lines.append(f"  {MESES_FULL[r.mes]}: {int(r.envios):,} env | Rev ${rv:,} | Costo ${c:,} | Mg ${rv-c:,}")
+
+    # Sellers 2026
+    seller_month = db.query(
+        Seller.nombre,
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual), 0).label("rev"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual), 0).label("costo"),
+    ).join(Seller, Envio.seller_id == Seller.id
+    ).filter(Envio.anio == anio, Envio.estado_entrega == 'delivered'
+    ).group_by(Seller.nombre, Envio.mes
+    ).order_by(Seller.nombre, Envio.mes).all()
+
+    by_seller: dict = {}
+    for r in seller_month:
+        by_seller.setdefault(r.nombre, []).append(r)
+
+    sorted_sellers = sorted(by_seller.items(), key=lambda x: sum(int(r.rev) for r in x[1]), reverse=True)
+    lines.append(f"\nSELLERS 2026 YTD ({len(by_seller)} activos):")
+    for nombre, rows in sorted_sellers:
+        tot_rev_s = sum(int(r.rev) for r in rows)
+        tot_env_s = sum(int(r.envios) for r in rows)
+        tot_cost_s = sum(int(r.costo) for r in rows)
+        mg_s = tot_rev_s - tot_cost_s
+        lines.append(f"\n  {nombre}: {tot_env_s:,} env | Rev ${tot_rev_s:,} | Mg ${mg_s:,} ({round(mg_s/tot_rev_s*100,1) if tot_rev_s else 0}%)")
+        parts = [f"{MESES_FULL[r.mes]}:{int(r.envios):,}env/${int(r.rev):,}" for r in sorted(rows, key=lambda x: x.mes)]
+        lines.append("    " + " | ".join(parts))
+
+    # Drivers 2026
+    driver_month = db.query(
+        Driver.nombre,
+        Driver.contratado,
+        Envio.mes,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller + Envio.cobro_extra_manual), 0).label("rev"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver + Envio.pago_extra_manual), 0).label("costo"),
+    ).join(Driver, Envio.driver_id == Driver.id
+    ).filter(Envio.anio == anio, Envio.estado_entrega == 'delivered'
+    ).group_by(Driver.nombre, Driver.contratado, Envio.mes
+    ).order_by(Driver.nombre, Envio.mes).all()
+
+    by_driver: dict = {}
+    for r in driver_month:
+        by_driver.setdefault(r.nombre, {"contratado": r.contratado, "rows": []})["rows"].append(r)
+
+    sorted_drivers = sorted(by_driver.items(), key=lambda x: sum(int(r.envios) for r in x[1]["rows"]), reverse=True)
+    lines.append(f"\nDRIVERS 2026 YTD ({len(by_driver)} activos):")
+    for nombre, data in sorted_drivers:
+        rows = data["rows"]
+        tipo = "CONTRATADO" if data["contratado"] else "TERCERIZADO"
+        tot_env_d = sum(int(r.envios) for r in rows)
+        tot_cost_d = sum(int(r.costo) for r in rows)
+        tot_rev_d = sum(int(r.rev) for r in rows)
+        mg_d = tot_rev_d - tot_cost_d
+        lines.append(f"\n  {nombre} [{tipo}]: {tot_env_d:,} env | Rev ${tot_rev_d:,} | Costo ${tot_cost_d:,} | Mg ${mg_d:,}")
+        parts = [f"{MESES_FULL[r.mes]}:{int(r.envios):,}env/${int(r.costo):,}costo" for r in sorted(rows, key=lambda x: x.mes)]
+        lines.append("    " + " | ".join(parts))
+
+    # Movimientos financieros 2026 por categoría
+    mov_rows = db.query(
+        CategoriaFinanciera.nombre.label("cat"),
+        CategoriaFinanciera.tipo.label("tipo"),
+        F.count(MovimientoFinanciero.id).label("items"),
+        F.coalesce(F.sum(MovimientoFinanciero.monto), 0).label("total"),
+    ).join(CategoriaFinanciera, MovimientoFinanciero.categoria_id == CategoriaFinanciera.id
+    ).filter(MovimientoFinanciero.anio == anio
+    ).group_by(CategoriaFinanciera.nombre, CategoriaFinanciera.tipo).all()
+
+    if mov_rows:
+        lines.append(f"\nMOVIMIENTOS FINANCIEROS 2026:")
+        for r in mov_rows:
+            lines.append(f"  {r.cat} [{r.tipo}]: {int(r.items)} items · ${int(r.total):,}")
+
+    # Egresos próximos 30 días
+    fecha_limite = hoy + timedelta(days=30)
+    proximos = db.query(
+        MovimientoFinanciero,
+        CategoriaFinanciera.nombre.label("cat"),
+    ).join(CategoriaFinanciera, MovimientoFinanciero.categoria_id == CategoriaFinanciera.id
+    ).filter(
+        MovimientoFinanciero.estado == "PENDIENTE",
+        MovimientoFinanciero.fecha_vencimiento != None,
+        MovimientoFinanciero.fecha_vencimiento >= hoy,
+        MovimientoFinanciero.fecha_vencimiento <= fecha_limite,
+    ).order_by(MovimientoFinanciero.fecha_vencimiento).all()
+
+    if proximos:
+        total_prox = sum(int(c.monto or 0) for c, _ in proximos)
+        lines.append(f"\nEGRESOS PRÓXIMOS 30 DÍAS (total ${total_prox:,}):")
+        for c, cat in proximos:
+            venc = c.fecha_vencimiento.strftime('%d/%m') if c.fecha_vencimiento else "?"
+            lines.append(f"  {cat} — {c.nombre}: ${int(c.monto or 0):,} vence {venc}")
+
+    # Retiros 2026
+    from sqlalchemy import extract as sa_extract
+    ret_rows = db.query(
+        sa_extract('month', Retiro.fecha).label("mes"),
+        F.count(Retiro.id).label("cant"),
+        F.coalesce(F.sum(Retiro.tarifa_seller), 0).label("ing"),
+        F.coalesce(F.sum(Retiro.tarifa_driver), 0).label("costo"),
+    ).filter(sa_extract('year', Retiro.fecha) == anio
+    ).group_by(sa_extract('month', Retiro.fecha)).order_by(sa_extract('month', Retiro.fecha)).all()
+
+    if ret_rows:
+        tot_ing = sum(int(r.ing) for r in ret_rows)
+        tot_rc = sum(int(r.costo) for r in ret_rows)
+        lines.append(f"\nRETIROS 2026: Ingreso ${tot_ing:,} | Costo ${tot_rc:,} | Margen ${tot_ing-tot_rc:,}")
+        parts = [f"{MESES_FULL[int(r.mes)]}:${int(r.ing):,}/${int(r.costo):,}" for r in ret_rows]
+        lines.append("  " + " | ".join(parts))
+
+    return "\n".join(lines)
+
+
+@router.post("/grok/memoria/generar/{anio}")
+def generar_memoria_anual(
+    anio: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    from datetime import datetime as dt
+    if anio not in (2024, 2025, 2026):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Año debe ser 2024, 2025 o 2026")
+
+    if anio == 2026:
+        texto = _generate_2026_realtime(db)
+    else:
+        texto = _generate_annual_snapshot(db, anio)
+
+    tokens_aprox = len(texto) // 4
+    row = db.query(GrokMemoria).filter(GrokMemoria.anio == anio).first()
+    if row:
+        row.contenido = texto
+        row.tokens_aprox = tokens_aprox
+        row.generado_en = dt.utcnow()
+    else:
+        row = GrokMemoria(anio=anio, contenido=texto, tokens_aprox=tokens_aprox)
+        db.add(row)
+    db.commit()
+    return {
+        "ok": True,
+        "anio": anio,
+        "tokens_aprox": tokens_aprox,
+        "generado_en": row.generado_en.isoformat(),
+        "preview": texto[:600] + ("..." if len(texto) > 600 else ""),
+    }
+
+
+@router.get("/grok/memoria")
+def get_memorias(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    rows = db.query(GrokMemoria).order_by(GrokMemoria.anio).all()
+    return [
+        {
+            "anio": r.anio,
+            "tokens_aprox": r.tokens_aprox,
+            "generado_en": r.generado_en.isoformat() if r.generado_en else None,
+        }
+        for r in rows
+    ]
+
+
+
     """
     Detects drivers, sellers and zones mentioned in the question and fetches
     real data from the DB.  Always prepends a P&L summary for the period so
@@ -945,7 +1273,7 @@ async def grok_query(
     if not api_key:
         return {"error": "XAI_API_KEY no configurada en el servidor"}
 
-    # ── Brief del negocio (system prompt persistente) ──────────────────────────
+    # ── Brief del negocio (system prompt) ─────────────────────────────────────
     brief_row = db.query(GrokBrief).order_by(GrokBrief.id.desc()).first()
     brief_text = brief_row.contenido if brief_row else ""
 
@@ -960,37 +1288,50 @@ async def grok_query(
         + (f"=== CONOCIMIENTO DEL NEGOCIO ===\n{brief_text}" if brief_text else "")
     )
 
-    # ── Snapshot financiero semanal (se incluye solo en primer mensaje de sesión) ──
-    snapshot_block = ""
+    context_parts: list[str] = []
+
+    # ── Memoria anual completa (solo en primer mensaje de sesión) ──────────────
     if req.es_primer_mensaje:
+        memorias = db.query(GrokMemoria).order_by(GrokMemoria.anio).all()
+        for mem in memorias:
+            if mem.contenido:
+                context_parts.append(mem.contenido)
+
+        # Si no hay memoria 2026 guardada, calcular en tiempo real
+        tiene_2026 = any(m.anio == 2026 for m in memorias)
+        if not tiene_2026:
+            context_parts.append(_generate_2026_realtime(db))
+
+        # Snapshot semanal (flujo de caja próximo) como complemento
         snap_row = db.query(GrokSnapshot).order_by(GrokSnapshot.id.desc()).first()
         if snap_row and snap_row.contenido:
-            snapshot_block = f"=== SNAPSHOT FINANCIERO (actualizado {snap_row.generado_en.strftime('%d/%m/%Y %H:%M') if snap_row.generado_en else ''}) ===\n{snap_row.contenido}"
+            context_parts.append(
+                f"=== FLUJO DE CAJA PRÓXIMO ===\n{snap_row.contenido}"
+            )
 
-    # ── Smart context: drivers/sellers/zonas detectados en la pregunta ─────────
+    # ── Smart context: entidades detectadas en la pregunta ────────────────────
     smart_ctx = _smart_context(db, req.pregunta, req.mes, req.anio)
-
-    # ── Armar bloque de contexto adicional ────────────────────────────────────
-    extra_parts = []
-    if snapshot_block:
-        extra_parts.append(snapshot_block)
     if smart_ctx:
-        extra_parts.append(smart_ctx)
+        context_parts.append(smart_ctx)
+
+    # ── Contextos manuales del usuario (P&L tab, Unit Economics, etc.) ────────
     if req.contexto:
-        extra_parts.extend(req.contexto)
+        context_parts.extend(req.contexto)
 
-    context_block = "\n\n".join(extra_parts)
-    user_msg = f"CONTEXTO FINANCIERO:\n{context_block}\n\nPREGUNTA: {req.pregunta}" if context_block else req.pregunta
+    context_block = "\n\n".join(context_parts)
+    user_msg = (
+        f"CONTEXTO FINANCIERO:\n{context_block}\n\nPREGUNTA: {req.pregunta}"
+        if context_block else req.pregunta
+    )
 
-    # ── Armar array de mensajes con historial de sesión ────────────────────────
-    # El historial viene del frontend: lista de {role, content} de turnos anteriores
+    # ── Historial de sesión + mensaje actual ──────────────────────────────────
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for h in (req.historial or []):
         if h.get("role") in ("user", "assistant") and h.get("content"):
             messages.append({"role": h["role"], "content": h["content"]})
     messages.append({"role": "user", "content": user_msg})
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             "https://api.x.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
