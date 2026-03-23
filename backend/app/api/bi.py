@@ -1147,6 +1147,7 @@ def get_memorias(
 
 
 
+def _smart_context(db: Session, pregunta: str, mes: int, anio: int) -> str:
     """
     Detects drivers, sellers and zones mentioned in the question and fetches
     real data from the DB.  Always prepends a P&L summary for the period so
