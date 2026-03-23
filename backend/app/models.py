@@ -941,3 +941,22 @@ class GrokAnalisis(Base):
     tab = Column(String(50))
     tokens_total = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class GrokBrief(Base):
+    """Descripción estática del negocio que se inyecta como system prompt en cada sesión."""
+    __tablename__ = "grok_brief"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contenido = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GrokSnapshot(Base):
+    """Snapshot financiero semanal auto-generado desde la DB para contexto de sesión."""
+    __tablename__ = "grok_snapshot"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contenido = Column(Text, nullable=False, default="")
+    generado_en = Column(DateTime, default=datetime.utcnow)
+    tokens_aprox = Column(Integer, default=0)

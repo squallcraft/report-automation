@@ -6,6 +6,7 @@ import {
   DollarSign, Target, AlertTriangle, Brain, Send, X,
   Loader2, Info, Activity, Zap, ShieldCheck,
   BookOpen, Bookmark, Trash2, ChevronDown, ChevronRight,
+  Database, RefreshCw,
 } from 'lucide-react'
 
 // ─── Design tokens (dark theme) ───────────────────────────────────────────────
@@ -808,18 +809,41 @@ function TabSalud({ mes, anio }) {
 // ─── GROK PANEL ───────────────────────────────────────────────────────────────
 
 function GrokPanel({ open, onClose, mes, anio, activeTab }) {
-  const [view, setView] = useState('chat')  // 'chat' | 'historial'
+  const [view, setView] = useState('chat')  // 'chat' | 'memoria' | 'historial'
   const [pregunta, setPregunta] = useState('')
-  const [contextos, setContextos] = useState({ pnl: true, unit: false, rent: false, ccc: false })
   const [loading, setLoading] = useState(false)
   const [chat, setChat] = useState([])
+  // historial de la sesión activa: [{role:'user'|'assistant', content:'...'}]
+  const [sesionHistorial, setSesionHistorial] = useState([])
   const [savedList, setSavedList] = useState([])
   const [loadingHist, setLoadingHist] = useState(false)
   const [expanded, setExpanded] = useState(null)
   const endRef = useRef(null)
 
-  const ctxLabels = { pnl: `P&L ${MESES_S[mes]} ${anio}`, unit: 'Unit Economics', rent: 'Rentabilidad', ccc: 'CCC / Liquidez' }
-  const estimatedTokens = Object.values(contextos).filter(Boolean).length * 400 + 200
+  // ── Brief ────────────────────────────────────────────────────────────────────
+  const [brief, setBrief] = useState('')
+  const [briefOrig, setBriefOrig] = useState('')
+  const [briefUpdated, setBriefUpdated] = useState(null)
+  const [savingBrief, setSavingBrief] = useState(false)
+
+  // ── Snapshot ─────────────────────────────────────────────────────────────────
+  const [snapshot, setSnapshot] = useState(null)
+  const [generatingSnap, setGeneratingSnap] = useState(false)
+
+  const TABS_LABEL = { pnl: 'P&L', unit: 'Unit Economics', rent: 'Rentabilidad', costos: 'Costos', yoy: 'YoY', salud: 'Salud' }
+
+  // ── Carga inicial: brief + snapshot ──────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return
+    api.get('/bi/grok/brief').then(({ data }) => {
+      setBrief(data.contenido || '')
+      setBriefOrig(data.contenido || '')
+      setBriefUpdated(data.updated_at)
+    }).catch(() => {})
+    api.get('/bi/grok/snapshot').then(({ data }) => {
+      setSnapshot(data)
+    }).catch(() => {})
+  }, [open])
 
   const cargarHistorial = async () => {
     setLoadingHist(true)
@@ -830,21 +854,57 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
     finally { setLoadingHist(false) }
   }
 
+  const guardarBrief = async () => {
+    setSavingBrief(true)
+    try {
+      await api.put('/bi/grok/brief', { contenido: brief })
+      setBriefOrig(brief)
+      setBriefUpdated(new Date().toISOString())
+      toast.success('Brief guardado — Grok lo usará desde la próxima sesión')
+    } catch { toast.error('Error guardando brief') }
+    finally { setSavingBrief(false) }
+  }
+
+  const generarSnapshot = async () => {
+    setGeneratingSnap(true)
+    try {
+      const { data } = await api.post('/bi/grok/snapshot/generar')
+      setSnapshot({ contenido: data.preview, generado_en: data.generado_en, tokens_aprox: data.tokens_aprox })
+      toast.success(`Snapshot generado (~${data.tokens_aprox} tokens)`)
+    } catch { toast.error('Error generando snapshot') }
+    finally { setGeneratingSnap(false) }
+  }
+
+  const nuevaSesion = () => {
+    setChat([])
+    setSesionHistorial([])
+    toast('Nueva sesión iniciada', { icon: '🔄' })
+  }
+
   const enviar = async () => {
-    if (!pregunta.trim()) return
+    if (!pregunta.trim() || loading) return
     setLoading(true)
-    const ctxBlocks = []
-    if (contextos.pnl) ctxBlocks.push(`Período: ${MESES[mes]} ${anio}. Tab activo: ${activeTab}. P&L operacional + movimientos financieros.`)
-    if (contextos.unit) ctxBlocks.push('Unit economics por zona: revenue/envío, cost/envío, margen/envío.')
-    if (contextos.rent) ctxBlocks.push('Rentabilidad por seller con margen % y envíos.')
-    if (contextos.ccc) ctxBlocks.push('CCC: capital atrapado y sellers con deuda pendiente (solo 2026).')
     const q = pregunta.trim()
+    const esPrimero = chat.length === 0
     const idx = chat.length
-    setChat(prev => [...prev, { q, a: null, t: null, saved: false, ctxBlocks, pending: true }])
+    setChat(prev => [...prev, { q, a: null, t: null, saved: false, pending: true, esPrimero }])
     setPregunta('')
     try {
-      const { data } = await api.post('/bi/grok', { pregunta: q, contexto: ctxBlocks, mes, anio })
-      setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: data.respuesta, t: data.tokens, pending: false } : x))
+      const { data } = await api.post('/bi/grok', {
+        pregunta: q,
+        contexto: [],
+        mes, anio,
+        es_primer_mensaje: esPrimero,
+        historial: sesionHistorial,
+      })
+      const respuesta = data.respuesta || '⚠ Sin respuesta'
+      setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: respuesta, t: data.tokens, pending: false } : x))
+      // Añadir al historial de sesión para siguiente pregunta
+      setSesionHistorial(prev => [
+        ...prev,
+        { role: 'user', content: q },
+        { role: 'assistant', content: respuesta },
+      ])
     } catch {
       setChat(prev => prev.map((x, i) => i === idx ? { ...x, a: '⚠ Error conectando con Grok. Intenta de nuevo.', pending: false } : x))
       toast.error('Error conectando con Grok')
@@ -859,7 +919,7 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
       await api.post('/bi/grok/guardar', {
         pregunta: h.q,
         respuesta: h.a,
-        contextos: h.ctxBlocks || [],
+        contextos: [],
         mes, anio,
         tab: activeTab,
         tokens_total: h.t?.total_tokens || 0,
@@ -881,25 +941,27 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [chat])
   useEffect(() => { if (view === 'historial') cargarHistorial() }, [view])
 
-  const TABS_LABEL = { pnl: 'P&L', unit: 'Unit Economics', rent: 'Rentabilidad', costos: 'Costos', yoy: 'YoY', salud: 'Salud' }
-
   if (!open) return null
 
   const btnTab = (v, label, Icon) => (
     <button onClick={() => setView(v)} style={{
-      display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px',
+      display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px',
       background: view === v ? C.accentDim : 'transparent',
       border: `1px solid ${view === v ? C.accent : C.border}`,
       borderRadius: 20, color: view === v ? C.accent : C.muted,
-      fontSize: 12, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+      fontSize: 11, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
     }}>
-      <Icon size={13} /> {label}
+      <Icon size={12} /> {label}
     </button>
   )
 
+  const snapFecha = snapshot?.generado_en
+    ? new Date(snapshot.generado_en).toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null
+
   return (
     <div style={{
-      position: 'fixed', inset: '0 0 0 auto', width: 440, background: '#111', zIndex: 50,
+      position: 'fixed', inset: '0 0 0 auto', width: 460, background: '#111', zIndex: 50,
       display: 'flex', flexDirection: 'column', borderLeft: `1px solid ${C.borderStrong}`,
       boxShadow: '-8px 0 32px rgba(0,0,0,0.6)',
     }}>
@@ -909,13 +971,18 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
           <div style={{ background: C.accentDim, padding: 6, borderRadius: 8, display: 'flex' }}><Brain size={16} style={{ color: C.accent }} /></div>
           <div>
             <p style={{ color: C.text, fontWeight: 700, fontSize: 14, lineHeight: 1 }}>Grok AI</p>
-            <p style={{ color: C.dimmed, fontSize: 10, marginTop: 2 }}>Analista financiero</p>
+            <p style={{ color: C.dimmed, fontSize: 10, marginTop: 2 }}>
+              {sesionHistorial.length > 0
+                ? `Sesión activa · ${sesionHistorial.length / 2 | 0} pregunta${sesionHistorial.length > 2 ? 's' : ''}`
+                : 'Sin sesión activa'}
+            </p>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {btnTab('chat', 'Chat', Brain)}
+          {btnTab('memoria', 'Memoria', Database)}
           {btnTab('historial', 'Índice', BookOpen)}
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.muted, padding: 4, borderRadius: 6, marginLeft: 4 }}
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: C.muted, padding: 4, borderRadius: 6, marginLeft: 2 }}
             onMouseEnter={e => e.currentTarget.style.color = C.text}
             onMouseLeave={e => e.currentTarget.style.color = C.muted}>
             <X size={18} />
@@ -926,34 +993,62 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
       {/* ── CHAT VIEW ── */}
       {view === 'chat' && (
         <>
-          <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}` }}>
-            <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 8 }}>Contexto a inyectar:</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {Object.entries(ctxLabels).map(([k, label]) => (
-                <button key={k} onClick={() => setContextos(prev => ({ ...prev, [k]: !prev[k] }))}
-                  style={{
-                    fontSize: 11, padding: '4px 10px', borderRadius: 20, cursor: 'pointer', transition: 'all 0.15s',
-                    border: `1px solid ${contextos[k] ? C.accent : C.border}`,
-                    background: contextos[k] ? C.accentDim : 'transparent',
-                    color: contextos[k] ? C.accent : C.dimmed,
-                  }}>
-                  {contextos[k] ? '✓ ' : ''}{label}
-                </button>
-              ))}
-            </div>
-            <p style={{ color: C.dimmed, fontSize: 10, marginTop: 8 }}>~{estimatedTokens} tokens estimados</p>
+          {/* Barra de estado de memoria */}
+          <div style={{ padding: '8px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 10, padding: '2px 8px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 4,
+              background: briefOrig ? C.accentDim : C.surface,
+              border: `1px solid ${briefOrig ? C.accent + '55' : C.border}`,
+              color: briefOrig ? C.accent : C.dimmed,
+            }}>
+              <Database size={9} /> Brief {briefOrig ? '✓' : 'vacío'}
+            </span>
+            <span style={{
+              fontSize: 10, padding: '2px 8px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 4,
+              background: snapshot?.contenido ? C.accentDim : C.surface,
+              border: `1px solid ${snapshot?.contenido ? C.accent + '55' : C.border}`,
+              color: snapshot?.contenido ? C.accent : C.dimmed,
+            }}>
+              <Zap size={9} /> Snapshot {snapFecha ? snapFecha : 'sin generar'}
+            </span>
+            {sesionHistorial.length > 0 && (
+              <button onClick={nuevaSesion} style={{
+                marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                background: 'transparent', border: `1px solid ${C.border}`, color: C.dimmed,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+              }}>
+                <RefreshCw size={9} /> Nueva sesión
+              </button>
+            )}
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {chat.length === 0 && (
               <div style={{ color: C.dimmed, fontSize: 13, textAlign: 'center', marginTop: 40 }}>
                 <Brain size={32} style={{ color: C.borderStrong, marginBottom: 12, display: 'block', margin: '0 auto 12px' }} />
-                Hazle una pregunta a Grok sobre los datos del período.
+                <p>Hazle una pregunta a Grok.</p>
+                {!briefOrig && (
+                  <p style={{ fontSize: 11, marginTop: 10, color: C.dimmed }}>
+                    💡 Configura el <button onClick={() => setView('memoria')} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>Brief del negocio</button> para que Grok conozca E-Courier.
+                  </p>
+                )}
+                {!snapshot?.contenido && (
+                  <p style={{ fontSize: 11, marginTop: 6, color: C.dimmed }}>
+                    💡 Genera el <button onClick={() => setView('memoria')} style={{ background: 'none', border: 'none', color: C.accent, cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>Snapshot financiero</button> para contexto del negocio hoy.
+                  </p>
+                )}
               </div>
             )}
             {chat.map((h, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.text }}>{h.q}</div>
+                <div style={{ background: C.accentDim, border: `1px solid ${C.accent}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.text }}>
+                  {h.esPrimero && (
+                    <span style={{ fontSize: 9, color: C.accent, background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: '1px 6px', marginBottom: 6, display: 'inline-block' }}>
+                      + Snapshot y brief inyectados
+                    </span>
+                  )}
+                  <p>{h.q}</p>
+                </div>
                 {h.pending ? (
                   <div style={{ background: C.surface, border: `1px solid ${C.accent}55`, borderRadius: 8, padding: '16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ display: 'flex', gap: 5 }}>
@@ -961,13 +1056,13 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
                         <div key={j} style={{ width: 7, height: 7, borderRadius: '50%', background: C.accent, animation: `grokPulse 1.2s ease-in-out ${j * 0.22}s infinite` }} />
                       ))}
                     </div>
-                    <span style={{ color: C.muted, fontSize: 12 }}>Grok está analizando tu pregunta...</span>
+                    <span style={{ color: C.muted, fontSize: 12 }}>Grok está analizando...</span>
                   </div>
                 ) : (
                   <>
                     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{h.a}</div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      {h.t && <p style={{ color: C.dimmed, fontSize: 10 }}>Tokens: {h.t.total_tokens || '—'}</p>}
+                      {h.t && <p style={{ color: C.dimmed, fontSize: 10 }}>Tokens: {h.t.total_tokens?.toLocaleString('es-CL') || '—'}</p>}
                       <button onClick={() => guardar(i)} disabled={h.saved}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, padding: '4px 10px',
@@ -991,7 +1086,7 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={pregunta} onChange={e => setPregunta(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && enviar()}
-                placeholder="Pregunta sobre los datos..."
+                placeholder="Pregunta sobre el negocio..."
                 disabled={loading}
                 style={{
                   flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
@@ -1011,6 +1106,92 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── MEMORIA VIEW ── */}
+      {view === 'memoria' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+          {/* Snapshot */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div>
+                <p style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>Snapshot financiero</p>
+                <p style={{ color: C.dimmed, fontSize: 11, marginTop: 2 }}>
+                  Resumen del negocio hoy: P&L, cobros pendientes, pagos próximos. Se inyecta en el primer mensaje de cada sesión.
+                </p>
+              </div>
+              <button onClick={generarSnapshot} disabled={generatingSnap}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 14px',
+                  borderRadius: 8, cursor: generatingSnap ? 'default' : 'pointer',
+                  background: C.accent, border: 'none', color: '#fff', opacity: generatingSnap ? 0.6 : 1,
+                  transition: 'opacity 0.15s', whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                {generatingSnap ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
+                {generatingSnap ? 'Generando...' : 'Actualizar'}
+              </button>
+            </div>
+            {snapshot?.contenido ? (
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px', fontSize: 11, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.7, maxHeight: 240, overflowY: 'auto' }}>
+                {snapshot.contenido}
+                {snapshot.contenido.endsWith('...') && <span style={{ color: C.dimmed }}> (preview)</span>}
+              </div>
+            ) : (
+              <div style={{ background: C.surface, border: `1px dashed ${C.border}`, borderRadius: 8, padding: '20px', textAlign: 'center', color: C.dimmed, fontSize: 12 }}>
+                Sin snapshot generado. Haz click en "Actualizar" para generarlo.
+              </div>
+            )}
+            {snapFecha && (
+              <p style={{ color: C.dimmed, fontSize: 10, marginTop: 6 }}>
+                Generado el {snapFecha} · ~{snapshot?.tokens_aprox || 0} tokens
+              </p>
+            )}
+          </div>
+
+          <div style={{ borderTop: `1px solid ${C.border}` }} />
+
+          {/* Brief */}
+          <div>
+            <div style={{ marginBottom: 10 }}>
+              <p style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>Brief del negocio</p>
+              <p style={{ color: C.dimmed, fontSize: 11, marginTop: 2 }}>
+                Descripción permanente de E-Courier: modelo de negocio, créditos, estructura de costos, etc. Grok lo lee en cada sesión como su "conocimiento base".
+              </p>
+            </div>
+            <textarea
+              value={brief}
+              onChange={e => setBrief(e.target.value)}
+              rows={14}
+              style={{
+                width: '100%', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+                padding: '10px 12px', fontSize: 12, color: C.text, outline: 'none', resize: 'vertical',
+                lineHeight: 1.6, fontFamily: 'monospace', boxSizing: 'border-box',
+              }}
+              onFocus={e => e.target.style.borderColor = C.accent}
+              onBlur={e => e.target.style.borderColor = C.border}
+              placeholder="Describe el negocio de E-Courier: modelo, sellers clave, conductores, créditos, tarifas, contexto relevante..."
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+              <p style={{ color: C.dimmed, fontSize: 10 }}>
+                ~{(brief.length / 4) | 0} tokens · {brief.length} chars
+                {briefUpdated && ` · Guardado ${new Date(briefUpdated).toLocaleDateString('es-CL')}`}
+              </p>
+              <button onClick={guardarBrief} disabled={savingBrief || brief === briefOrig}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 16px',
+                  borderRadius: 8, cursor: (savingBrief || brief === briefOrig) ? 'default' : 'pointer',
+                  background: brief !== briefOrig ? C.accent : C.surface,
+                  border: `1px solid ${brief !== briefOrig ? C.accent : C.border}`,
+                  color: brief !== briefOrig ? '#fff' : C.dimmed,
+                  opacity: savingBrief ? 0.6 : 1, transition: 'all 0.15s',
+                }}>
+                {savingBrief ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : null}
+                {savingBrief ? 'Guardando...' : brief === briefOrig ? 'Sin cambios' : 'Guardar brief'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── HISTORIAL VIEW ── */}
@@ -1075,9 +1256,6 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
                         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, color: C.muted, whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 320, overflowY: 'auto' }}>
                           {item.respuesta}
                         </div>
-                        {item.contextos?.length > 0 && (
-                          <p style={{ fontSize: 10, color: C.dimmed }}>Contexto: {item.contextos.length} bloques inyectados</p>
-                        )}
                         {item.tokens_total > 0 && (
                           <p style={{ fontSize: 10, color: C.dimmed }}>Tokens usados: {item.tokens_total.toLocaleString('es-CL')}</p>
                         )}

@@ -219,6 +219,46 @@ with engine.connect() as conn:
         if "tipo_pago" not in sel_cols:
             safe_exec("ALTER TABLE sellers ADD COLUMN tipo_pago TEXT NOT NULL DEFAULT 'semanal'")
 
+    # ── Migración: Grok Memory System (brief + snapshot) ──
+    safe_exec("""
+        CREATE TABLE IF NOT EXISTS grok_brief (
+            id SERIAL PRIMARY KEY,
+            contenido TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    safe_exec("""
+        CREATE TABLE IF NOT EXISTS grok_snapshot (
+            id SERIAL PRIMARY KEY,
+            contenido TEXT NOT NULL DEFAULT '',
+            generado_en TIMESTAMP DEFAULT NOW(),
+            tokens_aprox INTEGER DEFAULT 0
+        )
+    """)
+    # Seed: insertar fila inicial del brief si no existe
+    with engine.connect() as conn:
+        try:
+            count = conn.execute(text("SELECT COUNT(*) FROM grok_brief")).scalar()
+            if count == 0:
+                conn.execute(text("""
+                    INSERT INTO grok_brief (contenido) VALUES (
+                        'E-Courier es una empresa chilena de paquetería B2B. '
+                        'Opera con sellers (clientes que generan envíos), drivers (conductores que entregan), '
+                        'y pickups (puntos de retiro/recepción). '
+                        'Los drivers pueden ser contratados (flota propia con sueldos, combustible y mantención) '
+                        'o tercerizados. Algunos drivers son Jefes de Flota con conductores subordinados. '
+                        'Los sellers tienen tipo de pago: semanal, quincenal o mensual. '
+                        'La empresa tiene créditos vehiculares activos: Forum-JAC ($483.085/mes, vence día 2) '
+                        'y Tanner-Foton ($395.179/mes, vence día 23). '
+                        'El sistema registra envíos con cobro_seller (ingreso) y costo_driver (egreso). '
+                        'Los extras (producto, comuna) se suman al cobro del seller y al costo del driver. '
+                        'Moneda: CLP. Datos históricos disponibles desde 2024.'
+                    )
+                """))
+                conn.commit()
+        except Exception:
+            conn.rollback()
+
     # ── Migración: tablas CPP (pagos pickups) y facturas pickups se crean via create_all ──
 
     # ── Eliminar driver "Oscar" (27) y consolidar en "Oscar Martínez" (54) ─────

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func as F, case, extract, cast, Date, text
-from typing import Optional
+from typing import Optional, List
 
 from app.database import get_db
 from app.auth import require_admin_or_administracion
@@ -11,6 +11,7 @@ from app.models import (
     PagoSemanaSeller, PagoSemanaDriver, PagoSemanaPickup,
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
     PagoTrabajador, CalendarioSemanas, GrokAnalisis,
+    GrokBrief, GrokSnapshot,
 )
 
 router = APIRouter(prefix="/bi", tags=["Business Intelligence"])
@@ -813,6 +814,8 @@ class GrokRequest(BaseModel):
     contexto: List[str] = []
     mes: int = 3
     anio: int = 2026
+    es_primer_mensaje: bool = True
+    historial: List[dict] = []  # [{role: "user"|"assistant", content: "..."}]
 
 
 def _smart_context(db: Session, pregunta: str, mes: int, anio: int) -> str:
@@ -942,22 +945,50 @@ async def grok_query(
     if not api_key:
         return {"error": "XAI_API_KEY no configurada en el servidor"}
 
+    # ── Brief del negocio (system prompt persistente) ──────────────────────────
+    brief_row = db.query(GrokBrief).order_by(GrokBrief.id.desc()).first()
+    brief_text = brief_row.contenido if brief_row else ""
+
     system_prompt = (
-        "Eres un analista financiero senior de E-Courier, empresa chilena de paquetería B2B. "
+        "Eres el analista financiero senior de E-Courier, empresa chilena de paquetería B2B. "
         "Respondes ÚNICAMENTE en español. Moneda: CLP (pesos chilenos). "
         "REGLA CRÍTICA: Usa EXCLUSIVAMENTE los datos del CONTEXTO FINANCIERO que se te proporciona. "
         "NUNCA inventes, estimes ni uses números hipotéticos. "
         "Si los datos exactos están en el contexto, úsalos directamente. "
         "Si falta algún dato, indica qué información específica no está disponible en lugar de estimarla. "
-        "Sé conciso y directo. Usa formato claro con bullets cuando ayude."
+        "Sé conciso y directo. Usa formato claro con bullets cuando ayude.\n\n"
+        + (f"=== CONOCIMIENTO DEL NEGOCIO ===\n{brief_text}" if brief_text else "")
     )
 
-    # Contexto automático desde la DB (siempre presente)
-    smart_ctx = _smart_context(db, req.pregunta, req.mes, req.anio)
-    all_ctx_parts = ([smart_ctx] if smart_ctx else []) + (req.contexto or [])
-    context_block = "\n\n".join(all_ctx_parts)
+    # ── Snapshot financiero semanal (se incluye solo en primer mensaje de sesión) ──
+    snapshot_block = ""
+    if req.es_primer_mensaje:
+        snap_row = db.query(GrokSnapshot).order_by(GrokSnapshot.id.desc()).first()
+        if snap_row and snap_row.contenido:
+            snapshot_block = f"=== SNAPSHOT FINANCIERO (actualizado {snap_row.generado_en.strftime('%d/%m/%Y %H:%M') if snap_row.generado_en else ''}) ===\n{snap_row.contenido}"
 
+    # ── Smart context: drivers/sellers/zonas detectados en la pregunta ─────────
+    smart_ctx = _smart_context(db, req.pregunta, req.mes, req.anio)
+
+    # ── Armar bloque de contexto adicional ────────────────────────────────────
+    extra_parts = []
+    if snapshot_block:
+        extra_parts.append(snapshot_block)
+    if smart_ctx:
+        extra_parts.append(smart_ctx)
+    if req.contexto:
+        extra_parts.extend(req.contexto)
+
+    context_block = "\n\n".join(extra_parts)
     user_msg = f"CONTEXTO FINANCIERO:\n{context_block}\n\nPREGUNTA: {req.pregunta}" if context_block else req.pregunta
+
+    # ── Armar array de mensajes con historial de sesión ────────────────────────
+    # El historial viene del frontend: lista de {role, content} de turnos anteriores
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    for h in (req.historial or []):
+        if h.get("role") in ("user", "assistant") and h.get("content"):
+            messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": user_msg})
 
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
@@ -965,10 +996,7 @@ async def grok_query(
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
                 "model": "grok-3",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg},
-                ],
+                "messages": messages,
                 "temperature": 0.2,
             },
         )
@@ -978,6 +1006,211 @@ async def grok_query(
     answer = data["choices"][0]["message"]["content"]
     usage = data.get("usage", {})
     return {"respuesta": answer, "tokens": usage}
+
+
+# ════════════════════════════════════════════════════
+#  GROK — Brief del negocio
+# ════════════════════════════════════════════════════
+
+class BriefUpdateRequest(BaseModel):
+    contenido: str
+
+
+@router.get("/grok/brief")
+def get_brief(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    row = db.query(GrokBrief).order_by(GrokBrief.id.desc()).first()
+    if not row:
+        return {"contenido": "", "updated_at": None}
+    return {
+        "contenido": row.contenido,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@router.put("/grok/brief")
+def update_brief(
+    req: BriefUpdateRequest,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    from datetime import datetime as dt
+    row = db.query(GrokBrief).order_by(GrokBrief.id.desc()).first()
+    if row:
+        row.contenido = req.contenido
+        row.updated_at = dt.utcnow()
+    else:
+        row = GrokBrief(contenido=req.contenido)
+        db.add(row)
+    db.commit()
+    return {"ok": True}
+
+
+# ════════════════════════════════════════════════════
+#  GROK — Snapshot financiero semanal
+# ════════════════════════════════════════════════════
+
+def _generate_snapshot_text(db: Session) -> str:
+    """
+    Genera un texto comprimido con el estado financiero actual del negocio:
+    - P&L del mes en curso
+    - Cobros pendientes por seller (según tipo_pago)
+    - Pagos a conductores pendientes
+    - Créditos con vencimiento próximo (30 días)
+    - Movimientos financieros próximos
+    """
+    from datetime import datetime as dt, date, timedelta
+    import calendar
+
+    lines: list[str] = []
+    hoy = date.today()
+    mes_actual = hoy.month
+    anio_actual = hoy.year
+
+    # ── P&L operacional del mes en curso ──────────────────────────────────────
+    pnl = db.query(
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+        F.coalesce(F.sum(Envio.costo_driver + Envio.extra_producto_driver + Envio.extra_comuna_driver), 0).label("costo"),
+    ).filter(
+        Envio.mes == mes_actual,
+        Envio.anio == anio_actual,
+        Envio.estado_entrega == 'delivered',
+    ).first()
+
+    if pnl and int(pnl.envios) > 0:
+        rev, cost = int(pnl.revenue), int(pnl.costo)
+        lines.append(f"P&L {hoy.strftime('%B %Y')} (hasta hoy):")
+        lines.append(f"  Envíos entregados: {int(pnl.envios):,}")
+        lines.append(f"  Revenue: ${rev:,} | Costo drivers: ${cost:,} | Margen: ${rev - cost:,} ({round((rev - cost) / rev * 100, 1) if rev else 0}%)")
+
+    # ── Top 10 sellers del mes con cobro pendiente ────────────────────────────
+    seller_rows = db.query(
+        Seller.nombre,
+        Seller.tipo_pago,
+        F.count(Envio.id).label("envios"),
+        F.coalesce(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller), 0).label("revenue"),
+    ).join(Seller, Envio.seller_id == Seller.id
+    ).filter(
+        Envio.mes == mes_actual,
+        Envio.anio == anio_actual,
+        Envio.estado_entrega == 'delivered',
+        Envio.is_facturado == False,
+    ).group_by(Seller.nombre, Seller.tipo_pago
+    ).order_by(F.sum(Envio.cobro_seller + Envio.extra_producto_seller + Envio.extra_comuna_seller).desc()
+    ).limit(15).all()
+
+    if seller_rows:
+        lines.append(f"\nCobros pendientes (sellers sin facturar, {hoy.strftime('%b %Y')}):")
+        total_pend = 0
+        for r in seller_rows:
+            rv = int(r.revenue)
+            total_pend += rv
+            lines.append(f"  {r.nombre} [{r.tipo_pago or 'semanal'}]: {int(r.envios)} env → ${rv:,}")
+        lines.append(f"  TOTAL pendiente de facturar: ${total_pend:,}")
+
+    # ── Pagos a conductores pendientes (PagoSemanaDriver PENDIENTE/INCOMPLETO) ─
+    driver_pend = db.query(
+        Driver.nombre,
+        F.sum(PagoSemanaDriver.monto_objetivo).label("monto_obj"),
+        F.sum(PagoSemanaDriver.monto_pagado).label("monto_pag"),
+    ).join(Driver, PagoSemanaDriver.driver_id == Driver.id
+    ).filter(
+        PagoSemanaDriver.mes == mes_actual,
+        PagoSemanaDriver.anio == anio_actual,
+        PagoSemanaDriver.estado.in_(["PENDIENTE", "INCOMPLETO"]),
+    ).group_by(Driver.nombre
+    ).order_by(F.sum(PagoSemanaDriver.monto_objetivo).desc()
+    ).limit(10).all()
+
+    if driver_pend:
+        lines.append(f"\nPagos pendientes a conductores ({hoy.strftime('%b %Y')}):")
+        total_drv = 0
+        for r in driver_pend:
+            obj = int(r.monto_obj or 0)
+            pag = int(r.monto_pag or 0)
+            por_pagar = obj - pag
+            total_drv += por_pagar
+            lines.append(f"  {r.nombre}: ${por_pagar:,} por pagar (objetivo ${obj:,}, pagado ${pag:,})")
+        lines.append(f"  TOTAL por pagar conductores: ${total_drv:,}")
+
+    # ── Créditos con vencimiento en los próximos 30 días ─────────────────────
+    fecha_limite = hoy + timedelta(days=30)
+    creditos = db.query(MovimientoFinanciero).filter(
+        MovimientoFinanciero.estado == "PENDIENTE",
+        MovimientoFinanciero.fecha_vencimiento != None,
+        MovimientoFinanciero.fecha_vencimiento >= hoy,
+        MovimientoFinanciero.fecha_vencimiento <= fecha_limite,
+    ).order_by(MovimientoFinanciero.fecha_vencimiento).all()
+
+    if creditos:
+        lines.append(f"\nEgresos programados próximos 30 días (créditos/pagos):")
+        total_cred = 0
+        for c in creditos:
+            total_cred += int(c.monto or 0)
+            venc = c.fecha_vencimiento.strftime('%d/%m') if c.fecha_vencimiento else "?"
+            lines.append(f"  {c.nombre} — ${int(c.monto or 0):,} vence {venc}")
+        lines.append(f"  TOTAL egresos próximos 30 días: ${total_cred:,}")
+
+    # ── Otros movimientos pendientes (no créditos) ───────────────────────────
+    otros_pend = db.query(
+        F.coalesce(F.sum(MovimientoFinanciero.monto), 0).label("total"),
+        F.count(MovimientoFinanciero.id).label("cant"),
+    ).join(CategoriaFinanciera, MovimientoFinanciero.categoria_id == CategoriaFinanciera.id
+    ).filter(
+        MovimientoFinanciero.estado == "PENDIENTE",
+        MovimientoFinanciero.mes == mes_actual,
+        MovimientoFinanciero.anio == anio_actual,
+        CategoriaFinanciera.tipo == "EGRESO",
+    ).first()
+
+    if otros_pend and int(otros_pend.cant) > 0:
+        lines.append(f"\nOtros egresos pendientes del mes: {int(otros_pend.cant)} items por ${int(otros_pend.total):,}")
+
+    return "\n".join(lines)
+
+
+@router.post("/grok/snapshot/generar")
+def generar_snapshot(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    from datetime import datetime as dt
+    texto = _generate_snapshot_text(db)
+    tokens_aprox = len(texto) // 4
+
+    row = db.query(GrokSnapshot).order_by(GrokSnapshot.id.desc()).first()
+    if row:
+        row.contenido = texto
+        row.generado_en = dt.utcnow()
+        row.tokens_aprox = tokens_aprox
+    else:
+        row = GrokSnapshot(contenido=texto, tokens_aprox=tokens_aprox)
+        db.add(row)
+    db.commit()
+    return {
+        "ok": True,
+        "tokens_aprox": tokens_aprox,
+        "generado_en": row.generado_en.isoformat(),
+        "preview": texto[:500] + ("..." if len(texto) > 500 else ""),
+    }
+
+
+@router.get("/grok/snapshot")
+def get_snapshot(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    row = db.query(GrokSnapshot).order_by(GrokSnapshot.id.desc()).first()
+    if not row:
+        return {"contenido": "", "generado_en": None, "tokens_aprox": 0}
+    return {
+        "contenido": row.contenido,
+        "generado_en": row.generado_en.isoformat() if row.generado_en else None,
+        "tokens_aprox": row.tokens_aprox,
+    }
 
 
 # ════════════════════════════════════════════════════

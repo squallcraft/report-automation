@@ -582,6 +582,7 @@ def _productos_envios(db: Session, envios_list):
             result.append({
                 "codigo_mlc": e.tracking_id or f"Envío #{e.id}",
                 "descripcion": f"Extra manual — {', '.join(desc_parts)}" if desc_parts else "Extra manual",
+                "direccion": e.direccion or "",
                 "extra_seller": cobro_m,
                 "extra_driver": pago_m,
                 "cantidad": 1,
