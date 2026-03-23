@@ -1141,7 +1141,11 @@ def _generate_snapshot_text(db: Session) -> str:
 
     # ── Créditos con vencimiento en los próximos 30 días ─────────────────────
     fecha_limite = hoy + timedelta(days=30)
-    creditos = db.query(MovimientoFinanciero).filter(
+    creditos = db.query(
+        MovimientoFinanciero,
+        CategoriaFinanciera.nombre.label("categoria_nombre"),
+    ).join(CategoriaFinanciera, MovimientoFinanciero.categoria_id == CategoriaFinanciera.id
+    ).filter(
         MovimientoFinanciero.estado == "PENDIENTE",
         MovimientoFinanciero.fecha_vencimiento != None,
         MovimientoFinanciero.fecha_vencimiento >= hoy,
@@ -1149,12 +1153,15 @@ def _generate_snapshot_text(db: Session) -> str:
     ).order_by(MovimientoFinanciero.fecha_vencimiento).all()
 
     if creditos:
-        lines.append(f"\nEgresos programados próximos 30 días (créditos/pagos):")
+        lines.append(f"\nEgresos programados próximos 30 días:")
         total_cred = 0
-        for c in creditos:
+        for c, cat_nombre in creditos:
             total_cred += int(c.monto or 0)
             venc = c.fecha_vencimiento.strftime('%d/%m') if c.fecha_vencimiento else "?"
-            lines.append(f"  {c.nombre} — ${int(c.monto or 0):,} vence {venc}")
+            label = f"{cat_nombre} — {c.nombre}"
+            if c.proveedor and c.proveedor != c.nombre:
+                label += f" ({c.proveedor})"
+            lines.append(f"  {label}: ${int(c.monto or 0):,} vence {venc}")
         lines.append(f"  TOTAL egresos próximos 30 días: ${total_cred:,}")
 
     # ── Otros movimientos pendientes (no créditos) ───────────────────────────
