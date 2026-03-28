@@ -91,8 +91,10 @@ function SidebarLink({ to, icon: Icon, label, collapsed, end = false }) {
     <NavLink
       to={to}
       end={end}
+      title={collapsed ? label : undefined}
       className={({ isActive }) =>
-        `flex items-center gap-3 px-3 sm:px-4 py-2 sm:py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors touch-manipulation
+        `flex items-center gap-3 py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors touch-manipulation
+        ${collapsed ? 'justify-center px-2' : 'px-3 sm:px-4'}
         ${isActive ? 'bg-primary-700 text-white' : 'text-primary-200 hover:bg-primary-800 hover:text-white'}`
       }
     >
@@ -110,8 +112,10 @@ function SidebarGroup({ group, icon: Icon, children, collapsed, openGroups, togg
   return (
     <div>
       <button
-        onClick={() => toggleGroup(group)}
-        className={`flex items-center gap-3 px-3 sm:px-4 py-2 sm:py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors w-full text-left touch-manipulation
+        onClick={() => !collapsed && toggleGroup(group)}
+        title={collapsed ? group : undefined}
+        className={`flex items-center gap-3 py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors w-full text-left touch-manipulation
+          ${collapsed ? 'justify-center px-2' : 'px-3 sm:px-4'}
           ${hasActive ? 'text-white' : 'text-primary-300 hover:bg-primary-800 hover:text-white'}`}
       >
         <Icon size={18} className="shrink-0" />
@@ -187,27 +191,33 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     <aside
       className={`
         fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-primary-900 text-white
-        w-64 transition-transform duration-200 ease-out
+        transition-all duration-200 ease-out overflow-hidden
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        w-64 ${collapsed ? 'lg:w-16' : 'lg:w-64'}
+        ${collapsed ? 'lg:w-16' : 'w-64'}
       `}
     >
-      <div className="flex items-center justify-between px-4 py-3 sm:py-5 border-b border-primary-800">
+      <div className={`flex items-center py-3 sm:py-5 border-b border-primary-800 px-3 ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
         {!collapsed && (
           <div className="min-w-0">
             <h1 className="text-base sm:text-lg font-bold tracking-wide truncate">ECourier</h1>
             <p className="text-xs text-primary-300 hidden sm:block">Sistema de Liquidación</p>
           </div>
         )}
-        {onClose ? (
+        {/* Botón cerrar en móvil */}
+        {onClose && (
           <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-primary-800 lg:hidden" aria-label="Cerrar menú">
             <X size={20} />
           </button>
-        ) : (
-          <button type="button" onClick={() => setCollapsed(!collapsed)} className="p-1 rounded hover:bg-primary-800 transition-colors hidden lg:block">
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
         )}
+        {/* Botón colapsar en desktop */}
+        <button
+          type="button"
+          onClick={() => setCollapsed(v => !v)}
+          className="p-1.5 rounded-lg hover:bg-primary-800 transition-colors hidden lg:flex items-center justify-center shrink-0"
+          aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+        >
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
       </div>
 
       <nav className="flex-1 py-2 sm:py-4 space-y-0.5 overflow-y-auto">
@@ -231,13 +241,14 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         )}
       </nav>
 
-      <div className="border-t border-primary-800 p-3 sm:p-4">
+      <div className={`border-t border-primary-800 p-3 sm:p-4 ${collapsed ? 'flex justify-center' : ''}`}>
         {!collapsed && (
           <p className="text-xs text-primary-300 mb-2 truncate">{user?.nombre}</p>
         )}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 text-sm text-primary-300 hover:text-white transition-colors w-full"
+          title={collapsed ? 'Cerrar sesión' : undefined}
+          className={`flex items-center gap-2 text-sm text-primary-300 hover:text-white transition-colors w-full ${collapsed ? 'justify-center' : ''}`}
         >
           <LogOut size={16} />
           {!collapsed && <span>Cerrar sesión</span>}
