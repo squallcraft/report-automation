@@ -24,6 +24,8 @@ export default function Envios() {
 
   const [envios, setEnvios] = useState([])
   const [loading, setLoading] = useState(true)
+  const [fetching, setFetching] = useState(false)
+  const hasLoadedOnce = useRef(false)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [filters, setFilters] = useState({
@@ -81,7 +83,11 @@ export default function Envios() {
   }, [search, filters, colFilters, sortBy, sortDir])
 
   const fetchEnvios = useCallback(() => {
-    setLoading(true)
+    if (!hasLoadedOnce.current) {
+      setLoading(true)
+    } else {
+      setFetching(true)
+    }
     const params = buildParams()
     api.get('/envios', { params })
       .then((envRes) => {
@@ -91,9 +97,13 @@ export default function Envios() {
           extra_total_driver: (e.extra_producto_driver || 0) + (e.extra_comuna_driver || 0) + (e.pago_extra_manual || 0),
         }))
         setEnvios(enriched)
+        hasLoadedOnce.current = true
       })
       .catch(() => toast.error('Error al cargar envíos'))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        setFetching(false)
+      })
   }, [buildParams])
 
   useEffect(() => {
@@ -356,7 +366,7 @@ export default function Envios() {
       {loading ? (
         <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
       ) : (
-        <>
+        <div className={`transition-opacity duration-150 ${fetching ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
           <DataTable
             columns={columns}
             data={envios}
@@ -370,7 +380,7 @@ export default function Envios() {
             onColumnFilterChange={handleColumnFilter}
             maxHeight="calc(100vh - 280px)"
           />
-        </>
+        </div>
       )}
 
       <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detalle del Envío" wide>
