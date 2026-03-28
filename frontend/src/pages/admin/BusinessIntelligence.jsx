@@ -264,7 +264,6 @@ const GLOSSARY = {
   'Δ YoY': 'Variación año sobre año: diferencia porcentual entre el valor actual (2026) y el período equivalente del año anterior (2025).',
   'Margen promedio': 'Promedio ponderado del margen operacional de todos los sellers o drivers activos en el período.',
   'Envíos': 'Cantidad total de paquetes entregados (estado: delivered) en el período.',
-  'Resultado': 'Revenue − Costo total del período. Indica si la operación fue rentable.',
   'Contratado': 'Driver con vínculo laboral directo: la empresa paga sueldo, combustible y mantención de vehículo.',
   'Tercerizado': 'Driver independiente: la empresa paga una tarifa por envío, sin costos de nómina.',
 }
