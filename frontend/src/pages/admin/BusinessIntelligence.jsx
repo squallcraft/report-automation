@@ -204,7 +204,7 @@ function BarChart({ data, labelKey, bars, barLabels, colors, height = 180 }) {
                       }}>
                         <p style={{ color: colors[j], fontSize: 10, margin: 0, fontWeight: 600 }}>{label}</p>
                         <p style={{ color: C.text, fontSize: 12, margin: '2px 0 0', fontWeight: 700 }}>{tooltip.value}</p>
-                        <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 8, height: 8, background: '#111', border: `1px solid ${C.borderStrong}`, borderTop: 'none', borderLeft: 'none', transform: 'translateX(-50%) rotate(45deg)' }} />
+                        <div style={{ position: 'absolute', bottom: -5, left: '50%', width: 8, height: 8, background: '#111', border: `1px solid ${C.borderStrong}`, borderTop: 'none', borderLeft: 'none', transform: 'translateX(-50%) rotate(45deg)' }} />
                       </div>
                     )}
                   </div>
