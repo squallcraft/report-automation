@@ -36,6 +36,7 @@ import DriverEntregas from './pages/driver/DriverEntregas'
 import DriverLiquidacion from './pages/driver/DriverLiquidacion'
 import DriverConsultas from './pages/driver/DriverConsultas'
 import DriverGanancias from './pages/driver/DriverGanancias'
+import DriverFacturas from './pages/driver/DriverFacturas'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Trabajadores from './pages/admin/Trabajadores'
@@ -131,6 +132,7 @@ export default function App() {
         <Route path="entregas" element={<DriverEntregas />} />
         <Route path="liquidacion" element={<DriverLiquidacion />} />
         <Route path="ganancias" element={<DriverGanancias />} />
+        <Route path="facturas" element={<DriverFacturas />} />
         <Route path="consultas" element={<DriverConsultas />} />
       </Route>
 

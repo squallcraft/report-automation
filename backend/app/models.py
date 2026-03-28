@@ -664,6 +664,38 @@ class FacturaPickup(Base):
     pickup = relationship("Pickup")
 
 
+class EstadoFacturaDriverEnum(str, enum.Enum):
+    SIN_FACTURA = "SIN_FACTURA"
+    CARGADA = "CARGADA"
+    APROBADA = "APROBADA"
+    RECHAZADA = "RECHAZADA"
+
+
+class FacturaDriver(Base):
+    """Factura semanal subida por un driver para un período específico."""
+    __tablename__ = "facturas_drivers"
+    __table_args__ = (
+        UniqueConstraint("driver_id", "semana", "mes", "anio", name="uq_factura_driver_periodo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=False)
+    semana = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    archivo_nombre = Column(String, nullable=True)
+    archivo_path = Column(String, nullable=True)
+    estado = Column(String, nullable=False, default=EstadoFacturaDriverEnum.CARGADA.value)
+    nota_driver = Column(Text, nullable=True)
+    nota_admin = Column(Text, nullable=True)
+    revisado_por = Column(String, nullable=True)
+    revisado_en = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    driver = relationship("Driver")
+
+
 class CartolaCarga(Base):
     """Historial de cada archivo de cartola subido al sistema."""
     __tablename__ = "cartola_cargas"

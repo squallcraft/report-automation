@@ -6,10 +6,12 @@ Endpoints del portal de seller y driver:
 - Excel filtrado (mismas restricciones)
 """
 import io
+import os
+import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -18,10 +20,16 @@ from app.models import (
     Envio, Seller, Driver, Retiro, AjusteLiquidacion,
     TipoEntidadEnum, PagoSemanaSeller, FacturaMensualSeller,
     CalendarioSemanas, EstadoPagoEnum, PagoCartolaSeller,
+    PagoSemanaDriver, FacturaDriver, EstadoFacturaDriverEnum,
 )
 from app.services.liquidacion import calcular_liquidacion_sellers, calcular_liquidacion_drivers
 from app.services.pdf_generator import generar_pdf_seller, generar_pdf_driver
 from app.api.liquidacion import _driver_detail, _daily_breakdown, _productos_envios
+
+UPLOADS_DIR_DRIVERS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "uploads", "facturas_drivers",
+)
 
 
 def _fmt_fecha(valor) -> str:
@@ -770,3 +778,142 @@ def driver_ganancias(
         "semanas": semanas_detalle,
         "pagos": pagos,
     }
+
+
+# ── DRIVER: Facturas semanales ────────────────────────────────────────────────
+
+def _monto_efectivo_driver(db: Session, driver_id: int, semana: int, mes: int, anio: int) -> int:
+    """Retorna el monto exactamente como lo muestra CPC para esa semana."""
+    from app.api.cpc import _get_monto_semanal_driver
+    pago = db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.driver_id == driver_id,
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+    ).first()
+    if pago and pago.monto_override is not None:
+        return pago.monto_override
+    if pago and pago.estado == EstadoPagoEnum.PAGADO.value and pago.monto_neto:
+        return pago.monto_neto
+    return _get_monto_semanal_driver(db, driver_id, semana, mes, anio)
+
+
+@router.post("/driver/facturas/upload")
+async def driver_upload_factura(
+    semana: int = Query(...),
+    mes: int = Query(...),
+    anio: int = Query(...),
+    nota: Optional[str] = Query(None),
+    archivo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_driver),
+):
+    driver_id = current_user["id"]
+    driver = db.get(Driver, driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+
+    allowed_ext = (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+    ext = os.path.splitext(archivo.filename or "")[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(status_code=400, detail=f"Formato no permitido. Use: {', '.join(allowed_ext)}")
+
+    existing = db.query(FacturaDriver).filter(
+        FacturaDriver.driver_id == driver_id,
+        FacturaDriver.semana == semana,
+        FacturaDriver.mes == mes,
+        FacturaDriver.anio == anio,
+    ).first()
+
+    if existing and existing.estado == EstadoFacturaDriverEnum.APROBADA.value:
+        raise HTTPException(status_code=400, detail="La factura de esta semana ya fue aprobada")
+
+    os.makedirs(UPLOADS_DIR_DRIVERS, exist_ok=True)
+    unique_name = f"{driver_id}_{semana}_{mes}_{anio}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = os.path.join(UPLOADS_DIR_DRIVERS, unique_name)
+
+    content = await archivo.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    if existing:
+        if existing.archivo_path and os.path.exists(existing.archivo_path):
+            try:
+                os.remove(existing.archivo_path)
+            except OSError:
+                pass
+        existing.archivo_nombre = archivo.filename
+        existing.archivo_path = file_path
+        existing.estado = EstadoFacturaDriverEnum.CARGADA.value
+        existing.nota_driver = nota
+        existing.nota_admin = None
+        existing.revisado_por = None
+        existing.revisado_en = None
+    else:
+        existing = FacturaDriver(
+            driver_id=driver_id, semana=semana, mes=mes, anio=anio,
+            archivo_nombre=archivo.filename,
+            archivo_path=file_path,
+            estado=EstadoFacturaDriverEnum.CARGADA.value,
+            nota_driver=nota,
+        )
+        db.add(existing)
+
+    db.commit()
+    db.refresh(existing)
+
+    return {
+        "ok": True,
+        "factura_id": existing.id,
+        "estado": existing.estado,
+        "archivo_nombre": existing.archivo_nombre,
+    }
+
+
+@router.get("/driver/facturas")
+def driver_listar_facturas(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_driver),
+):
+    driver_id = current_user["id"]
+    facturas = (
+        db.query(FacturaDriver)
+        .filter(FacturaDriver.driver_id == driver_id)
+        .order_by(FacturaDriver.anio.desc(), FacturaDriver.mes.desc(), FacturaDriver.semana.desc())
+        .all()
+    )
+    return [
+        {
+            "id": f.id,
+            "semana": f.semana,
+            "mes": f.mes,
+            "anio": f.anio,
+            "monto_neto": _monto_efectivo_driver(db, driver_id, f.semana, f.mes, f.anio),
+            "archivo_nombre": f.archivo_nombre,
+            "estado": f.estado,
+            "nota_driver": f.nota_driver,
+            "nota_admin": f.nota_admin,
+            "revisado_por": f.revisado_por,
+            "revisado_en": f.revisado_en.isoformat() if f.revisado_en else None,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f in facturas
+    ]
+
+
+@router.get("/driver/facturas/{factura_id}/descargar")
+def driver_descargar_factura(
+    factura_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_driver),
+):
+    factura = db.get(FacturaDriver, factura_id)
+    if not factura or factura.driver_id != current_user["id"]:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if not factura.archivo_path or not os.path.exists(factura.archivo_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return FileResponse(
+        factura.archivo_path,
+        filename=factura.archivo_nombre or "factura.pdf",
+        media_type="application/octet-stream",
+    )

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users } from 'lucide-react'
+import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users, CheckCircle, XCircle, Clock } from 'lucide-react'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const SEMANAS = [1, 2, 3, 4, 5]
@@ -417,9 +417,189 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 }
 
 // ---------------------------------------------------------------------------
+// Badge de estado de factura (por semana)
+// ---------------------------------------------------------------------------
+const FACTURA_BADGE = {
+  CARGADA:  { label: 'Factura pendiente', cls: 'bg-amber-100 text-amber-700 border-amber-300', icon: AlertCircle },
+  APROBADA: { label: 'Factura aprobada',  cls: 'bg-emerald-100 text-emerald-700 border-emerald-300', icon: CheckCircle },
+  RECHAZADA:{ label: 'Factura rechazada', cls: 'bg-red-100 text-red-600 border-red-300', icon: XCircle },
+}
+
+function FacturaBadge({ estado, onClick }) {
+  if (!estado || estado === 'SIN_FACTURA') return null
+  const cfg = FACTURA_BADGE[estado]
+  if (!cfg) return null
+  const Icon = cfg.icon
+  return (
+    <button
+      onClick={onClick}
+      title={cfg.label}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium cursor-pointer hover:opacity-80 transition-opacity ${cfg.cls}`}
+    >
+      <Icon size={10} />
+      Factura
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Modal revisión de factura de driver
+// ---------------------------------------------------------------------------
+function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto, onClose, onRevisada }) {
+  const [factura, setFactura] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [notaAdmin, setNotaAdmin] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => {
+    api.get('/cpc/facturas-drivers', { params: { mes, anio } })
+      .then(({ data }) => {
+        const f = data.find(x => x.id === facturaId)
+        setFactura(f || null)
+        setNotaAdmin(f?.nota_admin || '')
+      })
+      .catch(() => setFactura(null))
+      .finally(() => setLoading(false))
+  }, [facturaId, mes, anio])
+
+  const descargar = async () => {
+    try {
+      const { data } = await api.get(`/cpc/facturas-drivers/${facturaId}/descargar`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = factura?.archivo_nombre || 'factura'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Error descargando factura')
+    }
+  }
+
+  const revisar = async (estado) => {
+    setGuardando(true)
+    try {
+      await api.put(`/cpc/facturas-drivers/${facturaId}/revisar`, null, {
+        params: { estado, nota_admin: notaAdmin || undefined },
+      })
+      toast.success(estado === 'APROBADA' ? 'Factura aprobada' : 'Factura rechazada')
+      onRevisada()
+      onClose()
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error revisando factura')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">Factura — {driverNombre}</h2>
+            <p className="text-sm text-gray-500">Semana {semana} · {MESES[mes]} {anio}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+        </div>
+
+        <div className="px-6 py-5 flex-1">
+          {loading ? (
+            <p className="text-center text-gray-400 py-6">Cargando...</p>
+          ) : !factura ? (
+            <p className="text-center text-gray-400 py-6">No se encontró la factura</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                <div>
+                  <p className="text-xs text-gray-500">Monto liquidado (CPC)</p>
+                  <p className="text-lg font-bold text-gray-800">{fmt(monto)}</p>
+                </div>
+                {factura.archivo_nombre && (
+                  <button onClick={descargar}
+                    className="flex items-center gap-1.5 text-blue-600 hover:underline text-sm font-medium">
+                    <Download size={14} /> {factura.archivo_nombre}
+                  </button>
+                )}
+              </div>
+
+              {factura.nota_driver && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-blue-700 mb-0.5">Nota del conductor</p>
+                  <p className="text-sm text-blue-800">{factura.nota_driver}</p>
+                </div>
+              )}
+
+              {factura.estado !== 'APROBADA' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Nota de rechazo (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    className="input w-full text-sm"
+                    placeholder="Motivo del rechazo..."
+                    value={notaAdmin}
+                    onChange={e => setNotaAdmin(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {factura.estado === 'APROBADA' && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2">
+                  <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-emerald-800">Factura aprobada</p>
+                    {factura.revisado_por && (
+                      <p className="text-xs text-emerald-600">por {factura.revisado_por}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {factura.estado === 'RECHAZADA' && factura.nota_admin && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-xs font-medium text-red-700 mb-0.5">Observación anterior</p>
+                  <p className="text-sm text-red-800">{factura.nota_admin}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {factura && factura.estado !== 'APROBADA' && (
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+            <button onClick={onClose} className="btn btn-secondary">Cancelar</button>
+            <button
+              onClick={() => revisar('RECHAZADA')}
+              disabled={guardando}
+              className="btn flex items-center gap-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+            >
+              <XCircle size={15} /> Rechazar
+            </button>
+            <button
+              onClick={() => revisar('APROBADA')}
+              disabled={guardando}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              <CheckCircle size={15} /> Aprobar
+            </button>
+          </div>
+        )}
+        {factura && factura.estado === 'APROBADA' && (
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+            <button onClick={onClose} className="btn btn-secondary">Cerrar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Fila de conductor en la tabla
 // ---------------------------------------------------------------------------
-function DriverRow({ d, semanas, pagados, onUpdateEstado, onUpdateFechaPago }) {
+function DriverRow({ d, semanas, pagados, onUpdateEstado, onUpdateFechaPago, onVerFactura }) {
   const [expandido, setExpandido] = useState(false)
   const dPagados = pagados[String(d.driver_id)] || {}
   const esJefe = d.es_jefe_flota
@@ -489,6 +669,12 @@ function DriverRow({ d, semanas, pagados, onUpdateEstado, onUpdateFechaPago }) {
                       onChange={e => onUpdateFechaPago(semData.pago_id, e.target.value)}
                     />
                   )}
+                  {semData.factura_estado && (
+                    <FacturaBadge
+                      estado={semData.factura_estado}
+                      onClick={() => onVerFactura(semData.factura_id, d.driver_id, d.driver_nombre, sem, semData.monto_neto)}
+                    />
+                  )}
                 </div>
               </td>
               <td className="py-2 px-2 text-right">
@@ -550,6 +736,7 @@ export default function CPC() {
   const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
+  const [modalFactura, setModalFactura] = useState(null)
   const reqId = useRef(0)
 
   const cargar = useCallback((silencioso = false) => {
@@ -674,13 +861,14 @@ export default function CPC() {
   }, [drivers, filterSemanas, pagados])
 
   const estadoConteo = useMemo(() => {
-    const counts = { PENDIENTE: 0, PAGADO: 0, INCOMPLETO: 0 }
+    const counts = { PENDIENTE: 0, PAGADO: 0, INCOMPLETO: 0, FACTURAS_CARGADAS: 0 }
     const activas = filterSemanas.size > 0 ? filterSemanas : null
     drivers.forEach(d => {
       semanas.forEach(sem => {
         if (activas && !activas.has(sem)) return
         const s = d.semanas[String(sem)]
         if (s && s.monto_neto > 0) counts[s.estado] = (counts[s.estado] || 0) + 1
+        if (s?.factura_estado === 'CARGADA') counts.FACTURAS_CARGADAS += 1
       })
     })
     return counts
@@ -792,6 +980,12 @@ export default function CPC() {
             <p className="text-xs text-amber-600 font-medium">Pendientes</p>
             <p className="text-lg font-bold text-amber-800">{estadoConteo.PENDIENTE}</p>
           </div>
+          {estadoConteo.FACTURAS_CARGADAS > 0 && (
+            <div className="card bg-orange-50 border-orange-300 text-center col-span-2 sm:col-span-1">
+              <p className="text-xs text-orange-600 font-medium">Facturas por revisar</p>
+              <p className="text-lg font-bold text-orange-700">{estadoConteo.FACTURAS_CARGADAS}</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -836,6 +1030,9 @@ export default function CPC() {
                     pagados={pagados}
                     onUpdateEstado={updateEstado}
                     onUpdateFechaPago={updateFechaPago}
+                    onVerFactura={(facturaId, driverId, driverNombre, semana, monto) =>
+                      setModalFactura({ facturaId, driverId, driverNombre, semana, monto })
+                    }
                   />
               ))}
             </tbody>
@@ -860,6 +1057,18 @@ export default function CPC() {
           anio={anio}
           onClose={() => setModalCartola(false)}
           onConfirmado={() => cargar(true)}
+        />
+      )}
+      {modalFactura && (
+        <ModalFacturaDriver
+          facturaId={modalFactura.facturaId}
+          driverNombre={modalFactura.driverNombre}
+          semana={modalFactura.semana}
+          mes={mes}
+          anio={anio}
+          monto={modalFactura.monto}
+          onClose={() => setModalFactura(null)}
+          onRevisada={() => cargar(true)}
         />
       )}
     </div>

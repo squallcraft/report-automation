@@ -66,6 +66,7 @@ const driverLinks = [
   { to: '/driver/entregas', icon: FileText, label: 'Mis Entregas' },
   { to: '/driver/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
   { to: '/driver/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
+  { to: '/driver/facturas', icon: Receipt, label: 'Mis Facturas' },
   { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 

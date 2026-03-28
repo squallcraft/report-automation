@@ -25,10 +25,21 @@ from sqlalchemy import func
 
 from app.database import get_db
 from app.auth import require_admin_or_administracion
+import os
+import uuid
+from datetime import datetime
+from fastapi.responses import FileResponse
+
 from app.models import (
     Driver, Envio, Retiro, AjusteLiquidacion,
     PagoSemanaDriver, PagoCartola, CalendarioSemanas,
     CartolaCarga, TipoEntidadEnum, EstadoPagoEnum,
+    FacturaDriver, EstadoFacturaDriverEnum,
+)
+
+UPLOADS_DIR_DRIVERS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "uploads", "facturas_drivers",
 )
 from app.services.liquidacion import _calcular_retiro_driver
 from app.services.audit import registrar as audit
@@ -198,6 +209,11 @@ def tabla_cpc(
     ).all()
     pagos_map = {(p.driver_id, p.semana): p for p in all_pagos}
 
+    all_facturas_drivers = db.query(FacturaDriver).filter(
+        FacturaDriver.mes == mes, FacturaDriver.anio == anio,
+    ).all()
+    facturas_drivers_map = {(f.driver_id, f.semana): f for f in all_facturas_drivers}
+
     # --- Helpers con lookup en memoria ---
     def _monto_semanal(driver_id, semana):
         if (driver_id, semana) not in envio_agg:
@@ -234,12 +250,15 @@ def tabla_cpc(
                 monto = _monto_semanal(driver.id, sem)
 
             estado = pago.estado if pago else EstadoPagoEnum.PENDIENTE.value
+            factura = facturas_drivers_map.get((driver.id, sem))
             semanas_data[str(sem)] = {
                 "monto_neto": monto,
                 "estado": estado,
                 "nota": pago.nota if pago else None,
                 "fecha_pago": pago.fecha_pago.isoformat() if pago and pago.fecha_pago else None,
                 "pago_id": pago.id if pago else None,
+                "factura_estado": factura.estado if factura else None,
+                "factura_id": factura.id if factura else None,
             }
             subtotal += monto
         return semanas_data, subtotal
@@ -1090,3 +1109,107 @@ def total_pagado_mes(
         PagoCartola.anio == anio,
     ).scalar() or 0
     return {"total_pagado": total}
+
+
+# ---------------------------------------------------------------------------
+# Facturas de drivers (admin: listar, aprobar/rechazar, descargar)
+# ---------------------------------------------------------------------------
+
+@router.get("/facturas-drivers")
+def listar_facturas_drivers(
+    mes: Optional[int] = None,
+    anio: Optional[int] = None,
+    estado: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    q = db.query(FacturaDriver)
+    if mes is not None:
+        q = q.filter(FacturaDriver.mes == mes)
+    if anio is not None:
+        q = q.filter(FacturaDriver.anio == anio)
+    if estado is not None:
+        q = q.filter(FacturaDriver.estado == estado)
+    facturas = q.order_by(FacturaDriver.created_at.desc()).all()
+
+    result = []
+    for f in facturas:
+        driver = db.get(Driver, f.driver_id)
+        pago = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == f.driver_id,
+            PagoSemanaDriver.semana == f.semana,
+            PagoSemanaDriver.mes == f.mes,
+            PagoSemanaDriver.anio == f.anio,
+        ).first()
+        if pago and pago.monto_override is not None:
+            monto = pago.monto_override
+        elif pago and pago.estado == EstadoPagoEnum.PAGADO.value and pago.monto_neto:
+            monto = pago.monto_neto
+        else:
+            monto = _get_monto_semanal_driver(db, f.driver_id, f.semana, f.mes, f.anio)
+        result.append({
+            "id": f.id,
+            "driver_id": f.driver_id,
+            "driver_nombre": driver.nombre if driver else "—",
+            "semana": f.semana,
+            "mes": f.mes,
+            "anio": f.anio,
+            "monto_neto": monto,
+            "archivo_nombre": f.archivo_nombre,
+            "estado": f.estado,
+            "nota_driver": f.nota_driver,
+            "nota_admin": f.nota_admin,
+            "revisado_por": f.revisado_por,
+            "revisado_en": f.revisado_en.isoformat() if f.revisado_en else None,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        })
+    return result
+
+
+@router.put("/facturas-drivers/{factura_id}/revisar")
+def revisar_factura_driver(
+    factura_id: int,
+    estado: str = Query(...),
+    nota_admin: Optional[str] = Query(None),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_administracion),
+):
+    factura = db.get(FacturaDriver, factura_id)
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if estado not in (EstadoFacturaDriverEnum.APROBADA.value, EstadoFacturaDriverEnum.RECHAZADA.value):
+        raise HTTPException(status_code=400, detail="Estado inválido")
+
+    estado_anterior = factura.estado
+    factura.estado = estado
+    if nota_admin is not None:
+        factura.nota_admin = nota_admin
+    factura.revisado_por = current_user.get("nombre", current_user.get("username", "admin"))
+    factura.revisado_en = datetime.utcnow()
+
+    audit(db, "revisar_factura_driver", usuario=current_user, request=request,
+          entidad="factura_driver", entidad_id=factura_id,
+          cambios={"estado": {"antes": estado_anterior, "despues": estado}},
+          metadata={"driver_id": factura.driver_id, "semana": factura.semana,
+                    "mes": factura.mes, "anio": factura.anio})
+    db.commit()
+    return {"ok": True, "estado": estado}
+
+
+@router.get("/facturas-drivers/{factura_id}/descargar")
+def descargar_factura_driver(
+    factura_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    factura = db.get(FacturaDriver, factura_id)
+    if not factura or not factura.archivo_path:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    if not os.path.exists(factura.archivo_path):
+        raise HTTPException(status_code=404, detail="Archivo no encontrado en disco")
+    return FileResponse(
+        factura.archivo_path,
+        filename=factura.archivo_nombre or "factura.pdf",
+        media_type="application/octet-stream",
+    )
