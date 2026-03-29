@@ -27,6 +27,40 @@ def _similaridad(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
+def _tarifa_driver_para_retiro(
+    db: Session, driver: Driver, fecha, tarifa_base: int,
+    seen_dias: set = None,
+) -> int:
+    """
+    For drivers with tarifa_retiro_fija, only the FIRST retiro of the day
+    receives the fixed daily amount; subsequent retiros on the same date get 0.
+
+    seen_dias: set of (driver_id, str(fecha)) already assigned in the current
+               batch, used to avoid counting uncommitted records during imports.
+    """
+    if not driver or not driver.tarifa_retiro_fija or driver.tarifa_retiro_fija <= 0:
+        return tarifa_base
+
+    key = (driver.id, str(fecha))
+
+    if seen_dias is not None and key in seen_dias:
+        return 0
+
+    existing = db.query(Retiro).filter(
+        Retiro.driver_id == driver.id,
+        Retiro.fecha == fecha,
+        Retiro.tarifa_driver > 0,
+    ).first()
+
+    if existing:
+        return 0
+
+    if seen_dias is not None:
+        seen_dias.add(key)
+
+    return driver.tarifa_retiro_fija
+
+
 def _mejor_match(nombre_raw: str, entidades) -> tuple:
     """Busca la mejor coincidencia entre nombre_raw y una lista de entidades (con .nombre y .aliases)."""
     mejor, mejor_score = None, 0.0
@@ -459,6 +493,7 @@ def confirmar_retiros(
 ):
     """Crea retiros confirmados y guarda aliases de homologación."""
     ingesta_id = str(uuid.uuid4())[:8]
+    seen_dias: set = set()
     creados = 0
     creados_pickup = 0
     creados_sucursal = 0
@@ -477,7 +512,7 @@ def confirmar_retiros(
             driver_obj = db.get(Driver, item.driver_id) if item.driver_id else None
             tarifa_driver_efectiva = pickup.tarifa_driver if pickup else 0
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
-                tarifa_driver_efectiva = driver_obj.tarifa_retiro_fija
+                tarifa_driver_efectiva = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver_efectiva, seen_dias)
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
                 seller_id=None, driver_id=item.driver_id, pickup_id=item.pickup_id,
@@ -494,7 +529,7 @@ def confirmar_retiros(
             driver_obj = db.get(Driver, item.driver_id) if item.driver_id else None
             tarifa_driver_efectiva = suc.tarifa_retiro_driver if suc else 0
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
-                tarifa_driver_efectiva = driver_obj.tarifa_retiro_fija
+                tarifa_driver_efectiva = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver_efectiva, seen_dias)
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
                 seller_id=suc.seller_id if suc else item.seller_id,
@@ -514,7 +549,7 @@ def confirmar_retiros(
             tarifa_seller = (seller.tarifa_retiro or 0) if seller else 0
             tarifa_driver = (seller.tarifa_retiro_driver or 0) if seller else 0
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
-                tarifa_driver = driver_obj.tarifa_retiro_fija
+                tarifa_driver = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver, seen_dias)
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
                 seller_id=item.seller_id, driver_id=item.driver_id,
@@ -616,9 +651,8 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
         db, campos["semana"], campos["mes"], campos["anio"],
         driver_id=data.driver_id, seller_id=data.seller_id, pickup_id=data.pickup_id,
     )
-    # Si el driver tiene tarifa fija, guardarla en tarifa_driver del retiro (valor histórico)
     if driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
-        campos["tarifa_driver"] = driver.tarifa_retiro_fija
+        campos["tarifa_driver"] = _tarifa_driver_para_retiro(db, driver, data.fecha, campos.get("tarifa_driver", 0))
     retiro = Retiro(**campos)
     db.add(retiro)
     invalidar_snapshots(db, campos["semana"], campos["mes"], campos["anio"])
