@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, Briefcase, Shield, Receipt } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -188,12 +188,6 @@ export default function Dashboard() {
               color={stats.consultas_pendientes > 0 ? 'amber' : 'green'}
               sub="Del portal de transparencia"
             />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
-            <StatsCard icon={Briefcase} label="Sueldos" value={fmt(stats.total_sueldos_mes)} color="indigo" sub="Nómina mensual proyectada" />
-            <StatsCard icon={Shield} label="Imposiciones" value={fmt(stats.total_imposiciones_mes)} color="teal" sub="AFP + Salud trabajadores" />
-            <StatsCard icon={Receipt} label="Impuestos" value={fmt(stats.total_impuestos_mes)} color="red" sub="Categoría Impuestos / mes" />
           </div>
 
           {resumen && (
