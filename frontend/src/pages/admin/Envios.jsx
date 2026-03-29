@@ -24,7 +24,6 @@ export default function Envios() {
 
   const [envios, setEnvios] = useState([])
   const [loading, setLoading] = useState(true)
-  const [fetching, setFetching] = useState(false)
   const hasLoadedOnce = useRef(false)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -45,6 +44,9 @@ export default function Envios() {
     empresa: searchParams.get('empresa') || '',
     tracking_id: '',
   })
+  // Separate display state for text inputs so they update immediately while the
+  // API fetch is debounced (colFilters drives the actual request)
+  const [textInputs, setTextInputs] = useState({ comuna: '', tracking_id: '' })
 
   const [detailModal, setDetailModal] = useState(null)
   const [editModal, setEditModal] = useState(null)
@@ -85,8 +87,6 @@ export default function Envios() {
   const fetchEnvios = useCallback(() => {
     if (!hasLoadedOnce.current) {
       setLoading(true)
-    } else {
-      setFetching(true)
     }
     const params = buildParams()
     api.get('/envios', { params })
@@ -100,10 +100,7 @@ export default function Envios() {
         hasLoadedOnce.current = true
       })
       .catch(() => toast.error('Error al cargar envíos'))
-      .finally(() => {
-        setLoading(false)
-        setFetching(false)
-      })
+      .finally(() => setLoading(false))
   }, [buildParams])
 
   useEffect(() => {
@@ -120,6 +117,7 @@ export default function Envios() {
     setSearchInput('')
     setFilters({ semana: '', meses: [now.getMonth() + 1], anio: String(now.getFullYear()) })
     setColFilters({ seller_nombre: '', driver_nombre: '', comuna: '', empresa: '', tracking_id: '' })
+    setTextInputs({ comuna: '', tracking_id: '' })
     setSortBy('fecha_entrega')
     setSortDir('desc')
   }
@@ -133,9 +131,14 @@ export default function Envios() {
   const handleColumnFilter = (key, value) => {
     const filterConfig = columnFiltersConfig[key]
     if (filterConfig?.type === 'text') {
-      setColFilters((f) => ({ ...f, [key]: value }))
+      // Update display immediately so the input feels responsive
+      setTextInputs((f) => ({ ...f, [key]: value }))
+      // Delay the state that triggers the API fetch
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {}, 500)
+      debounceRef.current = setTimeout(() => {
+        setColFilters((f) => ({ ...f, [key]: value }))
+        debounceRef.current = null
+      }, 500)
     } else {
       setColFilters((f) => ({ ...f, [key]: value }))
     }
@@ -226,10 +229,10 @@ export default function Envios() {
       value: colFilters.driver_nombre,
       placeholder: 'Todos',
     },
-    comuna: { type: 'text', value: colFilters.comuna, placeholder: 'Filtrar...' },
+    comuna: { type: 'text', value: textInputs.comuna, placeholder: 'Filtrar...' },
     empresa: { type: 'select', options: empresaOptions, value: colFilters.empresa, placeholder: 'Todas' },
-    tracking_id: { type: 'text', value: colFilters.tracking_id, placeholder: 'Filtrar...' },
-  }), [sellersEnPeriodo, driversEnPeriodo, colFilters, empresaOptions])
+    tracking_id: { type: 'text', value: textInputs.tracking_id, placeholder: 'Filtrar...' },
+  }), [sellersEnPeriodo, driversEnPeriodo, colFilters, empresaOptions, textInputs])
 
   const openEditCb = useCallback((row) => openEdit(row), [])
   const openProductoCb = useCallback((row) => openProductoModal(row), [])
@@ -366,21 +369,19 @@ export default function Envios() {
       {loading ? (
         <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
       ) : (
-        <div className={`transition-opacity duration-150 ${fetching ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-          <DataTable
-            columns={columns}
-            data={envios}
-            onRowClick={(row) => setDetailModal(row)}
-            emptyMessage="No hay envíos con esos filtros"
-            sortable
-            onSort={handleServerSort}
-            externalSortKey={sortBy}
-            externalSortDir={sortDir}
-            columnFilters={columnFiltersConfig}
-            onColumnFilterChange={handleColumnFilter}
-            maxHeight="calc(100vh - 280px)"
-          />
-        </div>
+        <DataTable
+          columns={columns}
+          data={envios}
+          onRowClick={(row) => setDetailModal(row)}
+          emptyMessage="No hay envíos con esos filtros"
+          sortable
+          onSort={handleServerSort}
+          externalSortKey={sortBy}
+          externalSortDir={sortDir}
+          columnFilters={columnFiltersConfig}
+          onColumnFilterChange={handleColumnFilter}
+          maxHeight="calc(100vh - 280px)"
+        />
       )}
 
       <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detalle del Envío" wide>

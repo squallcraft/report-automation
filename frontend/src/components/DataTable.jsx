@@ -127,7 +127,6 @@ export default function DataTable({
                     <th key={col.key} className="px-2 py-1.5 bg-gray-50">
                       {filter.type === 'select' ? (
                         <select
-                          key={`${col.key}-${(filter.options || []).length}`}
                           value={filter.value || ''}
                           onChange={(e) => onColumnFilterChange(col.key, e.target.value)}
                           className="w-full text-xs font-normal border border-gray-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary-400 focus:border-primary-400"
