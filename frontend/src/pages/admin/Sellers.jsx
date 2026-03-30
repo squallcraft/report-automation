@@ -47,6 +47,8 @@ const initialForm = {
   usa_pickup: false,
   rut: '',
   giro: '',
+  dir_fiscal: '',
+  cmna_fiscal: '',
   email: '',
   password: '',
   tiene_sucursales: false,
@@ -176,6 +178,8 @@ export default function Sellers() {
       usa_pickup: seller.usa_pickup ?? false,
       rut: seller.rut || '',
       giro: seller.giro || '',
+      dir_fiscal: seller.dir_fiscal || '',
+      cmna_fiscal: seller.cmna_fiscal || '',
       email: seller.email || '',
       password: '',
       tiene_sucursales: sucs.length > 0,
@@ -243,6 +247,8 @@ export default function Sellers() {
       min_paquetes_retiro_gratis: parseInt(form.min_paquetes_retiro_gratis, 10) || 0,
       rut: (form.rut || '').trim() || null,
       giro: (form.giro || '').trim() || null,
+      dir_fiscal: (form.dir_fiscal || '').trim() || null,
+      cmna_fiscal: (form.cmna_fiscal || '').trim() || null,
       email: (form.email || '').trim() || null,
     }
     if (!payload.password) delete payload.password
@@ -403,6 +409,32 @@ export default function Sellers() {
                 value={form.giro}
                 onChange={(e) => setForm((f) => ({ ...f, giro: e.target.value }))}
               />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-amber-50/50 p-3 rounded-lg border border-amber-200">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dirección fiscal</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Ej: Av. Apoquindo 4700"
+                maxLength={70}
+                value={form.dir_fiscal}
+                onChange={(e) => setForm((f) => ({ ...f, dir_fiscal: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Aparece en la factura electrónica — máx. 70 caracteres</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Comuna fiscal</label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Ej: Las Condes"
+                maxLength={20}
+                value={form.cmna_fiscal}
+                onChange={(e) => setForm((f) => ({ ...f, cmna_fiscal: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Máx. 20 caracteres</p>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -606,6 +638,7 @@ export default function Sellers() {
                 value={form.email}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               />
+              <p className="text-xs text-gray-500 mt-1">Acceso al portal y envío del DTE por correo — máx. 80 caracteres</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
