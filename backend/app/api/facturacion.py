@@ -84,8 +84,19 @@ def _get_monto_semanal_seller(db: Session, seller_id: int, semana: int, mes: int
         Envio.mes == mes,
         Envio.anio == anio,
     ).all()
+
+    # Ajustes siempre se calculan, incluso sin envíos
+    ajustes = db.query(AjusteLiquidacion).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
+        AjusteLiquidacion.entidad_id == seller_id,
+        AjusteLiquidacion.semana == semana,
+        AjusteLiquidacion.mes == mes,
+        AjusteLiquidacion.anio == anio,
+    ).all()
+    total_ajustes = sum(a.monto for a in ajustes)
+
     if not envios:
-        return 0
+        return total_ajustes
 
     seller = db.get(Seller, seller_id)
     total_envios = sum(e.cobro_seller + e.cobro_extra_manual for e in envios)
@@ -104,15 +115,6 @@ def _get_monto_semanal_seller(db: Session, seller_id: int, semana: int, mes: int
         elif not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
             dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
             total_retiros = seller.tarifa_retiro * dias_con_envios
-
-    ajustes = db.query(AjusteLiquidacion).filter(
-        AjusteLiquidacion.tipo == TipoEntidadEnum.SELLER,
-        AjusteLiquidacion.entidad_id == seller_id,
-        AjusteLiquidacion.semana == semana,
-        AjusteLiquidacion.mes == mes,
-        AjusteLiquidacion.anio == anio,
-    ).all()
-    total_ajustes = sum(a.monto for a in ajustes)
 
     return total_envios + total_extras_producto + total_extras_comuna + total_retiros + total_ajustes
 
@@ -168,14 +170,14 @@ def tabla_facturacion(
     # --- Helper con lookup en memoria ---
     def _monto_semanal(seller, semana):
         key = (seller.id, semana)
+        t_aj = ajuste_agg.get(key, 0)
         if key not in envio_agg:
-            return 0
+            return t_aj
         t_env, t_ep, t_ec, cant, dias = envio_agg[key]
         total_retiros = 0
         if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
             if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
                 total_retiros = seller.tarifa_retiro * dias
-        t_aj = ajuste_agg.get(key, 0)
         return t_env + t_ep + t_ec + total_retiros + t_aj
 
     result = []
