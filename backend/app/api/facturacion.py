@@ -94,7 +94,14 @@ def _get_monto_semanal_seller(db: Session, seller_id: int, semana: int, mes: int
 
     total_retiros = 0
     if seller and seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
-        if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
+        if seller.min_paquetes_retiro_gratis > 0:
+            envios_por_dia: dict = {}
+            for e in envios:
+                if e.fecha_entrega:
+                    envios_por_dia[e.fecha_entrega] = envios_por_dia.get(e.fecha_entrega, 0) + 1
+            dias_cobrar = sum(1 for cnt in envios_por_dia.values() if cnt < seller.min_paquetes_retiro_gratis)
+            total_retiros = seller.tarifa_retiro * dias_cobrar
+        else:
             dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
             total_retiros = seller.tarifa_retiro * dias_con_envios
 

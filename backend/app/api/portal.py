@@ -73,14 +73,21 @@ def _monto_semanal_seller(db, seller_id, semana, mes, anio):
     seller = db.get(Seller, seller_id)
     total = sum(e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller for e in envios)
     if seller and seller.tiene_retiro and not seller.usa_pickup:
-        if not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
-            retiros = db.query(Retiro).filter(
-                Retiro.seller_id == seller_id, Retiro.semana == semana,
-                Retiro.mes == mes, Retiro.anio == anio,
-            ).all()
-            if retiros:
-                total += sum(r.tarifa_seller for r in retiros)
-            elif seller.tarifa_retiro and (semana >= 4 if (mes == 2 and anio == 2026) else (anio, mes) > (2026, 2)):
+        retiros = db.query(Retiro).filter(
+            Retiro.seller_id == seller_id, Retiro.semana == semana,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        if retiros:
+            total += sum(r.tarifa_seller for r in retiros)
+        elif seller.tarifa_retiro and (semana >= 4 if (mes == 2 and anio == 2026) else (anio, mes) > (2026, 2)):
+            if seller.min_paquetes_retiro_gratis > 0:
+                envios_por_dia: dict = {}
+                for e in envios:
+                    if e.fecha_entrega:
+                        envios_por_dia[e.fecha_entrega] = envios_por_dia.get(e.fecha_entrega, 0) + 1
+                dias_cobrar = sum(1 for cnt in envios_por_dia.values() if cnt < seller.min_paquetes_retiro_gratis)
+                total += seller.tarifa_retiro * dias_cobrar
+            else:
                 dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
                 total += seller.tarifa_retiro * dias_con_envios
     ajustes = db.query(AjusteLiquidacion).filter(
