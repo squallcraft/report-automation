@@ -15,7 +15,7 @@ import pandas as pd
 
 from app.database import get_db
 from app.auth import require_permission
-from app.models import Retiro, Seller, Driver, Pickup, Sucursal, PagoSemanaDriver, PagoSemanaSeller, PagoSemanaPickup
+from app.models import Retiro, Seller, Driver, Pickup, Sucursal, PagoSemanaDriver, PagoSemanaSeller, PagoSemanaPickup, CalendarioSemanas
 from app.schemas import RetiroCreate, RetiroUpdate, RetiroOut
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
 from app.services.audit import registrar as audit
@@ -25,6 +25,20 @@ from app.models import EstadoPagoEnum
 
 def _similaridad(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def _semana_mes_anio(db: Session, fecha) -> tuple:
+    """
+    Returns (semana, mes, anio) for a given date using the calendario_semanas
+    table first, falling back to the simple formula if not found.
+    """
+    week = db.query(CalendarioSemanas).filter(
+        CalendarioSemanas.fecha_inicio <= fecha,
+        CalendarioSemanas.fecha_fin >= fecha,
+    ).first()
+    if week:
+        return week.semana, week.mes, week.anio
+    return calcular_semana_del_mes(fecha), fecha.month, fecha.year
 
 
 def _tarifa_driver_para_retiro(
@@ -492,6 +506,8 @@ def confirmar_retiros(
     current_user=Depends(require_permission("retiros:editar")),
 ):
     """Crea retiros confirmados y guarda aliases de homologación."""
+    from app.services.calendario import build_fecha_semana_lookup
+    fecha_lookup = build_fecha_semana_lookup(db)
     ingesta_id = str(uuid.uuid4())[:8]
     seen_dias: set = set()
     creados = 0
@@ -500,10 +516,10 @@ def confirmar_retiros(
 
     for item in body.items:
         fecha = pd.to_datetime(item.fecha).date()
-        semana = calcular_semana_del_mes(fecha)
+        semana, mes_ret, anio_ret = fecha_lookup.get(fecha, (calcular_semana_del_mes(fecha), fecha.month, fecha.year))
 
         _verificar_semana_abierta(
-            db, semana, fecha.month, fecha.year,
+            db, semana, mes_ret, anio_ret,
             driver_id=item.driver_id, seller_id=item.seller_id, pickup_id=item.pickup_id,
         )
 
@@ -514,7 +530,7 @@ def confirmar_retiros(
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
                 tarifa_driver_efectiva = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver_efectiva, seen_dias)
             retiro = Retiro(
-                fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
+                fecha=fecha, semana=semana, mes=mes_ret, anio=anio_ret,
                 seller_id=None, driver_id=item.driver_id, pickup_id=item.pickup_id,
                 tarifa_seller=0,
                 tarifa_driver=tarifa_driver_efectiva,
@@ -531,7 +547,7 @@ def confirmar_retiros(
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
                 tarifa_driver_efectiva = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver_efectiva, seen_dias)
             retiro = Retiro(
-                fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
+                fecha=fecha, semana=semana, mes=mes_ret, anio=anio_ret,
                 seller_id=suc.seller_id if suc else item.seller_id,
                 driver_id=item.driver_id,
                 sucursal_id=item.sucursal_id,
@@ -551,7 +567,7 @@ def confirmar_retiros(
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
                 tarifa_driver = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver, seen_dias)
             retiro = Retiro(
-                fecha=fecha, semana=semana, mes=fecha.month, anio=fecha.year,
+                fecha=fecha, semana=semana, mes=mes_ret, anio=anio_ret,
                 seller_id=item.seller_id, driver_id=item.driver_id,
                 tarifa_seller=tarifa_seller, tarifa_driver=tarifa_driver,
                 seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
@@ -604,8 +620,8 @@ def confirmar_retiros(
     periodos_afectados = set()
     for item in body.items:
         fecha = pd.to_datetime(item.fecha).date()
-        semana = calcular_semana_del_mes(fecha)
-        periodos_afectados.add((semana, fecha.month, fecha.year))
+        semana, mes_ret, anio_ret = fecha_lookup.get(fecha, (calcular_semana_del_mes(fecha), fecha.month, fecha.year))
+        periodos_afectados.add((semana, mes_ret, anio_ret))
     for s, m, a in periodos_afectados:
         invalidar_snapshots(db, s, m, a)
 
@@ -644,9 +660,7 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
     campos = data.model_dump()
-    campos["semana"] = calcular_semana_del_mes(data.fecha)
-    campos["mes"] = data.fecha.month
-    campos["anio"] = data.fecha.year
+    campos["semana"], campos["mes"], campos["anio"] = _semana_mes_anio(db, data.fecha)
     _verificar_semana_abierta(
         db, campos["semana"], campos["mes"], campos["anio"],
         driver_id=data.driver_id, seller_id=data.seller_id, pickup_id=data.pickup_id,
