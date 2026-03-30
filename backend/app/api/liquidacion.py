@@ -388,14 +388,14 @@ def _seller_detail(db: Session, seller_id: int, mes: int, anio: int):
 
         total_retiros = 0
         if seller.tiene_retiro and not seller.usa_pickup and envios and seller.tarifa_retiro:
-            if seller.min_paquetes_retiro_gratis > 0:
+            if seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
                 envios_por_dia: dict = {}
                 for e in envios:
                     if e.fecha_entrega:
                         envios_por_dia[e.fecha_entrega] = envios_por_dia.get(e.fecha_entrega, 0) + 1
                 dias_cobrar = sum(1 for cnt in envios_por_dia.values() if cnt < seller.min_paquetes_retiro_gratis)
                 total_retiros = seller.tarifa_retiro * dias_cobrar
-            else:
+            elif not (seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis):
                 dias_con_envios = len({e.fecha_entrega for e in envios if e.fecha_entrega})
                 total_retiros = seller.tarifa_retiro * dias_con_envios
 
