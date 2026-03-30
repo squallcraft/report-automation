@@ -63,8 +63,10 @@ class Seller(Base):
     tipo_pago = Column(String, default="semanal")
     rut = Column(String, nullable=True)
     giro = Column(String, nullable=True)
+    dir_fiscal = Column(String(70), nullable=True)   # DirRecep — máx 70 caracteres (estándar SII)
+    cmna_fiscal = Column(String(20), nullable=True)  # CmnaRecep — máx 20 caracteres (estándar SII)
     activo = Column(Boolean, default=True)
-    email = Column(String, unique=True, nullable=True)
+    email = Column(String, unique=True, nullable=True)  # también usado como CorreoRecep — máx 80 caracteres
     password_hash = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

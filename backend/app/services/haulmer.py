@@ -47,9 +47,12 @@ def emitir_factura(
     receptor_rut: str,
     receptor_razon: str,
     receptor_giro: str,
-    mnt_neto: int,
-    iva: int,
-    mnt_total: int,
+    receptor_dir: str = "",    # DirRecep  — máx 70 caracteres (estándar SII)
+    receptor_cmna: str = "",   # CmnaRecep — máx 20 caracteres (estándar SII)
+    receptor_email: str = "",  # CorreoRecep para envío DTE — máx 80 caracteres
+    mnt_neto: int = 0,
+    iva: int = 0,
+    mnt_total: int = 0,
     glosa_detalle: str = "Servicios de transporte y logística",
     idempotency_key: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[dict], Optional[str]]:
@@ -101,8 +104,9 @@ def emitir_factura(
                     "RznSocRecep": (receptor_razon or "Receptor").strip()[:100],
                     "GiroRecep": (receptor_giro or "Sin giro").strip()[:40],
                     "Contacto": "",
-                    "DirRecep": "No especificada",
-                    "CmnaRecep": "No especificada",
+                    "CorreoRecep": receptor_email.strip()[:80] if receptor_email and receptor_email.strip() else "",
+                    "DirRecep": (receptor_dir or "No especificada").strip()[:70],
+                    "CmnaRecep": (receptor_cmna or "No especificada").strip()[:20],
                 },
                 "Totales": {
                     "MntNeto": mnt_neto,

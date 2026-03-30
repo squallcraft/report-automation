@@ -60,8 +60,10 @@ class SellerBase(BaseModel):
     tipo_pago: str = "semanal"
     rut: Optional[str] = None
     giro: Optional[str] = None
+    dir_fiscal: Optional[str] = None   # Dirección fiscal del receptor — máx 70 caracteres
+    cmna_fiscal: Optional[str] = None  # Comuna fiscal del receptor — máx 20 caracteres
     activo: bool = True
-    email: Optional[str] = None
+    email: Optional[str] = None        # Correo receptor para envío DTE — máx 80 caracteres
 
 
 class SellerCreate(SellerBase):
@@ -84,6 +86,8 @@ class SellerUpdate(BaseModel):
     tipo_pago: Optional[str] = None
     rut: Optional[str] = None
     giro: Optional[str] = None
+    dir_fiscal: Optional[str] = None
+    cmna_fiscal: Optional[str] = None
     activo: Optional[bool] = None
     email: Optional[str] = None
     password: Optional[str] = None
