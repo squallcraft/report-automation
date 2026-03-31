@@ -443,6 +443,14 @@ def generar_facturas(
                     receptor_dir=seller.dir_fiscal or "",
                     receptor_cmna=seller.cmna_fiscal or "",
                     receptor_email=seller.correo_dte or "",
+                    mnt_neto=factura_obj.subtotal_neto,
+                    iva=factura_obj.iva,
+                    mnt_total=factura_obj.total,
+                    glosa_detalle=glosa,
+                    idempotency_key=f"ecourier-{sid}-{mes}-{anio}",
+                )
+                if err:
+                    errores.append(f"{seller.nombre}: {err}")
                 else:
                     factura_obj.folio_haulmer = folio or (str(resp.get("FOLIO") or resp.get("folio") or "") if isinstance(resp, dict) else "")
                     factura_obj.estado = EstadoFacturaEnum.EMITIDA.value
@@ -552,6 +560,12 @@ def _procesar_un_seller_factura(
                 receptor_dir=seller.dir_fiscal or "",
                 receptor_cmna=seller.cmna_fiscal or "",
                 receptor_email=seller.correo_dte or "",
+                mnt_neto=factura_obj.subtotal_neto,
+                iva=factura_obj.iva,
+                mnt_total=factura_obj.total,
+                glosa_detalle=glosa,
+                idempotency_key=f"ecourier-{sid}-{mes}-{anio}",
+            )
             if err:
                 err_msg = f"{seller.nombre}: {err}"
             else:
