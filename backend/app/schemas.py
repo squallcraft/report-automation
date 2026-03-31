@@ -62,8 +62,9 @@ class SellerBase(BaseModel):
     giro: Optional[str] = None
     dir_fiscal: Optional[str] = None   # Dirección fiscal del receptor — máx 70 caracteres
     cmna_fiscal: Optional[str] = None  # Comuna fiscal del receptor — máx 20 caracteres
+    correo_dte: Optional[str] = None   # Correo para notificación DTE — máx 80 caracteres
     activo: bool = True
-    email: Optional[str] = None        # Correo receptor para envío DTE — máx 80 caracteres
+    email: Optional[str] = None        # Acceso al portal del seller
 
 
 class SellerCreate(SellerBase):
@@ -88,6 +89,7 @@ class SellerUpdate(BaseModel):
     giro: Optional[str] = None
     dir_fiscal: Optional[str] = None
     cmna_fiscal: Optional[str] = None
+    correo_dte: Optional[str] = None
     activo: Optional[bool] = None
     email: Optional[str] = None
     password: Optional[str] = None

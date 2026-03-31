@@ -49,7 +49,7 @@ def emitir_factura(
     receptor_giro: str,
     receptor_dir: str = "",    # DirRecep  — máx 70 caracteres (estándar SII)
     receptor_cmna: str = "",   # CmnaRecep — máx 20 caracteres (estándar SII)
-    receptor_email: str = "",  # CorreoRecep para envío DTE — máx 80 caracteres
+    receptor_email: str = "",  # CorreoRecep — correo DTE del receptor, máx 80 caracteres
     mnt_neto: int = 0,
     iva: int = 0,
     mnt_total: int = 0,

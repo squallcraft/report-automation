@@ -442,15 +442,7 @@ def generar_facturas(
                     receptor_giro=(seller.giro or "").strip() or settings.HAULMER_EMISOR_GIRO or GIRO_DEFAULT,
                     receptor_dir=seller.dir_fiscal or "",
                     receptor_cmna=seller.cmna_fiscal or "",
-                    receptor_email=seller.email or "",
-                    mnt_neto=factura_obj.subtotal_neto,
-                    iva=factura_obj.iva,
-                    mnt_total=factura_obj.total,
-                    glosa_detalle=glosa,
-                    idempotency_key=f"ecourier-{sid}-{mes}-{anio}",
-                )
-                if err:
-                    errores.append(f"{seller.nombre}: {err}")
+                    receptor_email=seller.correo_dte or "",
                 else:
                     factura_obj.folio_haulmer = folio or (str(resp.get("FOLIO") or resp.get("folio") or "") if isinstance(resp, dict) else "")
                     factura_obj.estado = EstadoFacturaEnum.EMITIDA.value
@@ -559,13 +551,7 @@ def _procesar_un_seller_factura(
                 receptor_giro=(seller.giro or "").strip() or settings.HAULMER_EMISOR_GIRO or GIRO_DEFAULT,
                 receptor_dir=seller.dir_fiscal or "",
                 receptor_cmna=seller.cmna_fiscal or "",
-                receptor_email=seller.email or "",
-                mnt_neto=factura_obj.subtotal_neto,
-                iva=factura_obj.iva,
-                mnt_total=factura_obj.total,
-                glosa_detalle=glosa,
-                idempotency_key=f"ecourier-{sid}-{mes}-{anio}",
-            )
+                receptor_email=seller.correo_dte or "",
             if err:
                 err_msg = f"{seller.nombre}: {err}"
             else:

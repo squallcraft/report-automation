@@ -49,6 +49,7 @@ const initialForm = {
   giro: '',
   dir_fiscal: '',
   cmna_fiscal: '',
+  correo_dte: '',
   email: '',
   password: '',
   tiene_sucursales: false,
@@ -180,6 +181,7 @@ export default function Sellers() {
       giro: seller.giro || '',
       dir_fiscal: seller.dir_fiscal || '',
       cmna_fiscal: seller.cmna_fiscal || '',
+      correo_dte: seller.correo_dte || '',
       email: seller.email || '',
       password: '',
       tiene_sucursales: sucs.length > 0,
@@ -249,6 +251,7 @@ export default function Sellers() {
       giro: (form.giro || '').trim() || null,
       dir_fiscal: (form.dir_fiscal || '').trim() || null,
       cmna_fiscal: (form.cmna_fiscal || '').trim() || null,
+      correo_dte: (form.correo_dte || '').trim() || null,
       email: (form.email || '').trim() || null,
     }
     if (!payload.password) delete payload.password
@@ -436,6 +439,18 @@ export default function Sellers() {
               />
               <p className="text-xs text-gray-500 mt-1">Máx. 20 caracteres</p>
             </div>
+          </div>
+          <div className="bg-amber-50/50 p-3 rounded-lg border border-amber-200">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Correo DTE</label>
+            <input
+              type="email"
+              className="input-field"
+              placeholder="Ej: facturacion@empresa.cl"
+              maxLength={80}
+              value={form.correo_dte}
+              onChange={(e) => setForm((f) => ({ ...f, correo_dte: e.target.value }))}
+            />
+            <p className="text-xs text-gray-500 mt-1">Haulmer enviará la factura electrónica a este correo — máx. 80 caracteres</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -638,7 +653,7 @@ export default function Sellers() {
                 value={form.email}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               />
-              <p className="text-xs text-gray-500 mt-1">Acceso al portal y envío del DTE por correo — máx. 80 caracteres</p>
+              <p className="text-xs text-gray-500 mt-1">Acceso al portal del seller</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
