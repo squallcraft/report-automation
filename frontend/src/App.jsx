@@ -50,6 +50,7 @@ import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
 import PickupEnvios from './pages/pickup/PickupEnvios'
 import PickupEntregas from './pages/pickup/PickupEntregas'
+import PickupCalendario from './pages/pickup/PickupCalendario'
 import PickupGanancias from './pages/pickup/PickupGanancias'
 import PickupFacturas from './pages/pickup/PickupFacturas'
 
@@ -123,6 +124,7 @@ export default function App() {
         <Route path="recepciones" element={<PickupRecepciones />} />
         <Route path="envios" element={<PickupEnvios />} />
         <Route path="entregas" element={<PickupEntregas />} />
+        <Route path="calendario" element={<PickupCalendario />} />
         <Route path="ganancias" element={<PickupGanancias />} />
         <Route path="facturas" element={<PickupFacturas />} />
       </Route>

@@ -164,6 +164,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     { to: '/pickup/recepciones', icon: Package, label: 'Mis Recepciones' },
     ...(pickupProfile?.seller_id ? [{ to: '/pickup/envios', icon: FileText, label: 'Mis Envíos' }] : []),
     ...(pickupProfile?.driver_id ? [{ to: '/pickup/entregas', icon: Truck, label: 'Mis Entregas' }] : []),
+    { to: '/pickup/calendario', icon: CalendarDays, label: 'Mi Calendario' },
     { to: '/pickup/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
     { to: '/pickup/facturas', icon: Receipt, label: 'Mis Facturas' },
   ]

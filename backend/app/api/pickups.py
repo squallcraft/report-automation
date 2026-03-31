@@ -2,7 +2,8 @@
 CRUD y gestión de Pickup Points + importación de recepciones de paquetes.
 """
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date as date_type
+import calendar
 
 import io
 import uuid
@@ -900,6 +901,102 @@ def pickup_dashboard(
         },
     }
     return result
+
+
+@router.get("/portal/calendario")
+def pickup_calendario(
+    mes: Optional[int] = None,
+    anio: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_pickup),
+):
+    """
+    Calendario mensual de recepciones para el pickup.
+    Cálculo basado en fecha_recepcion (día 1 al último día del mes),
+    completamente independiente del cálculo semanal de sellers.
+    Retroactivo desde enero 2026.
+    """
+    pickup_id = current_user["id"]
+    pickup = db.get(Pickup, pickup_id)
+    if not pickup:
+        raise HTTPException(status_code=404, detail="Pickup no encontrado")
+
+    hoy = date_type.today()
+    if mes is None:
+        mes = hoy.month
+    if anio is None:
+        anio = hoy.year
+
+    # Rango completo del mes — día 1 al último día
+    primer_dia = date_type(anio, mes, 1)
+    ultimo_dia = date_type(anio, mes, calendar.monthrange(anio, mes)[1])
+
+    # Todas las recepciones del pickup en el mes por fecha (no semana)
+    recs = db.query(RecepcionPaquete).filter(
+        RecepcionPaquete.pickup_id == pickup_id,
+        RecepcionPaquete.fecha_recepcion >= primer_dia,
+        RecepcionPaquete.fecha_recepcion <= ultimo_dia,
+    ).order_by(RecepcionPaquete.fecha_recepcion).all()
+
+    # Pre-cargar envíos referenciados para aplicar regla own-seller/own-driver
+    envio_cache: dict = {}
+    for r in recs:
+        if r.envio_id and r.envio_id not in envio_cache:
+            envio_cache[r.envio_id] = db.get(Envio, r.envio_id)
+
+    # Agrupar por día
+    dias: dict = {}
+    total_paquetes = 0
+    total_comision = 0
+
+    for r in recs:
+        # Regla: comisión 0 para recepciones del seller propio o driver propio
+        skip = False
+        if r.envio_id:
+            envio = envio_cache.get(r.envio_id)
+            if envio:
+                if pickup.driver_id and envio.driver_id == pickup.driver_id:
+                    skip = True
+                elif pickup.seller_id and envio.seller_id == pickup.seller_id:
+                    skip = True
+
+        fecha_str = r.fecha_recepcion.isoformat()
+        if fecha_str not in dias:
+            dias[fecha_str] = {"fecha": fecha_str, "paquetes": 0, "comision": 0, "detalle": []}
+
+        dias[fecha_str]["paquetes"] += 1
+        if not skip:
+            dias[fecha_str]["comision"] += r.comision
+            total_comision += r.comision
+        total_paquetes += 1
+
+        dias[fecha_str]["detalle"].append({
+            "id": r.id,
+            "pedido": r.pedido,
+            "tipo": r.tipo,
+            "comision": r.comision if not skip else 0,
+            "excluido": skip,
+        })
+
+    # Generar todos los días del mes (incluye días vacíos)
+    dias_completos = []
+    for day in range(1, ultimo_dia.day + 1):
+        fecha_str = date_type(anio, mes, day).isoformat()
+        dias_completos.append(dias.get(fecha_str, {
+            "fecha": fecha_str, "paquetes": 0, "comision": 0, "detalle": [],
+        }))
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "primer_dia": primer_dia.isoformat(),
+        "ultimo_dia": ultimo_dia.isoformat(),
+        "dias": dias_completos,
+        "resumen": {
+            "total_paquetes": total_paquetes,
+            "total_comision": total_comision,
+        },
+    }
 
 
 @router.get("/portal/ganancias")
