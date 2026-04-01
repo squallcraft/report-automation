@@ -351,6 +351,9 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 function ModalFacturas({ mes, anio, onClose, onActualizado }) {
   const [facturas, setFacturas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [rechazarId, setRechazarId] = useState(null)   // facturaId pendiente de rechazo
+  const [notaRechazo, setNotaRechazo] = useState('')
+  const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -360,16 +363,37 @@ function ModalFacturas({ mes, anio, onClose, onActualizado }) {
       .finally(() => setLoading(false))
   }, [mes, anio])
 
-  const revisar = async (facturaId, estado) => {
-    const nota = estado === 'RECHAZADA' ? prompt('Motivo del rechazo (opcional):') : null
+  const aprobar = async (facturaId) => {
     try {
-      await api.put(`/cpp/facturas/${facturaId}/revisar`, null, {
-        params: { estado, nota_admin: nota || undefined },
-      })
-      toast.success(estado === 'APROBADA' ? 'Factura aprobada' : 'Factura rechazada')
-      setFacturas(prev => prev.map(f => f.id === facturaId ? { ...f, estado } : f))
+      await api.put(`/cpp/facturas/${facturaId}/revisar`, null, { params: { estado: 'APROBADA' } })
+      toast.success('Factura aprobada')
+      setFacturas(prev => prev.map(f => f.id === facturaId ? { ...f, estado: 'APROBADA' } : f))
       onActualizado()
-    } catch { toast.error('Error al revisar factura') }
+    } catch { toast.error('Error al aprobar factura') }
+  }
+
+  const abrirRechazo = (facturaId) => {
+    setRechazarId(facturaId)
+    setNotaRechazo('')
+  }
+
+  const confirmarRechazo = async () => {
+    if (!rechazarId) return
+    setGuardando(true)
+    try {
+      await api.put(`/cpp/facturas/${rechazarId}/revisar`, null, {
+        params: { estado: 'RECHAZADA', nota_admin: notaRechazo.trim() || undefined },
+      })
+      toast.success('Factura rechazada')
+      setFacturas(prev => prev.map(f =>
+        f.id === rechazarId
+          ? { ...f, estado: 'RECHAZADA', nota_admin: notaRechazo.trim() || null }
+          : f
+      ))
+      onActualizado()
+      setRechazarId(null)
+    } catch { toast.error('Error al rechazar factura') }
+    finally { setGuardando(false) }
   }
 
   const descargar = async (facturaId, nombre) => {
@@ -435,11 +459,11 @@ function ModalFacturas({ mes, anio, onClose, onActualizado }) {
                       <td className="py-2">
                         {f.estado === 'CARGADA' && (
                           <div className="flex gap-1.5">
-                            <button onClick={() => revisar(f.id, 'APROBADA')}
+                            <button onClick={() => aprobar(f.id)}
                               className="p-1 rounded hover:bg-emerald-100 text-emerald-600" title="Aprobar">
                               <CheckCircle size={16} />
                             </button>
-                            <button onClick={() => revisar(f.id, 'RECHAZADA')}
+                            <button onClick={() => abrirRechazo(f.id)}
                               className="p-1 rounded hover:bg-red-100 text-red-500" title="Rechazar">
                               <XCircle size={16} />
                             </button>
@@ -461,6 +485,44 @@ function ModalFacturas({ mes, anio, onClose, onActualizado }) {
           <button onClick={onClose} className="btn btn-secondary">Cerrar</button>
         </div>
       </div>
+
+      {/* Mini-modal de rechazo */}
+      {rechazarId && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <XCircle size={18} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">Rechazar factura</h3>
+                <p className="text-xs text-gray-500">El pickup verá este mensaje en su portal</p>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Motivo del rechazo <span className="text-gray-400">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                className="input w-full text-sm"
+                placeholder="Ej: Monto no coincide, adjunto incorrecto..."
+                value={notaRechazo}
+                onChange={e => setNotaRechazo(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && confirmarRechazo()}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3 justify-end pt-1">
+              <button onClick={() => setRechazarId(null)} className="btn btn-secondary text-sm">Cancelar</button>
+              <button onClick={confirmarRechazo} disabled={guardando}
+                className="btn flex items-center gap-1.5 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm">
+                <XCircle size={14} /> {guardando ? 'Rechazando...' : 'Confirmar rechazo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
