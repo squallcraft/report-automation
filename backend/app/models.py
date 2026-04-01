@@ -448,6 +448,7 @@ class PagoCartola(Base):
     fecha_pago = Column(String, nullable=True)
     descripcion = Column(String, nullable=True)
     fuente = Column(String, nullable=False, default="cartola")
+    fingerprint = Column(String(32), nullable=True)   # MD5(fecha|monto|descripcion) — deduplicación
     carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -468,6 +469,7 @@ class PagoCartolaSeller(Base):
     fecha_pago = Column(String, nullable=True)
     descripcion = Column(String, nullable=True)
     fuente = Column(String, nullable=False, default="cartola")
+    fingerprint = Column(String(32), nullable=True)   # MD5(fecha|monto|descripcion) — deduplicación
     carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -635,6 +637,7 @@ class PagoCartolaPickup(Base):
     fecha_pago = Column(String, nullable=True)
     descripcion = Column(String, nullable=True)
     fuente = Column(String, nullable=False, default="cartola")
+    fingerprint = Column(String(32), nullable=True)   # MD5(fecha|monto|descripcion) — deduplicación
     carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -715,6 +718,7 @@ class CartolaCarga(Base):
     matcheadas = Column(Integer, default=0)
     no_matcheadas = Column(Integer, default=0)
     monto_total = Column(Integer, default=0)
+    duplicados_omitidos = Column(Integer, default=0)  # filas ignoradas por fingerprint duplicado
     detalle = Column(JSON, nullable=True)
 
 

@@ -1,6 +1,7 @@
 """
 API CPC (Control de Pagos a Conductores): control semanal de egresos a drivers.
 """
+import hashlib
 import io
 import re
 from datetime import date
@@ -774,6 +775,12 @@ def _extraer_nombre_cartola(descripcion: str) -> str:
     return descripcion.strip()
 
 
+def _generar_fingerprint(fecha: str, monto: int, descripcion: str) -> str:
+    """MD5 determinista sobre los campos naturales de la transacción bancaria."""
+    raw = f"{str(fecha).strip()}|{monto}|{str(descripcion).strip().lower()}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
 def _parsear_cartola(archivo_bytes: bytes) -> list[dict]:
     """
     Lee el .xls/.xlsx de cartola Banco de Chile.
@@ -873,8 +880,21 @@ async def cartola_preview(
     ).all():
         pagados_existentes[p.driver_id] = pagados_existentes.get(p.driver_id, 0) + p.monto
 
+    # Pre-calcular fingerprints y buscar duplicados en un solo query
+    fps_movs = [
+        _generar_fingerprint(m["fecha"], m["monto"], m["descripcion"])
+        for m in movimientos
+    ]
+    fps_existentes: dict[str, int] = {}
+    if fps_movs:
+        for p in db.query(PagoCartola).filter(
+            PagoCartola.fingerprint.in_(fps_movs)
+        ).all():
+            if p.fingerprint:
+                fps_existentes[p.fingerprint] = p.carga_id or 0
+
     resultado = []
-    for mov in movimientos:
+    for mov, fp in zip(movimientos, fps_movs):
         nombre_norm = mov["nombre_extraido"].lower()
         mejor_driver = None
         mejor_score = 0.0
@@ -895,6 +915,7 @@ async def cartola_preview(
 
         ya_pagado = pagados_existentes.get(mejor_driver.id, 0) if mejor_driver else 0
         liquidado = _get_monto_semanal_driver(db, mejor_driver.id, semana, mes, anio) if mejor_driver else 0
+        ya_existe = fp in fps_existentes
 
         resultado.append({
             "descripcion": mov["descripcion"],
@@ -907,6 +928,9 @@ async def cartola_preview(
             "match_confiable": match_confiable,
             "ya_pagado": ya_pagado,
             "liquidado": liquidado,
+            "fingerprint": fp,
+            "ya_existe": ya_existe,
+            "carga_previa_id": fps_existentes.get(fp),
         })
 
     # Devolver también la lista de todos los drivers para el dropdown de edición
@@ -925,6 +949,7 @@ class ItemConfirmarCartola(BaseModel):
     fecha: Optional[str] = None
     descripcion: Optional[str] = None
     nombre_extraido: Optional[str] = None  # Para guardar como alias
+    fingerprint: Optional[str] = None
 
 
 class ConfirmarCartolaRequest(BaseModel):
@@ -958,10 +983,22 @@ def cartola_confirmar(
     db.flush()
 
     grabados = 0
-    pagados_driver_semana: set[int] = set()  # driver_ids ya marcados como pagados esta carga
+    duplicados = 0
+    pagados_driver_semana: set[int] = set()
     for item in body.items:
         if item.driver_id <= 0 or item.monto <= 0:
             continue
+
+        fp = item.fingerprint or _generar_fingerprint(item.fecha or "", item.monto, item.descripcion or "")
+
+        # Verificar duplicado a nivel de BD antes de insertar
+        existe = db.query(PagoCartola.id).filter(
+            PagoCartola.fingerprint == fp
+        ).first()
+        if existe:
+            duplicados += 1
+            continue
+
         pago = PagoCartola(
             driver_id=item.driver_id,
             semana=body.semana,
@@ -971,6 +1008,7 @@ def cartola_confirmar(
             fecha_pago=item.fecha,
             descripcion=item.descripcion,
             fuente="cartola",
+            fingerprint=fp,
             carga_id=carga.id,
         )
         db.add(pago)
@@ -1038,10 +1076,11 @@ def cartola_confirmar(
     for pago_c in db.query(PagoCartola).filter(PagoCartola.carga_id == carga.id).all():
         asiento_pago_driver_cartola(db, pago_c)
 
-    audit(db, "carga_cartola_driver", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
+    carga.duplicados_omitidos = duplicados
+    audit(db, "carga_cartola_driver", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "grabados": grabados, "duplicados_omitidos": duplicados, "monto_total": sum(it.monto for it in body.items)})
 
     db.commit()
-    return {"ok": True, "grabados": grabados}
+    return {"ok": True, "grabados": grabados, "duplicados_omitidos": duplicados}
 
 
 # ---------------------------------------------------------------------------

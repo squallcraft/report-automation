@@ -1,6 +1,7 @@
 """
 API de Facturación: control semanal de cobros a sellers y factura mensual.
 """
+import hashlib
 import json
 from typing import Optional, List
 from datetime import date as _date_type, datetime, timezone
@@ -873,6 +874,11 @@ def pagos_acumulados_sellers(
 # Endpoints: cartola seller (preview + confirmar)
 # ---------------------------------------------------------------------------
 
+def _generar_fingerprint(fecha: str, monto: int, descripcion: str) -> str:
+    """MD5 determinista sobre los campos naturales de la transacción bancaria."""
+    raw = f"{str(fecha).strip()}|{monto}|{str(descripcion).strip().lower()}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
 def _parsear_cartola_seller(archivo_bytes: bytes) -> list:
     """
     Lee cartola Banco de Chile y retorna abonos recibidos ('Traspaso De:').
@@ -976,8 +982,21 @@ async def cartola_seller_preview(
     ).all():
         cobrados_existentes[p.seller_id] = cobrados_existentes.get(p.seller_id, 0) + p.monto
 
+    # Pre-calcular fingerprints y buscar duplicados en un solo query
+    fps_movs = [
+        _generar_fingerprint(m["fecha"], m["monto"], m["descripcion"])
+        for m in movimientos
+    ]
+    fps_existentes: dict[str, int] = {}
+    if fps_movs:
+        for p in db.query(PagoCartolaSeller).filter(
+            PagoCartolaSeller.fingerprint.in_(fps_movs)
+        ).all():
+            if p.fingerprint:
+                fps_existentes[p.fingerprint] = p.carga_id or 0
+
     resultado = []
-    for mov in movimientos:
+    for mov, fp in zip(movimientos, fps_movs):
         nombre_norm = mov["nombre_extraido"].lower()
         mejor_seller = None
         mejor_score = 0.0
@@ -995,6 +1014,7 @@ async def cartola_seller_preview(
         match_confiable = mejor_score >= 0.55
         ya_cobrado = cobrados_existentes.get(mejor_seller.id, 0) if mejor_seller else 0
         liquidado = _get_monto_semanal_seller(db, mejor_seller.id, semana, mes, anio) if mejor_seller else 0
+        ya_existe = fp in fps_existentes
 
         resultado.append({
             "descripcion": mov["descripcion"],
@@ -1007,6 +1027,9 @@ async def cartola_seller_preview(
             "match_confiable": match_confiable,
             "ya_cobrado": ya_cobrado,
             "liquidado": liquidado,
+            "fingerprint": fp,
+            "ya_existe": ya_existe,
+            "carga_previa_id": fps_existentes.get(fp),
         })
 
     todos_sellers = [{"id": s.id, "nombre": s.nombre} for s in sorted(sellers, key=lambda x: x.nombre)]
@@ -1020,6 +1043,7 @@ class ItemConfirmarCartolaSeller(BaseModel):
     fecha: Optional[str] = None
     descripcion: Optional[str] = None
     nombre_extraido: Optional[str] = None
+    fingerprint: Optional[str] = None
 
 
 class ConfirmarCartolaSellerRequest(BaseModel):
@@ -1050,14 +1074,24 @@ def cartola_seller_confirmar(
     db.flush()
 
     grabados = 0
+    duplicados = 0
     alias_guardados = set()
-    # Rastrear PagoSemanaSeller ya procesados en este request para evitar
-    # duplicados cuando el mismo seller+semana aparece más de una vez en la cartola
     pago_sem_cache: dict[tuple, object] = {}
 
     for item in body.items:
         if item.seller_id <= 0 or item.monto <= 0:
             continue
+
+        fp = item.fingerprint or _generar_fingerprint(item.fecha or "", item.monto, item.descripcion or "")
+
+        # Verificar duplicado a nivel de BD antes de insertar
+        existe = db.query(PagoCartolaSeller.id).filter(
+            PagoCartolaSeller.fingerprint == fp
+        ).first()
+        if existe:
+            duplicados += 1
+            continue
+
         db.add(PagoCartolaSeller(
             seller_id=item.seller_id,
             semana=item.semana,
@@ -1067,6 +1101,7 @@ def cartola_seller_confirmar(
             fecha_pago=item.fecha,
             descripcion=item.descripcion,
             fuente="cartola",
+            fingerprint=fp,
             carga_id=carga.id,
         ))
         grabados += 1
@@ -1106,13 +1141,14 @@ def cartola_seller_confirmar(
                     seller.aliases = list(seller.aliases or []) + [alias_nuevo]
                     alias_guardados.add(item.seller_id)
 
+    carga.duplicados_omitidos = duplicados
     db.flush()
     for pago_s in db.query(PagoCartolaSeller).filter(PagoCartolaSeller.carga_id == carga.id).all():
         asiento_cobro_seller(db, pago_s)
 
-    audit(db, "carga_cartola_seller", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "monto_total": sum(it.monto for it in body.items)})
+    audit(db, "carga_cartola_seller", usuario=current_user, request=request, entidad="cartola_carga", entidad_id=carga.id, metadata={"mes": body.mes, "anio": body.anio, "transacciones": len(body.items), "grabados": grabados, "duplicados_omitidos": duplicados, "monto_total": sum(it.monto for it in body.items)})
     db.commit()
-    return {"ok": True, "grabados": grabados}
+    return {"ok": True, "grabados": grabados, "duplicados_omitidos": duplicados}
 
 
 # ---------------------------------------------------------------------------

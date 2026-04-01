@@ -156,7 +156,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
         ...it,
         _key: `orig-${i}`,
         _origMonto: it.monto,
-        incluir: it.seller_id != null,
+        incluir: it.seller_id != null && !it.ya_existe,
         seller_id_sel: it.seller_id,
         seller_nombre_sel: it.seller_nombre,
         semana_sel: semana,
@@ -229,6 +229,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
           fecha: it.fecha,
           descripcion: it.descripcion,
           nombre_extraido: it.nombre_extraido,
+          fingerprint: it.fingerprint,
         })),
       })
       toast.success(`${seleccionados.length} pagos registrados`)
@@ -290,6 +291,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
                     <th className="py-2 text-right font-medium w-28">Monto</th>
                     <th className="py-2 text-right font-medium">Ya cobrado</th>
                     <th className="py-2 text-right font-medium">Liquidado</th>
+                    <th className="py-2 text-center font-medium w-24">Estado</th>
                     <th className="py-2 w-16"></th>
                   </tr>
                 </thead>
@@ -297,7 +299,7 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
                   {items.map(it => {
                     const isSplit = it._key.startsWith('split-')
                     return (
-                      <tr key={it._key} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''} ${isSplit ? 'bg-blue-50/50' : ''}`}>
+                      <tr key={it._key} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''} ${isSplit ? 'bg-blue-50/50' : ''} ${it.ya_existe ? 'bg-red-50/60' : ''}`}>
                         <td className="py-1.5">
                           <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(it._key)}
                             className="w-3.5 h-3.5 accent-primary-600" />
@@ -343,6 +345,12 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
                         </td>
                         <td className="py-1.5 text-right font-mono text-blue-600">{it.ya_cobrado > 0 ? fmt(it.ya_cobrado) : '—'}</td>
                         <td className="py-1.5 text-right font-mono text-gray-600">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
+                        <td className="py-1.5 text-center">
+                          {!isSplit && (it.ya_existe
+                            ? <span className="inline-flex items-center gap-1 text-[10px] font-medium text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">Ya procesado</span>
+                            : <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Nuevo</span>
+                          )}
+                        </td>
                         <td className="py-1.5 text-center">
                           {!isSplit ? (
                             <button onClick={() => splitRow(it._key)} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium" title="Dividir en 2 filas">Dividir</button>

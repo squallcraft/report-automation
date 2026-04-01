@@ -245,7 +245,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
       // Todos los items empiezan con checkbox activo si tienen driver asignado
       setItems(data.items.map(it => ({
         ...it,
-        incluir: it.driver_id != null,
+        incluir: it.driver_id != null && !it.ya_existe,
         driver_id_sel: it.driver_id,
         driver_nombre_sel: it.driver_nombre,
       })))
@@ -279,7 +279,8 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
           monto: it.monto,
           fecha: it.fecha,
           descripcion: it.descripcion,
-          nombre_extraido: it.nombre_extraido,  // para guardar alias
+          nombre_extraido: it.nombre_extraido,
+          fingerprint: it.fingerprint,
         })),
       })
       toast.success(`${seleccionados.length} pagos registrados`)
@@ -341,11 +342,12 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                     <th className="py-2 text-right font-medium">Monto</th>
                     <th className="py-2 text-right font-medium">Ya pagado</th>
                     <th className="py-2 text-right font-medium">Liquidado</th>
+                    <th className="py-2 text-center font-medium w-24">Estado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((it, idx) => (
-                    <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''}`}>
+                    <tr key={idx} className={`border-b border-gray-100 text-xs ${!it.incluir ? 'opacity-40' : ''} ${it.ya_existe ? 'bg-red-50/60' : ''}`}>
                       <td className="py-1.5">
                         <input type="checkbox" checked={it.incluir} onChange={() => toggleItem(idx)}
                           className="w-3.5 h-3.5 accent-primary-600" />
@@ -392,6 +394,12 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
                       <td className="py-1.5 text-right font-mono">{fmt(it.monto)}</td>
                       <td className="py-1.5 text-right font-mono text-blue-600">{it.ya_pagado > 0 ? fmt(it.ya_pagado) : '—'}</td>
                       <td className="py-1.5 text-right font-mono text-gray-600">{it.liquidado > 0 ? fmt(it.liquidado) : '—'}</td>
+                      <td className="py-1.5 text-center">
+                        {it.ya_existe
+                          ? <span className="inline-flex items-center gap-1 text-[10px] font-medium text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">Ya procesado</span>
+                          : <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Nuevo</span>
+                        }
+                      </td>
                     </tr>
                   ))}
                 </tbody>

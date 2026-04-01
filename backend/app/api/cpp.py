@@ -1,6 +1,7 @@
 """
 API CPP (Control de Pagos a Pickups): control semanal de egresos a pickups.
 """
+import hashlib
 import io
 import os
 import re
@@ -440,6 +441,12 @@ def _similaridad(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
+def _generar_fingerprint(fecha: str, monto: int, descripcion: str) -> str:
+    """MD5 determinista sobre los campos naturales de la transacción bancaria."""
+    raw = f"{str(fecha).strip()}|{monto}|{str(descripcion).strip().lower()}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
 def _parsear_cartola_pickup(archivo_bytes: bytes) -> list:
     try:
         df = pd.read_excel(io.BytesIO(archivo_bytes), header=None)
@@ -512,8 +519,21 @@ async def cartola_pickup_preview(
     ).all():
         pagados_existentes[p.pickup_id] = pagados_existentes.get(p.pickup_id, 0) + p.monto
 
+    # Pre-calcular fingerprints de todos los movimientos y buscar duplicados en un solo query
+    fps_movs = [
+        _generar_fingerprint(m["fecha"], m["monto"], m["descripcion"])
+        for m in movimientos
+    ]
+    fps_existentes: dict[str, int] = {}  # fingerprint → carga_id
+    if fps_movs:
+        for p in db.query(PagoCartolaPickup).filter(
+            PagoCartolaPickup.fingerprint.in_(fps_movs)
+        ).all():
+            if p.fingerprint:
+                fps_existentes[p.fingerprint] = p.carga_id or 0
+
     resultado = []
-    for mov in movimientos:
+    for mov, fp in zip(movimientos, fps_movs):
         nombre_norm = mov["nombre_extraido"].lower()
         mejor_pickup = None
         mejor_score = 0.0
@@ -530,6 +550,7 @@ async def cartola_pickup_preview(
         match_confiable = mejor_score >= 0.55
         ya_pagado = pagados_existentes.get(mejor_pickup.id, 0) if mejor_pickup else 0
         liquidado = _get_monto_semanal_pickup(db, mejor_pickup.id, semana, mes, anio) if mejor_pickup else 0
+        ya_existe = fp in fps_existentes
 
         resultado.append({
             "descripcion": mov["descripcion"],
@@ -542,6 +563,9 @@ async def cartola_pickup_preview(
             "match_confiable": match_confiable,
             "ya_pagado": ya_pagado,
             "liquidado": liquidado,
+            "fingerprint": fp,
+            "ya_existe": ya_existe,
+            "carga_previa_id": fps_existentes.get(fp),
         })
 
     todos_pickups = [{"id": p.id, "nombre": p.nombre} for p in sorted(pickups, key=lambda x: x.nombre)]
@@ -554,6 +578,7 @@ class ItemConfirmarCartolaPickup(BaseModel):
     fecha: Optional[str] = None
     descripcion: Optional[str] = None
     nombre_extraido: Optional[str] = None
+    fingerprint: Optional[str] = None
 
 
 class ConfirmarCartolaPickupRequest(BaseModel):
@@ -582,14 +607,26 @@ def cartola_pickup_confirmar(
     db.flush()
 
     grabados = 0
+    duplicados = 0
     for item in body.items:
         if item.pickup_id <= 0 or item.monto <= 0:
             continue
+
+        fp = item.fingerprint or _generar_fingerprint(item.fecha or "", item.monto, item.descripcion or "")
+
+        # Verificar duplicado a nivel de BD antes de insertar
+        existe = db.query(PagoCartolaPickup.id).filter(
+            PagoCartolaPickup.fingerprint == fp
+        ).first()
+        if existe:
+            duplicados += 1
+            continue
+
         db.add(PagoCartolaPickup(
             pickup_id=item.pickup_id, semana=body.semana,
             mes=body.mes, anio=body.anio, monto=item.monto,
             fecha_pago=item.fecha, descripcion=item.descripcion,
-            fuente="cartola", carga_id=carga.id,
+            fuente="cartola", fingerprint=fp, carga_id=carga.id,
         ))
         grabados += 1
 
@@ -601,6 +638,7 @@ def cartola_pickup_confirmar(
                 if alias_nuevo.lower() != pickup.nombre.lower() and alias_nuevo.lower() not in aliases_actuales:
                     pickup.aliases = list(pickup.aliases or []) + [alias_nuevo]
 
+    carga.duplicados_omitidos = duplicados
     db.flush()
     for pago_p in db.query(PagoCartolaPickup).filter(PagoCartolaPickup.carga_id == carga.id).all():
         asiento_pago_pickup(db, pago_p)
@@ -609,9 +647,11 @@ def cartola_pickup_confirmar(
           entidad="cartola_carga", entidad_id=carga.id,
           metadata={"mes": body.mes, "anio": body.anio,
                     "transacciones": len(body.items),
+                    "grabados": grabados,
+                    "duplicados_omitidos": duplicados,
                     "monto_total": sum(it.monto for it in body.items)})
     db.commit()
-    return {"ok": True, "grabados": grabados}
+    return {"ok": True, "grabados": grabados, "duplicados_omitidos": duplicados}
 
 
 @router.get("/pagos-acumulados")
