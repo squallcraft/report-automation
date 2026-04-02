@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, Zap } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -38,10 +38,102 @@ function calcCostos(row) {
     + (row.costo_extra_manual_driver || 0) + (row.costo_retiro_driver || 0) + (row.costo_comision_pickup || 0)
 }
 
+// ---------------------------------------------------------------------------
+// Same Day Effectiveness component
+// ---------------------------------------------------------------------------
+function SameDaySection({ data }) {
+  const maxTasa = Math.max(...(data.por_dia || []).map(d => d.tasa), 1)
+
+  const tasBadge = (tasa) => {
+    if (tasa >= 70) return 'text-emerald-700 bg-emerald-100'
+    if (tasa >= 40) return 'text-amber-700 bg-amber-100'
+    return 'text-red-700 bg-red-100'
+  }
+
+  return (
+    <div className="card overflow-hidden p-0 mt-6">
+      <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+        <Zap size={16} className="text-amber-500" />
+        <div>
+          <h2 className="text-sm font-semibold text-gray-700">Efectividad Same Day</h2>
+          <p className="text-[10px] text-gray-400 mt-0.5">
+            Envíos entregados el mismo día de carga · {data.same_day.toLocaleString()} de {data.total.toLocaleString()} ({data.tasa}%)
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+
+        {/* Desglose por seller */}
+        <div className="p-4">
+          <h3 className="text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide">Por Seller</h3>
+          <div className="space-y-2">
+            {(data.por_seller || []).slice(0, 10).map((s) => (
+              <div key={s.seller_id} className="flex items-center gap-2">
+                <span className="text-xs text-gray-700 w-36 truncate flex-shrink-0" title={s.nombre}>{s.nombre}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-2 rounded-full transition-all ${s.tasa >= 70 ? 'bg-emerald-500' : s.tasa >= 40 ? 'bg-amber-400' : 'bg-red-400'}`}
+                    style={{ width: `${s.tasa}%` }}
+                  />
+                </div>
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[42px] text-center ${tasBadge(s.tasa)}`}>
+                  {s.tasa}%
+                </span>
+                <span className="text-[10px] text-gray-400 w-16 text-right">{s.same_day}/{s.total}</span>
+              </div>
+            ))}
+            {data.por_seller?.length === 0 && (
+              <p className="text-xs text-gray-400">Sin datos</p>
+            )}
+          </div>
+        </div>
+
+        {/* Tendencia diaria */}
+        <div className="p-4">
+          <h3 className="text-xs font-semibold text-gray-600 mb-3 uppercase tracking-wide">Tendencia diaria del mes</h3>
+          {data.por_dia?.length > 0 ? (
+            <div className="flex items-end gap-px h-24 overflow-x-auto pb-1">
+              {data.por_dia.map((d) => {
+                const altura = maxTasa > 0 ? Math.round((d.tasa / maxTasa) * 100) : 0
+                const color = d.tasa >= 70 ? 'bg-emerald-400' : d.tasa >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                const dia = d.fecha ? d.fecha.slice(8) : '?'
+                return (
+                  <div key={d.fecha} className="flex flex-col items-center flex-shrink-0 group relative" style={{ width: '22px' }}>
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[9px] rounded px-1.5 py-0.5 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
+                      {d.fecha}: {d.tasa}% ({d.same_day}/{d.total})
+                    </div>
+                    <div className="w-full flex items-end" style={{ height: '80px' }}>
+                      <div
+                        className={`w-full rounded-t ${color} transition-all`}
+                        style={{ height: `${Math.max(altura, d.tasa > 0 ? 4 : 0)}%` }}
+                      />
+                    </div>
+                    <span className="text-[8px] text-gray-400 mt-0.5">{dia}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">Sin datos diarios</p>
+          )}
+          <div className="flex items-center gap-3 mt-3 text-[10px] text-gray-500">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> ≥70%</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> 40–70%</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> &lt;40%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [resumen, setResumen] = useState(null)
   const [resumenAnual, setResumenAnual] = useState(null)
+  const [sameDay, setSameDay] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadingAnual, setLoadingAnual] = useState(true)
   const [period, setPeriod] = useState({ semana: null, mes: now.getMonth() + 1, anio: now.getFullYear() })
@@ -55,10 +147,12 @@ export default function Dashboard() {
     Promise.all([
       api.get('/dashboard/stats', { params }),
       api.get('/dashboard/resumen-financiero', { params: { mes: period.mes, anio: period.anio } }),
+      api.get('/dashboard/same-day', { params: { mes: period.mes, anio: period.anio } }),
     ])
-      .then(([statsRes, resumenRes]) => {
+      .then(([statsRes, resumenRes, sameDayRes]) => {
         setStats(statsRes.data)
         setResumen(resumenRes.data)
+        setSameDay(sameDayRes.data)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -188,6 +282,15 @@ export default function Dashboard() {
               color={stats.consultas_pendientes > 0 ? 'amber' : 'green'}
               sub="Del portal de transparencia"
             />
+            {sameDay && sameDay.total > 0 && (
+              <StatsCard
+                icon={Zap}
+                label="Efectividad Same Day"
+                value={`${sameDay.tasa}%`}
+                color={sameDay.tasa >= 70 ? 'green' : sameDay.tasa >= 40 ? 'amber' : 'red'}
+                sub={`${sameDay.same_day.toLocaleString()} de ${sameDay.total.toLocaleString()} envíos`}
+              />
+            )}
           </div>
 
           {resumen && (
@@ -280,6 +383,10 @@ export default function Dashboard() {
                 </table>
               </div>
             </div>
+          )}
+          {/* ── Same Day Effectiveness ── */}
+          {sameDay && sameDay.total > 0 && (
+            <SameDaySection data={sameDay} />
           )}
           {/* ── Resumen Anual ── */}
           {loadingAnual ? (

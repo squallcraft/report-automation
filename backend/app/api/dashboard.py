@@ -5,7 +5,7 @@ from datetime import datetime, date
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc, distinct
+from sqlalchemy import func as sqlfunc, distinct, case
 
 from app.database import get_db
 from app.auth import require_admin_or_administracion
@@ -280,3 +280,95 @@ def resumen_anual(
             total[k] += s[k]
 
     return {"meses": meses, "total": total}
+
+
+@router.get("/same-day")
+def same_day_stats(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Calcula la efectividad de entregas same-day:
+    envíos donde fecha_entrega == fecha_carga, solo cuando ambas están presentes.
+    Devuelve métrica global + desglose por seller + tendencia diaria.
+    """
+    base_filter = [
+        Envio.mes == mes,
+        Envio.anio == anio,
+        Envio.fecha_carga.isnot(None),
+    ]
+
+    # ── Global ──
+    rows_global = db.query(
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(
+            case((Envio.fecha_entrega == Envio.fecha_carga, 1), else_=0)
+        ).label("same_day"),
+    ).filter(*base_filter).first()
+
+    total_global = int(rows_global.total or 0)
+    same_day_global = int(rows_global.same_day or 0)
+    tasa_global = round(same_day_global / total_global * 100, 1) if total_global else 0.0
+
+    # ── Por seller ──
+    rows_seller = db.query(
+        Envio.seller_id,
+        sqlfunc.coalesce(Envio.seller_nombre_raw, "Sin nombre").label("nombre"),
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(
+            case((Envio.fecha_entrega == Envio.fecha_carga, 1), else_=0)
+        ).label("same_day"),
+    ).filter(*base_filter, Envio.seller_id.isnot(None)).group_by(
+        Envio.seller_id, Envio.seller_nombre_raw
+    ).order_by(sqlfunc.count(Envio.id).desc()).limit(20).all()
+
+    # Usar nombre real del seller si está disponible
+    seller_ids = [r.seller_id for r in rows_seller if r.seller_id]
+    seller_nombres = {
+        s.id: s.nombre
+        for s in db.query(Seller.id, Seller.nombre).filter(Seller.id.in_(seller_ids)).all()
+    } if seller_ids else {}
+
+    por_seller = []
+    for r in rows_seller:
+        t = int(r.total or 0)
+        sd = int(r.same_day or 0)
+        por_seller.append({
+            "seller_id": r.seller_id,
+            "nombre": seller_nombres.get(r.seller_id) or r.nombre or "Sin nombre",
+            "total": t,
+            "same_day": sd,
+            "tasa": round(sd / t * 100, 1) if t else 0.0,
+        })
+
+    # ── Tendencia diaria ──
+    rows_dia = db.query(
+        Envio.fecha_entrega,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(
+            case((Envio.fecha_entrega == Envio.fecha_carga, 1), else_=0)
+        ).label("same_day"),
+    ).filter(*base_filter).group_by(Envio.fecha_entrega).order_by(Envio.fecha_entrega).all()
+
+    por_dia = []
+    for r in rows_dia:
+        t = int(r.total or 0)
+        sd = int(r.same_day or 0)
+        por_dia.append({
+            "fecha": str(r.fecha_entrega) if r.fecha_entrega else None,
+            "total": t,
+            "same_day": sd,
+            "tasa": round(sd / t * 100, 1) if t else 0.0,
+        })
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "total": total_global,
+        "same_day": same_day_global,
+        "tasa": tasa_global,
+        "por_seller": por_seller,
+        "por_dia": por_dia,
+    }
