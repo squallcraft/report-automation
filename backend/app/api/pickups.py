@@ -21,6 +21,8 @@ from app.auth import (
     require_admin, require_admin_or_administracion, require_permission, require_pickup,
     hash_password, get_current_user,
 )
+import threading
+
 from app.config import get_settings
 from app.models import (
     Pickup, RecepcionPaquete, Envio, Seller, Driver, RolEnum,
@@ -29,7 +31,9 @@ from app.models import (
 from app.schemas import PickupCreate, PickupUpdate, PickupOut, RecepcionPaqueteOut
 from app.services.audit import registrar as audit
 from app.services.ingesta import calcular_semana_del_mes, homologar_nombre
+from app.services.task_progress import create_task, update_task, get_task, cleanup_old_tasks
 from app.services.trackingtech import fetch_pickups_by_date
+from app.database import SessionLocal
 
 router = APIRouter(prefix="/pickups", tags=["Pickups"])
 
@@ -535,6 +539,186 @@ async def importar_recepciones(
     return resultado
 
 
+def _run_trackingtech_import(
+    task_id: str,
+    fecha_inicio: str,
+    fecha_fin: str,
+    usuario_dict: dict,
+    request_base_url: str,
+):
+    """Ejecuta la importación de TrackingTech en un hilo separado con su propia sesión de BD."""
+    db = SessionLocal()
+    ingesta_id = f"tt-{task_id[:8]}"
+    try:
+        settings = get_settings()
+        update_task(task_id, message="Conectando con API TrackingTech…")
+
+        records, api_error = fetch_pickups_by_date(
+            api_url=settings.TRACKINGTECH_API_URL,
+            email=settings.TRACKINGTECH_EMAIL,
+            password=settings.TRACKINGTECH_PASSWORD,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        )
+
+        if api_error and not records:
+            update_task(task_id, status="error", message=f"Error API TrackingTech: {api_error}")
+            return
+
+        total = len(records)
+        update_task(task_id, total=total, message=f"Descargados {total} registros. Procesando…")
+
+        pickups = db.query(Pickup).filter(Pickup.activo == True).all()
+        pickup_cache: dict = {}
+        pickup_obj_cache = {p.id: p for p in pickups}
+
+        creados = 0
+        duplicados = 0
+        vinculados = 0
+        descartados = 0
+        sin_homologar: list[str] = []
+        errores: list[str] = []
+
+        for idx, rec in enumerate(records):
+            try:
+                pending = rec.get("pending", False)
+                error_msg_api = rec.get("error_msg") or None
+
+                if pending or error_msg_api:
+                    descartados += 1
+                else:
+                    created_at_raw = rec.get("created_at")
+                    if not created_at_raw:
+                        errores.append(f"Registro {idx + 1}: sin fecha")
+                    else:
+                        fecha = datetime.strptime(created_at_raw, "%Y-%m-%d %H:%M:%S").date()
+                        pickup_raw = (rec.get("Pickup") or "").strip()
+                        seller_code = (rec.get("seller_code") or "").strip()
+                        id_interno = (rec.get("id_interno") or "").strip()
+                        tipo = (rec.get("tipo") or "").strip() or None
+                        pedido = id_interno or seller_code
+
+                        if not pedido:
+                            errores.append(f"Registro {idx + 1}: sin seller_code ni id_interno")
+                        elif not pickup_raw:
+                            errores.append(f"Registro {idx + 1}: sin nombre de pickup")
+                        else:
+                            pickup_id = homologar_nombre(pickup_raw, pickups, pickup_cache)
+                            if pickup_id:
+                                pickup_obj = pickup_obj_cache.get(pickup_id)
+                                if pickup_obj:
+                                    _persist_pickup_alias(pickup_obj, pickup_raw)
+                            else:
+                                sin_homologar.append(pickup_raw)
+
+                            dup_filter = (
+                                db.query(RecepcionPaquete)
+                                .filter(
+                                    RecepcionPaquete.pedido == pedido,
+                                    RecepcionPaquete.fecha_recepcion == fecha,
+                                )
+                            )
+                            if pickup_id:
+                                dup_filter = dup_filter.filter(RecepcionPaquete.pickup_id == pickup_id)
+                            else:
+                                dup_filter = dup_filter.filter(RecepcionPaquete.pickup_nombre_raw == pickup_raw)
+
+                            if dup_filter.first():
+                                duplicados += 1
+                            else:
+                                envio_id = None
+                                envio = db.query(Envio).filter(
+                                    (Envio.tracking_id == pedido) | (Envio.venta_id == pedido)
+                                ).first()
+                                if envio:
+                                    envio_id = envio.id
+                                    vinculados += 1
+
+                                semana = calcular_semana_del_mes(fecha)
+                                comision = 0
+                                if pickup_id:
+                                    pickup_obj = pickup_obj_cache.get(pickup_id)
+                                    comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
+                                    if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                                        comision = 0
+
+                                db.add(RecepcionPaquete(
+                                    pickup_id=pickup_id,
+                                    pickup_nombre_raw=pickup_raw,
+                                    envio_id=envio_id,
+                                    fecha_recepcion=fecha,
+                                    semana=semana,
+                                    mes=fecha.month,
+                                    anio=fecha.year,
+                                    pedido=pedido,
+                                    tipo=tipo,
+                                    comision=comision,
+                                    procesado=True,
+                                    error_msg=None,
+                                    ingesta_id=ingesta_id,
+                                ))
+                                creados += 1
+
+            except Exception as e:
+                errores.append(f"Registro {idx + 1}: {str(e)}")
+
+            # Update progress every 50 records
+            if (idx + 1) % 50 == 0 or (idx + 1) == total:
+                update_task(
+                    task_id,
+                    processed=idx + 1,
+                    nuevos=creados,
+                    duplicados=duplicados,
+                    errores=len(errores),
+                    message=f"Procesando… {idx + 1}/{total}",
+                )
+
+        db.commit()
+
+        resultado = {
+            "creados": creados,
+            "duplicados": duplicados,
+            "descartados": descartados,
+            "vinculados": vinculados,
+            "total_api": total,
+            "sin_homologar": list(set(sin_homologar)),
+            "errores": errores,
+            "advertencia_api": api_error,
+            "ingesta_id": ingesta_id,
+        }
+
+        update_task(
+            task_id,
+            status="done",
+            processed=total,
+            nuevos=creados,
+            duplicados=duplicados,
+            errores=len(errores),
+            message=f"Completado: {creados} creados, {duplicados} duplicados",
+            result=resultado,
+        )
+
+        audit(db, "importar_recepciones_trackingtech", usuario=usuario_dict, entidad="recepcion_paquete", metadata={
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+            "total_api": total,
+            "creados": creados,
+            "duplicados": duplicados,
+            "descartados": descartados,
+            "vinculados": vinculados,
+            "errores_count": len(errores),
+            "sin_homologar": list(set(sin_homologar)),
+            "ingesta_id": ingesta_id,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        update_task(task_id, status="error", message=f"Error fatal: {str(e)}")
+    finally:
+        db.close()
+
+
 @router.post("/recepciones/importar-trackingtech")
 def importar_desde_trackingtech(
     request: Request,
@@ -544,156 +728,44 @@ def importar_desde_trackingtech(
     current_user=Depends(require_permission("pickups:editar")),
 ):
     """
-    Importa recepciones de paquetes desde la API TrackingTech.
-    Consulta todos los escaneos en el rango de fechas y los crea como RecepcionPaquete.
+    Inicia la importación de recepciones desde TrackingTech en background.
+    Devuelve task_id para consultar progreso via GET /recepciones/importar-trackingtech/progress/{task_id}.
     """
     if len(fecha_inicio) != 8 or len(fecha_fin) != 8:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYYMMDD")
 
-    settings = get_settings()
-    records, api_error = fetch_pickups_by_date(
-        api_url=settings.TRACKINGTECH_API_URL,
-        email=settings.TRACKINGTECH_EMAIL,
-        password=settings.TRACKINGTECH_PASSWORD,
-        fecha_inicio=fecha_inicio,
-        fecha_fin=fecha_fin,
-    )
+    cleanup_old_tasks()
 
-    if api_error and not records:
-        raise HTTPException(status_code=502, detail=f"Error API TrackingTech: {api_error}")
+    task_id = uuid.uuid4().hex
+    create_task(task_id, total=0, archivo=f"TrackingTech {fecha_inicio}–{fecha_fin}")
 
-    pickups = db.query(Pickup).filter(Pickup.activo == True).all()
-    pickup_cache: dict = {}
-    pickup_obj_cache = {p.id: p for p in pickups}
-    ingesta_id = f"tt-{uuid.uuid4().hex[:8]}"
-
-    creados = 0
-    duplicados = 0
-    vinculados = 0
-    descartados = 0
-    sin_homologar: list[str] = []
-    errores: list[str] = []
-
-    for idx, rec in enumerate(records):
-        try:
-            pending = rec.get("pending", False)
-            error_msg_api = rec.get("error_msg") or None
-
-            if pending or error_msg_api:
-                descartados += 1
-                continue
-
-            created_at_raw = rec.get("created_at")
-            if not created_at_raw:
-                errores.append(f"Registro {idx + 1}: sin fecha")
-                continue
-
-            fecha = datetime.strptime(created_at_raw, "%Y-%m-%d %H:%M:%S").date()
-
-            pickup_raw = (rec.get("Pickup") or "").strip()
-            seller_code = (rec.get("seller_code") or "").strip()
-            id_interno = (rec.get("id_interno") or "").strip()
-            tipo = (rec.get("tipo") or "").strip() or None
-
-            pedido = id_interno or seller_code
-            if not pedido:
-                errores.append(f"Registro {idx + 1}: sin seller_code ni id_interno")
-                continue
-
-            if not pickup_raw:
-                errores.append(f"Registro {idx + 1}: sin nombre de pickup")
-                continue
-
-            pickup_id = homologar_nombre(pickup_raw, pickups, pickup_cache)
-
-            if pickup_id:
-                pickup_obj = pickup_obj_cache.get(pickup_id)
-                if pickup_obj:
-                    _persist_pickup_alias(pickup_obj, pickup_raw)
-            else:
-                sin_homologar.append(pickup_raw)
-
-            dup_filter = (
-                db.query(RecepcionPaquete)
-                .filter(
-                    RecepcionPaquete.pedido == pedido,
-                    RecepcionPaquete.fecha_recepcion == fecha,
-                )
-            )
-            if pickup_id:
-                dup_filter = dup_filter.filter(RecepcionPaquete.pickup_id == pickup_id)
-            else:
-                dup_filter = dup_filter.filter(RecepcionPaquete.pickup_nombre_raw == pickup_raw)
-            if dup_filter.first():
-                duplicados += 1
-                continue
-
-            envio_id = None
-            envio = db.query(Envio).filter(
-                (Envio.tracking_id == pedido) | (Envio.venta_id == pedido)
-            ).first()
-            if envio:
-                envio_id = envio.id
-                vinculados += 1
-
-            semana = calcular_semana_del_mes(fecha)
-
-            comision = 0
-            if pickup_id:
-                pickup_obj = pickup_obj_cache.get(pickup_id)
-                comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
-                if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
-                    comision = 0
-
-            new_rec = RecepcionPaquete(
-                pickup_id=pickup_id,
-                pickup_nombre_raw=pickup_raw,
-                envio_id=envio_id,
-                fecha_recepcion=fecha,
-                semana=semana,
-                mes=fecha.month,
-                anio=fecha.year,
-                pedido=pedido,
-                tipo=tipo,
-                comision=comision,
-                procesado=True,
-                error_msg=None,
-                ingesta_id=ingesta_id,
-            )
-            db.add(new_rec)
-            creados += 1
-
-        except Exception as e:
-            errores.append(f"Registro {idx + 1}: {str(e)}")
-
-    db.commit()
-
-    resultado = {
-        "creados": creados,
-        "duplicados": duplicados,
-        "descartados": descartados,
-        "vinculados": vinculados,
-        "total_api": len(records),
-        "sin_homologar": list(set(sin_homologar)),
-        "errores": errores,
-        "advertencia_api": api_error,
-        "ingesta_id": ingesta_id,
+    usuario_dict = {
+        "id": getattr(current_user, "id", None),
+        "nombre": getattr(current_user, "nombre", ""),
+        "email": getattr(current_user, "email", ""),
+        "rol": str(getattr(current_user, "rol", "")),
     }
 
-    audit(db, "importar_recepciones_trackingtech", usuario=current_user, request=request, entidad="recepcion_paquete", metadata={
-        "fecha_inicio": fecha_inicio,
-        "fecha_fin": fecha_fin,
-        "total_api": len(records),
-        "creados": creados,
-        "duplicados": duplicados,
-        "descartados": descartados,
-        "vinculados": vinculados,
-        "errores_count": len(errores),
-        "sin_homologar": resultado["sin_homologar"],
-        "ingesta_id": ingesta_id,
-    })
+    thread = threading.Thread(
+        target=_run_trackingtech_import,
+        args=(task_id, fecha_inicio, fecha_fin, usuario_dict, str(request.base_url)),
+        daemon=True,
+    )
+    thread.start()
 
-    return resultado
+    return {"task_id": task_id}
+
+
+@router.get("/recepciones/importar-trackingtech/progress/{task_id}")
+def trackingtech_import_progress(
+    task_id: str,
+    _=Depends(require_permission("pickups:editar")),
+):
+    """Consulta el progreso de una importación TrackingTech en background."""
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    return task
 
 
 # ── Portal Pickup ──

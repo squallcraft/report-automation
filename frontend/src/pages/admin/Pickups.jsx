@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import api from '../../api'
 import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
@@ -115,6 +115,8 @@ export default function Pickups() {
   const [ttFechaInicio, setTtFechaInicio] = useState('')
   const [ttFechaFin, setTtFechaFin] = useState('')
   const [importResult, setImportResult] = useState(null)
+  const [ttProgress, setTtProgress] = useState(null)
+  const ttPollRef = useRef(null)
   const [pendientes, setPendientes] = useState([])
   const [resolveModal, setResolveModal] = useState(null)
   const [resolvePickupId, setResolvePickupId] = useState('')
@@ -298,23 +300,40 @@ export default function Pickups() {
     if (!ttFechaInicio || !ttFechaFin) return toast.error('Selecciona ambas fechas')
     setTtLoading(true)
     setImportResult(null)
+    setTtProgress(null)
     try {
       const fi = ttFechaInicio.replace(/-/g, '')
       const ff = ttFechaFin.replace(/-/g, '')
       const { data } = await api.post(`/pickups/recepciones/importar-trackingtech?fecha_inicio=${fi}&fecha_fin=${ff}`)
-      setImportResult({ ...data, fuente: 'api' })
-      if (data.creados > 0) {
-        toast.success(`${data.creados} recepciones importadas desde TrackingTech`)
-      } else if (data.duplicados > 0) {
-        toast(`${data.duplicados} registros ya existían, 0 nuevos`, { icon: 'ℹ️' })
-      } else {
-        toast('No se encontraron registros nuevos', { icon: 'ℹ️' })
-      }
-      if (data.sin_homologar?.length) toast.error(`${data.sin_homologar.length} pickups sin homologar`)
-      loadPendientes()
+      const taskId = data.task_id
+
+      // Start polling progress
+      ttPollRef.current = setInterval(async () => {
+        try {
+          const { data: prog } = await api.get(`/pickups/recepciones/importar-trackingtech/progress/${taskId}`)
+          setTtProgress(prog)
+          if (prog.status === 'done' || prog.status === 'error') {
+            clearInterval(ttPollRef.current)
+            ttPollRef.current = null
+            setTtLoading(false)
+            if (prog.status === 'done' && prog.result) {
+              const r = prog.result
+              setImportResult({ ...r, fuente: 'api' })
+              if (r.creados > 0) toast.success(`${r.creados} recepciones importadas desde TrackingTech`)
+              else if (r.duplicados > 0) toast(`${r.duplicados} registros ya existían, 0 nuevos`, { icon: 'ℹ️' })
+              else toast('No se encontraron registros nuevos', { icon: 'ℹ️' })
+              if (r.sin_homologar?.length) toast.error(`${r.sin_homologar.length} pickups sin homologar`)
+              loadPendientes()
+            } else if (prog.status === 'error') {
+              toast.error(prog.message || 'Error en la importación')
+            }
+          }
+        } catch {
+          // keep polling on transient errors
+        }
+      }, 1000)
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Error al importar desde TrackingTech')
-    } finally {
+      toast.error(err.response?.data?.detail || 'Error al iniciar importación desde TrackingTech')
       setTtLoading(false)
     }
   }
@@ -846,6 +865,31 @@ export default function Pickups() {
                   )}
                 </button>
               </div>
+
+              {ttLoading && ttProgress && (
+                <div className="space-y-2 mt-2">
+                  <div className="flex items-center justify-between text-xs text-gray-500">
+                    <span>{ttProgress.message}</span>
+                    {ttProgress.total > 0 && (
+                      <span className="font-medium">{ttProgress.processed}/{ttProgress.total}</span>
+                    )}
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-primary-600 h-2 rounded-full transition-all duration-500"
+                      style={{ width: ttProgress.total > 0 ? `${Math.round((ttProgress.processed / ttProgress.total) * 100)}%` : '0%' }}
+                    />
+                  </div>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-green-700 font-medium">✓ {ttProgress.nuevos ?? 0} nuevos</span>
+                    <span className="text-amber-600 font-medium">↩ {ttProgress.duplicados ?? 0} duplicados</span>
+                    {ttProgress.errores > 0 && <span className="text-red-600 font-medium">✕ {ttProgress.errores} errores</span>}
+                    {ttProgress.total > 0 && ttProgress.estimated_remaining_seconds > 0 && (
+                      <span className="text-gray-400 ml-auto">~{Math.ceil(ttProgress.estimated_remaining_seconds)}s restantes</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
