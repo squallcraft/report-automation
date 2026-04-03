@@ -44,6 +44,7 @@ import Prestamos from './pages/admin/Prestamos'
 import PagosTrabajadores from './pages/admin/PagosTrabajadores'
 import Auditoria from './pages/admin/Auditoria'
 import BusinessIntelligence from './pages/admin/BusinessIntelligence'
+import EfectividadEntregas from './pages/admin/EfectividadEntregas'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
 import PickupDashboard from './pages/pickup/PickupDashboard'
@@ -108,6 +109,7 @@ export default function App() {
         <Route path="pagos-trabajadores" element={<PagosTrabajadores />} />
         <Route path="auditoria" element={<Auditoria />} />
         <Route path="bi" element={<BusinessIntelligence />} />
+        <Route path="efectividad" element={<EfectividadEntregas />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>

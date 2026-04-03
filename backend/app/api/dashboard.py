@@ -372,3 +372,217 @@ def same_day_stats(
         "por_seller": por_seller,
         "por_dia": por_dia,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Efectividad de entregas — ciclo fecha_carga → fecha_entrega
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ciclo_expr():
+    """Days between fecha_carga and fecha_entrega (PostgreSQL date subtraction)."""
+    from sqlalchemy import cast, Integer as SAInteger
+    return cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)
+
+
+def _efectividad_row(rows_with_carga):
+    """Compute distribution and averages from a list of ciclo_dias ints."""
+    if not rows_with_carga:
+        return {"ciclo_promedio": None, "pct_0d": 0, "pct_1d": 0, "pct_2d": 0,
+                "pct_3d": 0, "pct_4plus": 0, "pct_rapida": 0}
+    n = len(rows_with_carga)
+    c0 = sum(1 for d in rows_with_carga if d == 0)
+    c1 = sum(1 for d in rows_with_carga if d == 1)
+    c2 = sum(1 for d in rows_with_carga if d == 2)
+    c3 = sum(1 for d in rows_with_carga if d == 3)
+    c4 = sum(1 for d in rows_with_carga if d >= 4)
+    avg = round(sum(rows_with_carga) / n, 1)
+    pct = lambda x: round(x / n * 100, 1)
+    return {
+        "ciclo_promedio": avg,
+        "pct_0d": pct(c0), "n_0d": c0,
+        "pct_1d": pct(c1), "n_1d": c1,
+        "pct_2d": pct(c2), "n_2d": c2,
+        "pct_3d": pct(c3), "n_3d": c3,
+        "pct_4plus": pct(c4), "n_4plus": c4,
+        "pct_rapida": pct(c0 + c1),
+    }
+
+
+@router.get("/efectividad")
+def efectividad_entregas(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    semana: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Ciclo de entrega: fecha_carga → fecha_entrega por seller y driver."""
+    from sqlalchemy import cast, Integer as SAInteger
+
+    base = [Envio.mes == mes, Envio.anio == anio]
+    if semana:
+        base.append(Envio.semana == semana)
+
+    # ── Global ──
+    rows_global = db.query(_ciclo_expr().label("d")).filter(
+        *base, Envio.fecha_carga.isnot(None)
+    ).all()
+    dias_global = [r.d for r in rows_global if r.d is not None and r.d >= 0]
+
+    total_global = db.query(sqlfunc.count(Envio.id)).filter(*base).scalar() or 0
+    con_fecha_carga = len(dias_global)
+
+    global_stats = {
+        "total": total_global,
+        "con_fecha_carga": con_fecha_carga,
+        "sin_fecha_carga": total_global - con_fecha_carga,
+        **_efectividad_row(dias_global),
+    }
+
+    # ── Por Seller ──
+    seller_data = db.query(
+        Envio.seller_id,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.count(Envio.fecha_carga).label("con_carga"),
+        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("avg_ciclo"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 1, 1), else_=0)).label("n_1d"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) >= 4, 1), else_=0)).label("n_4plus"),
+    ).filter(*base, Envio.fecha_carga.isnot(None), Envio.seller_id.isnot(None)
+    ).group_by(Envio.seller_id).all()
+
+    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+
+    por_seller = []
+    for r in sorted(seller_data, key=lambda x: -(x.total or 0)):
+        cc = r.con_carga or 0
+        por_seller.append({
+            "seller_id": r.seller_id,
+            "nombre": seller_nombres.get(r.seller_id, "Sin nombre"),
+            "total": r.total,
+            "con_fecha_carga": cc,
+            "ciclo_promedio": round(float(r.avg_ciclo), 1) if r.avg_ciclo is not None else None,
+            "pct_0d": round(r.n_0d / cc * 100, 1) if cc else 0,
+            "pct_rapida": round((r.n_0d + r.n_1d) / cc * 100, 1) if cc else 0,
+            "pct_4plus": round(r.n_4plus / cc * 100, 1) if cc else 0,
+        })
+
+    # ── Por Driver ──
+    driver_data = db.query(
+        Envio.driver_id,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.count(Envio.fecha_carga).label("con_carga"),
+        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("avg_ciclo"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 1, 1), else_=0)).label("n_1d"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) >= 4, 1), else_=0)).label("n_4plus"),
+    ).filter(*base, Envio.fecha_carga.isnot(None), Envio.driver_id.isnot(None)
+    ).group_by(Envio.driver_id).all()
+
+    driver_nombres = {d.id: d.nombre for d in db.query(Driver.id, Driver.nombre).all()}
+
+    por_driver = []
+    for r in sorted(driver_data, key=lambda x: -(x.con_carga or 0)):
+        cc = r.con_carga or 0
+        ciclo = round(float(r.avg_ciclo), 1) if r.avg_ciclo is not None else None
+        pct_rapida = round((r.n_0d + r.n_1d) / cc * 100, 1) if cc else 0
+        por_driver.append({
+            "driver_id": r.driver_id,
+            "nombre": driver_nombres.get(r.driver_id, "Sin nombre"),
+            "total": r.total,
+            "con_fecha_carga": cc,
+            "ciclo_promedio": ciclo,
+            "pct_0d": round(r.n_0d / cc * 100, 1) if cc else 0,
+            "pct_rapida": pct_rapida,
+            "pct_4plus": round(r.n_4plus / cc * 100, 1) if cc else 0,
+            "alerta": ciclo is not None and ciclo > 2.5,
+        })
+
+    # Tendencia semanal por driver (últimas 4 semanas del mes)
+    sem_data = db.query(
+        Envio.driver_id,
+        Envio.semana,
+        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("avg_ciclo"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("rapidas"),
+        sqlfunc.count(Envio.id).label("total"),
+    ).filter(Envio.mes == mes, Envio.anio == anio, Envio.fecha_carga.isnot(None),
+             Envio.driver_id.isnot(None)
+    ).group_by(Envio.driver_id, Envio.semana).all()
+
+    spark_by_driver: dict = defaultdict(dict)
+    for r in sem_data:
+        t = r.total or 0
+        spark_by_driver[r.driver_id][r.semana] = round(r.rapidas / t * 100, 1) if t else 0
+
+    semanas_mes = sorted({r.semana for r in sem_data})
+    for d in por_driver:
+        d["spark"] = [spark_by_driver[d["driver_id"]].get(s, 0) for s in semanas_mes]
+
+    return {
+        "mes": mes, "anio": anio, "semana": semana,
+        "global": global_stats,
+        "por_seller": por_seller,
+        "por_driver": por_driver,
+        "semanas": semanas_mes,
+    }
+
+
+@router.get("/efectividad/driver/{driver_id}")
+def efectividad_driver_detalle(
+    driver_id: int,
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Detalle de ciclo de entrega para un driver específico."""
+    from sqlalchemy import cast, Integer as SAInteger
+
+    base = [Envio.mes == mes, Envio.anio == anio,
+            Envio.driver_id == driver_id, Envio.fecha_carga.isnot(None)]
+
+    driver = db.query(Driver).filter(Driver.id == driver_id).first()
+    nombre = driver.nombre if driver else f"Driver {driver_id}"
+
+    # Resumen
+    rows = db.query(_ciclo_expr().label("d")).filter(*base).all()
+    dias = [r.d for r in rows if r.d is not None and r.d >= 0]
+
+    resumen = {"nombre": nombre, "total": len(dias), **_efectividad_row(dias)}
+
+    # Tendencia diaria
+    daily = db.query(
+        Envio.fecha_carga.label("fecha"),
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("ciclo_avg"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("n_rapidos"),
+    ).filter(*base).group_by(Envio.fecha_carga).order_by(Envio.fecha_carga).all()
+
+    por_dia = [{
+        "fecha": str(r.fecha),
+        "total": r.total,
+        "ciclo_avg": round(float(r.ciclo_avg), 1) if r.ciclo_avg else 0,
+        "pct_0d": round(r.n_0d / r.total * 100, 1) if r.total else 0,
+        "pct_rapida": round(r.n_rapidos / r.total * 100, 1) if r.total else 0,
+    } for r in daily]
+
+    # Envíos lentos (+3 días)
+    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+    lentos_rows = db.query(
+        Envio.tracking_id, Envio.seller_id, Envio.fecha_carga,
+        Envio.fecha_entrega, Envio.comuna,
+        _ciclo_expr().label("ciclo_dias"),
+    ).filter(*base, _ciclo_expr() >= 3
+    ).order_by(_ciclo_expr().desc()).limit(20).all()
+
+    lentos = [{
+        "tracking_id": r.tracking_id or "—",
+        "seller": seller_nombres.get(r.seller_id, "—"),
+        "fecha_carga": str(r.fecha_carga),
+        "fecha_entrega": str(r.fecha_entrega),
+        "ciclo_dias": r.ciclo_dias,
+        "comuna": r.comuna or "—",
+    } for r in lentos_rows]
+
+    return {"resumen": resumen, "por_dia": por_dia, "lentos": lentos}
