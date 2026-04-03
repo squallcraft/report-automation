@@ -211,7 +211,7 @@ export default function EfectividadDriver() {
               <TrendingUp size={20} className="text-blue-600" />
               {loading ? 'Cargando…' : (r?.nombre || `Conductor #${driverId}`)}
             </h1>
-            <p className="text-xs text-gray-400 mt-0.5">Efectividad de entrega · Ciclo recepción → entrega</p>
+            <p className="text-xs text-gray-400 mt-0.5">Efectividad de entrega · días hábiles (L-V)</p>
           </div>
         </div>
         <select

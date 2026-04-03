@@ -183,7 +183,7 @@ export default function EfectividadEntregas() {
             <TrendingUp size={20} className="text-blue-600" />
             Efectividad de Entregas
           </h1>
-          <p className="text-xs text-gray-400 mt-0.5">Ciclo recepción → entrega · solo admin</p>
+          <p className="text-xs text-gray-400 mt-0.5">Ciclo recepción → entrega · días hábiles (L-V) · solo admin</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
@@ -223,7 +223,7 @@ export default function EfectividadEntregas() {
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-emerald-500">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Ciclo promedio</p>
               <p className={`text-3xl font-black mt-1 ${colorCiclo(g?.ciclo_promedio)}`}>{fmtDias(g?.ciclo_promedio)}</p>
-              <p className="text-xs text-gray-400 mt-1">recepción → entrega</p>
+              <p className="text-xs text-gray-400 mt-1">días hábiles · recepción → entrega</p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-emerald-400">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Entregados en ≤1d</p>

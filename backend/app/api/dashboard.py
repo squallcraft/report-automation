@@ -379,9 +379,24 @@ def same_day_stats(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ciclo_expr():
-    """Days between fecha_carga and fecha_entrega (PostgreSQL date subtraction)."""
-    from sqlalchemy import cast, Integer as SAInteger
-    return cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)
+    """
+    Business days (Mon-Fri) between fecha_carga and fecha_entrega.
+    Friday → Monday = 1 business day (weekend skipped).
+
+    Formula: wd_cumulative(entrega) - wd_cumulative(carga)
+    where wd_cumulative(d) = (days_since_ref_monday / 7) * 5 + LEAST(ISODOW, 5)
+    Reference 2024-01-01 is a Monday (ISODOW=1).
+    """
+    from sqlalchemy import cast, Integer as SAInteger, text
+
+    def _wd(col):
+        # Days since a known Monday (integer division keeps only full weeks)
+        days = cast(col - text("'2024-01-01'::date"), SAInteger)
+        # ISODOW: 1=Mon … 5=Fri, 6=Sat, 7=Sun → LEAST(isodow, 5) caps Sat/Sun at 5
+        isodow = cast(sqlfunc.extract('isodow', col), SAInteger)
+        return (days / 7) * 5 + sqlfunc.least(isodow, 5)
+
+    return _wd(Envio.fecha_entrega) - _wd(Envio.fecha_carga)
 
 
 def _efectividad_row(rows_with_carga):
@@ -417,8 +432,6 @@ def efectividad_entregas(
     _=Depends(require_admin_or_administracion),
 ):
     """Ciclo de entrega: fecha_carga → fecha_entrega por seller y driver."""
-    from sqlalchemy import cast, Integer as SAInteger
-
     base = [Envio.mes == mes, Envio.anio == anio]
     if semana:
         base.append(Envio.semana == semana)
@@ -444,10 +457,10 @@ def efectividad_entregas(
         Envio.seller_id,
         sqlfunc.count(Envio.id).label("total"),
         sqlfunc.count(Envio.fecha_carga).label("con_carga"),
-        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("avg_ciclo"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 1, 1), else_=0)).label("n_1d"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) >= 4, 1), else_=0)).label("n_4plus"),
+        sqlfunc.avg(_ciclo_expr()).label("avg_ciclo"),
+        sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.sum(case((_ciclo_expr() == 1, 1), else_=0)).label("n_1d"),
+        sqlfunc.sum(case((_ciclo_expr() >= 4, 1), else_=0)).label("n_4plus"),
     ).filter(*base, Envio.fecha_carga.isnot(None), Envio.seller_id.isnot(None)
     ).group_by(Envio.seller_id).all()
 
@@ -472,10 +485,10 @@ def efectividad_entregas(
         Envio.driver_id,
         sqlfunc.count(Envio.id).label("total"),
         sqlfunc.count(Envio.fecha_carga).label("con_carga"),
-        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("avg_ciclo"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 1, 1), else_=0)).label("n_1d"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) >= 4, 1), else_=0)).label("n_4plus"),
+        sqlfunc.avg(_ciclo_expr()).label("avg_ciclo"),
+        sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.sum(case((_ciclo_expr() == 1, 1), else_=0)).label("n_1d"),
+        sqlfunc.sum(case((_ciclo_expr() >= 4, 1), else_=0)).label("n_4plus"),
     ).filter(*base, Envio.fecha_carga.isnot(None), Envio.driver_id.isnot(None)
     ).group_by(Envio.driver_id).all()
 
@@ -502,8 +515,8 @@ def efectividad_entregas(
     sem_data = db.query(
         Envio.driver_id,
         Envio.semana,
-        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("avg_ciclo"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("rapidas"),
+        sqlfunc.avg(_ciclo_expr()).label("avg_ciclo"),
+        sqlfunc.sum(case((_ciclo_expr() <= 1, 1), else_=0)).label("rapidas"),
         sqlfunc.count(Envio.id).label("total"),
     ).filter(Envio.mes == mes, Envio.anio == anio, Envio.fecha_carga.isnot(None),
              Envio.driver_id.isnot(None)
@@ -536,8 +549,6 @@ def efectividad_driver_detalle(
     _=Depends(require_admin_or_administracion),
 ):
     """Detalle de ciclo de entrega para un driver específico."""
-    from sqlalchemy import cast, Integer as SAInteger
-
     base = [Envio.mes == mes, Envio.anio == anio,
             Envio.driver_id == driver_id, Envio.fecha_carga.isnot(None)]
 
@@ -554,9 +565,9 @@ def efectividad_driver_detalle(
     daily = db.query(
         Envio.fecha_carga.label("fecha"),
         sqlfunc.count(Envio.id).label("total"),
-        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("ciclo_avg"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("n_rapidos"),
+        sqlfunc.avg(_ciclo_expr()).label("ciclo_avg"),
+        sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.sum(case((_ciclo_expr() <= 1, 1), else_=0)).label("n_rapidos"),
     ).filter(*base).group_by(Envio.fecha_carga).order_by(Envio.fecha_carga).all()
 
     por_dia = [{
@@ -571,9 +582,9 @@ def efectividad_driver_detalle(
     weekly = db.query(
         Envio.semana.label("semana"),
         sqlfunc.count(Envio.id).label("total"),
-        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("ciclo_avg"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("n_rapidos"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.avg(_ciclo_expr()).label("ciclo_avg"),
+        sqlfunc.sum(case((_ciclo_expr() <= 1, 1), else_=0)).label("n_rapidos"),
+        sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
     ).filter(*base).group_by(Envio.semana).order_by(Envio.semana).all()
 
     por_semana = [{
@@ -588,9 +599,9 @@ def efectividad_driver_detalle(
     rutas = db.query(
         sqlfunc.coalesce(Envio.ruta_nombre, "Sin ruta").label("ruta"),
         sqlfunc.count(Envio.id).label("total"),
-        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("ciclo_avg"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("n_rapidos"),
-        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+        sqlfunc.avg(_ciclo_expr()).label("ciclo_avg"),
+        sqlfunc.sum(case((_ciclo_expr() <= 1, 1), else_=0)).label("n_rapidos"),
+        sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
     ).filter(*base).group_by(sqlfunc.coalesce(Envio.ruta_nombre, "Sin ruta")).order_by(sqlfunc.count(Envio.id).desc()).all()
 
     por_ruta = [{
