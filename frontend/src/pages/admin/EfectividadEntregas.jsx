@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { TrendingUp, AlertTriangle, Clock, Package, ChevronRight } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Clock, ChevronUp, ChevronDown, Search, ArrowRight } from 'lucide-react'
 
 const now = new Date()
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -12,62 +13,23 @@ const colorCiclo = (v) => {
   if (v <= 2.5) return 'text-amber-600'
   return 'text-red-600'
 }
-const colorPct = (v, invert = false) => {
+const colorPct = (v) => {
   if (v == null) return 'text-gray-400'
-  const ok = invert ? v <= 5 : v >= 60
-  const warn = invert ? v <= 15 : v >= 40
-  if (ok) return invert ? 'text-emerald-600' : 'text-emerald-600'
-  if (warn) return invert ? 'text-amber-600' : 'text-amber-600'
+  if (v >= 60) return 'text-emerald-600'
+  if (v >= 40) return 'text-amber-600'
   return 'text-red-600'
 }
 
 function Sparkline({ data = [] }) {
-  if (!data.length) return <div className="h-6 text-[9px] text-gray-300 flex items-center">sin datos</div>
+  if (!data.length) return <div className="h-6 text-[9px] text-gray-300 flex items-center">—</div>
   const max = Math.max(...data, 1)
   return (
-    <div className="flex items-end gap-0.5 h-6">
+    <div className="flex items-end gap-0.5 h-6 w-16">
       {data.map((v, i) => {
         const h = Math.max(Math.round((v / max) * 100), v > 0 ? 8 : 0)
         const bg = v >= 70 ? 'bg-emerald-400' : v >= 40 ? 'bg-amber-400' : 'bg-red-400'
         return <div key={i} className={`flex-1 rounded-sm ${bg}`} style={{ height: `${h}%` }} />
       })}
-    </div>
-  )
-}
-
-function DriverCard({ d, active, onClick }) {
-  const alertColor = d.alerta ? 'border-red-200' : d.ciclo_promedio <= 1.5 ? 'border-emerald-200' : 'border-gray-100'
-  const badge = d.ciclo_promedio == null ? 'bg-gray-100 text-gray-400'
-    : d.ciclo_promedio <= 1.5 ? 'bg-emerald-100 text-emerald-700'
-    : d.ciclo_promedio <= 2.5 ? 'bg-amber-100 text-amber-700'
-    : 'bg-red-100 text-red-700'
-  const initials = d.nombre.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-  const avatarBg = d.alerta ? 'bg-red-100 text-red-700'
-    : d.ciclo_promedio != null && d.ciclo_promedio <= 1.5 ? 'bg-emerald-100 text-emerald-700'
-    : 'bg-gray-100 text-gray-600'
-
-  return (
-    <div
-      onClick={onClick}
-      className={`bg-white rounded-xl p-3 cursor-pointer border transition-all hover:-translate-y-0.5 hover:shadow-md ${alertColor} ${active ? 'outline outline-2 outline-blue-500 outline-offset-2' : ''}`}
-    >
-      <div className="flex justify-between items-start mb-2">
-        <div className={`w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center ${avatarBg}`}>
-          {initials}
-        </div>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge}`}>
-          {fmtDias(d.ciclo_promedio)}
-        </span>
-      </div>
-      <p className="text-xs font-semibold text-gray-800 truncate">{d.nombre.split(' ')[0]} {d.nombre.split(' ')[1] || ''}</p>
-      <p className="text-[10px] text-gray-400">{d.con_fecha_carga} envíos medibles</p>
-      <div className="mt-2">
-        <Sparkline data={d.spark || []} />
-      </div>
-      {d.alerta && <p className="text-[9px] text-red-500 mt-1">⚠ ciclo &gt; 2.5d</p>}
-      {!d.alerta && d.pct_rapida != null && (
-        <p className="text-[9px] text-gray-400 mt-1">{d.pct_rapida}% en ≤1d</p>
-      )}
     </div>
   )
 }
@@ -88,14 +50,53 @@ function BarDist({ label, pct, n, color }) {
   )
 }
 
+function SortIcon({ col, sortState }) {
+  if (sortState.col !== col) return <ChevronUp size={10} className="text-gray-300 ml-0.5" />
+  return sortState.dir === 'asc'
+    ? <ChevronUp size={10} className="text-blue-500 ml-0.5" />
+    : <ChevronDown size={10} className="text-blue-500 ml-0.5" />
+}
+
+function SortableTh({ label, col, sortState, onSort, className = '' }) {
+  return (
+    <th
+      onClick={() => onSort(col)}
+      className={`px-4 py-2 font-semibold cursor-pointer select-none hover:bg-gray-100 transition-colors ${className}`}
+    >
+      <span className="flex items-center justify-center gap-0.5">
+        {label}
+        <SortIcon col={col} sortState={sortState} />
+      </span>
+    </th>
+  )
+}
+
+const PAGE_OPTIONS = [
+  { label: '30', value: 30 },
+  { label: '50', value: 50 },
+  { label: '100', value: 100 },
+  { label: '200', value: 200 },
+  { label: 'Todos', value: 0 },
+]
+
 export default function EfectividadEntregas() {
+  const navigate = useNavigate()
   const [period, setPeriod] = useState({ mes: now.getMonth() + 1, anio: now.getFullYear(), semana: null })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [selectedDriver, setSelectedDriver] = useState(null)
-  const [detalle, setDetalle] = useState(null)
-  const [loadingDetalle, setLoadingDetalle] = useState(false)
   const [vista, setVista] = useState('mensual')
+
+  // Seller table controls
+  const [sellerSearch, setSellerSearch] = useState('')
+  const [sellerSort, setSellerSort] = useState({ col: 'total', dir: 'desc' })
+  const [sellerPageSize, setSellerPageSize] = useState(30)
+  const [sellerPage, setSellerPage] = useState(1)
+
+  // Driver table controls
+  const [driverSearch, setDriverSearch] = useState('')
+  const [driverSort, setDriverSort] = useState({ col: 'con_fecha_carga', dir: 'desc' })
+  const [driverPageSize, setDriverPageSize] = useState(30)
+  const [driverPage, setDriverPage] = useState(1)
 
   const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
@@ -106,10 +107,6 @@ export default function EfectividadEntregas() {
       if (vista === 'semanal' && period.semana) params.semana = period.semana
       const { data: d } = await api.get('/dashboard/efectividad', { params })
       setData(d)
-      // Auto-select first driver with data
-      if (d.por_driver?.length && !selectedDriver) {
-        setSelectedDriver(d.por_driver[0].driver_id)
-      }
     } catch {
       toast.error('Error cargando efectividad')
     } finally {
@@ -118,15 +115,62 @@ export default function EfectividadEntregas() {
   }, [period, vista])
 
   useEffect(() => { load() }, [load])
+  // Reset pages when search changes
+  useEffect(() => { setSellerPage(1) }, [sellerSearch, sellerSort])
+  useEffect(() => { setDriverPage(1) }, [driverSearch, driverSort])
 
-  useEffect(() => {
-    if (!selectedDriver) return
-    setLoadingDetalle(true)
-    api.get(`/dashboard/efectividad/driver/${selectedDriver}`, { params: { mes: period.mes, anio: period.anio } })
-      .then(({ data: d }) => setDetalle(d))
-      .catch(() => toast.error('Error cargando detalle'))
-      .finally(() => setLoadingDetalle(false))
-  }, [selectedDriver, period])
+  const handleSellerSort = (col) => {
+    setSellerSort(s => ({ col, dir: s.col === col && s.dir === 'desc' ? 'asc' : 'desc' }))
+  }
+  const handleDriverSort = (col) => {
+    setDriverSort(s => ({ col, dir: s.col === col && s.dir === 'desc' ? 'asc' : 'desc' }))
+  }
+
+  const sellersSorted = useMemo(() => {
+    if (!data?.por_seller) return []
+    let rows = data.por_seller.filter(s =>
+      s.nombre.toLowerCase().includes(sellerSearch.toLowerCase())
+    )
+    rows = [...rows].sort((a, b) => {
+      if (sellerSort.col === 'nombre') {
+        const cmp = (a.nombre || '').localeCompare(b.nombre || '')
+        return sellerSort.dir === 'asc' ? cmp : -cmp
+      }
+      const va = a[sellerSort.col] ?? -1
+      const vb = b[sellerSort.col] ?? -1
+      return sellerSort.dir === 'asc' ? va - vb : vb - va
+    })
+    return rows
+  }, [data?.por_seller, sellerSearch, sellerSort])
+
+  const sellerTotalPages = sellerPageSize === 0 ? 1 : Math.max(1, Math.ceil(sellersSorted.length / sellerPageSize))
+  const sellerPageClamped = Math.min(sellerPage, sellerTotalPages)
+  const sellersVisible = sellerPageSize === 0
+    ? sellersSorted
+    : sellersSorted.slice((sellerPageClamped - 1) * sellerPageSize, sellerPageClamped * sellerPageSize)
+
+  const driversSorted = useMemo(() => {
+    if (!data?.por_driver) return []
+    let rows = data.por_driver.filter(d =>
+      d.nombre.toLowerCase().includes(driverSearch.toLowerCase())
+    )
+    rows = [...rows].sort((a, b) => {
+      if (driverSort.col === 'nombre') {
+        const cmp = (a.nombre || '').localeCompare(b.nombre || '')
+        return driverSort.dir === 'asc' ? cmp : -cmp
+      }
+      const va = a[driverSort.col] ?? -1
+      const vb = b[driverSort.col] ?? -1
+      return driverSort.dir === 'asc' ? va - vb : vb - va
+    })
+    return rows
+  }, [data?.por_driver, driverSearch, driverSort])
+
+  const driverTotalPages = driverPageSize === 0 ? 1 : Math.max(1, Math.ceil(driversSorted.length / driverPageSize))
+  const driverPageClamped = Math.min(driverPage, driverTotalPages)
+  const driversVisible = driverPageSize === 0
+    ? driversSorted
+    : driversSorted.slice((driverPageClamped - 1) * driverPageSize, driverPageClamped * driverPageSize)
 
   const g = data?.global
 
@@ -210,23 +254,50 @@ export default function EfectividadEntregas() {
           {/* Tabla por Seller */}
           {data?.por_seller?.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
                 <p className="text-sm font-semibold text-gray-700">Por Seller</p>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar seller…"
+                      value={sellerSearch}
+                      onChange={e => setSellerSearch(e.target.value)}
+                      className="border border-gray-200 rounded-lg pl-7 pr-3 py-1.5 text-xs w-44 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span>Mostrar</span>
+                    <select
+                      value={sellerPageSize}
+                      onChange={e => { setSellerPageSize(+e.target.value); setSellerPage(1) }}
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    >
+                      {PAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-[10px] text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
-                      <th className="px-4 py-2 text-left font-semibold">Seller</th>
-                      <th className="px-4 py-2 text-center font-semibold">Total</th>
-                      <th className="px-4 py-2 text-center font-semibold">Ciclo prom.</th>
-                      <th className="px-4 py-2 font-semibold">Entregados en ≤1d</th>
-                      <th className="px-4 py-2 text-center font-semibold">Mismo día</th>
-                      <th className="px-4 py-2 text-center font-semibold">+4 días</th>
+                      <th
+                        onClick={() => handleSellerSort('nombre')}
+                        className="px-4 py-2 text-left font-semibold cursor-pointer hover:bg-gray-100 transition-colors"
+                      >
+                        <span className="flex items-center gap-0.5">Seller <SortIcon col="nombre" sortState={sellerSort} /></span>
+                      </th>
+                      <SortableTh label="Total" col="total" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
+                      <SortableTh label="Ciclo prom." col="ciclo_promedio" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
+                      <SortableTh label="Entregados ≤1d" col="pct_rapida" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
+                      <SortableTh label="Mismo día" col="pct_0d" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
+                      <SortableTh label="+4 días" col="pct_4plus" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {data.por_seller.map(s => (
+                    {sellersVisible.map(s => (
                       <tr key={s.seller_id} className={`text-gray-700 hover:bg-gray-50 ${s.pct_4plus > 15 ? 'bg-red-50/30' : ''}`}>
                         <td className="px-4 py-2.5 font-medium">
                           {s.nombre}
@@ -247,131 +318,125 @@ export default function EfectividadEntregas() {
                         <td className="px-4 py-2.5 text-center"><span className={`font-semibold ${s.pct_4plus > 10 ? 'text-red-500' : 'text-gray-400'}`}>{fmtPct(s.pct_4plus)}</span></td>
                       </tr>
                     ))}
+                    {sellersVisible.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Sin resultados</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
+              {/* Paginación sellers */}
+              {sellerPageSize > 0 && sellerTotalPages > 1 && (
+                <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>{sellersSorted.length} sellers · página {sellerPageClamped} de {sellerTotalPages}</span>
+                  <div className="flex gap-1">
+                    <button onClick={() => setSellerPage(p => Math.max(1, p - 1))} disabled={sellerPageClamped === 1}
+                      className="px-2.5 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40">‹</button>
+                    <button onClick={() => setSellerPage(p => Math.min(sellerTotalPages, p + 1))} disabled={sellerPageClamped === sellerTotalPages}
+                      className="px-2.5 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40">›</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Grid de Drivers */}
+          {/* Tabla por Driver */}
           {data?.por_driver?.length > 0 && (
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-                Conductores — clic para ver detalle
-                <span className="ml-2 text-gray-300 normal-case font-normal">Sparkline = % entregas en ≤1d por semana</span>
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                {data.por_driver.map(d => (
-                  <DriverCard
-                    key={d.driver_id}
-                    d={d}
-                    active={selectedDriver === d.driver_id}
-                    onClick={() => setSelectedDriver(d.driver_id)}
-                  />
-                ))}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700">Por Conductor</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Haz clic en una fila para ver el detalle completo</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Buscar conductor…"
+                      value={driverSearch}
+                      onChange={e => setDriverSearch(e.target.value)}
+                      className="border border-gray-200 rounded-lg pl-7 pr-3 py-1.5 text-xs w-44 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span>Mostrar</span>
+                    <select
+                      value={driverPageSize}
+                      onChange={e => { setDriverPageSize(+e.target.value); setDriverPage(1) }}
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white"
+                    >
+                      {PAGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Panel de detalle del driver */}
-          {selectedDriver && (
-            <div className="space-y-4">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                Detalle — {detalle?.resumen?.nombre || '…'}
-              </p>
-
-              {loadingDetalle ? (
-                <div className="text-center py-8 text-gray-400 text-sm">Cargando…</div>
-              ) : detalle && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-                  {/* Col 1: métricas + distribución */}
-                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 space-y-4">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Resumen del período</p>
-                    <div className="grid grid-cols-2 gap-2 text-center">
-                      <div className="bg-gray-50 rounded-lg p-2.5">
-                        <p className="text-[10px] text-gray-400">Total medibles</p>
-                        <p className="text-xl font-bold text-gray-800">{detalle.resumen.total}</p>
-                      </div>
-                      <div className="bg-blue-50 rounded-lg p-2.5">
-                        <p className="text-[10px] text-blue-500">Ciclo promedio</p>
-                        <p className={`text-xl font-bold ${colorCiclo(detalle.resumen.ciclo_promedio)}`}>{fmtDias(detalle.resumen.ciclo_promedio)}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Distribución del ciclo</p>
-                      <BarDist label="Mismo día" pct={detalle.resumen.pct_0d} n={detalle.resumen.n_0d} color="bg-emerald-500" />
-                      <BarDist label="1 día" pct={detalle.resumen.pct_1d} n={detalle.resumen.n_1d} color="bg-emerald-400" />
-                      <BarDist label="2 días" pct={detalle.resumen.pct_2d} n={detalle.resumen.n_2d} color="bg-amber-400" />
-                      <BarDist label="3 días" pct={detalle.resumen.pct_3d} n={detalle.resumen.n_3d} color="bg-orange-400" />
-                      <BarDist label="+4 días" pct={detalle.resumen.pct_4plus} n={detalle.resumen.n_4plus} color="bg-red-400" />
-                    </div>
-                    <p className="text-[10px] text-emerald-600 font-medium">{detalle.resumen.pct_rapida}% entregados en ≤1 día</p>
-                  </div>
-
-                  {/* Col 2: tendencia diaria */}
-                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3">Tendencia diaria</p>
-                    {detalle.por_dia.length === 0 ? (
-                      <p className="text-xs text-gray-400 text-center py-8">Sin datos diarios</p>
-                    ) : (
-                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                        {detalle.por_dia.map(d => (
-                          <div key={d.fecha} className="flex items-center gap-2 text-[10px]">
-                            <span className="text-gray-400 w-16 flex-shrink-0">{d.fecha.slice(5)}</span>
-                            <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
-                              <div className={`h-3 rounded-full transition-all ${d.pct_rapida >= 60 ? 'bg-emerald-400' : d.pct_rapida >= 30 ? 'bg-amber-400' : 'bg-red-400'}`}
-                                style={{ width: `${d.pct_rapida}%` }} />
-                            </div>
-                            <span className={`w-8 text-right font-semibold ${colorPct(d.pct_rapida)}`}>{d.pct_rapida}%</span>
-                            <span className="text-gray-300 w-8 text-right">{d.total}</span>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-[10px] text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                      <th
+                        onClick={() => handleDriverSort('nombre')}
+                        className="px-4 py-2 text-left font-semibold cursor-pointer hover:bg-gray-100 transition-colors"
+                      >
+                        <span className="flex items-center gap-0.5">Conductor <SortIcon col="nombre" sortState={driverSort} /></span>
+                      </th>
+                      <SortableTh label="Medibles" col="con_fecha_carga" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="Ciclo prom." col="ciclo_promedio" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="≤1 día" col="pct_rapida" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="Mismo día" col="pct_0d" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="+4 días" col="pct_4plus" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <th className="px-4 py-2 text-center font-semibold">Tendencia</th>
+                      <th className="px-4 py-2 text-center font-semibold"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {driversVisible.map(d => (
+                      <tr
+                        key={d.driver_id}
+                        onClick={() => navigate(`/admin/efectividad/driver/${d.driver_id}?mes=${period.mes}&anio=${period.anio}`)}
+                        className={`text-gray-700 hover:bg-blue-50/40 cursor-pointer transition-colors ${d.alerta ? 'bg-red-50/20' : ''}`}
+                      >
+                        <td className="px-4 py-2.5 font-medium">
+                          {d.nombre}
+                          {d.alerta && <span className="ml-1.5 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">⚠ Alerta</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-gray-500">{d.con_fecha_carga ?? d.total}</td>
+                        <td className={`px-4 py-2.5 text-center font-bold ${colorCiclo(d.ciclo_promedio)}`}>{fmtDias(d.ciclo_promedio)}</td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className={`font-bold ${colorPct(d.pct_rapida)}`}>{fmtPct(d.pct_rapida)}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className={`font-semibold ${d.pct_0d >= 30 ? 'text-emerald-600' : 'text-gray-500'}`}>{fmtPct(d.pct_0d)}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className={`font-semibold ${d.pct_4plus > 10 ? 'text-red-500' : 'text-gray-400'}`}>{fmtPct(d.pct_4plus)}</span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex justify-center">
+                            <Sparkline data={d.spark || []} />
                           </div>
-                        ))}
-                      </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <ArrowRight size={14} className="text-gray-300 group-hover:text-blue-400 mx-auto" />
+                        </td>
+                      </tr>
+                    ))}
+                    {driversVisible.length === 0 && (
+                      <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">Sin resultados</td></tr>
                     )}
+                  </tbody>
+                </table>
+              </div>
+              {/* Paginación drivers */}
+              {driverPageSize > 0 && driverTotalPages > 1 && (
+                <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>{driversSorted.length} conductores · página {driverPageClamped} de {driverTotalPages}</span>
+                  <div className="flex gap-1">
+                    <button onClick={() => setDriverPage(p => Math.max(1, p - 1))} disabled={driverPageClamped === 1}
+                      className="px-2.5 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40">‹</button>
+                    <button onClick={() => setDriverPage(p => Math.min(driverTotalPages, p + 1))} disabled={driverPageClamped === driverTotalPages}
+                      className="px-2.5 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-40">›</button>
                   </div>
-
-                  {/* Col 3: envíos lentos */}
-                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                      <AlertTriangle size={13} className="text-amber-500" />
-                      <div>
-                        <p className="text-xs font-semibold text-gray-700">Envíos con +3 días</p>
-                        <p className="text-[10px] text-gray-400">{detalle.lentos.length} registros</p>
-                      </div>
-                    </div>
-                    {detalle.lentos.length === 0 ? (
-                      <p className="text-xs text-gray-400 text-center py-6">Sin envíos lentos ✓</p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="bg-gray-50 text-[10px] text-gray-400 border-b border-gray-100">
-                              <th className="px-3 py-2 text-left font-medium">Tracking</th>
-                              <th className="px-3 py-2 text-left font-medium">Seller</th>
-                              <th className="px-3 py-2 text-center font-medium">Días</th>
-                              <th className="px-3 py-2 text-left font-medium">Comuna</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {detalle.lentos.map((l, i) => (
-                              <tr key={i} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 font-mono text-blue-600 text-[10px]">{l.tracking_id.slice(-8)}</td>
-                                <td className="px-3 py-2 text-gray-700 max-w-[80px] truncate" title={l.seller}>{l.seller}</td>
-                                <td className="px-3 py-2 text-center">
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${l.ciclo_dias >= 4 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                                    +{l.ciclo_dias}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-gray-500">{l.comuna}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
                 </div>
               )}
             </div>

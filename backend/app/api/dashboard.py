@@ -567,6 +567,40 @@ def efectividad_driver_detalle(
         "pct_rapida": round(r.n_rapidos / r.total * 100, 1) if r.total else 0,
     } for r in daily]
 
+    # Tendencia semanal
+    weekly = db.query(
+        Envio.semana.label("semana"),
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("ciclo_avg"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("n_rapidos"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+    ).filter(*base).group_by(Envio.semana).order_by(Envio.semana).all()
+
+    por_semana = [{
+        "semana": r.semana,
+        "total": r.total,
+        "ciclo_avg": round(float(r.ciclo_avg), 1) if r.ciclo_avg else 0,
+        "pct_rapida": round(r.n_rapidos / r.total * 100, 1) if r.total else 0,
+        "pct_0d": round(r.n_0d / r.total * 100, 1) if r.total else 0,
+    } for r in weekly]
+
+    # Por ruta
+    rutas = db.query(
+        sqlfunc.coalesce(Envio.ruta_nombre, "Sin ruta").label("ruta"),
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.avg(cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger)).label("ciclo_avg"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) <= 1, 1), else_=0)).label("n_rapidos"),
+        sqlfunc.sum(case((cast(Envio.fecha_entrega - Envio.fecha_carga, SAInteger) == 0, 1), else_=0)).label("n_0d"),
+    ).filter(*base).group_by(sqlfunc.coalesce(Envio.ruta_nombre, "Sin ruta")).order_by(sqlfunc.count(Envio.id).desc()).all()
+
+    por_ruta = [{
+        "ruta": r.ruta,
+        "total": r.total,
+        "ciclo_avg": round(float(r.ciclo_avg), 1) if r.ciclo_avg else 0,
+        "pct_rapida": round(r.n_rapidos / r.total * 100, 1) if r.total else 0,
+        "pct_0d": round(r.n_0d / r.total * 100, 1) if r.total else 0,
+    } for r in rutas]
+
     # Envíos lentos (+3 días)
     seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
     lentos_rows = db.query(
@@ -585,4 +619,4 @@ def efectividad_driver_detalle(
         "comuna": r.comuna or "—",
     } for r in lentos_rows]
 
-    return {"resumen": resumen, "por_dia": por_dia, "lentos": lentos}
+    return {"resumen": resumen, "por_dia": por_dia, "por_semana": por_semana, "por_ruta": por_ruta, "lentos": lentos}
