@@ -44,6 +44,7 @@ const adminMenu = [
     group: 'Análisis', icon: BarChart3, children: [
       { to: '/admin/bi', icon: BarChart3, label: 'Business Intelligence', permiso: 'finanzas' },
       { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
+      { to: '/admin/retencion', icon: Users, label: 'Retención Comercial' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },

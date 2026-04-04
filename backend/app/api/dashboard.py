@@ -631,3 +631,137 @@ def efectividad_driver_detalle(
     } for r in lentos_rows]
 
     return {"resumen": resumen, "por_dia": por_dia, "por_semana": por_semana, "por_ruta": por_ruta, "lentos": lentos}
+
+
+@router.get("/retencion")
+def analisis_retencion(
+    anio: int = Query(...),
+    mes_ref: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Análisis de retención y salud comercial de sellers."""
+    from collections import Counter
+
+    # Aggregate monthly shipments + income per seller for the year
+    monthly = db.query(
+        Envio.seller_id,
+        Envio.mes,
+        sqlfunc.count(Envio.id).label("paquetes"),
+        sqlfunc.sum(
+            sqlfunc.coalesce(Envio.cobro_seller, 0)
+            + sqlfunc.coalesce(Envio.extra_producto_seller, 0)
+            + sqlfunc.coalesce(Envio.extra_comuna_seller, 0)
+            + sqlfunc.coalesce(Envio.cobro_extra_manual, 0)
+        ).label("ingreso"),
+    ).filter(
+        Envio.anio == anio,
+        Envio.seller_id.isnot(None),
+    ).group_by(Envio.seller_id, Envio.mes).all()
+
+    if not monthly:
+        return {
+            "anio": anio, "mes_ref": mes_ref,
+            "resumen": {"activo": 0, "nuevo": 0, "recuperado": 0, "en_riesgo": 0, "inactivo": 0, "perdido": 0, "total_sellers": 0},
+            "sellers": [], "top_riesgo": [], "max_vol": 1,
+        }
+
+    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+
+    # Build per-seller monthly structure
+    by_seller: dict = defaultdict(lambda: {"meses": defaultdict(int), "ingresos": defaultdict(int)})
+    for r in monthly:
+        by_seller[r.seller_id]["meses"][r.mes] += r.paquetes
+        by_seller[r.seller_id]["ingresos"][r.mes] += int(r.ingreso or 0)
+
+    def classify(meses_dict: dict, ref: int) -> str:
+        vol_ref = meses_dict.get(ref, 0)
+        vol_prev = meses_dict.get(ref - 1, 0) if ref > 1 else 0
+        active = sorted(m for m, v in meses_dict.items() if v > 0)
+        if not active:
+            return "perdido"
+        # Nuevo: first activity is in the last 1-2 months
+        if active[0] >= ref - 1 and not any(meses_dict.get(m, 0) > 0 for m in range(1, ref - 1)):
+            return "nuevo"
+        if vol_ref > 0:
+            if vol_prev == 0 and any(meses_dict.get(m, 0) > 0 for m in range(1, ref - 1)):
+                return "recuperado"
+            return "activo"
+        else:
+            if vol_prev > 0:
+                return "en_riesgo"
+            elif any(meses_dict.get(m, 0) > 0 for m in range(max(1, ref - 4), ref)):
+                return "inactivo"
+            else:
+                return "perdido"
+
+    sellers_out = []
+    for seller_id, d in by_seller.items():
+        meses_dict = dict(d["meses"])
+        ingresos_dict = dict(d["ingresos"])
+
+        active_months = sorted(m for m, v in meses_dict.items() if v > 0)
+        meses_activo = len(active_months)
+        ultimo_mes_activo = max(active_months) if active_months else None
+
+        promedio_mensual = int(sum(meses_dict.get(m, 0) for m in active_months) / meses_activo) if meses_activo else 0
+        ingreso_mensual_avg = int(sum(ingresos_dict.get(m, 0) for m in active_months) / meses_activo) if meses_activo else 0
+
+        estado = classify(meses_dict, mes_ref)
+
+        meses_sin = (mes_ref - ultimo_mes_activo) if (ultimo_mes_activo and meses_dict.get(mes_ref, 0) == 0) else 0
+        semanas_sin = meses_sin * 4
+
+        meses_restantes = max(0, 12 - mes_ref + 1)
+        impacto_anual = ingreso_mensual_avg * meses_restantes if estado in ("en_riesgo", "inactivo", "perdido") else 0
+
+        vol_anual = [meses_dict.get(m, 0) for m in range(1, 13)]
+
+        sellers_out.append({
+            "seller_id": seller_id,
+            "nombre": seller_nombres.get(seller_id, f"Seller {seller_id}"),
+            "estado": estado,
+            "ultimo_mes_activo": ultimo_mes_activo,
+            "meses_activo": meses_activo,
+            "promedio_mensual": promedio_mensual,
+            "ingreso_mensual_avg": ingreso_mensual_avg,
+            "impacto_anual": impacto_anual,
+            "semanas_sin_actividad": semanas_sin,
+            "vol_anual": vol_anual,
+            "vol_ref": meses_dict.get(mes_ref, 0),
+        })
+
+    estado_order = {"perdido": 0, "en_riesgo": 1, "inactivo": 2, "recuperado": 3, "nuevo": 4, "activo": 5}
+    sellers_out.sort(key=lambda x: (estado_order.get(x["estado"], 9), -x["ingreso_mensual_avg"]))
+
+    counts = Counter(s["estado"] for s in sellers_out)
+    prev_counts = Counter(classify(dict(by_seller[sid]["meses"]), mes_ref - 1) for sid in by_seller) if mes_ref > 1 else Counter()
+
+    resumen = {
+        "activo": counts["activo"],
+        "nuevo": counts["nuevo"],
+        "recuperado": counts["recuperado"],
+        "en_riesgo": counts["en_riesgo"],
+        "inactivo": counts["inactivo"],
+        "perdido": counts["perdido"],
+        "total_sellers": len(sellers_out),
+        "prev_en_riesgo": prev_counts.get("en_riesgo", 0),
+        "prev_perdido": prev_counts.get("perdido", 0),
+        "prev_activo": prev_counts.get("activo", 0) + prev_counts.get("recuperado", 0),
+    }
+
+    top_riesgo = sorted(
+        [s for s in sellers_out if s["estado"] in ("en_riesgo", "inactivo", "perdido")],
+        key=lambda x: -x["ingreso_mensual_avg"]
+    )[:10]
+
+    max_vol = max((max(s["vol_anual"]) for s in sellers_out if any(s["vol_anual"])), default=1)
+
+    return {
+        "anio": anio,
+        "mes_ref": mes_ref,
+        "resumen": resumen,
+        "sellers": sellers_out,
+        "top_riesgo": top_riesgo,
+        "max_vol": max_vol,
+    }
