@@ -546,6 +546,9 @@ export default function PagosTrabajadores() {
   const [cargando, setCargando] = useState(false)
   const [modalCartola, setModalCartola] = useState(false)
   const [modalPago, setModalPago] = useState(null)
+  const [filterText, setFilterText] = useState('')
+  const [filterEstado, setFilterEstado] = useState('')
+  const [sortMonto, setSortMonto] = useState(null)
 
   const cargar = async () => {
     setCargando(true)
@@ -581,6 +584,23 @@ export default function PagosTrabajadores() {
 
   const anos = []
   for (let y = hoy.getFullYear() - 2; y <= hoy.getFullYear() + 1; y++) anos.push(y)
+
+  const trabajadores = useMemo(() => {
+    let result = data
+    if (filterText) {
+      const q = filterText.toLowerCase()
+      result = result.filter(t => t.nombre.toLowerCase().includes(q))
+    }
+    if (filterEstado) {
+      result = result.filter(t => t.estado === filterEstado)
+    }
+    if (sortMonto) {
+      result = [...result].sort((a, b) =>
+        sortMonto === 'desc' ? (b.monto_neto || 0) - (a.monto_neto || 0) : (a.monto_neto || 0) - (b.monto_neto || 0)
+      )
+    }
+    return result
+  }, [data, filterText, filterEstado, sortMonto])
 
   return (
     <div className="space-y-6">
@@ -628,12 +648,33 @@ export default function PagosTrabajadores() {
 
       {/* Tabla */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
           <div>
             <span className="text-sm font-semibold text-gray-800">Nómina {MESES[mes]} {anio}</span>
             <span className="ml-2 text-xs text-gray-400">· Pago físico puede ocurrir en {MESES[mes === 12 ? 1 : mes + 1] || 'mes siguiente'}</span>
           </div>
-          <span className="text-xs text-gray-400">{data.length} trabajadores</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <input type="text" placeholder="Buscar trabajador..." className="input w-44 text-sm"
+              value={filterText} onChange={e => setFilterText(e.target.value)} />
+            <div className="flex items-center gap-1">
+              {[
+                { value: '', label: 'Todos' },
+                { value: 'PENDIENTE', label: 'Pendientes', active: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold' },
+                { value: 'PARCIAL', label: 'Parciales', active: 'bg-blue-100 text-blue-800 border-blue-400 font-semibold' },
+                { value: 'PAGADO', label: 'Pagados', active: 'bg-green-100 text-green-800 border-green-400 font-semibold' },
+              ].map(opt => (
+                <button key={opt.value} onClick={() => setFilterEstado(opt.value)}
+                  className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                    filterEstado === opt.value
+                      ? (opt.active || 'bg-primary-100 text-primary-800 border-primary-400 font-semibold')
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                  }`}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-gray-400">{trabajadores.length} trabajadores</span>
+          </div>
         </div>
 
         {cargando ? (
@@ -651,7 +692,11 @@ export default function PagosTrabajadores() {
                   <th className="py-2 px-3 text-right font-medium text-green-600">Bonif.</th>
                   <th className="py-2 px-3 text-right font-medium text-red-500">Cuotas</th>
                   <th className="py-2 px-3 text-right font-medium text-amber-500">Ajustes</th>
-                  <th className="py-2 px-3 text-right font-medium">Líquido</th>
+                  <th className="py-2 px-3 text-right font-medium cursor-pointer select-none hover:text-primary-600"
+                    onClick={() => setSortMonto(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc')}
+                    title="Ordenar por líquido">
+                    Líquido {sortMonto === 'desc' ? ' ↓' : sortMonto === 'asc' ? ' ↑' : ''}
+                  </th>
                   <th className="py-2 px-3 text-right font-medium text-blue-600">Ya pagado</th>
                   <th className="py-2 px-3 text-right font-medium text-indigo-600">Saldo</th>
                   <th className="py-2 px-3 text-left font-medium">Estado</th>
@@ -662,28 +707,28 @@ export default function PagosTrabajadores() {
                 </tr>
               </thead>
               <tbody>
-                {data.map(t => (
+                {trabajadores.map(t => (
                   <TrabajadorRow key={t.id} t={t} mes={mes} anio={anio} onPagoManual={setModalPago} onReload={cargar} />
                 ))}
               </tbody>
               <tfoot>
                 <tr className="bg-gray-50 border-t-2 border-gray-200 text-sm font-semibold text-gray-800">
                   <td className="py-2 px-3 text-xs text-gray-500" colSpan={2}>Total</td>
-                  <td className="py-2 px-3 text-right font-mono">{fmt(resumen.totalBruto)}</td>
+                  <td className="py-2 px-3 text-right font-mono">{fmt(trabajadores.reduce((s, t) => s + (t.sueldo_bruto || 0), 0))}</td>
                   <td className="py-2 px-3 text-right font-mono text-green-600">
-                    {fmt(data.reduce((s, t) => s + (t.bonificaciones || 0), 0))}
+                    {fmt(trabajadores.reduce((s, t) => s + (t.bonificaciones || 0), 0))}
                   </td>
                   <td className="py-2 px-3 text-right font-mono text-red-600">
-                    {fmt(data.reduce((s, t) => s + (t.descuento_cuotas || 0), 0))}
+                    {fmt(trabajadores.reduce((s, t) => s + (t.descuento_cuotas || 0), 0))}
                   </td>
                   <td className="py-2 px-3 text-right font-mono text-amber-600">
-                    {fmt(data.reduce((s, t) => s + (t.descuento_ajustes || 0), 0))}
+                    {fmt(trabajadores.reduce((s, t) => s + (t.descuento_ajustes || 0), 0))}
                   </td>
-                  <td className="py-2 px-3 text-right font-mono">{fmt(resumen.totalLiquido)}</td>
+                  <td className="py-2 px-3 text-right font-mono">{fmt(trabajadores.reduce((s, t) => s + (t.monto_neto || 0), 0))}</td>
                   <td className="py-2 px-3 text-right font-mono text-blue-600">
-                    {fmt(data.reduce((s, t) => s + (t.monto_pagado || 0), 0))}
+                    {fmt(trabajadores.reduce((s, t) => s + (t.monto_pagado || 0), 0))}
                   </td>
-                  <td className="py-2 px-3 text-right font-mono text-indigo-600">{fmt(resumen.totalSaldo)}</td>
+                  <td className="py-2 px-3 text-right font-mono text-indigo-600">{fmt(trabajadores.filter(t => t.estado !== 'PAGADO').reduce((s, t) => s + (t.saldo || 0), 0))}</td>
                   <td colSpan={5}></td>
                 </tr>
               </tfoot>

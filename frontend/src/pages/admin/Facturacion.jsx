@@ -394,6 +394,8 @@ export default function Facturacion() {
   const [editValue, setEditValue] = useState('')
   const [filterText, setFilterText] = useState('')
   const [filterSemanas, setFilterSemanas] = useState(new Set())
+  const [filterEstado, setFilterEstado] = useState('')
+  const [sortMonto, setSortMonto] = useState(null)
   const [showFacturar, setShowFacturar] = useState(false)
   const [tab, setTab] = useState('facturacion')
   const [progress, setProgress] = useState(null)
@@ -456,10 +458,35 @@ export default function Facturacion() {
 
   const sellers = useMemo(() => {
     if (!data?.sellers) return []
-    if (!filterText) return data.sellers
-    const q = filterText.toLowerCase()
-    return data.sellers.filter(s => s.seller_nombre.toLowerCase().includes(q))
-  }, [data, filterText])
+    const semanasAll = data.semanas_disponibles || []
+    let result = data.sellers
+
+    if (filterText) {
+      const q = filterText.toLowerCase()
+      result = result.filter(s => s.seller_nombre.toLowerCase().includes(q))
+    }
+
+    if (filterEstado) {
+      const semanasACheck = filterSemanas.size === 1 ? [...filterSemanas] : semanasAll
+      result = result.filter(s =>
+        semanasACheck.some(sem => {
+          const semData = s.semanas?.[String(sem)]
+          return semData && (semData.subtotal_neto || semData.monto_neto || 0) > 0 && semData.estado === filterEstado
+        })
+      )
+    }
+
+    if (sortMonto) {
+      const semList = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
+      result = [...result].sort((a, b) => {
+        const subA = semList.reduce((acc, s) => acc + (a.semanas?.[String(s)]?.subtotal_neto || a.semanas?.[String(s)]?.monto_neto || 0), 0)
+        const subB = semList.reduce((acc, s) => acc + (b.semanas?.[String(s)]?.subtotal_neto || b.semanas?.[String(s)]?.monto_neto || 0), 0)
+        return sortMonto === 'desc' ? subB - subA : subA - subB
+      })
+    }
+
+    return result
+  }, [data, filterText, filterEstado, filterSemanas, sortMonto])
 
   const historialFiltrado = useMemo(() => {
     let items = historialData
@@ -753,6 +780,23 @@ export default function Facturacion() {
           </div>
           <input type="text" placeholder="Buscar seller..." className="input w-48"
             value={filterText} onChange={e => setFilterText(e.target.value)} />
+          <div className="flex items-center gap-1">
+            {[
+              { value: '', label: 'Todos' },
+              { value: 'PENDIENTE', label: 'Por cobrar', active: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold' },
+              { value: 'PAGADO', label: 'Cobrados', active: 'bg-green-100 text-green-800 border-green-400 font-semibold' },
+              { value: 'INCOMPLETO', label: 'Incompletos', active: 'bg-red-100 text-red-800 border-red-400 font-semibold' },
+            ].map(opt => (
+              <button key={opt.value} onClick={() => setFilterEstado(opt.value)}
+                className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                  filterEstado === opt.value
+                    ? (opt.active || 'bg-primary-100 text-primary-800 border-primary-400 font-semibold')
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                }`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
           {semanas.length > 0 && (
             <div className="flex items-center gap-1.5">
               <label className="text-sm font-medium text-gray-700">Semana:</label>
@@ -914,7 +958,11 @@ export default function Facturacion() {
                 ) : (
                   <th key={s} className="pb-2 pt-3 px-3 font-medium text-right">Sem {s}</th>
                 ))}
-                <th className="pb-2 pt-3 px-3 font-medium text-right">Subtotal</th>
+                <th className="pb-2 pt-3 px-3 font-medium text-right cursor-pointer select-none hover:text-primary-600"
+                  onClick={() => setSortMonto(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc')}
+                  title="Ordenar por monto">
+                  Subtotal {sortMonto === 'desc' ? ' ↓' : sortMonto === 'asc' ? ' ↑' : ''}
+                </th>
                 <th className="pb-2 pt-3 px-3 font-medium text-right">Total + IVA</th>
                 {tab === 'facturacion' && <th className="pb-2 pt-3 px-3 font-medium text-center">Factura</th>}
               </tr>
