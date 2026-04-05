@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, BarChart2 } from 'lucide-react'
 
 const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO', 'VALPARAISO', 'MELIPILLA']
 
@@ -58,6 +59,7 @@ const initialForm = {
 
 export default function Sellers() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const canEdit = user?.rol === 'ADMIN'
   const [sellers, setSellers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -294,24 +296,35 @@ export default function Sellers() {
       key: 'acciones',
       label: '',
       align: 'right',
-      render: (_, row) => canEdit ? (
+      render: (_, row) => (
         <div className="flex items-center justify-end gap-1">
           <button
-            onClick={(e) => { e.stopPropagation(); openEdit(row) }}
-            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
-            title="Editar"
+            onClick={(e) => { e.stopPropagation(); navigate(`/admin/sellers/${row.id}/perfil?mes=${new Date().getMonth() + 1}&anio=${new Date().getFullYear()}`) }}
+            className="p-1.5 rounded-lg text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+            title="Ver perfil analítico"
           >
-            <Pencil size={16} />
+            <BarChart2 size={16} />
           </button>
-          <button
-            onClick={(e) => handleDeleteClick(e, row)}
-            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-            title="Desactivar"
-          >
-            <Trash2 size={16} />
-          </button>
+          {canEdit && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); openEdit(row) }}
+                className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
+                title="Editar"
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                onClick={(e) => handleDeleteClick(e, row)}
+                className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                title="Desactivar"
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          )}
         </div>
-      ) : null,
+      ),
     },
   ]
 
