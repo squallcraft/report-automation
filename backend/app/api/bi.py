@@ -18,30 +18,8 @@ router = APIRouter(prefix="/bi", tags=["Business Intelligence"])
 
 MESES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-# ── BI Seller Groups — solo para análisis BI, sin efecto en el resto del sistema ─
-# Clave: fragmento del nombre en minúsculas  →  Valor: nombre del grupo
-_BI_SELLER_GROUPS: dict[str, str] = {
-    "nuevo genesis":              "Nuevo Genesis",
-    "comercial element":          "Nuevo Genesis",
-    "rebon":                      "Nuevo Genesis",
-    " yan":                       "Nuevo Genesis",   # espacio antes para no capturar "Tanya" etc.
-    "sofozy":                     "Nuevo Genesis",
-    "equipo alca":                "Alca",
-    "alcaplus":                   "Alca",            # covers "EquipoAlcaplus"
-    "alca computaci":             "Alca",            # cubre "Sociedad Comercial Alca Computación"
-    "sociedad computacional alca":"Alca",
-}
-
-
-def _bi_group_seller(nombre: str) -> str:
-    """Devuelve el nombre de grupo BI para un seller, o el nombre original si no aplica."""
-    if not nombre:
-        return nombre or "Sin nombre"
-    n_low = " " + nombre.lower()   # espacio inicial para que el truco de " yan" funcione
-    for key, group in _BI_SELLER_GROUPS.items():
-        if key in n_low:
-            return group
-    return nombre
+# ── Seller grouping — shared logic ───────────────────────────────────────────
+from app.services.seller_groups import group_seller as _bi_group_seller
 
 
 def _merge_seller_groups(sellers: list) -> list:

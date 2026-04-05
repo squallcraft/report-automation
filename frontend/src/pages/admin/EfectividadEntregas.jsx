@@ -298,9 +298,16 @@ export default function EfectividadEntregas() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {sellersVisible.map(s => (
-                      <tr key={s.seller_id} className={`text-gray-700 hover:bg-gray-50 ${s.pct_4plus > 15 ? 'bg-red-50/30' : ''}`}>
+                      <tr key={s.seller_id ?? s.nombre}
+                        className={`text-gray-700 hover:bg-gray-50 cursor-pointer ${s.pct_4plus > 15 ? 'bg-red-50/30' : ''}`}
+                        onClick={() => {
+                          if (s.es_grupo) navigate(`/admin/sellers/grupo/${encodeURIComponent(s.grupo_nombre)}/perfil?mes=${period.mes}&anio=${period.anio}`)
+                          else navigate(`/admin/sellers/${s.seller_id}/perfil?mes=${period.mes}&anio=${period.anio}`)
+                        }}
+                      >
                         <td className="px-4 py-2.5 font-medium">
                           {s.nombre}
+                          {s.es_grupo && <span className="ml-1.5 text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-bold">Grupo</span>}
                           {s.pct_4plus > 15 && <span className="ml-1.5 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">Alerta</span>}
                         </td>
                         <td className="px-4 py-2.5 text-center text-gray-500">{s.total}</td>

@@ -116,6 +116,7 @@ export default function App() {
         <Route path="efectividad/driver/:driverId" element={<EfectividadDriver />} />
         <Route path="retencion" element={<Retencion />} />
         <Route path="sellers/:sellerId/perfil" element={<SellerPerfil />} />
+        <Route path="sellers/grupo/:grupoName/perfil" element={<SellerPerfil />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>

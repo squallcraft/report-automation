@@ -15,6 +15,7 @@ from app.models import (
     MovimientoFinanciero, CategoriaFinanciera, Trabajador,
 )
 from app.schemas import DashboardStats
+from app.services.seller_groups import group_seller, get_group_seller_ids, is_in_group
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -466,18 +467,55 @@ def efectividad_entregas(
 
     seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
 
-    por_seller = []
+    por_seller_raw = []
     for r in sorted(seller_data, key=lambda x: -(x.total or 0)):
         cc = r.con_carga or 0
-        por_seller.append({
+        por_seller_raw.append({
             "seller_id": r.seller_id,
             "nombre": seller_nombres.get(r.seller_id, "Sin nombre"),
             "total": r.total,
             "con_fecha_carga": cc,
-            "ciclo_promedio": round(float(r.avg_ciclo), 1) if r.avg_ciclo is not None else None,
-            "pct_0d": round(r.n_0d / cc * 100, 1) if cc else 0,
-            "pct_rapida": round((r.n_0d + r.n_1d) / cc * 100, 1) if cc else 0,
-            "pct_4plus": round(r.n_4plus / cc * 100, 1) if cc else 0,
+            "_n_0d": r.n_0d or 0,
+            "_n_1d": r.n_1d or 0,
+            "_n_4plus": r.n_4plus or 0,
+            "_ciclo_sum": float(r.avg_ciclo or 0) * cc,
+        })
+
+    # ── Aplicar agrupaciones analytics ──────────────────────────────────────
+    _ef_groups: dict = {}
+    for row in por_seller_raw:
+        gname = group_seller(row["nombre"])
+        if gname not in _ef_groups:
+            _ef_groups[gname] = {
+                "seller_id": None if gname != row["nombre"] else row["seller_id"],
+                "nombre": gname,
+                "es_grupo": gname != row["nombre"],
+                "grupo_nombre": gname if gname != row["nombre"] else None,
+                "total": 0, "con_fecha_carga": 0,
+                "_n_0d": 0, "_n_1d": 0, "_n_4plus": 0, "_ciclo_sum": 0.0,
+            }
+        g = _ef_groups[gname]
+        g["total"] += row["total"]
+        g["con_fecha_carga"] += row["con_fecha_carga"]
+        g["_n_0d"] += row["_n_0d"]
+        g["_n_1d"] += row["_n_1d"]
+        g["_n_4plus"] += row["_n_4plus"]
+        g["_ciclo_sum"] += row["_ciclo_sum"]
+
+    por_seller = []
+    for g in sorted(_ef_groups.values(), key=lambda x: -x["total"]):
+        cc = g["con_fecha_carga"]
+        por_seller.append({
+            "seller_id": g["seller_id"],
+            "nombre": g["nombre"],
+            "es_grupo": g["es_grupo"],
+            "grupo_nombre": g["grupo_nombre"],
+            "total": g["total"],
+            "con_fecha_carga": cc,
+            "ciclo_promedio": round(g["_ciclo_sum"] / cc, 1) if cc else None,
+            "pct_0d": round(g["_n_0d"] / cc * 100, 1) if cc else 0,
+            "pct_rapida": round((g["_n_0d"] + g["_n_1d"]) / cc * 100, 1) if cc else 0,
+            "pct_4plus": round(g["_n_4plus"] / cc * 100, 1) if cc else 0,
         })
 
     # ── Por Driver ──
@@ -731,6 +769,36 @@ def analisis_retencion(
             "vol_ref": meses_dict.get(mes_ref, 0),
         })
 
+    # ── Aplicar agrupaciones analytics ─────────────────────────────────────
+    _ret_groups: dict = {}
+    for row in sellers_out:
+        gname = group_seller(row["nombre"])
+        if gname not in _ret_groups:
+            _ret_groups[gname] = {
+                **row,
+                "nombre": gname,
+                "es_grupo": gname != row["nombre"],
+                "grupo_nombre": gname if gname != row["nombre"] else None,
+                "seller_id": None if gname != row["nombre"] else row["seller_id"],
+            }
+        else:
+            g = _ret_groups[gname]
+            # Merge vol_anual element-wise
+            g["vol_anual"] = [g["vol_anual"][i] + row["vol_anual"][i] for i in range(12)]
+            g["vol_ref"] += row["vol_ref"]
+            g["ingreso_mensual_avg"] += row["ingreso_mensual_avg"]
+            g["promedio_mensual"] += row["promedio_mensual"]
+            g["impacto_anual"] += row["impacto_anual"]
+            g["meses_activo"] = max(g["meses_activo"], row["meses_activo"])
+            g["semanas_sin_actividad"] = min(g["semanas_sin_actividad"], row["semanas_sin_actividad"])
+            if row["ultimo_mes_activo"] and (not g["ultimo_mes_activo"] or row["ultimo_mes_activo"] > g["ultimo_mes_activo"]):
+                g["ultimo_mes_activo"] = row["ultimo_mes_activo"]
+            # Re-classify based on merged monthly volumes
+            merged_meses = {m + 1: g["vol_anual"][m] for m in range(12)}
+            g["estado"] = classify(merged_meses, mes_ref)
+
+    sellers_out = list(_ret_groups.values())
+
     estado_order = {"perdido": 0, "en_riesgo": 1, "inactivo": 2, "recuperado": 3, "nuevo": 4, "activo": 5}
     sellers_out.sort(key=lambda x: (estado_order.get(x["estado"], 9), -x["ingreso_mensual_avg"]))
 
@@ -907,6 +975,37 @@ def sellers_tiers(
             "ultimo_envio": r.ultimo_envio.isoformat() if r.ultimo_envio else None,
         })
 
+    # ── Aplicar agrupaciones analytics ──────────────────────────────────────
+    _tier_groups: dict = {}
+    for row in result:
+        gname = group_seller(row["nombre"])
+        if gname not in _tier_groups:
+            _tier_groups[gname] = {
+                **row,
+                "nombre": gname,
+                "es_grupo": gname != row["nombre"],
+                "grupo_nombre": gname if gname != row["nombre"] else None,
+                "seller_id": None if gname != row["nombre"] else row["seller_id"],
+            }
+        else:
+            g = _tier_groups[gname]
+            g["total_mes"] += row["total_mes"]
+            g["dias_activos"] = max(g["dias_activos"], row["dias_activos"])
+            g["ingreso_mes"] += row["ingreso_mes"]
+            g["costo_mes"] += row["costo_mes"]
+            g["prev_total"] += row["prev_total"]
+            if row["ultimo_envio"] and (not g["ultimo_envio"] or row["ultimo_envio"] > g["ultimo_envio"]):
+                g["ultimo_envio"] = row["ultimo_envio"]
+            # Recalculate derived fields
+            g["margen_mes"] = g["ingreso_mes"] - g["costo_mes"]
+            g["margen_pct"] = round(g["margen_mes"] / g["ingreso_mes"] * 100, 1) if g["ingreso_mes"] else 0
+            g["avg_diario"] = round(g["total_mes"] / max(g["dias_activos"], 1), 1)
+            g["tier"] = _asignar_tier(g["avg_diario"])
+            g["margen_pp"] = round(g["margen_mes"] / g["total_mes"]) if g["total_mes"] else 0
+            g["delta_pct"] = round((g["total_mes"] - g["prev_total"]) / g["prev_total"] * 100, 1) if g["prev_total"] else (100.0 if g["total_mes"] else 0)
+            g["tendencia"] = "CRECIENDO" if g["delta_pct"] > 5 else ("BAJANDO" if g["delta_pct"] < -5 else "ESTABLE")
+
+    result = list(_tier_groups.values())
     result.sort(key=lambda x: (TIER_ORDER.get(x["tier"], 9), -x["avg_diario"]))
 
     # Resumen por tier
@@ -931,25 +1030,15 @@ def sellers_tiers(
 
 
 # ---------------------------------------------------------------------------
-# Endpoint: perfil completo de un seller
+# Shared helper: computes perfil data for a list of seller IDs
 # ---------------------------------------------------------------------------
-@router.get("/seller/{seller_id}/perfil")
-def seller_perfil(
-    seller_id: int,
-    mes: int = Query(...),
-    anio: int = Query(...),
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
-):
-    """One-page profile: KPIs, tendencia 24 meses, comunas, rutas, semanas."""
-    seller = db.get(Seller, seller_id)
-    if not seller:
-        from fastapi import HTTPException
-        raise HTTPException(404, "Seller no encontrado")
-
-    # ── Mes actual ──────────────────────────────────────────────────────────
+def _perfil_data(seller_ids: list, seller_info: dict, mes: int, anio: int, db):
+    """Returns full perfil dict for a set of seller IDs (individual or group)."""
+    from fastapi import HTTPException
     mes_prev = mes - 1 if mes > 1 else 12
     anio_prev = anio if mes > 1 else anio - 1
+    f_cur = [Envio.seller_id.in_(seller_ids), Envio.mes == mes, Envio.anio == anio]
+    f_prev = [Envio.seller_id.in_(seller_ids), Envio.mes == mes_prev, Envio.anio == anio_prev]
 
     cur = db.query(
         sqlfunc.count(Envio.id).label("total"),
@@ -957,12 +1046,12 @@ def seller_perfil(
         sqlfunc.sum(_ingreso_expr()).label("ingreso"),
         sqlfunc.sum(_costo_expr()).label("costo"),
         sqlfunc.max(Envio.fecha_entrega).label("ultimo_envio"),
-    ).filter(Envio.seller_id == seller_id, Envio.mes == mes, Envio.anio == anio).first()
+    ).filter(*f_cur).first()
 
     prev_cur = db.query(
         sqlfunc.count(Envio.id).label("total"),
         sqlfunc.sum(_ingreso_expr()).label("ingreso"),
-    ).filter(Envio.seller_id == seller_id, Envio.mes == mes_prev, Envio.anio == anio_prev).first()
+    ).filter(*f_prev).first()
 
     total = cur.total or 0
     dias = max(cur.dias or 1, 1)
@@ -981,115 +1070,66 @@ def seller_perfil(
 
     tier = _asignar_tier(avg_diario)
 
-    # ── Tendencia 24 meses ───────────────────────────────────────────────────
-    # Rango: 24 meses hacia atrás desde mes/anio actual
-    anio_desde = anio - 2 if mes == 12 else (anio - 2 if anio - 2 >= 2024 else 2024)
+    anio_desde = max(anio - 2, 2024)
     trend_rows = db.query(
         Envio.mes, Envio.anio,
         sqlfunc.count(Envio.id).label("total"),
         sqlfunc.sum(_ingreso_expr()).label("ingreso"),
         sqlfunc.sum(_costo_expr()).label("costo"),
     ).filter(
-        Envio.seller_id == seller_id,
+        Envio.seller_id.in_(seller_ids),
         (Envio.anio > anio_desde) | ((Envio.anio == anio_desde) & (Envio.mes >= mes)),
         (Envio.anio < anio) | ((Envio.anio == anio) & (Envio.mes <= mes)),
     ).group_by(Envio.mes, Envio.anio).order_by(Envio.anio, Envio.mes).all()
 
     tendencia_mensual = [
         {
-            "mes": r.mes,
-            "anio": r.anio,
-            "label": f"{r.mes}/{r.anio}",
-            "total": r.total or 0,
-            "ingreso": int(r.ingreso or 0),
+            "mes": r.mes, "anio": r.anio, "label": f"{r.mes}/{r.anio}",
+            "total": r.total or 0, "ingreso": int(r.ingreso or 0),
             "costo": int(r.costo or 0),
             "margen": int((r.ingreso or 0) - (r.costo or 0)),
         }
         for r in trend_rows
     ]
 
-    # ── Meses activos últimos 6 (para health score) ──────────────────────────
-    meses_activo_6 = sum(
-        1 for r in tendencia_mensual[-6:]
-        if r["total"] > 0
-    )
-
+    meses_activo_6 = sum(1 for r in tendencia_mensual[-6:] if r["total"] > 0)
     health = _health_score(avg_diario, meses_activo_6, delta_pct, tier)
 
-    # ── Top comunas (mes actual) ─────────────────────────────────────────────
     comunas_rows = db.query(
-        Envio.comuna,
-        sqlfunc.count(Envio.id).label("total"),
-    ).filter(
-        Envio.seller_id == seller_id,
-        Envio.mes == mes, Envio.anio == anio,
-        Envio.comuna.isnot(None),
+        Envio.comuna, sqlfunc.count(Envio.id).label("total"),
+    ).filter(*f_cur, Envio.comuna.isnot(None),
     ).group_by(Envio.comuna).order_by(sqlfunc.count(Envio.id).desc()).limit(10).all()
-
     top_comunas = [{"comuna": r.comuna.title() if r.comuna else "—", "total": r.total} for r in comunas_rows]
 
-    # ── Top rutas (mes actual) ───────────────────────────────────────────────
     rutas_rows = db.query(
-        Envio.ruta_nombre,
-        sqlfunc.count(Envio.id).label("total"),
-    ).filter(
-        Envio.seller_id == seller_id,
-        Envio.mes == mes, Envio.anio == anio,
-        Envio.ruta_nombre.isnot(None),
+        Envio.ruta_nombre, sqlfunc.count(Envio.id).label("total"),
+    ).filter(*f_cur, Envio.ruta_nombre.isnot(None),
     ).group_by(Envio.ruta_nombre).order_by(sqlfunc.count(Envio.id).desc()).limit(10).all()
-
     top_rutas = [{"ruta": r.ruta_nombre or "—", "total": r.total} for r in rutas_rows]
 
-    # ── Desglose semanal (mes actual) ────────────────────────────────────────
     semanas_rows = db.query(
-        Envio.semana,
-        sqlfunc.count(Envio.id).label("total"),
+        Envio.semana, sqlfunc.count(Envio.id).label("total"),
         sqlfunc.sum(_ingreso_expr()).label("ingreso"),
         sqlfunc.sum(_costo_expr()).label("costo"),
-    ).filter(
-        Envio.seller_id == seller_id,
-        Envio.mes == mes, Envio.anio == anio,
-    ).group_by(Envio.semana).order_by(Envio.semana).all()
-
+    ).filter(*f_cur).group_by(Envio.semana).order_by(Envio.semana).all()
     semanas_detalle = [
-        {
-            "semana": r.semana,
-            "total": r.total or 0,
-            "ingreso": int(r.ingreso or 0),
-            "costo": int(r.costo or 0),
-            "margen": int((r.ingreso or 0) - (r.costo or 0)),
-        }
+        {"semana": r.semana, "total": r.total or 0, "ingreso": int(r.ingreso or 0),
+         "costo": int(r.costo or 0), "margen": int((r.ingreso or 0) - (r.costo or 0))}
         for r in semanas_rows
     ]
 
-    # ── Mejor y peor mes (histórico) ─────────────────────────────────────────
     mejor = max(tendencia_mensual, key=lambda x: x["total"], default=None)
-    peor_activo = min((r for r in tendencia_mensual if r["total"] > 0), key=lambda x: x["total"], default=None)
 
     return {
-        "seller": {
-            "id": seller.id,
-            "nombre": seller.nombre,
-            "empresa": seller.empresa or "ECOURIER",
-            "rut": seller.rut,
-            "zona": seller.zona,
-            "activo": seller.activo,
-        },
+        "seller": seller_info,
         "mes": mes, "anio": anio,
-        "tier": tier,
-        "tier_meta": TIER_META.get(tier, {}),
+        "tier": tier, "tier_meta": TIER_META.get(tier, {}),
         "health_score": health,
         "kpis": {
-            "total_mes": total,
-            "avg_diario": round(avg_diario, 1),
-            "dias_activos": dias,
-            "ingreso_mes": ingreso,
-            "costo_mes": costo,
-            "margen_mes": margen,
-            "margen_pct": margen_pct,
-            "margen_pp": margen_pp,
-            "prev_total": prev_total,
-            "prev_ingreso": prev_ingreso,
+            "total_mes": total, "avg_diario": round(avg_diario, 1),
+            "dias_activos": dias, "ingreso_mes": ingreso, "costo_mes": costo,
+            "margen_mes": margen, "margen_pct": margen_pct, "margen_pp": margen_pp,
+            "prev_total": prev_total, "prev_ingreso": prev_ingreso,
             "delta_pct": delta_pct,
             "tendencia": "CRECIENDO" if delta_pct > 5 else ("BAJANDO" if delta_pct < -5 else "ESTABLE"),
         },
@@ -1101,3 +1141,66 @@ def seller_perfil(
         "meses_activo_6": meses_activo_6,
         "ultimo_envio": cur.ultimo_envio.isoformat() if cur.ultimo_envio else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: perfil completo de un seller
+# ---------------------------------------------------------------------------
+@router.get("/seller/{seller_id}/perfil")
+def seller_perfil(
+    seller_id: int,
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """One-page profile: KPIs, tendencia 24 meses, comunas, rutas, semanas.
+    If the seller belongs to an analytics group, returns aggregated group data."""
+    from fastapi import HTTPException
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(404, "Seller no encontrado")
+
+    grupo = group_seller(seller.nombre or "")
+    if grupo != seller.nombre:
+        # Delegate to group profile
+        seller_ids = get_group_seller_ids(grupo, db)
+        seller_info = {
+            "id": None, "nombre": grupo, "empresa": seller.empresa or "ECOURIER",
+            "rut": None, "zona": seller.zona, "activo": True, "es_grupo": True,
+        }
+    else:
+        seller_ids = [seller_id]
+        seller_info = {
+            "id": seller.id, "nombre": seller.nombre,
+            "empresa": seller.empresa or "ECOURIER",
+            "rut": seller.rut, "zona": seller.zona, "activo": seller.activo, "es_grupo": False,
+        }
+
+    return _perfil_data(seller_ids, seller_info, mes, anio, db)
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: perfil de grupo analítico
+# ---------------------------------------------------------------------------
+@router.get("/grupo/{grupo_nombre}/perfil")
+def grupo_perfil(
+    grupo_nombre: str,
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Perfil agregado para un grupo analítico (ej. 'Nuevo Genesis', 'Alca', 'Ragnar Chile')."""
+    from fastapi import HTTPException
+    from urllib.parse import unquote
+    grupo_nombre = unquote(grupo_nombre)
+    seller_ids = get_group_seller_ids(grupo_nombre, db)
+    if not seller_ids:
+        raise HTTPException(404, f"Grupo '{grupo_nombre}' no encontrado o sin sellers")
+
+    seller_info = {
+        "id": None, "nombre": grupo_nombre, "empresa": "—",
+        "rut": None, "zona": None, "activo": True, "es_grupo": True,
+    }
+    return _perfil_data(seller_ids, seller_info, mes, anio, db)

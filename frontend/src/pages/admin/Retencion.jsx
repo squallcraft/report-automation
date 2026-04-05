@@ -420,13 +420,21 @@ export default function Retencion() {
                     {sellersVisible.map((s, i) => {
                       const cfg = ESTADO_CFG[s.estado] || {}
                       const isRisk = ['perdido', 'en_riesgo'].includes(s.estado)
+                      const handlePerfilClick = () => {
+                        if (s.es_grupo) navigate(`/admin/sellers/grupo/${encodeURIComponent(s.grupo_nombre)}/perfil?mes=${period.mes}&anio=${period.anio}`)
+                        else navigate(`/admin/sellers/${s.seller_id}/perfil?mes=${period.mes}&anio=${period.anio}`)
+                      }
                       return (
-                        <tr key={s.seller_id}
-                          style={{ borderBottom: `1px solid ${C.border}`, background: isRisk ? `${cfg.bg}` : 'transparent', transition: 'background 0.1s' }}
+                        <tr key={s.seller_id ?? s.nombre}
+                          onClick={handlePerfilClick}
+                          style={{ borderBottom: `1px solid ${C.border}`, background: isRisk ? `${cfg.bg}` : 'transparent', transition: 'background 0.1s', cursor: 'pointer' }}
                           onMouseEnter={e => e.currentTarget.style.background = C.cardHover}
                           onMouseLeave={e => e.currentTarget.style.background = isRisk ? cfg.bg : 'transparent'}
                         >
-                          <td style={{ padding: '9px 12px', color: C.text, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</td>
+                          <td style={{ padding: '9px 12px', color: C.text, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {s.nombre}
+                            {s.es_grupo && <span style={{ marginLeft: 6, background: C.purpleDim, color: C.purple, border: `1px solid ${C.purple}33`, borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 700 }}>Grupo</span>}
+                          </td>
                           <td style={{ padding: '9px 12px' }}><EstadoBadge estado={s.estado} /></td>
                           <td style={{ padding: '9px 12px', textAlign: 'center', color: C.muted }}>{s.ultimo_mes_activo ? MESES_S[s.ultimo_mes_activo] : '—'}</td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', color: C.muted }}>{s.meses_activo}</td>
@@ -607,7 +615,11 @@ export default function Retencion() {
                     {data.sellers.map(s => {
                       const total = s.vol_anual.reduce((a, b) => a + b, 0)
                       return (
-                        <tr key={s.seller_id} style={{ borderBottom: `1px solid ${C.border}22` }}
+                        <tr key={s.seller_id ?? s.nombre} style={{ borderBottom: `1px solid ${C.border}22`, cursor: 'pointer' }}
+                          onClick={() => {
+                            if (s.es_grupo) navigate(`/admin/sellers/grupo/${encodeURIComponent(s.grupo_nombre)}/perfil?mes=${period.mes}&anio=${period.anio}`)
+                            else navigate(`/admin/sellers/${s.seller_id}/perfil?mes=${period.mes}&anio=${period.anio}`)
+                          }}
                           onMouseEnter={e => e.currentTarget.style.background = C.cardHover}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                           <td style={{ padding: '6px 12px', color: C.text, whiteSpace: 'nowrap', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>

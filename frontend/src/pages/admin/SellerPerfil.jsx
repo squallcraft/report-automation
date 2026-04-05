@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { ArrowLeft, TrendingUp, TrendingDown, Package, DollarSign, BarChart3, MapPin, Route, Minus } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, Package, DollarSign, BarChart3, MapPin, Route, Minus, Users } from 'lucide-react'
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -111,7 +111,8 @@ function BarChart({ data, keyY, keyX, height = 80, color = C.blue, highlightLast
 const now = new Date()
 
 export default function SellerPerfil() {
-  const { sellerId } = useParams()
+  const { sellerId, grupoName } = useParams()
+  const isGrupo = !!grupoName
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
@@ -125,16 +126,19 @@ export default function SellerPerfil() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: d } = await api.get(`/dashboard/seller/${sellerId}/perfil`, {
+      const endpoint = isGrupo
+        ? `/dashboard/grupo/${encodeURIComponent(grupoName)}/perfil`
+        : `/dashboard/seller/${sellerId}/perfil`
+      const { data: d } = await api.get(endpoint, {
         params: { mes: period.mes, anio: period.anio }
       })
       setData(d)
     } catch {
-      toast.error('Error cargando perfil del seller')
+      toast.error('Error cargando perfil')
     } finally {
       setLoading(false)
     }
-  }, [sellerId, period])
+  }, [sellerId, grupoName, isGrupo, period])
 
   useEffect(() => { load() }, [load])
 
@@ -175,10 +179,20 @@ export default function SellerPerfil() {
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
         <HealthRing score={health_score} />
-        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>{seller.nombre}</h1>
             <TierBadge tier={tier} />
+            {seller.es_grupo && (
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'rgba(167,139,250,0.12)', color: '#a78bfa',
+                border: '1px solid #a78bfa33', borderRadius: 6, padding: '2px 10px',
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+              }}>
+                <Users size={10} /> Grupo analítico
+              </span>
+            )}
           </div>
           <p style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
             {seller.empresa || 'ECOURIER'} · RUT {seller.rut || '—'} · {MESES_L[period.mes]} {period.anio}
