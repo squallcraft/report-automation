@@ -611,9 +611,12 @@ export default function CPP() {
   const [loading, setLoading] = useState(true)
   const [filterText, setFilterText] = useState('')
   const [filterSemanas, setFilterSemanas] = useState(new Set())
+  const [filterEstado, setFilterEstado] = useState('')
+  const [sortMonto, setSortMonto] = useState(null)
   const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
   const [modalFacturas, setModalFacturas] = useState(false)
+
   const reqId = useRef(0)
 
   const cargar = useCallback((silencioso = false) => {
@@ -650,10 +653,35 @@ export default function CPP() {
 
   const pickups = useMemo(() => {
     if (!data?.pickups) return []
-    if (!filterText) return data.pickups
-    const q = filterText.toLowerCase()
-    return data.pickups.filter(p => p.pickup_nombre.toLowerCase().includes(q))
-  }, [data, filterText])
+    const semanasAll = data.semanas_disponibles || []
+    let result = data.pickups
+
+    if (filterText) {
+      const q = filterText.toLowerCase()
+      result = result.filter(p => p.pickup_nombre.toLowerCase().includes(q))
+    }
+
+    if (filterEstado) {
+      const semanasACheck = filterSemanas.size === 1 ? [...filterSemanas] : semanasAll
+      result = result.filter(p =>
+        semanasACheck.some(sem => {
+          const semData = p.semanas[String(sem)]
+          return semData && semData.monto_neto > 0 && semData.estado === filterEstado
+        })
+      )
+    }
+
+    if (sortMonto) {
+      const semList = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
+      result = [...result].sort((a, b) => {
+        const subA = semList.reduce((acc, s) => acc + (a.semanas[String(s)]?.monto_neto || 0), 0)
+        const subB = semList.reduce((acc, s) => acc + (b.semanas[String(s)]?.monto_neto || 0), 0)
+        return sortMonto === 'desc' ? subB - subA : subA - subB
+      })
+    }
+
+    return result
+  }, [data, filterText, filterEstado, filterSemanas, sortMonto])
 
   const updateEstado = async (pickupId, semana, estado) => {
     setData(prev => {
@@ -768,6 +796,23 @@ export default function CPP() {
           </div>
           <input type="text" placeholder="Buscar pickup..." className="input w-48"
             value={filterText} onChange={e => setFilterText(e.target.value)} />
+          <div className="flex items-center gap-1">
+            {[
+              { value: '', label: 'Todos' },
+              { value: 'PENDIENTE', label: 'Por pagar', active: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold' },
+              { value: 'PAGADO', label: 'Pagados', active: 'bg-green-100 text-green-800 border-green-400 font-semibold' },
+              { value: 'INCOMPLETO', label: 'Incompletos', active: 'bg-red-100 text-red-800 border-red-400 font-semibold' },
+            ].map(opt => (
+              <button key={opt.value} onClick={() => setFilterEstado(opt.value)}
+                className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                  filterEstado === opt.value
+                    ? (opt.active || 'bg-primary-100 text-primary-800 border-primary-400 font-semibold')
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                }`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
           {semanas.length > 0 && (
             <div className="flex items-center gap-1.5 ml-auto">
               <label className="text-sm font-medium text-gray-700">Semana:</label>
@@ -838,7 +883,11 @@ export default function CPP() {
                       Sem {s}
                     </th>
                   ))}
-                  <th className="pb-2 pt-3 px-4 font-medium text-right">Subtotal</th>
+                  <th className="pb-2 pt-3 px-4 font-medium text-right cursor-pointer select-none hover:text-primary-600"
+                    onClick={() => setSortMonto(s => s === 'desc' ? 'asc' : s === 'asc' ? null : 'desc')}
+                    title="Ordenar por monto">
+                    Subtotal {sortMonto === 'desc' ? ' ↓' : sortMonto === 'asc' ? ' ↑' : ''}
+                  </th>
                 </tr>
                 <tr className="text-[10px] text-gray-400 border-b border-gray-200 bg-gray-50">
                   <th /><th /><th />
