@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { ArrowLeft, TrendingUp, TrendingDown, Package, DollarSign, BarChart3, MapPin, Route, Minus, Users } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, Package, DollarSign, BarChart3, MapPin, Route, Minus, Users, Plus, Trash2, MessageSquare, Bell, Calculator } from 'lucide-react'
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -123,6 +123,19 @@ export default function SellerPerfil() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // Gestión comercial
+  const [gestion, setGestion] = useState([])
+  const [showGestionModal, setShowGestionModal] = useState(false)
+  const [gestionForm, setGestionForm] = useState({
+    fecha: new Date().toISOString().split('T')[0],
+    tipo: 'llamada', estado: '', razon: '', nota: '', recordatorio: '',
+  })
+  const [savingGestion, setSavingGestion] = useState(false)
+
+  // Simulador de descuento
+  const [simDescuento, setSimDescuento] = useState('')     // % descuento
+  const [simPaquetes, setSimPaquetes] = useState('')        // paquetes proyectados (opcional)
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -141,6 +154,37 @@ export default function SellerPerfil() {
   }, [sellerId, grupoName, isGrupo, period])
 
   useEffect(() => { load() }, [load])
+
+  const loadGestion = useCallback(async () => {
+    if (isGrupo) return   // grupos no tienen gestión individual
+    try {
+      const { data: d } = await api.get(`/dashboard/seller/${sellerId}/gestion`)
+      setGestion(d)
+    } catch { /* silent */ }
+  }, [sellerId, isGrupo])
+
+  useEffect(() => { loadGestion() }, [loadGestion])
+
+  const saveGestion = async () => {
+    if (!gestionForm.tipo) return toast.error('Selecciona el tipo de contacto')
+    setSavingGestion(true)
+    try {
+      await api.post(`/dashboard/seller/${sellerId}/gestion`, gestionForm)
+      toast.success('Registro guardado')
+      setShowGestionModal(false)
+      setGestionForm({ fecha: new Date().toISOString().split('T')[0], tipo: 'llamada', estado: '', razon: '', nota: '', recordatorio: '' })
+      loadGestion()
+    } catch { toast.error('Error guardando registro') }
+    finally { setSavingGestion(false) }
+  }
+
+  const deleteGestion = async (id) => {
+    if (!window.confirm('¿Eliminar este registro?')) return
+    try {
+      await api.delete(`/dashboard/seller/${sellerId}/gestion/${id}`)
+      setGestion(g => g.filter(e => e.id !== id))
+    } catch { toast.error('Error eliminando registro') }
+  }
 
   if (loading) return (
     <div style={{ background: C.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted }}>
@@ -383,6 +427,224 @@ export default function SellerPerfil() {
           </table>
         </div>
       </div>
+
+      {/* ── Dos columnas: Gestión comercial + Simulador ────────────────────── */}
+      {!isGrupo && (
+        <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 16, marginTop: 20 }}>
+
+          {/* ── Motor 4: Gestión Comercial ─────────────────────────────────── */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MessageSquare size={14} style={{ color: C.accent }} />
+                <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>Gestión Comercial</p>
+              </div>
+              <button onClick={() => setShowGestionModal(true)} style={{
+                display: 'flex', alignItems: 'center', gap: 5, background: C.accent,
+                border: 'none', color: '#fff', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}>
+                <Plus size={12} /> Registrar
+              </button>
+            </div>
+
+            {gestion.length === 0 ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: C.dimmed, fontSize: 12 }}>
+                Sin registros de gestión. Usa el botón para agregar el primer contacto.
+              </div>
+            ) : (
+              <div style={{ overflowY: 'auto', maxHeight: 420 }}>
+                {gestion.map(e => {
+                  const TIPO_CFG = {
+                    llamada: { color: C.green,  label: 'Llamada' },
+                    email:   { color: C.blue,   label: 'Email' },
+                    reunion: { color: C.purple, label: 'Reunión' },
+                    whatsapp:{ color: '#25d366', label: 'WhatsApp' },
+                    visita:  { color: C.amber,  label: 'Visita' },
+                    interno: { color: C.muted,  label: 'Interno' },
+                    otro:    { color: C.dimmed, label: 'Otro' },
+                  }
+                  const ESTADO_CFG = {
+                    en_gestion: { color: C.amber },
+                    activo:     { color: C.green },
+                    recuperado: { color: C.purple },
+                    perdido:    { color: C.red },
+                    en_pausa:   { color: '#f97316' },
+                    seguimiento:{ color: C.blue },
+                  }
+                  const RAZON_LABEL = {
+                    precios: 'Precios', servicio: 'Servicio', cierre_negocio: 'Cierre negocio',
+                    estacional: 'Estacional', geografico: 'Geográfico', comunicacion: 'Comunicación', otro: 'Otro',
+                  }
+                  const tipo = TIPO_CFG[e.tipo] || TIPO_CFG.otro
+                  const estadoCfg = ESTADO_CFG[e.estado] || {}
+                  return (
+                    <div key={e.id} style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ background: 'transparent', color: tipo.color, border: `1px solid ${tipo.color}44`, borderRadius: 5, padding: '1px 8px', fontSize: 10, fontWeight: 700 }}>{tipo.label}</span>
+                          {e.estado && <span style={{ color: estadoCfg.color || C.muted, fontSize: 10, fontWeight: 600 }}>{e.estado.replace('_', ' ')}</span>}
+                          {e.razon && <span style={{ color: C.dimmed, fontSize: 10 }}>{RAZON_LABEL[e.razon] || e.razon}</span>}
+                          <span style={{ color: C.dimmed, fontSize: 10 }}>{e.fecha}</span>
+                          {e.usuario && <span style={{ color: C.dimmed, fontSize: 10 }}>· {e.usuario}</span>}
+                        </div>
+                        <button onClick={() => deleteGestion(e.id)}
+                          style={{ background: 'transparent', border: 'none', color: C.dimmed, cursor: 'pointer', padding: '2px 4px' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      {e.nota && <p style={{ color: C.text, fontSize: 12, lineHeight: 1.5, margin: '4px 0 0' }}>{e.nota}</p>}
+                      {e.recordatorio && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                          <Bell size={10} style={{ color: C.amber }} />
+                          <span style={{ color: C.amber, fontSize: 10, fontWeight: 600 }}>Recordatorio: {e.recordatorio}</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Motor 2: Simulador de descuento ────────────────────────────── */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Calculator size={14} style={{ color: C.accent }} />
+              <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>Simulador de Descuento</p>
+            </div>
+            <div style={{ padding: 18 }}>
+              {(() => {
+                const ingresoMes = kpis?.ingreso_mes || 0
+                const costoMes = kpis?.costo_mes || 0
+                const totalPaq = kpis?.total_mes || 0
+                const margenActual = ingresoMes - costoMes
+                const ingPorPaq = totalPaq > 0 ? ingresoMes / totalPaq : 0
+                const descPct = parseFloat(simDescuento) || 0
+                const paqProy = parseFloat(simPaquetes) || totalPaq
+                const nuevoPrecio = ingPorPaq * (1 - descPct / 100)
+                const nuevoIngreso = nuevoPrecio * paqProy
+                const nuevoMargen = nuevoIngreso - (paqProy * (totalPaq > 0 ? costoMes / totalPaq : 0))
+                const impactoMensual = nuevoIngreso - ingresoMes
+                const impactoAnual = impactoMensual * 12
+                const margenNuevoPct = nuevoIngreso > 0 ? Math.round(nuevoMargen / nuevoIngreso * 100) : 0
+                const threshold = ingPorPaq > 0 ? Math.max(0, Math.round((1 - costoMes / ingresoMes) * 100 * 0.5)) : 0
+
+                return (
+                  <>
+                    <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 14 }}>
+                      Precio actual: <strong style={{ color: C.text }}>{fmt(Math.round(ingPorPaq))}/paq.</strong>
+                      {' '}· Costo: <strong style={{ color: C.amber }}>{fmt(Math.round(totalPaq > 0 ? costoMes / totalPaq : 0))}/paq.</strong>
+                    </p>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Descuento propuesto (%)</label>
+                      <input type="number" min="0" max="50" step="0.5"
+                        value={simDescuento} onChange={e => setSimDescuento(e.target.value)}
+                        placeholder="Ej: 5"
+                        style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Paquetes proyectados (opcional)</label>
+                      <input type="number" min="0"
+                        value={simPaquetes} onChange={e => setSimPaquetes(e.target.value)}
+                        placeholder={`Actual: ${fmtN(totalPaq)}`}
+                        style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    {descPct > 0 && (
+                      <div style={{ background: C.surface, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {[
+                          ['Ingreso proyectado/mes', fmt(Math.round(nuevoIngreso)), nuevoIngreso >= ingresoMes ? C.green : C.red],
+                          ['Margen proyectado/mes', fmt(Math.round(nuevoMargen)), nuevoMargen >= margenActual ? C.green : C.red],
+                          ['Margen %', `${margenNuevoPct}%`, margenNuevoPct >= 15 ? C.green : margenNuevoPct >= 8 ? C.amber : C.red],
+                          ['Impacto mensual', `${impactoMensual >= 0 ? '+' : ''}${fmt(Math.round(impactoMensual))}`, impactoMensual >= 0 ? C.green : C.red],
+                          ['Impacto anual', `${impactoAnual >= 0 ? '+' : ''}${fmt(Math.round(impactoAnual))}`, impactoAnual >= 0 ? C.green : C.red],
+                        ].map(([label, val, color]) => (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ color: C.muted, fontSize: 11 }}>{label}</span>
+                            <span style={{ color, fontWeight: 700, fontSize: 13 }}>{val}</span>
+                          </div>
+                        ))}
+                        <div style={{ marginTop: 4, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                          <p style={{ color: descPct <= threshold ? C.green : descPct <= threshold * 1.5 ? C.amber : C.red, fontSize: 11, fontWeight: 600 }}>
+                            {descPct <= threshold
+                              ? `✓ Descuento sostenible (margen > ${threshold * 2}% del ingreso)`
+                              : descPct <= threshold * 1.5
+                              ? `⚠ Descuento moderado — negocia con contrapartida`
+                              : `✗ Descuento agresivo — requiere mayor volumen comprometido`}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {!descPct && (
+                      <p style={{ color: C.dimmed, fontSize: 11 }}>Ingresa un porcentaje de descuento para ver el impacto.</p>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: nuevo registro de gestión ──────────────────────────────────── */}
+      {showGestionModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={e => e.target === e.currentTarget && setShowGestionModal(false)}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, width: '100%', maxWidth: 520 }}>
+            <h2 style={{ color: C.text, fontSize: 16, fontWeight: 700, marginBottom: 18 }}>Registrar gestión comercial</h2>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              {[
+                ['fecha', 'Fecha', 'date'],
+                ['recordatorio', 'Recordatorio (opcional)', 'date'],
+              ].map(([key, label, type]) => (
+                <div key={key}>
+                  <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>{label}</label>
+                  <input type={type} value={gestionForm[key]} onChange={e => setGestionForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+              {[
+                ['tipo', 'Tipo de contacto', ['llamada', 'email', 'reunion', 'whatsapp', 'visita', 'interno', 'otro']],
+                ['estado', 'Estado comercial', ['', 'en_gestion', 'activo', 'recuperado', 'perdido', 'en_pausa', 'seguimiento']],
+                ['razon', 'Razón (si aplica)', ['', 'precios', 'servicio', 'cierre_negocio', 'estacional', 'geografico', 'comunicacion', 'otro']],
+              ].map(([key, label, options]) => (
+                <div key={key}>
+                  <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>{label}</label>
+                  <select value={gestionForm[key]} onChange={e => setGestionForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}>
+                    {options.map(o => <option key={o} value={o}>{o ? o.replace('_', ' ') : '—'}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Nota</label>
+              <textarea rows={3} value={gestionForm.nota} onChange={e => setGestionForm(f => ({ ...f, nota: e.target.value }))}
+                placeholder="Detalle del contacto, acuerdos, próximos pasos…"
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowGestionModal(false)}
+                style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '8px 16px', fontSize: 12, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={saveGestion} disabled={savingGestion}
+                style={{ background: C.accent, border: 'none', color: '#fff', borderRadius: 8, padding: '8px 20px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: savingGestion ? 0.7 : 1 }}>
+                {savingGestion ? 'Guardando…' : 'Guardar registro'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

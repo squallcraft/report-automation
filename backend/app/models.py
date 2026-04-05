@@ -1010,3 +1010,19 @@ class GrokMemoria(Base):
     contenido = Column(Text, nullable=False, default="")
     tokens_aprox = Column(Integer, default=0)
     generado_en = Column(DateTime, default=datetime.utcnow)
+
+
+class GestionComercialEntry(Base):
+    """Log liviano de gestión comercial por seller (CRM mínimo)."""
+    __tablename__ = "gestion_comercial"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=False, index=True)
+    fecha = Column(Date, nullable=False, default=date.today)
+    usuario = Column(String(100), nullable=True)       # nombre del usuario que registra
+    tipo = Column(String(50), nullable=False)           # llamada | email | reunion | whatsapp | visita | interno | otro
+    estado = Column(String(50), nullable=True)          # en_gestion | activo | recuperado | perdido | en_pausa | seguimiento
+    razon = Column(String(100), nullable=True)          # precios | servicio | cierre_negocio | estacional | geografico | comunicacion | otro
+    nota = Column(Text, nullable=True)
+    recordatorio = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

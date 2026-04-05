@@ -13,6 +13,7 @@ from app.models import (
     Seller, Driver, Envio, Retiro, ConsultaPortal, EstadoConsultaEnum,
     PagoSemanaDriver, PagoCartola, EstadoPagoEnum, RecepcionPaquete,
     MovimientoFinanciero, CategoriaFinanciera, Trabajador,
+    GestionComercialEntry,
 )
 from app.schemas import DashboardStats
 from app.services.seller_groups import group_seller, get_group_seller_ids, is_in_group
@@ -1204,3 +1205,96 @@ def grupo_perfil(
         "rut": None, "zona": None, "activo": True, "es_grupo": True,
     }
     return _perfil_data(seller_ids, seller_info, mes, anio, db)
+
+
+# ---------------------------------------------------------------------------
+# Motor 4 — Gestión Comercial (CRM liviano) por seller
+# ---------------------------------------------------------------------------
+from pydantic import BaseModel as PydanticBase
+from typing import Optional as Opt
+
+
+class GestionEntradaCreate(PydanticBase):
+    fecha: str                       # ISO date string
+    tipo: str                        # llamada | email | reunion | whatsapp | visita | interno | otro
+    estado: Opt[str] = None          # en_gestion | activo | recuperado | perdido | en_pausa | seguimiento
+    razon: Opt[str] = None
+    nota: Opt[str] = None
+    recordatorio: Opt[str] = None    # ISO date string or null
+    usuario: Opt[str] = None
+
+
+@router.get("/seller/{seller_id}/gestion")
+def get_gestion(
+    seller_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    entries = (
+        db.query(GestionComercialEntry)
+        .filter(GestionComercialEntry.seller_id == seller_id)
+        .order_by(GestionComercialEntry.fecha.desc(), GestionComercialEntry.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": e.id,
+            "fecha": e.fecha.isoformat() if e.fecha else None,
+            "usuario": e.usuario,
+            "tipo": e.tipo,
+            "estado": e.estado,
+            "razon": e.razon,
+            "nota": e.nota,
+            "recordatorio": e.recordatorio.isoformat() if e.recordatorio else None,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in entries
+    ]
+
+
+@router.post("/seller/{seller_id}/gestion", status_code=201)
+def add_gestion(
+    seller_id: int,
+    body: GestionEntradaCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_administracion),
+):
+    from fastapi import HTTPException
+    from datetime import date as _date
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(404, "Seller no encontrado")
+
+    entry = GestionComercialEntry(
+        seller_id=seller_id,
+        fecha=_date.fromisoformat(body.fecha) if body.fecha else _date.today(),
+        tipo=body.tipo,
+        estado=body.estado,
+        razon=body.razon,
+        nota=body.nota,
+        recordatorio=_date.fromisoformat(body.recordatorio) if body.recordatorio else None,
+        usuario=body.usuario or getattr(current_user, "nombre", None) or getattr(current_user, "email", None),
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return {"id": entry.id, "ok": True}
+
+
+@router.delete("/seller/{seller_id}/gestion/{entry_id}", status_code=200)
+def delete_gestion(
+    seller_id: int,
+    entry_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    from fastapi import HTTPException
+    entry = db.query(GestionComercialEntry).filter(
+        GestionComercialEntry.id == entry_id,
+        GestionComercialEntry.seller_id == seller_id,
+    ).first()
+    if not entry:
+        raise HTTPException(404, "Entrada no encontrada")
+    db.delete(entry)
+    db.commit()
+    return {"ok": True}
