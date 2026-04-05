@@ -47,6 +47,7 @@ import BusinessIntelligence from './pages/admin/BusinessIntelligence'
 import EfectividadEntregas from './pages/admin/EfectividadEntregas'
 import EfectividadDriver from './pages/admin/EfectividadDriver'
 import Retencion from './pages/admin/Retencion'
+import SellerPerfil from './pages/admin/SellerPerfil'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
 import PickupDashboard from './pages/pickup/PickupDashboard'
@@ -114,6 +115,7 @@ export default function App() {
         <Route path="efectividad" element={<EfectividadEntregas />} />
         <Route path="efectividad/driver/:driverId" element={<EfectividadDriver />} />
         <Route path="retencion" element={<Retencion />} />
+        <Route path="sellers/:sellerId/perfil" element={<SellerPerfil />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   Users, AlertTriangle, TrendingDown, TrendingUp,
-  UserCheck, UserX, UserMinus, Search, Download,
+  UserCheck, UserX, UserMinus, Search, Download, ExternalLink,
 } from 'lucide-react'
 
 // ─── Design tokens (matching BI dark theme) ──────────────────────────────────
@@ -32,6 +33,37 @@ const ESTADO_CFG = {
 }
 
 const ESTADO_ORDER = { perdido: 0, en_riesgo: 1, inactivo: 2, recuperado: 3, nuevo: 4, activo: 5 }
+
+const TIER_COLORS = {
+  EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33', min: 500 },
+  CLAVE:  { label: 'Clave',  color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33', min: 100 },
+  BUENO:  { label: 'Bueno',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33', min: 20  },
+  NORMAL: { label: 'Normal', color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22', min: 0   },
+}
+
+function TierBadge({ tier }) {
+  const cfg = TIER_COLORS[tier] || TIER_COLORS.NORMAL
+  return (
+    <span style={{
+      background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+      borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700,
+      letterSpacing: '0.04em', whiteSpace: 'nowrap',
+    }}>{cfg.label}</span>
+  )
+}
+
+function TendBadge({ tendencia, delta }) {
+  const cfg = tendencia === 'CRECIENDO'
+    ? { color: '#22c55e', icon: '▲' }
+    : tendencia === 'BAJANDO'
+    ? { color: '#ef4444', icon: '▼' }
+    : { color: '#9ca3af', icon: '→' }
+  return (
+    <span style={{ color: cfg.color, fontSize: 11, fontWeight: 600 }}>
+      {cfg.icon} {delta > 0 ? '+' : ''}{delta}%
+    </span>
+  )
+}
 
 const now = new Date()
 
@@ -110,10 +142,19 @@ function KpiCard({ label, value, sub, color, icon: Icon, delta, deltaLabel }) {
 }
 
 export default function Retencion() {
+  const navigate = useNavigate()
   const [period, setPeriod] = useState({ anio: now.getFullYear(), mes: now.getMonth() + 1 })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [vista, setVista] = useState('semaforo') // 'semaforo' | 'heatmap'
+  const [vista, setVista] = useState('semaforo') // 'semaforo' | 'heatmap' | 'tiers'
+
+  // Tiers state
+  const [tiersData, setTiersData] = useState(null)
+  const [loadingTiers, setLoadingTiers] = useState(false)
+  const [tiersSearch, setTiersSearch] = useState('')
+  const [tiersFiltroTier, setTiersFiltroTier] = useState('')
+  const [tiersSortCol, setTiersSortCol] = useState('avg_diario')
+  const [tiersSortDir, setTiersSortDir] = useState('desc')
 
   // Table controls
   const [search, setSearch] = useState('')
@@ -137,7 +178,22 @@ export default function Retencion() {
     }
   }, [period])
 
+  const loadTiers = useCallback(async () => {
+    setLoadingTiers(true)
+    try {
+      const { data: d } = await api.get('/dashboard/tiers', {
+        params: { mes: period.mes, anio: period.anio }
+      })
+      setTiersData(d)
+    } catch {
+      toast.error('Error cargando tiers de sellers')
+    } finally {
+      setLoadingTiers(false)
+    }
+  }, [period])
+
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (vista === 'tiers') loadTiers() }, [vista, loadTiers])
   useEffect(() => { setPage(1) }, [search, filterEstado, sortCol, sortDir])
 
   const handleSort = (col) => {
@@ -176,6 +232,35 @@ export default function Retencion() {
 
   const r = data?.resumen
   const maxVol = data?.max_vol || 1
+
+  const tiersSellers = useMemo(() => {
+    if (!tiersData?.sellers) return []
+    let rows = tiersData.sellers.filter(s => {
+      const matchSearch = !tiersSearch || s.nombre.toLowerCase().includes(tiersSearch.toLowerCase())
+      const matchTier = !tiersFiltroTier || s.tier === tiersFiltroTier
+      return matchSearch && matchTier
+    })
+    rows = [...rows].sort((a, b) => {
+      if (tiersSortCol === 'nombre') {
+        const c = a.nombre.localeCompare(b.nombre)
+        return tiersSortDir === 'asc' ? c : -c
+      }
+      if (tiersSortCol === 'tier') {
+        const TIER_ORD = { EPICO: 0, CLAVE: 1, BUENO: 2, NORMAL: 3 }
+        const c = (TIER_ORD[a.tier] ?? 9) - (TIER_ORD[b.tier] ?? 9)
+        return tiersSortDir === 'asc' ? c : -c
+      }
+      const va = a[tiersSortCol] ?? -Infinity
+      const vb = b[tiersSortCol] ?? -Infinity
+      return tiersSortDir === 'asc' ? va - vb : vb - va
+    })
+    return rows
+  }, [tiersData?.sellers, tiersSearch, tiersFiltroTier, tiersSortCol, tiersSortDir])
+
+  const handleTiersSort = (col) => {
+    if (tiersSortCol === col) setTiersSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    else { setTiersSortCol(col); setTiersSortDir('desc') }
+  }
 
   // CSV export
   const exportCSV = () => {
@@ -272,7 +357,7 @@ export default function Retencion() {
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 4, background: C.surface, borderRadius: 10, padding: 4, width: 'fit-content', marginBottom: 20 }}>
-            {[['semaforo', '🚦 Semáforo'], ['heatmap', '🌡️ Mapa de calor']].map(([id, label]) => (
+            {[['semaforo', '🚦 Semáforo'], ['tiers', '🏆 Tiers'], ['heatmap', '🌡️ Mapa de calor']].map(([id, label]) => (
               <button key={id} onClick={() => setVista(id)} style={{
                 background: vista === id ? C.card : 'transparent',
                 border: vista === id ? `1px solid ${C.border}` : '1px solid transparent',
@@ -375,6 +460,116 @@ export default function Retencion() {
                       style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12, opacity: pageClamped === totalPages ? 0.4 : 1 }}>›</button>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* BLOQUE TIERS */}
+          {vista === 'tiers' && (
+            <div style={{ marginBottom: 24 }}>
+              {loadingTiers ? (
+                <div style={{ textAlign: 'center', padding: '60px 0', color: C.muted }}>Cargando tiers…</div>
+              ) : !tiersData ? null : (
+                <>
+                  {/* Tier summary cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+                    {['EPICO', 'CLAVE', 'BUENO', 'NORMAL'].map(tier => {
+                      const cfg = TIER_COLORS[tier]
+                      const res = tiersData.resumen_tiers?.[tier] || {}
+                      return (
+                        <div key={tier} style={{
+                          background: C.card, border: `1px solid ${cfg.border}`, borderRadius: 12,
+                          padding: '16px 18px', cursor: 'pointer', transition: 'border-color 0.15s',
+                        }}
+                          onClick={() => setTiersFiltroTier(tiersFiltroTier === tier ? '' : tier)}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <span style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`, borderRadius: 6, padding: '2px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em' }}>{cfg.label}</span>
+                            <span style={{ color: C.muted, fontSize: 10 }}>≥{cfg.min}/día</span>
+                          </div>
+                          <p style={{ color: cfg.color, fontSize: 28, fontWeight: 800, lineHeight: 1, marginBottom: 2 }}>{res.count ?? 0}</p>
+                          <p style={{ color: C.muted, fontSize: 11 }}>sellers</p>
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                            <p style={{ color: C.dimmed, fontSize: 10, marginBottom: 2 }}>{(res.total_paquetes || 0).toLocaleString()} paq. · {(res.avg_diario_tier || 0).toFixed(1)}/día</p>
+                            <p style={{ color: C.green, fontSize: 11, fontWeight: 600 }}>${(res.total_ingreso || 0).toLocaleString('es-CL')}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Tiers table */}
+                  <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: 260 }}>
+                        <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.muted }} />
+                        <input
+                          value={tiersSearch} onChange={e => setTiersSearch(e.target.value)}
+                          placeholder="Buscar seller…"
+                          style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px 6px 30px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <select value={tiersFiltroTier} onChange={e => setTiersFiltroTier(e.target.value)}
+                        style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
+                        <option value="">Todos los tiers</option>
+                        {['EPICO', 'CLAVE', 'BUENO', 'NORMAL'].map(t => <option key={t} value={t}>{TIER_COLORS[t].label}</option>)}
+                      </select>
+                      <span style={{ color: C.dimmed, fontSize: 11, marginLeft: 'auto' }}>{tiersSellers.length} sellers</span>
+                    </div>
+                    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 560 }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead style={{ position: 'sticky', top: 0, background: C.surface, zIndex: 1 }}>
+                          <tr>
+                            {[
+                              ['nombre', 'Seller', 'left'],
+                              ['tier', 'Tier', 'center'],
+                              ['avg_diario', 'Prom. diario', 'right'],
+                              ['total_mes', 'Total mes', 'right'],
+                              ['ingreso_mes', 'Ingreso mes', 'right'],
+                              ['margen_mes', 'Margen', 'right'],
+                              ['margen_pp', '$/paquete', 'right'],
+                              ['delta_pct', 'vs mes ant.', 'right'],
+                            ].map(([col, label, align]) => (
+                              <th key={col} onClick={() => handleTiersSort(col)} style={{
+                                padding: '8px 12px', textAlign: align, color: tiersSortCol === col ? C.accent : C.muted,
+                                fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
+                                borderBottom: `1px solid ${C.border}`, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+                              }}>
+                                {label} <span style={{ opacity: tiersSortCol === col ? 1 : 0.25 }}>{tiersSortCol === col ? (tiersSortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
+                              </th>
+                            ))}
+                            <th style={{ padding: '8px 12px', color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tiersSellers.map(s => (
+                            <tr key={s.seller_id}
+                              onClick={() => navigate(`/admin/sellers/${s.seller_id}/perfil?mes=${period.mes}&anio=${period.anio}`)}
+                              style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer', transition: 'background 0.1s' }}
+                              onMouseEnter={e => e.currentTarget.style.background = C.cardHover}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <td style={{ padding: '9px 12px', color: C.text, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center' }}><TierBadge tier={s.tier} /></td>
+                              <td style={{ padding: '9px 12px', textAlign: 'right', color: C.text, fontWeight: 600 }}>{s.avg_diario.toFixed(1)}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'right', color: C.muted }}>{(s.total_mes || 0).toLocaleString()}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'right', color: C.green, fontWeight: 600 }}>${(s.ingreso_mes || 0).toLocaleString('es-CL')}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'right', color: s.margen_mes >= 0 ? C.green : C.red, fontWeight: 600 }}>${(s.margen_mes || 0).toLocaleString('es-CL')}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'right', color: C.muted }}>${(s.margen_pp || 0).toLocaleString()}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'right' }}><TendBadge tendencia={s.tendencia} delta={s.delta_pct} /></td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                                <ExternalLink size={12} style={{ color: C.muted, opacity: 0.5 }} />
+                              </td>
+                            </tr>
+                          ))}
+                          {tiersSellers.length === 0 && (
+                            <tr><td colSpan={9} style={{ padding: '32px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}

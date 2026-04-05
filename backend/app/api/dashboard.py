@@ -765,3 +765,339 @@ def analisis_retencion(
         "top_riesgo": top_riesgo,
         "max_vol": max_vol,
     }
+
+
+# ---------------------------------------------------------------------------
+# Helpers compartidos para tiers + perfil
+# ---------------------------------------------------------------------------
+def _asignar_tier(avg_diario: float) -> str:
+    if avg_diario >= 500:
+        return "EPICO"
+    elif avg_diario >= 100:
+        return "CLAVE"
+    elif avg_diario >= 20:
+        return "BUENO"
+    return "NORMAL"
+
+
+TIER_ORDER = {"EPICO": 0, "CLAVE": 1, "BUENO": 2, "NORMAL": 3}
+TIER_META = {
+    "EPICO":  {"label": "Épico",  "min": 500,  "color": "#7c3aed"},
+    "CLAVE":  {"label": "Clave",  "min": 100,  "color": "#2563eb"},
+    "BUENO":  {"label": "Bueno",  "min": 20,   "color": "#16a34a"},
+    "NORMAL": {"label": "Normal", "min": 0,    "color": "#6b7280"},
+}
+
+
+def _ingreso_expr():
+    return (
+        sqlfunc.coalesce(Envio.cobro_seller, 0)
+        + sqlfunc.coalesce(Envio.cobro_extra_manual, 0)
+        + sqlfunc.coalesce(Envio.extra_producto_seller, 0)
+        + sqlfunc.coalesce(Envio.extra_comuna_seller, 0)
+    )
+
+
+def _costo_expr():
+    return (
+        sqlfunc.coalesce(Envio.costo_driver, 0)
+        + sqlfunc.coalesce(Envio.pago_extra_manual, 0)
+        + sqlfunc.coalesce(Envio.extra_producto_driver, 0)
+        + sqlfunc.coalesce(Envio.extra_comuna_driver, 0)
+    )
+
+
+def _health_score(avg_diario_mes: float, meses_activo_6: int, delta_pct: float, tier: str) -> int:
+    """
+    Score 0-100.
+    Recencia/consistencia (35%): meses_activo_6 / 6
+    Tendencia (30%): -1..+1 normalizado de delta_pct clamped a [-50, +50]
+    Tier/valor (35%): EPICO=100, CLAVE=80, BUENO=55, NORMAL=30
+    """
+    consistencia = min(meses_activo_6 / 6, 1.0)
+    tendencia_norm = max(-1.0, min(1.0, delta_pct / 50.0))
+    tendencia_score = (tendencia_norm + 1) / 2  # 0..1
+    tier_scores = {"EPICO": 1.0, "CLAVE": 0.8, "BUENO": 0.55, "NORMAL": 0.3}
+    tier_score = tier_scores.get(tier, 0.3)
+
+    raw = (consistencia * 35) + (tendencia_score * 30) + (tier_score * 35)
+    return max(0, min(100, round(raw)))
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: tiers de sellers
+# ---------------------------------------------------------------------------
+@router.get("/tiers")
+def sellers_tiers(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Clasifica todos los sellers activos en tiers según volumen diario promedio."""
+    hoy = date.today()
+
+    # Mes actual y mes anterior para calcular tendencia
+    mes_prev = mes - 1 if mes > 1 else 12
+    anio_prev = anio if mes > 1 else anio - 1
+
+    # Agregado mes actual
+    cur = db.query(
+        Envio.seller_id,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.count(sqlfunc.distinct(Envio.fecha_entrega)).label("dias"),
+        sqlfunc.sum(_ingreso_expr()).label("ingreso"),
+        sqlfunc.sum(_costo_expr()).label("costo"),
+        sqlfunc.max(Envio.fecha_entrega).label("ultimo_envio"),
+    ).filter(
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.seller_id.isnot(None),
+    ).group_by(Envio.seller_id).all()
+
+    # Agregado mes anterior
+    prev = db.query(
+        Envio.seller_id,
+        sqlfunc.count(Envio.id).label("total"),
+    ).filter(
+        Envio.mes == mes_prev, Envio.anio == anio_prev,
+        Envio.seller_id.isnot(None),
+    ).group_by(Envio.seller_id).all()
+    prev_map = {r.seller_id: r.total for r in prev}
+
+    sellers_db = {s.id: s for s in db.query(Seller).filter(Seller.activo == True).all()}
+
+    result = []
+    for r in cur:
+        seller = sellers_db.get(r.seller_id)
+        if not seller:
+            continue
+        total = r.total or 0
+        dias = max(r.dias or 1, 1)
+        avg_diario = total / dias
+        tier = _asignar_tier(avg_diario)
+
+        ingreso = int(r.ingreso or 0)
+        costo = int(r.costo or 0)
+        margen = ingreso - costo
+        margen_pct = round(margen / ingreso * 100, 1) if ingreso > 0 else 0
+        margen_pp = round(margen / total) if total > 0 else 0
+
+        prev_total = prev_map.get(r.seller_id, 0)
+        delta_pct = round((total - prev_total) / prev_total * 100, 1) if prev_total > 0 else 0
+        if prev_total == 0 and total > 0:
+            delta_pct = 100.0
+        tendencia = "CRECIENDO" if delta_pct > 5 else ("BAJANDO" if delta_pct < -5 else "ESTABLE")
+
+        result.append({
+            "seller_id": r.seller_id,
+            "nombre": seller.nombre,
+            "empresa": seller.empresa or "ECOURIER",
+            "tier": tier,
+            "avg_diario": round(avg_diario, 1),
+            "total_mes": total,
+            "dias_activos": dias,
+            "ingreso_mes": ingreso,
+            "costo_mes": costo,
+            "margen_mes": margen,
+            "margen_pct": margen_pct,
+            "margen_pp": margen_pp,
+            "prev_total": prev_total,
+            "delta_pct": delta_pct,
+            "tendencia": tendencia,
+            "ultimo_envio": r.ultimo_envio.isoformat() if r.ultimo_envio else None,
+        })
+
+    result.sort(key=lambda x: (TIER_ORDER.get(x["tier"], 9), -x["avg_diario"]))
+
+    # Resumen por tier
+    resumen_tiers = {}
+    for tier_key, meta in TIER_META.items():
+        members = [s for s in result if s["tier"] == tier_key]
+        resumen_tiers[tier_key] = {
+            **meta,
+            "count": len(members),
+            "total_paquetes": sum(s["total_mes"] for s in members),
+            "total_ingreso": sum(s["ingreso_mes"] for s in members),
+            "total_margen": sum(s["margen_mes"] for s in members),
+            "avg_diario_tier": round(sum(s["avg_diario"] for s in members) / len(members), 1) if members else 0,
+        }
+
+    return {
+        "mes": mes, "anio": anio,
+        "sellers": result,
+        "resumen_tiers": resumen_tiers,
+        "total_sellers": len(result),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: perfil completo de un seller
+# ---------------------------------------------------------------------------
+@router.get("/seller/{seller_id}/perfil")
+def seller_perfil(
+    seller_id: int,
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """One-page profile: KPIs, tendencia 24 meses, comunas, rutas, semanas."""
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Seller no encontrado")
+
+    # ── Mes actual ──────────────────────────────────────────────────────────
+    mes_prev = mes - 1 if mes > 1 else 12
+    anio_prev = anio if mes > 1 else anio - 1
+
+    cur = db.query(
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.count(sqlfunc.distinct(Envio.fecha_entrega)).label("dias"),
+        sqlfunc.sum(_ingreso_expr()).label("ingreso"),
+        sqlfunc.sum(_costo_expr()).label("costo"),
+        sqlfunc.max(Envio.fecha_entrega).label("ultimo_envio"),
+    ).filter(Envio.seller_id == seller_id, Envio.mes == mes, Envio.anio == anio).first()
+
+    prev_cur = db.query(
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(_ingreso_expr()).label("ingreso"),
+    ).filter(Envio.seller_id == seller_id, Envio.mes == mes_prev, Envio.anio == anio_prev).first()
+
+    total = cur.total or 0
+    dias = max(cur.dias or 1, 1)
+    avg_diario = total / dias
+    ingreso = int(cur.ingreso or 0)
+    costo = int(cur.costo or 0)
+    margen = ingreso - costo
+    margen_pct = round(margen / ingreso * 100, 1) if ingreso > 0 else 0
+    margen_pp = round(margen / total) if total > 0 else 0
+
+    prev_total = prev_cur.total or 0
+    prev_ingreso = int(prev_cur.ingreso or 0)
+    delta_pct = round((total - prev_total) / prev_total * 100, 1) if prev_total > 0 else 0
+    if prev_total == 0 and total > 0:
+        delta_pct = 100.0
+
+    tier = _asignar_tier(avg_diario)
+
+    # ── Tendencia 24 meses ───────────────────────────────────────────────────
+    # Rango: 24 meses hacia atrás desde mes/anio actual
+    anio_desde = anio - 2 if mes == 12 else (anio - 2 if anio - 2 >= 2024 else 2024)
+    trend_rows = db.query(
+        Envio.mes, Envio.anio,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(_ingreso_expr()).label("ingreso"),
+        sqlfunc.sum(_costo_expr()).label("costo"),
+    ).filter(
+        Envio.seller_id == seller_id,
+        (Envio.anio > anio_desde) | ((Envio.anio == anio_desde) & (Envio.mes >= mes)),
+        (Envio.anio < anio) | ((Envio.anio == anio) & (Envio.mes <= mes)),
+    ).group_by(Envio.mes, Envio.anio).order_by(Envio.anio, Envio.mes).all()
+
+    tendencia_mensual = [
+        {
+            "mes": r.mes,
+            "anio": r.anio,
+            "label": f"{r.mes}/{r.anio}",
+            "total": r.total or 0,
+            "ingreso": int(r.ingreso or 0),
+            "costo": int(r.costo or 0),
+            "margen": int((r.ingreso or 0) - (r.costo or 0)),
+        }
+        for r in trend_rows
+    ]
+
+    # ── Meses activos últimos 6 (para health score) ──────────────────────────
+    meses_activo_6 = sum(
+        1 for r in tendencia_mensual[-6:]
+        if r["total"] > 0
+    )
+
+    health = _health_score(avg_diario, meses_activo_6, delta_pct, tier)
+
+    # ── Top comunas (mes actual) ─────────────────────────────────────────────
+    comunas_rows = db.query(
+        Envio.comuna,
+        sqlfunc.count(Envio.id).label("total"),
+    ).filter(
+        Envio.seller_id == seller_id,
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.comuna.isnot(None),
+    ).group_by(Envio.comuna).order_by(sqlfunc.count(Envio.id).desc()).limit(10).all()
+
+    top_comunas = [{"comuna": r.comuna.title() if r.comuna else "—", "total": r.total} for r in comunas_rows]
+
+    # ── Top rutas (mes actual) ───────────────────────────────────────────────
+    rutas_rows = db.query(
+        Envio.ruta_nombre,
+        sqlfunc.count(Envio.id).label("total"),
+    ).filter(
+        Envio.seller_id == seller_id,
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.ruta_nombre.isnot(None),
+    ).group_by(Envio.ruta_nombre).order_by(sqlfunc.count(Envio.id).desc()).limit(10).all()
+
+    top_rutas = [{"ruta": r.ruta_nombre or "—", "total": r.total} for r in rutas_rows]
+
+    # ── Desglose semanal (mes actual) ────────────────────────────────────────
+    semanas_rows = db.query(
+        Envio.semana,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(_ingreso_expr()).label("ingreso"),
+        sqlfunc.sum(_costo_expr()).label("costo"),
+    ).filter(
+        Envio.seller_id == seller_id,
+        Envio.mes == mes, Envio.anio == anio,
+    ).group_by(Envio.semana).order_by(Envio.semana).all()
+
+    semanas_detalle = [
+        {
+            "semana": r.semana,
+            "total": r.total or 0,
+            "ingreso": int(r.ingreso or 0),
+            "costo": int(r.costo or 0),
+            "margen": int((r.ingreso or 0) - (r.costo or 0)),
+        }
+        for r in semanas_rows
+    ]
+
+    # ── Mejor y peor mes (histórico) ─────────────────────────────────────────
+    mejor = max(tendencia_mensual, key=lambda x: x["total"], default=None)
+    peor_activo = min((r for r in tendencia_mensual if r["total"] > 0), key=lambda x: x["total"], default=None)
+
+    return {
+        "seller": {
+            "id": seller.id,
+            "nombre": seller.nombre,
+            "empresa": seller.empresa or "ECOURIER",
+            "rut": seller.rut,
+            "zona": seller.zona,
+            "activo": seller.activo,
+        },
+        "mes": mes, "anio": anio,
+        "tier": tier,
+        "tier_meta": TIER_META.get(tier, {}),
+        "health_score": health,
+        "kpis": {
+            "total_mes": total,
+            "avg_diario": round(avg_diario, 1),
+            "dias_activos": dias,
+            "ingreso_mes": ingreso,
+            "costo_mes": costo,
+            "margen_mes": margen,
+            "margen_pct": margen_pct,
+            "margen_pp": margen_pp,
+            "prev_total": prev_total,
+            "prev_ingreso": prev_ingreso,
+            "delta_pct": delta_pct,
+            "tendencia": "CRECIENDO" if delta_pct > 5 else ("BAJANDO" if delta_pct < -5 else "ESTABLE"),
+        },
+        "tendencia_mensual": tendencia_mensual,
+        "top_comunas": top_comunas,
+        "top_rutas": top_rutas,
+        "semanas_detalle": semanas_detalle,
+        "mejor_mes": mejor,
+        "meses_activo_6": meses_activo_6,
+        "ultimo_envio": cur.ultimo_envio.isoformat() if cur.ultimo_envio else None,
+    }
