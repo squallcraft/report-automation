@@ -69,6 +69,17 @@ class Seller(Base):
     activo = Column(Boolean, default=True)
     email = Column(String, unique=True, nullable=True)  # acceso al portal del seller
     password_hash = Column(String, nullable=True)
+    # ── Lifecycle comercial ──────────────────────────────────────────────────
+    tipo_cierre = Column(String(20), nullable=True)       # 'pausa' | 'cerrado' | 'desactivado'
+    fecha_cierre = Column(Date, nullable=True)
+    fecha_pausa_fin = Column(Date, nullable=True)         # solo para tipo_cierre='pausa'
+    razones_cierre = Column(JSON, default=list)           # lista de strings (multi-select)
+    conversacion_salida = Column(String(20), nullable=True)  # 'si' | 'no' | 'parcial'
+    destino_competencia = Column(String(200), nullable=True)
+    potencial_recuperacion = Column(String(20), nullable=True)  # 'alto' | 'medio' | 'bajo' | 'ninguno'
+    condicion_recuperacion = Column(Text, nullable=True)
+    nota_cierre = Column(Text, nullable=True)
+    cerrado_por = Column(String(100), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

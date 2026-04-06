@@ -146,7 +146,7 @@ export default function Retencion() {
   const [period, setPeriod] = useState({ anio: now.getFullYear(), mes: now.getMonth() + 1 })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [vista, setVista] = useState('semaforo') // 'semaforo' | 'heatmap' | 'tiers'
+  const [vista, setVista] = useState('semaforo') // 'semaforo' | 'heatmap' | 'tiers' | 'churn'
 
   // Tiers state
   const [tiersData, setTiersData] = useState(null)
@@ -155,6 +155,10 @@ export default function Retencion() {
   const [tiersFiltroTier, setTiersFiltroTier] = useState('')
   const [tiersSortCol, setTiersSortCol] = useState('avg_diario')
   const [tiersSortDir, setTiersSortDir] = useState('desc')
+
+  // Churn intelligence state
+  const [churnData, setChurnData] = useState(null)
+  const [loadingChurn, setLoadingChurn] = useState(false)
 
   // Table controls
   const [search, setSearch] = useState('')
@@ -192,8 +196,24 @@ export default function Retencion() {
     }
   }, [period])
 
+  const loadChurn = async () => {
+    setLoadingChurn(true)
+    try {
+      const [{ data: analytics }, { data: noActivos }] = await Promise.all([
+        api.get('/sellers/churn-analytics'),
+        api.get('/sellers/no-activos'),
+      ])
+      setChurnData({ analytics, noActivos })
+    } catch {
+      toast.error('Error cargando datos de churn')
+    } finally {
+      setLoadingChurn(false)
+    }
+  }
+
   useEffect(() => { load() }, [load])
   useEffect(() => { if (vista === 'tiers') loadTiers() }, [vista, loadTiers])
+  useEffect(() => { if (vista === 'churn') loadChurn() }, [vista])
   useEffect(() => { setPage(1) }, [search, filterEstado, sortCol, sortDir])
 
   const handleSort = (col) => {
@@ -357,7 +377,7 @@ export default function Retencion() {
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 4, background: C.surface, borderRadius: 10, padding: 4, width: 'fit-content', marginBottom: 20 }}>
-            {[['semaforo', '🚦 Semáforo'], ['tiers', '🏆 Tiers'], ['heatmap', '🌡️ Mapa de calor']].map(([id, label]) => (
+            {[['semaforo', '🚦 Semáforo'], ['tiers', '🏆 Tiers'], ['heatmap', '🌡️ Mapa de calor'], ['churn', '🔒 Inteligencia de churn']].map(([id, label]) => (
               <button key={id} onClick={() => setVista(id)} style={{
                 background: vista === id ? C.card : 'transparent',
                 border: vista === id ? `1px solid ${C.border}` : '1px solid transparent',
@@ -706,6 +726,163 @@ export default function Retencion() {
                   </tfoot>
                 </table>
               </div>
+            </div>
+          )}
+          {vista === 'churn' && (
+            <div>
+              {loadingChurn ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: C.muted }}>Cargando datos de churn…</div>
+              ) : churnData ? (() => {
+                const { analytics, noActivos } = churnData
+                const POTENCIAL_COLOR = {
+                  alto: { color: C.green, bg: C.greenDim },
+                  medio: { color: C.amber, bg: C.amberDim },
+                  bajo: { color: C.muted, bg: 'rgba(156,163,175,0.08)' },
+                  ninguno: { color: C.red, bg: C.redDim },
+                }
+                return (
+                  <>
+                    {/* KPIs de churn */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+                      {[
+                        { label: 'Clientes cerrados', value: analytics.total_cerrados, color: C.red },
+                        { label: 'En pausa', value: noActivos.pausados.length, color: '#f97316' },
+                        { label: 'Recuperables', value: analytics.recuperables, color: C.amber },
+                        { label: 'Tasa de recuperación', value: analytics.total_cerrados > 0 ? `${Math.round(analytics.recuperables / analytics.total_cerrados * 100)}%` : '—', color: C.green },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
+                          <p style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{label}</p>
+                          <p style={{ color, fontSize: 28, fontWeight: 800 }}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                      {/* Top razones */}
+                      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
+                        <p style={{ color: C.text, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Top razones de cierre</p>
+                        {analytics.razones.length === 0 && (
+                          <p style={{ color: C.dimmed, fontSize: 12 }}>Sin datos aún</p>
+                        )}
+                        {analytics.razones.map((r, i) => {
+                          const maxC = analytics.razones[0]?.count || 1
+                          return (
+                            <div key={r.razon} style={{ marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ color: C.text, fontSize: 12 }}>{r.razon.replace(/_/g, ' ')}</span>
+                                <span style={{ color: C.muted, fontSize: 12, fontWeight: 600 }}>{r.count}</span>
+                              </div>
+                              <div style={{ height: 5, background: C.border, borderRadius: 3 }}>
+                                <div style={{ width: `${Math.round(r.count / maxC * 100)}%`, height: '100%', background: i === 0 ? C.red : C.accent, borderRadius: 3, opacity: 0.8 }} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* Potencial de recuperación */}
+                      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
+                        <p style={{ color: C.text, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Potencial de recuperación</p>
+                        {Object.keys(analytics.potencial_recuperacion).length === 0 && (
+                          <p style={{ color: C.dimmed, fontSize: 12 }}>Sin datos aún</p>
+                        )}
+                        {Object.entries(analytics.potencial_recuperacion).sort((a, b) => {
+                          const order = { alto: 0, medio: 1, bajo: 2, ninguno: 3 }
+                          return (order[a[0]] ?? 4) - (order[b[0]] ?? 4)
+                        }).map(([pot, count]) => {
+                          const cfg = POTENCIAL_COLOR[pot] || { color: C.muted, bg: 'transparent' }
+                          return (
+                            <div key={pot} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: 8, background: cfg.bg, marginBottom: 6 }}>
+                              <span style={{ color: cfg.color, fontWeight: 600, fontSize: 12, textTransform: 'capitalize' }}>{pot}</span>
+                              <span style={{ color: cfg.color, fontWeight: 800, fontSize: 20 }}>{count}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Listado cerrados con potencial */}
+                    {noActivos.cerrados.filter(s => ['alto', 'medio'].includes(s.potencial_recuperacion)).length > 0 && (
+                      <div style={{ background: C.card, border: `1px solid ${C.green}33`, borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+                        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: C.green, fontSize: 16 }}>🎯</span>
+                          <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>Clientes cerrados recuperables</p>
+                          <span style={{ color: C.muted, fontSize: 11, marginLeft: 4 }}>(alto/medio potencial)</span>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead style={{ background: C.surface }}>
+                            <tr>
+                              {['Seller', 'Cierre', 'Razones', 'Potencial', 'Condición de regreso', 'Acciones'].map(h => (
+                                <th key={h} style={{ padding: '8px 14px', textAlign: 'left', color: C.dimmed, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {noActivos.cerrados.filter(s => ['alto', 'medio'].includes(s.potencial_recuperacion)).map(s => {
+                              const cfg = POTENCIAL_COLOR[s.potencial_recuperacion] || { color: C.muted, bg: 'transparent' }
+                              return (
+                                <tr key={s.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+                                  <td style={{ padding: '10px 14px', color: C.text, fontWeight: 600 }}>{s.nombre}</td>
+                                  <td style={{ padding: '10px 14px', color: C.muted }}>{s.fecha_cierre || '—'}</td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                      {(s.razones_cierre || []).map(r => (
+                                        <span key={r} style={{ fontSize: 9, background: C.redDim, color: C.red, padding: '2px 6px', borderRadius: 4 }}>{r.replace(/_/g, ' ')}</span>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <span style={{ color: cfg.color, fontWeight: 700, fontSize: 11, textTransform: 'capitalize' }}>{s.potencial_recuperacion}</span>
+                                  </td>
+                                  <td style={{ padding: '10px 14px', color: C.muted, maxWidth: 200 }}>{s.condicion_recuperacion || '—'}</td>
+                                  <td style={{ padding: '10px 14px' }}>
+                                    <button onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${new Date().getMonth() + 1}&anio=${new Date().getFullYear()}`)}
+                                      style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 6, padding: '4px 10px', fontSize: 10, cursor: 'pointer' }}>
+                                      Ver perfil
+                                    </button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* En pausa */}
+                    {noActivos.pausados.length > 0 && (
+                      <div style={{ background: C.card, border: `1px solid #f9731633`, borderRadius: 12, overflow: 'hidden' }}>
+                        <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ color: '#f97316', fontSize: 16 }}>⏸</span>
+                          <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>Clientes en pausa</p>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead style={{ background: C.surface }}>
+                            <tr>
+                              {['Seller', 'En pausa desde', 'Retorno estimado', 'Nota'].map(h => (
+                                <th key={h} style={{ padding: '8px 14px', textAlign: 'left', color: C.dimmed, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {noActivos.pausados.map(s => (
+                              <tr key={s.id} style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+                                onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${new Date().getMonth() + 1}&anio=${new Date().getFullYear()}`)}>
+                                <td style={{ padding: '10px 14px', color: C.text, fontWeight: 600 }}>{s.nombre}</td>
+                                <td style={{ padding: '10px 14px', color: C.muted }}>{s.fecha_cierre || '—'}</td>
+                                <td style={{ padding: '10px 14px', color: '#f97316', fontWeight: 600 }}>{s.fecha_pausa_fin || '—'}</td>
+                                <td style={{ padding: '10px 14px', color: C.muted }}>{s.nota_cierre || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )
+              })() : (
+                <div style={{ textAlign: 'center', padding: '40px', color: C.dimmed }}>Sin datos de churn disponibles</div>
+              )}
             </div>
           )}
         </>

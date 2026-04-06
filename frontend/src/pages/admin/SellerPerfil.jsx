@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { ArrowLeft, TrendingUp, TrendingDown, Package, DollarSign, BarChart3, MapPin, Route, Minus, Users, Plus, Trash2, MessageSquare, Bell, Calculator } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, Package, DollarSign, BarChart3, MapPin, Route, Minus, Users, Plus, Trash2, MessageSquare, Bell, Calculator, PauseCircle, XCircle, PlayCircle, AlertTriangle } from 'lucide-react'
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -136,6 +136,61 @@ export default function SellerPerfil() {
   const [simDescuento, setSimDescuento] = useState('')     // % descuento
   const [simPaquetes, setSimPaquetes] = useState('')        // paquetes proyectados (opcional)
 
+  // Lifecycle comercial (cerrar / pausar / reabrir)
+  const [showCierreModal, setShowCierreModal] = useState(false)
+  const [showPausaModal, setShowPausaModal] = useState(false)
+  const [showReabrirModal, setShowReabrirModal] = useState(false)
+  const [lifecycleForm, setLifecycleForm] = useState({})
+  const [savingLifecycle, setSavingLifecycle] = useState(false)
+
+  const RAZONES_CIERRE_OPTS = [
+    { value: 'tarifas', label: 'Buscó mejores tarifas' },
+    { value: 'calidad_servicio', label: 'Problemas de calidad/servicio' },
+    { value: 'cierre_negocio', label: 'Cerró su negocio' },
+    { value: 'competidor', label: 'Se fue con la competencia' },
+    { value: 'ubicacion', label: 'Cambio de ubicación/zona' },
+    { value: 'comunicacion', label: 'Problemas de comunicación' },
+    { value: 'mal_pagador', label: 'Mal pagador' },
+    { value: 'metodologia', label: 'Diferencias metodológicas' },
+    { value: 'otro', label: 'Otro' },
+  ]
+
+  const cerrarSeller = async () => {
+    setSavingLifecycle(true)
+    try {
+      await api.post(`/sellers/${sellerId}/cerrar`, lifecycleForm)
+      toast.success('Cliente cerrado')
+      setShowCierreModal(false)
+      setLifecycleForm({})
+      load()
+    } catch { toast.error('Error al cerrar cliente') }
+    finally { setSavingLifecycle(false) }
+  }
+
+  const pausarSeller = async () => {
+    setSavingLifecycle(true)
+    try {
+      await api.post(`/sellers/${sellerId}/pausar`, lifecycleForm)
+      toast.success('Cliente pausado')
+      setShowPausaModal(false)
+      setLifecycleForm({})
+      load()
+    } catch { toast.error('Error al pausar cliente') }
+    finally { setSavingLifecycle(false) }
+  }
+
+  const reabrir = async () => {
+    setSavingLifecycle(true)
+    try {
+      await api.post(`/sellers/${sellerId}/reabrir`, lifecycleForm)
+      toast.success('Cliente reactivado')
+      setShowReabrirModal(false)
+      setLifecycleForm({})
+      load()
+    } catch { toast.error('Error al reabrir cliente') }
+    finally { setSavingLifecycle(false) }
+  }
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -237,16 +292,61 @@ export default function SellerPerfil() {
                 <Users size={10} /> Grupo analítico
               </span>
             )}
+            {seller.tipo_cierre === 'pausa' && (
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'rgba(249,115,22,0.12)', color: '#f97316',
+                border: '1px solid #f9731633', borderRadius: 6, padding: '2px 10px',
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+              }}>
+                <PauseCircle size={10} /> En pausa {seller.fecha_pausa_fin ? `· retorno est. ${seller.fecha_pausa_fin}` : ''}
+              </span>
+            )}
+            {seller.tipo_cierre === 'cerrado' && (
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+                border: '1px solid #ef444433', borderRadius: 6, padding: '2px 10px',
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
+              }}>
+                <XCircle size={10} /> Cerrado {seller.fecha_cierre ? `· ${seller.fecha_cierre}` : ''}
+              </span>
+            )}
           </div>
           <p style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
             {seller.empresa || 'ECOURIER'} · RUT {seller.rut || '—'} · {MESES_L[period.mes]} {period.anio}
           </p>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ color: C.dimmed, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Último envío</p>
-          <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{data.ultimo_envio || '—'}</p>
-          {mejor_mes && (
-            <p style={{ color: C.dimmed, fontSize: 10, marginTop: 4 }}>Mejor mes: {MESES_S[mejor_mes.mes]}/{mejor_mes.anio} ({fmtN(mejor_mes.total)} paq.)</p>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ color: C.dimmed, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Último envío</p>
+            <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{data.ultimo_envio || '—'}</p>
+            {mejor_mes && (
+              <p style={{ color: C.dimmed, fontSize: 10, marginTop: 4 }}>Mejor mes: {MESES_S[mejor_mes.mes]}/{mejor_mes.anio} ({fmtN(mejor_mes.total)} paq.)</p>
+            )}
+          </div>
+          {/* Lifecycle actions — only for individual sellers */}
+          {!isGrupo && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              {(!seller.tipo_cierre) && (
+                <>
+                  <button onClick={() => { setLifecycleForm({}); setShowPausaModal(true) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid #f9731666', color: '#f97316', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                    <PauseCircle size={12} /> Poner en pausa
+                  </button>
+                  <button onClick={() => { setLifecycleForm({ razones_cierre: [] }); setShowCierreModal(true) }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid #ef444466', color: '#ef4444', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                    <XCircle size={12} /> Cerrar cliente
+                  </button>
+                </>
+              )}
+              {seller.tipo_cierre && (
+                <button onClick={() => { setLifecycleForm({}); setShowReabrirModal(true) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: `1px solid ${C.green}66`, color: C.green, borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                  <PlayCircle size={12} /> Reabrir cliente
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -584,6 +684,186 @@ export default function SellerPerfil() {
                   </>
                 )
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Cerrar cliente ─────────────────────────────────────────────── */}
+      {showCierreModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={e => e.target === e.currentTarget && setShowCierreModal(false)}>
+          <div style={{ background: C.card, border: `1px solid #ef444444`, borderRadius: 16, padding: 24, width: '100%', maxWidth: 560 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+              <XCircle size={18} style={{ color: '#ef4444' }} />
+              <h2 style={{ color: C.text, fontSize: 16, fontWeight: 700, margin: 0 }}>Cerrar cliente: {seller.nombre}</h2>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>Razones de cierre (multi-selección)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {RAZONES_CIERRE_OPTS.map(opt => {
+                  const selected = (lifecycleForm.razones_cierre || []).includes(opt.value)
+                  return (
+                    <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, border: `1px solid ${selected ? '#ef444466' : C.border}`, background: selected ? 'rgba(239,68,68,0.08)' : 'transparent', cursor: 'pointer', fontSize: 12, color: selected ? '#ef4444' : C.text }}>
+                      <input type="checkbox" checked={selected}
+                        onChange={() => setLifecycleForm(f => {
+                          const arr = f.razones_cierre || []
+                          return { ...f, razones_cierre: selected ? arr.filter(v => v !== opt.value) : [...arr, opt.value] }
+                        })}
+                        style={{ accentColor: '#ef4444' }} />
+                      {opt.label}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Conversación de salida</label>
+                <select value={lifecycleForm.conversacion_salida || ''} onChange={e => setLifecycleForm(f => ({ ...f, conversacion_salida: e.target.value }))}
+                  style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}>
+                  <option value="">—</option>
+                  <option value="si">Sí</option>
+                  <option value="no">No</option>
+                  <option value="parcial">Parcial</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Potencial de recuperación</label>
+                <select value={lifecycleForm.potencial_recuperacion || ''} onChange={e => setLifecycleForm(f => ({ ...f, potencial_recuperacion: e.target.value }))}
+                  style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}>
+                  <option value="">—</option>
+                  <option value="alto">Alto</option>
+                  <option value="medio">Medio</option>
+                  <option value="bajo">Bajo</option>
+                  <option value="ninguno">Ninguno</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Destino (competidor)</label>
+                <input type="text" placeholder="Nombre (opcional)" value={lifecycleForm.destino_competencia || ''}
+                  onChange={e => setLifecycleForm(f => ({ ...f, destino_competencia: e.target.value }))}
+                  style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Condición para recuperación (opcional)</label>
+              <input type="text" placeholder="Ej: mejora de tarifa, resolución de conflicto…" value={lifecycleForm.condicion_recuperacion || ''}
+                onChange={e => setLifecycleForm(f => ({ ...f, condicion_recuperacion: e.target.value }))}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Nota interna</label>
+              <textarea rows={3} value={lifecycleForm.nota_cierre || ''} onChange={e => setLifecycleForm(f => ({ ...f, nota_cierre: e.target.value }))}
+                placeholder="Contexto adicional del cierre…"
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid #ef444433', borderRadius: 10, padding: '10px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <AlertTriangle size={13} style={{ color: '#ef4444', flexShrink: 0 }} />
+              <p style={{ color: '#ef4444', fontSize: 11, margin: 0 }}>El cliente dejará de aparecer en todos los flujos operativos diarios. Podrás reactivarlo desde el listado de cerrados.</p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowCierreModal(false)}
+                style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '8px 16px', fontSize: 12, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={cerrarSeller} disabled={savingLifecycle || !(lifecycleForm.razones_cierre?.length)}
+                style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: 8, padding: '8px 20px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: (savingLifecycle || !(lifecycleForm.razones_cierre?.length)) ? 0.5 : 1 }}>
+                {savingLifecycle ? 'Cerrando…' : 'Confirmar cierre'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Poner en pausa ─────────────────────────────────────────────── */}
+      {showPausaModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={e => e.target === e.currentTarget && setShowPausaModal(false)}>
+          <div style={{ background: C.card, border: `1px solid #f9731644`, borderRadius: 16, padding: 24, width: '100%', maxWidth: 460 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+              <PauseCircle size={18} style={{ color: '#f97316' }} />
+              <h2 style={{ color: C.text, fontSize: 16, fontWeight: 700, margin: 0 }}>Pausar cliente: {seller.nombre}</h2>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Fecha estimada de regreso (opcional)</label>
+              <input type="date" value={lifecycleForm.fecha_pausa_fin || ''}
+                onChange={e => setLifecycleForm(f => ({ ...f, fecha_pausa_fin: e.target.value }))}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Nota</label>
+              <textarea rows={3} value={lifecycleForm.nota || ''} onChange={e => setLifecycleForm(f => ({ ...f, nota: e.target.value }))}
+                placeholder="Vacaciones, reestructuración interna, temporada baja…"
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowPausaModal(false)}
+                style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '8px 16px', fontSize: 12, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={pausarSeller} disabled={savingLifecycle}
+                style={{ background: '#f97316', border: 'none', color: '#fff', borderRadius: 8, padding: '8px 20px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: savingLifecycle ? 0.5 : 1 }}>
+                {savingLifecycle ? 'Pausando…' : 'Confirmar pausa'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Reabrir cliente ─────────────────────────────────────────────── */}
+      {showReabrirModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={e => e.target === e.currentTarget && setShowReabrirModal(false)}>
+          <div style={{ background: C.card, border: `1px solid ${C.green}44`, borderRadius: 16, padding: 24, width: '100%', maxWidth: 460 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+              <PlayCircle size={18} style={{ color: C.green }} />
+              <h2 style={{ color: C.text, fontSize: 16, fontWeight: 700, margin: 0 }}>Reactivar cliente: {seller.nombre}</h2>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>¿Cómo volvió?</label>
+              <select value={lifecycleForm.como_volvio || ''} onChange={e => setLifecycleForm(f => ({ ...f, como_volvio: e.target.value }))}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}>
+                <option value="">— Seleccionar —</option>
+                <option value="espontaneo">Regreso espontáneo</option>
+                <option value="outreach">Nosotros lo contactamos</option>
+                <option value="oferta">Con oferta comercial</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>¿Qué cambió?</label>
+              <input type="text" placeholder="Tarifa ajustada, nuevo contacto, resolución de problemas…" value={lifecycleForm.que_cambio || ''}
+                onChange={e => setLifecycleForm(f => ({ ...f, que_cambio: e.target.value }))}
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Nota (opcional)</label>
+              <textarea rows={2} value={lifecycleForm.nota || ''} onChange={e => setLifecycleForm(f => ({ ...f, nota: e.target.value }))}
+                placeholder="Contexto adicional…"
+                style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 10px', fontSize: 12, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowReabrirModal(false)}
+                style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '8px 16px', fontSize: 12, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={reabrir} disabled={savingLifecycle}
+                style={{ background: C.green, border: 'none', color: '#fff', borderRadius: 8, padding: '8px 20px', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: savingLifecycle ? 0.5 : 1 }}>
+                {savingLifecycle ? 'Reactivando…' : 'Confirmar reactivación'}
+              </button>
             </div>
           </div>
         </div>

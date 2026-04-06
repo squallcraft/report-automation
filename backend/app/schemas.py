@@ -118,6 +118,11 @@ class SellerOut(SellerBase):
     id: int
     created_at: Optional[datetime] = None
     sucursales: List[SucursalOut] = []
+    tipo_cierre: Optional[str] = None
+    fecha_cierre: Optional[date] = None
+    fecha_pausa_fin: Optional[date] = None
+    razones_cierre: Optional[List[str]] = None
+    potencial_recuperacion: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

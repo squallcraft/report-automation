@@ -1176,6 +1176,11 @@ def seller_perfil(
             "id": seller.id, "nombre": seller.nombre,
             "empresa": seller.empresa or "ECOURIER",
             "rut": seller.rut, "zona": seller.zona, "activo": seller.activo, "es_grupo": False,
+            "tipo_cierre": seller.tipo_cierre,
+            "fecha_cierre": seller.fecha_cierre.isoformat() if seller.fecha_cierre else None,
+            "fecha_pausa_fin": seller.fecha_pausa_fin.isoformat() if seller.fecha_pausa_fin else None,
+            "razones_cierre": seller.razones_cierre or [],
+            "potencial_recuperacion": seller.potencial_recuperacion,
         }
 
     return _perfil_data(seller_ids, seller_info, mes, anio, db)

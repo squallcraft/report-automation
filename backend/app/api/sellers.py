@@ -481,3 +481,219 @@ def eliminar_sucursal(
           metadata={"seller_id": seller_id, "nombre": suc.nombre})
 
     return {"message": "Sucursal eliminada"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Lifecycle comercial: cerrar / pausar / reabrir
+# ──────────────────────────────────────────────────────────────────────────────
+from pydantic import BaseModel as _PB
+from datetime import date as _date
+from app.models import GestionComercialEntry
+
+
+class CerrarSellerBody(_PB):
+    razones_cierre: List[str] = []
+    conversacion_salida: Optional[str] = None     # 'si' | 'no' | 'parcial'
+    destino_competencia: Optional[str] = None
+    potencial_recuperacion: Optional[str] = None  # 'alto' | 'medio' | 'bajo' | 'ninguno'
+    condicion_recuperacion: Optional[str] = None
+    nota_cierre: Optional[str] = None
+
+
+class PausarSellerBody(_PB):
+    fecha_pausa_fin: Optional[str] = None   # ISO date
+    nota: Optional[str] = None
+
+
+class ReabrirSellerBody(_PB):
+    como_volvio: Optional[str] = None  # 'espontaneo' | 'outreach' | 'oferta'
+    que_cambio: Optional[str] = None
+    nota: Optional[str] = None
+
+
+@router.post("/{seller_id}/cerrar")
+def cerrar_seller(
+    seller_id: int, body: CerrarSellerBody, request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(404, "Seller no encontrado")
+
+    seller.activo = False
+    seller.tipo_cierre = "cerrado"
+    seller.fecha_cierre = _date.today()
+    seller.razones_cierre = body.razones_cierre
+    seller.conversacion_salida = body.conversacion_salida
+    seller.destino_competencia = body.destino_competencia
+    seller.potencial_recuperacion = body.potencial_recuperacion
+    seller.condicion_recuperacion = body.condicion_recuperacion
+    seller.nota_cierre = body.nota_cierre
+    seller.cerrado_por = getattr(current_user, "nombre", None) or getattr(current_user, "email", None)
+
+    nota_log = f"Cliente cerrado. Razones: {', '.join(body.razones_cierre) or '—'}."
+    if body.nota_cierre:
+        nota_log += f" {body.nota_cierre}"
+    db.add(GestionComercialEntry(
+        seller_id=seller_id,
+        fecha=_date.today(),
+        tipo="interno",
+        estado="perdido",
+        razon=body.razones_cierre[0] if body.razones_cierre else None,
+        nota=nota_log,
+        usuario=seller.cerrado_por,
+    ))
+    db.commit()
+    audit(db, "cerrar_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller_id,
+          metadata={"razones": body.razones_cierre, "potencial": body.potencial_recuperacion})
+    return {"ok": True}
+
+
+@router.post("/{seller_id}/pausar")
+def pausar_seller(
+    seller_id: int, body: PausarSellerBody, request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(404, "Seller no encontrado")
+
+    seller.activo = False
+    seller.tipo_cierre = "pausa"
+    seller.fecha_cierre = _date.today()
+    seller.fecha_pausa_fin = _date.fromisoformat(body.fecha_pausa_fin) if body.fecha_pausa_fin else None
+    seller.nota_cierre = body.nota
+    seller.cerrado_por = getattr(current_user, "nombre", None) or getattr(current_user, "email", None)
+
+    db.add(GestionComercialEntry(
+        seller_id=seller_id,
+        fecha=_date.today(),
+        tipo="interno",
+        estado="en_pausa",
+        nota=f"Seller pausado. {body.nota or ''}".strip(),
+        recordatorio=seller.fecha_pausa_fin,
+        usuario=seller.cerrado_por,
+    ))
+    db.commit()
+    audit(db, "pausar_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller_id, metadata={})
+    return {"ok": True}
+
+
+@router.post("/{seller_id}/reabrir")
+def reabrir_seller(
+    seller_id: int, body: ReabrirSellerBody, request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    seller = db.get(Seller, seller_id)
+    if not seller:
+        raise HTTPException(404, "Seller no encontrado")
+
+    prev_tipo = seller.tipo_cierre
+    seller.activo = True
+    seller.tipo_cierre = None
+    seller.fecha_cierre = None
+    seller.fecha_pausa_fin = None
+    seller.razones_cierre = []
+    seller.conversacion_salida = None
+    seller.destino_competencia = None
+    seller.potencial_recuperacion = None
+    seller.condicion_recuperacion = None
+    seller.nota_cierre = None
+    seller.cerrado_por = None
+
+    nota_log = f"Seller reactivado (era: {prev_tipo or 'inactivo'})."
+    if body.como_volvio:
+        nota_log += f" Regreso: {body.como_volvio}."
+    if body.que_cambio:
+        nota_log += f" Cambio: {body.que_cambio}."
+    if body.nota:
+        nota_log += f" {body.nota}"
+    db.add(GestionComercialEntry(
+        seller_id=seller_id,
+        fecha=_date.today(),
+        tipo="interno",
+        estado="recuperado",
+        nota=nota_log,
+        usuario=getattr(current_user, "nombre", None) or getattr(current_user, "email", None),
+    ))
+    db.commit()
+    audit(db, "reabrir_seller", usuario=current_user, request=request,
+          entidad="seller", entidad_id=seller_id, metadata={"como_volvio": body.como_volvio})
+    return {"ok": True}
+
+
+@router.get("/no-activos")
+def listar_no_activos(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Retorna sellers pausados y cerrados con su metadata de cierre."""
+    sellers = db.query(Seller).filter(
+        Seller.activo == False,
+        Seller.tipo_cierre.isnot(None),
+    ).order_by(Seller.fecha_cierre.desc()).all()
+
+    pausados = []
+    cerrados = []
+    for s in sellers:
+        row = {
+            "id": s.id,
+            "nombre": s.nombre,
+            "empresa": s.empresa,
+            "rut": s.rut,
+            "tipo_cierre": s.tipo_cierre,
+            "fecha_cierre": s.fecha_cierre.isoformat() if s.fecha_cierre else None,
+            "fecha_pausa_fin": s.fecha_pausa_fin.isoformat() if s.fecha_pausa_fin else None,
+            "razones_cierre": s.razones_cierre or [],
+            "conversacion_salida": s.conversacion_salida,
+            "destino_competencia": s.destino_competencia,
+            "potencial_recuperacion": s.potencial_recuperacion,
+            "condicion_recuperacion": s.condicion_recuperacion,
+            "nota_cierre": s.nota_cierre,
+            "cerrado_por": s.cerrado_por,
+        }
+        if s.tipo_cierre == "pausa":
+            pausados.append(row)
+        else:
+            cerrados.append(row)
+
+    return {"pausados": pausados, "cerrados": cerrados}
+
+
+@router.get("/churn-analytics")
+def churn_analytics(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Estadísticas de churn: razones, potencial recuperación, tasa de recovery."""
+    cerrados = db.query(Seller).filter(
+        Seller.activo == False, Seller.tipo_cierre == "cerrado"
+    ).all()
+
+    from collections import Counter
+    todas_razones = []
+    potenciales = Counter()
+    for s in cerrados:
+        todas_razones.extend(s.razones_cierre or [])
+        if s.potencial_recuperacion:
+            potenciales[s.potencial_recuperacion] += 1
+
+    # Recovery rate: sellers that were cerrado but are now activo (reopened)
+    # We detect this by gestion entries with estado='recuperado' for sellers that are now activo
+    total_cerrados_historico = len(cerrados)
+    recuperados = db.query(GestionComercialEntry).filter(
+        GestionComercialEntry.estado == "recuperado",
+    ).count()
+
+    return {
+        "total_cerrados": len(cerrados),
+        "razones": [{"razon": r, "count": c} for r, c in Counter(todas_razones).most_common()],
+        "potencial_recuperacion": dict(potenciales),
+        "recuperables": sum(1 for s in cerrados if s.potencial_recuperacion in ("alto", "medio")),
+    }
+

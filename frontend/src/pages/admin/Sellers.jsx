@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, BarChart2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle } from 'lucide-react'
 
 const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO', 'VALPARAISO', 'MELIPILLA']
 
@@ -75,11 +75,19 @@ export default function Sellers() {
   const [sellerFacturas, setSellerFacturas] = useState([])
   const [sellerFacturasLoading, setSellerFacturasLoading] = useState(false)
 
+  // Tabs de lifecycle
+  const [tab, setTab] = useState('activos')
+  const [noActivos, setNoActivos] = useState({ pausados: [], cerrados: [] })
+
   const fetchSellers = () => {
     api.get('/sellers')
       .then(({ data }) => setSellers(data))
       .catch(() => toast.error('Error al cargar sellers'))
       .finally(() => setLoading(false))
+  }
+
+  const fetchNoActivos = () => {
+    api.get('/sellers/no-activos').then(({ data }) => setNoActivos(data)).catch(() => {})
   }
 
   const handleDownloadPlantilla = async () => {
@@ -139,6 +147,7 @@ export default function Sellers() {
 
   useEffect(() => {
     fetchSellers()
+    fetchNoActivos()
   }, [])
 
   useEffect(() => {
@@ -283,6 +292,16 @@ export default function Sellers() {
     }
   }
 
+  const reactivarDesdeListado = async (sellerId) => {
+    const nota = window.prompt('¿Cómo volvió este cliente? (opcional)')
+    try {
+      await api.post(`/sellers/${sellerId}/reabrir`, { nota: nota || undefined })
+      toast.success('Cliente reactivado')
+      fetchSellers()
+      fetchNoActivos()
+    } catch { toast.error('Error al reactivar') }
+  }
+
   const columns = [
     { key: 'nombre', label: 'Nombre' },
     { key: 'rut', label: 'RUT', render: (v) => v ? <span className="text-sm font-mono">{v}</span> : <span className="text-gray-400">—</span> },
@@ -372,12 +391,138 @@ export default function Sellers() {
       </div>
 
       <div className="flex-1 min-h-0">
-      <DataTable
-        columns={columns}
-        data={sellers}
-        onRowClick={handleRowClick}
-        emptyMessage="No hay sellers"
-      />
+
+        {/* Tabs: Activos | Pausados | Cerrados */}
+        <div className="flex items-center gap-0 mb-4 border-b border-gray-200">
+          {[
+            { id: 'activos', label: 'Activos', count: sellers.filter(s => s.activo).length },
+            { id: 'pausados', label: 'En pausa', count: noActivos.pausados.length },
+            { id: 'cerrados', label: 'Cerrados', count: noActivos.cerrados.length },
+          ].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {t.label}
+              {t.count > 0 && (
+                <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full font-bold ${tab === t.id ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-500'}`}>{t.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'activos' && (
+          <DataTable
+            columns={columns}
+            data={sellers.filter(s => s.activo)}
+            onRowClick={handleRowClick}
+            emptyMessage="No hay sellers activos"
+          />
+        )}
+
+        {tab === 'pausados' && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  {['Nombre', 'Empresa', 'RUT', 'En pausa desde', 'Retorno estimado', 'Nota', 'Acciones'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {noActivos.pausados.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">No hay sellers en pausa</td></tr>
+                )}
+                {noActivos.pausados.map(s => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{s.nombre}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.empresa || '—'}</td>
+                    <td className="px-4 py-3 font-mono text-gray-600 text-xs">{s.rut || '—'}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.fecha_cierre || '—'}</td>
+                    <td className="px-4 py-3">
+                      {s.fecha_pausa_fin
+                        ? <span className="text-orange-600 font-medium">{s.fecha_pausa_fin}</span>
+                        : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">{s.nota_cierre || '—'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${new Date().getMonth() + 1}&anio=${new Date().getFullYear()}`)}
+                          className="p-1.5 rounded text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Ver perfil">
+                          <BarChart2 size={15} />
+                        </button>
+                        {canEdit && (
+                          <button onClick={() => reactivarDesdeListado(s.id)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+                            <PlayCircle size={12} /> Reactivar
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'cerrados' && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  {['Nombre', 'Empresa', 'RUT', 'Cierre', 'Razones', 'Potencial', 'Destino', 'Acciones'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {noActivos.cerrados.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">No hay sellers cerrados</td></tr>
+                )}
+                {noActivos.cerrados.map(s => {
+                  const POTENCIAL_COLOR = { alto: 'text-green-600 bg-green-50', medio: 'text-amber-600 bg-amber-50', bajo: 'text-gray-500 bg-gray-100', ninguno: 'text-red-400 bg-red-50' }
+                  return (
+                    <tr key={s.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{s.nombre}</td>
+                      <td className="px-4 py-3 text-gray-600">{s.empresa || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-gray-600 text-xs">{s.rut || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{s.fecha_cierre || '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(s.razones_cierre || []).map(r => (
+                            <span key={r} className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded font-medium">{r.replace(/_/g, ' ')}</span>
+                          ))}
+                          {!(s.razones_cierre?.length) && <span className="text-gray-400">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {s.potencial_recuperacion
+                          ? <span className={`text-xs font-semibold px-2 py-0.5 rounded ${POTENCIAL_COLOR[s.potencial_recuperacion] || 'text-gray-500 bg-gray-100'}`}>{s.potencial_recuperacion}</span>
+                          : <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">{s.destino_competencia || '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${new Date().getMonth() + 1}&anio=${new Date().getFullYear()}`)}
+                            className="p-1.5 rounded text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Ver perfil">
+                            <BarChart2 size={15} />
+                          </button>
+                          {canEdit && (
+                            <button onClick={() => reactivarDesdeListado(s.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+                              <PlayCircle size={12} /> Reabrir
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
       </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Seller' : 'Nuevo Seller'} wide>
