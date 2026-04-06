@@ -58,7 +58,7 @@ export default function Envios() {
   const [savingProducto, setSavingProducto] = useState(false)
 
   useEffect(() => {
-    api.get('/sellers').then(({ data }) => {
+    api.get('/sellers', { params: { activo: true } }).then(({ data }) => {
       setSellers(Array.isArray(data) ? data : [])
     }).catch(() => {})
     api.get('/drivers').then(({ data }) => {

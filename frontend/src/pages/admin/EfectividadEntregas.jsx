@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { TrendingUp, AlertTriangle, Clock, ChevronUp, ChevronDown, Search, ArrowRight } from 'lucide-react'
+import { TrendingUp, AlertTriangle, Clock, ChevronUp, ChevronDown, Search, ArrowRight, Download } from 'lucide-react'
 
 const now = new Date()
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -173,6 +173,43 @@ export default function EfectividadEntregas() {
     : driversSorted.slice((driverPageClamped - 1) * driverPageSize, driverPageClamped * driverPageSize)
 
   const g = data?.global
+  const prev = data?.prev_global
+
+  // Delta helpers: positive = worsened (higher ciclo / lower pct_rapida = bad)
+  const deltaCiclo = (g && prev && prev.ciclo_promedio && g.ciclo_promedio != null)
+    ? +(g.ciclo_promedio - prev.ciclo_promedio).toFixed(1) : null
+  const deltaRapida = (g && prev && prev.pct_rapida != null && g.pct_rapida != null)
+    ? +(g.pct_rapida - prev.pct_rapida).toFixed(1) : null
+
+  const DeltaBadge = ({ val, invert = false }) => {
+    if (val === null || val === undefined) return null
+    const improved = invert ? val > 0 : val < 0
+    const neutral = val === 0
+    return (
+      <span className={`text-[10px] font-semibold ml-1 ${neutral ? 'text-gray-400' : improved ? 'text-emerald-500' : 'text-red-500'}`}>
+        {val > 0 ? `+${val}` : val}{invert ? 'pp' : 'd'} vs mes ant.
+      </span>
+    )
+  }
+
+  const exportCSV = () => {
+    if (!data?.por_seller) return
+    const rows = [
+      ['Seller', 'Envíos', 'Con ciclo', 'Ciclo prom.', '% Rápida (≤1d)', '% Lenta (≥4d)'],
+      ...data.por_seller.map(s => [s.nombre, s.total, s.con_fecha_carga, s.ciclo_promedio ?? '', s.pct_rapida ?? '', s.pct_4plus ?? '']),
+      [],
+      ['Driver', 'Envíos', 'Con ciclo', 'Ciclo prom.', '% Rápida (≤1d)', '% Lenta (≥4d)'],
+      ...data.por_driver.map(d => [d.nombre, d.total, d.con_fecha_carga, d.ciclo_promedio ?? '', d.pct_rapida ?? '', d.pct_4plus ?? '']),
+    ]
+    const csv = rows.map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `efectividad_${period.mes}_${period.anio}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -200,12 +237,19 @@ export default function EfectividadEntregas() {
           <select className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-700"
             value={`${period.mes}-${period.anio}`}
             onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod(p => ({ ...p, mes: +m, anio: +a })) }}>
-            {Array.from({ length: 12 }, (_, i) => {
-              const mes = i + 1
-              const anio = now.getFullYear()
-              return <option key={i} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
-            })}
+            {[now.getFullYear() - 1, now.getFullYear()].flatMap(anio =>
+              Array.from({ length: 12 }, (_, i) => {
+                const mes = i + 1
+                return <option key={`${mes}-${anio}`} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
+              })
+            )}
           </select>
+          {data && (
+            <button onClick={exportCSV}
+              className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-600 hover:bg-gray-50 transition-colors">
+              <Download size={13} /> Exportar CSV
+            </button>
+          )}
         </div>
       </div>
 
@@ -223,12 +267,18 @@ export default function EfectividadEntregas() {
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-emerald-500">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Ciclo promedio</p>
               <p className={`text-3xl font-black mt-1 ${colorCiclo(g?.ciclo_promedio)}`}>{fmtDias(g?.ciclo_promedio)}</p>
-              <p className="text-xs text-gray-400 mt-1">días hábiles · recepción → entrega</p>
+              <div className="text-xs text-gray-400 mt-1 flex items-center">
+                días hábiles · recepción → entrega
+                <DeltaBadge val={deltaCiclo} invert={false} />
+              </div>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-emerald-400">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Entregados en ≤1d</p>
               <p className="text-3xl font-black text-emerald-600 mt-1">{fmtPct(g?.pct_rapida)}</p>
-              <p className="text-xs text-gray-400 mt-1">{g ? (g.n_0d || 0) + (g.n_1d || 0) : 0} envíos</p>
+              <div className="text-xs text-gray-400 mt-1 flex items-center">
+                {g ? (g.n_0d || 0) + (g.n_1d || 0) : 0} envíos
+                <DeltaBadge val={deltaRapida} invert={true} />
+              </div>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-red-400">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Con +4 días</p>

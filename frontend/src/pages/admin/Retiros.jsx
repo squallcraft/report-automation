@@ -350,7 +350,7 @@ export default function Retiros() {
   const [form, setForm] = useState({ fecha: '', seller_id: '', pickup_id: '', driver_id: '', tarifa_seller: 0, tarifa_driver: 0 })
 
   useEffect(() => {
-    api.get('/sellers').then(({ data }) => setSellers(data)).catch(() => toast.error('Error al cargar sellers'))
+    api.get('/sellers', { params: { activo: true } }).then(({ data }) => setSellers(data)).catch(() => toast.error('Error al cargar sellers'))
     api.get('/drivers').then(({ data }) => setDrivers(data)).catch(() => toast.error('Error al cargar drivers'))
     api.get('/pickups').then(({ data }) => setPickups(data)).catch(() => {})
   }, [])

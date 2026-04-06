@@ -46,7 +46,7 @@ function TabAjustes() {
 
   useEffect(() => { fetchAjustes() }, [period])
   useEffect(() => {
-    api.get('/sellers').then(({ data }) => setSellers(data)).catch(() => {})
+    api.get('/sellers', { params: { activo: true } }).then(({ data }) => setSellers(data)).catch(() => {})
     api.get('/drivers').then(({ data }) => setDrivers(data)).catch(() => {})
   }, [])
 

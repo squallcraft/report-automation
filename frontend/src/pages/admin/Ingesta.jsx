@@ -128,7 +128,7 @@ export default function Ingesta() {
 
   useEffect(() => {
     loadPendientes()
-    api.get('/sellers').then(({ data }) => setSellers(Array.isArray(data) ? data : [])).catch(() => {})
+    api.get('/sellers', { params: { activo: true } }).then(({ data }) => setSellers(Array.isArray(data) ? data : [])).catch(() => {})
     api.get('/drivers').then(({ data }) => setDrivers(Array.isArray(data) ? data : [])).catch(() => {})
     api.get('/pickups').then(({ data }) => setPickups(Array.isArray(data) ? data : [])).catch(() => {})
   }, [])

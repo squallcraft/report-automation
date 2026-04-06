@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, XCircle, PauseCircle } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -39,6 +40,7 @@ function calcCostos(row) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [stats, setStats] = useState(null)
   const [resumen, setResumen] = useState(null)
   const [resumenAnual, setResumenAnual] = useState(null)
@@ -46,6 +48,7 @@ export default function Dashboard() {
   const [loadingAnual, setLoadingAnual] = useState(true)
   const [period, setPeriod] = useState({ semana: null, mes: now.getMonth() + 1, anio: now.getFullYear() })
   const [filterSemana, setFilterSemana] = useState(false)
+  const [noActivos, setNoActivos] = useState({ pausados: [], cerrados: [] })
 
   useEffect(() => {
     setLoading(true)
@@ -72,6 +75,10 @@ export default function Dashboard() {
       .finally(() => setLoadingAnual(false))
   }, [period.anio])
 
+  useEffect(() => {
+    api.get('/sellers/no-activos').then(({ data }) => setNoActivos(data)).catch(() => {})
+  }, [])
+
   const getVal = (weekNum, key) => {
     if (!resumen?.semanas?.[weekNum]) return 0
     return resumen.semanas[weekNum][key] || 0
@@ -93,6 +100,58 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Resumen del período seleccionado</p>
       </div>
+
+      {/* ── Alertas de cierre: Épico / Clave ──────────────────────────────── */}
+      {(noActivos.cerrados.length > 0 || noActivos.pausados.length > 0) && (() => {
+        const TIER_THRESHOLD = ['EPICO', 'CLAVE']
+        // We show alerts for recently closed sellers (last 30 days) regardless of tier,
+        // but with special emphasis for high-tier ones.
+        const recientes = noActivos.cerrados.filter(s => {
+          if (!s.fecha_cierre) return false
+          const dias = (Date.now() - new Date(s.fecha_cierre).getTime()) / (1000 * 60 * 60 * 24)
+          return dias <= 30
+        })
+        const pausados = noActivos.pausados.filter(s => {
+          if (!s.fecha_cierre) return false
+          const dias = (Date.now() - new Date(s.fecha_cierre).getTime()) / (1000 * 60 * 60 * 24)
+          return dias <= 7
+        })
+        if (recientes.length === 0 && pausados.length === 0) return null
+        return (
+          <div className="mb-6 flex flex-col gap-2">
+            {recientes.map(s => (
+              <div key={s.id}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-red-200 bg-red-50 cursor-pointer hover:bg-red-100 transition-colors"
+                onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${now.getMonth() + 1}&anio=${now.getFullYear()}`)}>
+                <XCircle size={16} className="text-red-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-red-800">{s.nombre}</span>
+                  <span className="text-sm text-red-600 ml-2">fue cerrado{s.fecha_cierre ? ` el ${s.fecha_cierre}` : ''}</span>
+                  {s.potencial_recuperacion && s.potencial_recuperacion !== 'ninguno' && (
+                    <span className="ml-2 text-xs font-medium text-red-500">· Potencial de recuperación: {s.potencial_recuperacion}</span>
+                  )}
+                </div>
+                <span className="text-xs text-red-400 shrink-0">Ver perfil →</span>
+              </div>
+            ))}
+            {pausados.map(s => (
+              <div key={s.id}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-orange-200 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors"
+                onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${now.getMonth() + 1}&anio=${now.getFullYear()}`)}>
+                <PauseCircle size={16} className="text-orange-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold text-orange-800">{s.nombre}</span>
+                  <span className="text-sm text-orange-600 ml-2">fue puesto en pausa{s.fecha_cierre ? ` el ${s.fecha_cierre}` : ''}</span>
+                  {s.fecha_pausa_fin && (
+                    <span className="ml-2 text-xs text-orange-500">· Retorno estimado: {s.fecha_pausa_fin}</span>
+                  )}
+                </div>
+                <span className="text-xs text-orange-400 shrink-0">Ver perfil →</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       <div className="card mb-4 sm:mb-6">
         <div className="flex flex-wrap items-end gap-3 sm:gap-4">

@@ -133,7 +133,7 @@ export default function Pickups() {
   const fetchData = () => {
     Promise.all([
       api.get('/pickups'),
-      api.get('/sellers'),
+      api.get('/sellers', { params: { activo: true } }),
       api.get('/drivers'),
     ])
       .then(([pRes, sRes, dRes]) => {

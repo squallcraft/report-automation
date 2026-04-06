@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
+import logoEcourier from '../assets/logo-ecourier.png'
 
 const adminMenu = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
@@ -200,12 +201,21 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         ${collapsed ? 'lg:w-16' : 'w-64'}
       `}
     >
-      <div className={`flex items-center py-3 sm:py-5 border-b border-primary-800 px-3 ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
+      <div className={`flex items-center py-3 sm:py-4 border-b border-primary-800 px-3 ${collapsed ? 'justify-center' : 'justify-between px-4'}`}>
         {!collapsed && (
-          <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold tracking-wide truncate">ECourier</h1>
-            <p className="text-xs text-primary-300 hidden sm:block">Sistema de Liquidación</p>
-          </div>
+          <img
+            src={logoEcourier}
+            alt="eCourier"
+            className="h-8 w-auto object-contain"
+          />
+        )}
+        {collapsed && (
+          <img
+            src={logoEcourier}
+            alt="eCourier"
+            className="h-7 w-7 object-contain object-left"
+            style={{ objectPosition: 'center' }}
+          />
         )}
         {/* Botón cerrar en móvil */}
         {onClose && (

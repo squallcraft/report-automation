@@ -576,6 +576,24 @@ def efectividad_entregas(
         "por_seller": por_seller,
         "por_driver": por_driver,
         "semanas": semanas_mes,
+        "prev_global": _efectividad_prev(mes, anio, db),
+    }
+
+
+def _efectividad_prev(mes: int, anio: int, db):
+    """Global efectividad for the previous month (for comparison delta)."""
+    prev_mes = mes - 1 if mes > 1 else 12
+    prev_anio = anio if mes > 1 else anio - 1
+    base_prev = [Envio.mes == prev_mes, Envio.anio == prev_anio]
+    rows_prev = db.query(_ciclo_expr().label("d")).filter(
+        *base_prev, Envio.fecha_carga.isnot(None)
+    ).all()
+    dias_prev = [r.d for r in rows_prev if r.d is not None and r.d >= 0]
+    total_prev = db.query(sqlfunc.count(Envio.id)).filter(*base_prev).scalar() or 0
+    return {
+        "mes": prev_mes, "anio": prev_anio,
+        "total": total_prev, "con_fecha_carga": len(dias_prev),
+        **_efectividad_row(dias_prev),
     }
 
 
