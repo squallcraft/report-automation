@@ -32,9 +32,16 @@ const ESTADO_CFG = {
   perdido:    { label: 'Perdido',    color: C.red,    bg: C.redDim,    border: '#ef444433' },
 }
 
-const ESTADO_ORDER = { perdido: 0, en_riesgo: 1, inactivo: 2, recuperado: 3, nuevo: 4, activo: 5 }
+const GESTION_ESTADO_CFG = {
+  en_gestion:  { label: 'En gestión',  color: C.amber,   bg: C.amberDim,   border: '#f59e0b33' },
+  activo:      { label: 'Activo CRM',  color: C.green,   bg: C.greenDim,   border: '#22c55e33' },
+  recuperado:  { label: 'Recuperado',  color: C.purple,  bg: C.purpleDim,  border: '#a78bfa33' },
+  perdido:     { label: 'Perdido',     color: C.red,     bg: C.redDim,     border: '#ef444433' },
+  en_pausa:    { label: 'En pausa',    color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: '#f9731633' },
+  seguimiento: { label: 'Seguimiento', color: C.blue,    bg: C.blueDim,    border: '#60a5fa33' },
+}
 
-const TIER_COLORS = {
+const ESTADO_ORDER = { perdido: 0, en_riesgo: 1, inactivo: 2, recuperado: 3, nuevo: 4, activo: 5 }
   EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33', min: 500 },
   CLAVE:  { label: 'Clave',  color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33', min: 100 },
   BUENO:  { label: 'Bueno',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33', min: 20  },
@@ -456,7 +463,23 @@ export default function Retencion() {
                             {s.nombre}
                             {s.es_grupo && <span style={{ marginLeft: 6, background: C.purpleDim, color: C.purple, border: `1px solid ${C.purple}33`, borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 700 }}>Grupo</span>}
                           </td>
-                          <td style={{ padding: '9px 12px' }}><EstadoBadge estado={s.estado} /></td>
+                          <td style={{ padding: '9px 12px' }}>
+                            {s.ultima_gestion?.estado && GESTION_ESTADO_CFG[s.ultima_gestion.estado] ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                {(() => {
+                                  const gcfg = GESTION_ESTADO_CFG[s.ultima_gestion.estado]
+                                  return (
+                                    <span style={{ background: gcfg.bg, color: gcfg.color, border: `1px solid ${gcfg.border}`, borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <span style={{ fontSize: 8 }}>●</span> {gcfg.label}
+                                    </span>
+                                  )
+                                })()}
+                                <span style={{ color: C.dimmed, fontSize: 9 }}>Envíos: <EstadoBadge estado={s.estado} /></span>
+                              </div>
+                            ) : (
+                              <EstadoBadge estado={s.estado} />
+                            )}
+                          </td>
                           <td style={{ padding: '9px 12px', textAlign: 'center', color: C.muted }}>{s.ultimo_mes_activo ? MESES_S[s.ultimo_mes_activo] : '—'}</td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', color: C.muted }}>{s.meses_activo}</td>
                           <td style={{ padding: '9px 12px' }}><MiniSpark data={s.vol_anual} maxVal={maxVol} /></td>
