@@ -206,14 +206,14 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
           <img
             src={logoEcourier}
             alt="eCourier"
-            className="h-8 w-auto object-contain"
+            className="h-12 w-auto object-contain"
           />
         )}
         {collapsed && (
           <img
             src={logoEcourier}
             alt="eCourier"
-            className="h-7 w-7 object-contain object-left"
+            className="h-10 w-10 object-contain"
             style={{ objectPosition: 'center' }}
           />
         )}
