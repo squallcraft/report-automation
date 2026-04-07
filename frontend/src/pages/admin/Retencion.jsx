@@ -42,6 +42,8 @@ const GESTION_ESTADO_CFG = {
 }
 
 const ESTADO_ORDER = { perdido: 0, en_riesgo: 1, inactivo: 2, recuperado: 3, nuevo: 4, activo: 5 }
+
+const TIER_COLORS = {
   EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33', min: 500 },
   CLAVE:  { label: 'Clave',  color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33', min: 100 },
   BUENO:  { label: 'Bueno',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33', min: 20  },
