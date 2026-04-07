@@ -821,6 +821,52 @@ def analisis_retencion(
     estado_order = {"perdido": 0, "en_riesgo": 1, "inactivo": 2, "recuperado": 3, "nuevo": 4, "activo": 5}
     sellers_out.sort(key=lambda x: (estado_order.get(x["estado"], 9), -x["ingreso_mensual_avg"]))
 
+    # ── Cruzar con última gestión comercial por seller ──────────────────────
+    from sqlalchemy import func as sqlfunc2
+    # Get latest gestion entry per seller_id
+    latest_gestion_sub = (
+        db.query(
+            GestionComercialEntry.seller_id,
+            sqlfunc.max(GestionComercialEntry.id).label("max_id"),
+        )
+        .group_by(GestionComercialEntry.seller_id)
+        .subquery()
+    )
+    latest_entries = (
+        db.query(GestionComercialEntry)
+        .join(latest_gestion_sub, GestionComercialEntry.id == latest_gestion_sub.c.max_id)
+        .all()
+    )
+    gestion_by_seller: dict = {e.seller_id: e for e in latest_entries}
+
+    # Map individual seller IDs that belong to each group row
+    # Build reverse map: seller_id -> group_nombre
+    seller_to_group = {row["seller_id"]: row["nombre"] for row in sellers_out if row["seller_id"] and not row.get("es_grupo")}
+    # For groups, gather all member seller_ids
+    grupo_member_ids: dict = defaultdict(list)
+    for orig in list(by_seller.keys()):
+        gname = group_seller(seller_nombres.get(orig, ""))
+        grupo_member_ids[gname].append(orig)
+
+    def _latest_gestion_for_ids(ids):
+        entries = [gestion_by_seller[sid] for sid in ids if sid in gestion_by_seller]
+        if not entries:
+            return None
+        e = max(entries, key=lambda x: x.id)
+        return {
+            "fecha": e.fecha.isoformat() if e.fecha else None,
+            "tipo": e.tipo,
+            "estado": e.estado,
+            "nota": (e.nota[:80] + "…") if e.nota and len(e.nota) > 80 else e.nota,
+        }
+
+    for row in sellers_out:
+        if row.get("es_grupo"):
+            ids = grupo_member_ids.get(row["nombre"], [])
+        else:
+            ids = [row["seller_id"]] if row["seller_id"] else []
+        row["ultima_gestion"] = _latest_gestion_for_ids(ids)
+
     counts = Counter(s["estado"] for s in sellers_out)
     prev_counts = Counter(classify(dict(by_seller[sid]["meses"]), mes_ref - 1) for sid in by_seller) if mes_ref > 1 else Counter()
 

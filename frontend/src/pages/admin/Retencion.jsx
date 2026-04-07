@@ -434,6 +434,7 @@ export default function Retencion() {
                       <ThSort col="ingreso_mensual_avg" label="Ingreso prom./mes" align="right" />
                       <ThSort col="impacto_anual" label="Impacto anual" align="right" />
                       <ThSort col="semanas_sin_actividad" label="Sem. inactivo" align="right" />
+                      <th style={{ padding: '8px 12px', color: C.muted, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>Última gestión</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -467,11 +468,34 @@ export default function Retencion() {
                           <td style={{ padding: '9px 12px', textAlign: 'right', color: s.semanas_sin_actividad > 8 ? C.red : s.semanas_sin_actividad > 4 ? C.amber : C.muted }}>
                             {s.semanas_sin_actividad > 0 ? `${s.semanas_sin_actividad}s` : '—'}
                           </td>
+                          <td style={{ padding: '9px 12px', maxWidth: 200 }}>
+                            {s.ultima_gestion ? (() => {
+                              const TIPO_COLOR = {
+                                llamada: C.green, email: C.blue, reunion: C.purple,
+                                whatsapp: '#25d366', visita: C.amber, interno: C.muted, otro: C.dimmed,
+                              }
+                              const GESTION_ESTADO_COLOR = {
+                                en_gestion: C.amber, activo: C.green, recuperado: C.purple,
+                                perdido: C.red, en_pausa: '#f97316', seguimiento: C.blue,
+                              }
+                              const g = s.ultima_gestion
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span style={{ fontSize: 9, fontWeight: 700, color: TIPO_COLOR[g.tipo] || C.muted, background: `${TIPO_COLOR[g.tipo] || C.muted}18`, border: `1px solid ${TIPO_COLOR[g.tipo] || C.muted}33`, borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase' }}>{g.tipo}</span>
+                                    {g.estado && <span style={{ fontSize: 9, color: GESTION_ESTADO_COLOR[g.estado] || C.muted, fontWeight: 600 }}>{g.estado.replace('_', ' ')}</span>}
+                                    <span style={{ fontSize: 9, color: C.dimmed }}>{g.fecha}</span>
+                                  </div>
+                                  {g.nota && <span style={{ fontSize: 10, color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190 }}>{g.nota}</span>}
+                                </div>
+                              )
+                            })() : <span style={{ color: C.dimmed, fontSize: 10 }}>—</span>}
+                          </td>
                         </tr>
                       )
                     })}
                     {sellersVisible.length === 0 && (
-                      <tr><td colSpan={9} style={{ padding: '32px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
+                      <tr><td colSpan={10} style={{ padding: '32px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
                     )}
                   </tbody>
                 </table>
