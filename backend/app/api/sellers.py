@@ -331,6 +331,75 @@ async def importar_rut_giro(
     return {"actualizados": actualizados, "errores": errores}
 
 
+@router.get("/no-activos")
+def listar_no_activos(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Retorna sellers pausados y cerrados con su metadata de cierre."""
+    sellers = db.query(Seller).filter(
+        Seller.activo == False,
+        Seller.tipo_cierre.isnot(None),
+    ).order_by(Seller.fecha_cierre.desc()).all()
+
+    pausados = []
+    cerrados = []
+    for s in sellers:
+        row = {
+            "id": s.id,
+            "nombre": s.nombre,
+            "empresa": s.empresa,
+            "rut": s.rut,
+            "tipo_cierre": s.tipo_cierre,
+            "fecha_cierre": s.fecha_cierre.isoformat() if s.fecha_cierre else None,
+            "fecha_pausa_fin": s.fecha_pausa_fin.isoformat() if s.fecha_pausa_fin else None,
+            "razones_cierre": s.razones_cierre or [],
+            "conversacion_salida": s.conversacion_salida,
+            "destino_competencia": s.destino_competencia,
+            "potencial_recuperacion": s.potencial_recuperacion,
+            "condicion_recuperacion": s.condicion_recuperacion,
+            "nota_cierre": s.nota_cierre,
+            "cerrado_por": s.cerrado_por,
+        }
+        if s.tipo_cierre == "pausa":
+            pausados.append(row)
+        else:
+            cerrados.append(row)
+
+    return {"pausados": pausados, "cerrados": cerrados}
+
+
+@router.get("/churn-analytics")
+def churn_analytics(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Estadísticas de churn: razones, potencial recuperación, tasa de recovery."""
+    cerrados = db.query(Seller).filter(
+        Seller.activo == False, Seller.tipo_cierre == "cerrado"
+    ).all()
+
+    from collections import Counter
+    todas_razones = []
+    potenciales = Counter()
+    for s in cerrados:
+        todas_razones.extend(s.razones_cierre or [])
+        if s.potencial_recuperacion:
+            potenciales[s.potencial_recuperacion] += 1
+
+    total_cerrados_historico = len(cerrados)
+    recuperados = db.query(GestionComercialEntry).filter(
+        GestionComercialEntry.estado == "recuperado",
+    ).count()
+
+    return {
+        "total_cerrados": len(cerrados),
+        "razones": [{"razon": r, "count": c} for r, c in Counter(todas_razones).most_common()],
+        "potencial_recuperacion": dict(potenciales),
+        "recuperables": sum(1 for s in cerrados if s.potencial_recuperacion in ("alto", "medio")),
+    }
+
+
 @router.get("/{seller_id}", response_model=SellerOut)
 def obtener_seller(seller_id: int, db: Session = Depends(get_db), _=Depends(require_admin_or_administracion)):
     seller = db.query(Seller).options(joinedload(Seller.sucursales)).filter(Seller.id == seller_id).first()
@@ -627,75 +696,6 @@ def reabrir_seller(
     return {"ok": True}
 
 
-@router.get("/no-activos")
-def listar_no_activos(
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
-):
-    """Retorna sellers pausados y cerrados con su metadata de cierre."""
-    sellers = db.query(Seller).filter(
-        Seller.activo == False,
-        Seller.tipo_cierre.isnot(None),
-    ).order_by(Seller.fecha_cierre.desc()).all()
-
-    pausados = []
-    cerrados = []
-    for s in sellers:
-        row = {
-            "id": s.id,
-            "nombre": s.nombre,
-            "empresa": s.empresa,
-            "rut": s.rut,
-            "tipo_cierre": s.tipo_cierre,
-            "fecha_cierre": s.fecha_cierre.isoformat() if s.fecha_cierre else None,
-            "fecha_pausa_fin": s.fecha_pausa_fin.isoformat() if s.fecha_pausa_fin else None,
-            "razones_cierre": s.razones_cierre or [],
-            "conversacion_salida": s.conversacion_salida,
-            "destino_competencia": s.destino_competencia,
-            "potencial_recuperacion": s.potencial_recuperacion,
-            "condicion_recuperacion": s.condicion_recuperacion,
-            "nota_cierre": s.nota_cierre,
-            "cerrado_por": s.cerrado_por,
-        }
-        if s.tipo_cierre == "pausa":
-            pausados.append(row)
-        else:
-            cerrados.append(row)
-
-    return {"pausados": pausados, "cerrados": cerrados}
-
-
-@router.get("/churn-analytics")
-def churn_analytics(
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
-):
-    """Estadísticas de churn: razones, potencial recuperación, tasa de recovery."""
-    cerrados = db.query(Seller).filter(
-        Seller.activo == False, Seller.tipo_cierre == "cerrado"
-    ).all()
-
-    from collections import Counter
-    todas_razones = []
-    potenciales = Counter()
-    for s in cerrados:
-        todas_razones.extend(s.razones_cierre or [])
-        if s.potencial_recuperacion:
-            potenciales[s.potencial_recuperacion] += 1
-
-    # Recovery rate: sellers that were cerrado but are now activo (reopened)
-    # We detect this by gestion entries with estado='recuperado' for sellers that are now activo
-    total_cerrados_historico = len(cerrados)
-    recuperados = db.query(GestionComercialEntry).filter(
-        GestionComercialEntry.estado == "recuperado",
-    ).count()
-
-    return {
-        "total_cerrados": len(cerrados),
-        "razones": [{"razon": r, "count": c} for r, c in Counter(todas_razones).most_common()],
-        "potencial_recuperacion": dict(potenciales),
-        "recuperables": sum(1 for s in cerrados if s.potencial_recuperacion in ("alto", "medio")),
-    }
 
 
 # ── Tags ──────────────────────────────────────────────────────────────────────
