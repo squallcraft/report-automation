@@ -8,13 +8,13 @@ import {
 import api from '../../api'
 
 const C = {
-  bg: '#0f1117', surface: '#1a1d27', card: '#1e2130', border: '#2a2d3e',
-  text: '#e2e8f0', muted: '#94a3b8', dimmed: '#64748b',
-  green: '#22c55e', greenDim: 'rgba(34,197,94,0.08)',
-  amber: '#f59e0b', amberDim: 'rgba(245,158,11,0.08)',
-  red: '#ef4444', redDim: 'rgba(239,68,68,0.1)',
-  blue: '#60a5fa', blueDim: 'rgba(96,165,250,0.08)',
-  purple: '#a78bfa', cardHover: '#252840',
+  bg: '#f8fafc', surface: '#f1f5f9', card: '#ffffff', border: '#e2e8f0',
+  text: '#1e293b', muted: '#64748b', dimmed: '#94a3b8',
+  green: '#16a34a', greenDim: 'rgba(22,163,74,0.1)',
+  amber: '#d97706', amberDim: 'rgba(217,119,6,0.1)',
+  red: '#dc2626', redDim: 'rgba(220,38,38,0.1)',
+  blue: '#2563eb', blueDim: 'rgba(37,99,235,0.1)',
+  purple: '#7c3aed', cardHover: '#f1f5f9',
 }
 
 const TIPO_CFG = {
