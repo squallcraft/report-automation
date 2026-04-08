@@ -125,6 +125,8 @@ export default function SellerPerfil() {
 
   // Gestión comercial
   const [gestion, setGestion] = useState([])
+  const [tagInput, setTagInput] = useState('')
+  const [savingTags, setSavingTags] = useState(false)
   const [showGestionModal, setShowGestionModal] = useState(false)
   const [gestionForm, setGestionForm] = useState({
     fecha: new Date().toISOString().split('T')[0],
@@ -219,6 +221,31 @@ export default function SellerPerfil() {
   }, [sellerId, isGrupo])
 
   useEffect(() => { loadGestion() }, [loadGestion])
+
+  const saveTags = async (nuevosTags) => {
+    setSavingTags(true)
+    try {
+      await api.put(`/sellers/${sellerId}/tags`, { tags: nuevosTags })
+      setData(d => ({ ...d, seller: { ...d.seller, tags: nuevosTags } }))
+      toast.success('Tags actualizados')
+    } catch { toast.error('Error guardando tags') }
+    finally { setSavingTags(false) }
+  }
+
+  const addTag = () => {
+    const t = tagInput.trim().toLowerCase().replace(/\s+/g, '_')
+    if (!t) return
+    const curr = data?.seller?.tags || []
+    if (curr.includes(t)) { setTagInput(''); return }
+    saveTags([...curr.filter(x => !x.startsWith('auto:')), t])
+    setTagInput('')
+  }
+
+  const removeTag = (tag) => {
+    if (tag.startsWith('auto:')) return // no se pueden borrar tags automáticos
+    const curr = data?.seller?.tags || []
+    saveTags(curr.filter(t => t !== tag))
+  }
 
   const saveGestion = async () => {
     if (!gestionForm.tipo) return toast.error('Selecciona el tipo de contacto')
@@ -350,6 +377,47 @@ export default function SellerPerfil() {
           )}
         </div>
       </div>
+
+      {/* ── Tags ────────────────────────────────────────────────────────────── */}
+      {!isGrupo && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: C.dimmed, fontWeight: 600, whiteSpace: 'nowrap' }}>Tags:</span>
+          {(data.seller.tags || []).map(tag => {
+            const isAuto = tag.startsWith('auto:')
+            const label = isAuto ? tag.replace('auto:', '') : tag
+            return (
+              <span key={tag} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                background: isAuto ? 'rgba(37,99,235,0.1)' : 'rgba(100,116,139,0.1)',
+                color: isAuto ? '#2563eb' : C.muted,
+                border: `1px solid ${isAuto ? '#2563eb33' : C.border}`,
+                borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600,
+              }}>
+                {isAuto && <span style={{ fontSize: 9, opacity: 0.7 }}>AUTO</span>}
+                {label}
+                {!isAuto && (
+                  <button onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginLeft: 2, color: C.muted, display: 'flex' }}>
+                    ×
+                  </button>
+                )}
+              </span>
+            )
+          })}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input
+              value={tagInput}
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addTag()}
+              placeholder="+ nuevo tag"
+              style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 20, padding: '2px 10px', fontSize: 11, outline: 'none', width: 100 }}
+            />
+            <button onClick={addTag} disabled={savingTags}
+              style={{ background: C.accent, color: '#fff', border: 'none', borderRadius: 20, padding: '2px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}>
+              Agregar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── KPIs ────────────────────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>

@@ -123,6 +123,7 @@ class SellerOut(SellerBase):
     fecha_pausa_fin: Optional[date] = None
     razones_cierre: Optional[List[str]] = None
     potencial_recuperacion: Optional[str] = None
+    tags: Optional[List[str]] = None
 
     model_config = {"from_attributes": True}
 

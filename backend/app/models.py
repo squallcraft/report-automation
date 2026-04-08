@@ -83,6 +83,7 @@ class Seller(Base):
     # ── Comportamiento comercial ─────────────────────────────────────────────
     estacional = Column(Boolean, default=False)           # exime de regla auto-perdido a 3 meses
     telefono_whatsapp = Column(String(20), nullable=True) # número para WhatsApp Business
+    tags = Column(JSON, default=list)                     # etiquetas manuales + automáticas (ej. ["pickup", "vip"])
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

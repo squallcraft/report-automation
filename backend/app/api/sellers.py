@@ -488,7 +488,7 @@ def eliminar_sucursal(
 # ──────────────────────────────────────────────────────────────────────────────
 from pydantic import BaseModel as _PB
 from datetime import date as _date
-from app.models import GestionComercialEntry
+from app.models import GestionComercialEntry, RecepcionPaquete
 
 
 class CerrarSellerBody(_PB):
@@ -696,4 +696,71 @@ def churn_analytics(
         "potencial_recuperacion": dict(potenciales),
         "recuperables": sum(1 for s in cerrados if s.potencial_recuperacion in ("alto", "medio")),
     }
+
+
+# ── Tags ──────────────────────────────────────────────────────────────────────
+
+class TagsBody(_PB):
+    tags: List[str]
+
+
+@router.put("/{seller_id}/tags")
+def actualizar_tags(
+    seller_id: int,
+    body: TagsBody,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Reemplaza la lista completa de tags del seller."""
+    seller = db.query(Seller).get(seller_id)
+    if not seller:
+        raise HTTPException(404, "Seller no encontrado")
+    # Preservar tags automáticos (prefijo 'auto:') que no deben borrarse manualmente
+    auto_tags = [t for t in (seller.tags or []) if t.startswith("auto:")]
+    manual_tags = [t.strip().lower() for t in body.tags if t.strip() and not t.startswith("auto:")]
+    seller.tags = auto_tags + manual_tags
+    db.commit()
+    return {"tags": seller.tags}
+
+
+@router.post("/sync-tags-pickup")
+def sync_tags_pickup(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Detecta sellers que usan pickup y les aplica el tag automático 'auto:pickup'."""
+    from app.models import Envio as _Envio
+
+    # Sellers con al menos 1 recepción de pickup (via envio_id → seller_id)
+    seller_ids_pickup = set()
+    rows = (
+        db.query(_Envio.seller_id)
+        .join(RecepcionPaquete, RecepcionPaquete.envio_id == _Envio.id)
+        .filter(_Envio.seller_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    seller_ids_pickup = {r[0] for r in rows}
+
+    # Fallback: sellers marcados con usa_pickup=True
+    for s in db.query(Seller).filter(Seller.usa_pickup == True).all():
+        seller_ids_pickup.add(s.id)
+
+    sellers = db.query(Seller).filter(Seller.activo == True).all()
+    actualizados = 0
+    for seller in sellers:
+        tags_actuales = list(seller.tags or [])
+        tiene_tag = "auto:pickup" in tags_actuales
+        deberia_tener = seller.id in seller_ids_pickup
+
+        if deberia_tener and not tiene_tag:
+            tags_actuales.append("auto:pickup")
+            seller.tags = tags_actuales
+            actualizados += 1
+        elif not deberia_tener and tiene_tag:
+            seller.tags = [t for t in tags_actuales if t != "auto:pickup"]
+            actualizados += 1
+
+    db.commit()
+    return {"actualizados": actualizados, "sellers_pickup": len(seller_ids_pickup)}
 

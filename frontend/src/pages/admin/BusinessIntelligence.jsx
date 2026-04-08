@@ -9,33 +9,28 @@ import {
   Database, RefreshCw,
 } from 'lucide-react'
 
-// ─── Design tokens (dark theme) ───────────────────────────────────────────────
-// bg:    #0d0d0d  surface: #161616  card: #1e1e1e  border: #2a2a2a
-// accent: #e8521a (orange)  accent2: #f97316 (lighter orange)
-// text:  #f0f0f0  muted: #8a8a8a  dimmed: #555
-// green: #22c55e  red: #ef4444  blue: #60a5fa  amber: #f59e0b
-
+// ─── Design tokens (light theme — consistente con el resto del sistema) ───────
 const C = {
-  bg: '#0d0d0d',
-  surface: '#161616',
-  card: '#1e1e1e',
-  cardHover: '#242424',
-  border: '#2a2a2a',
-  borderStrong: '#383838',
-  accent: '#e8521a',
-  accentHover: '#f97316',
-  accentDim: 'rgba(232,82,26,0.12)',
-  text: '#f0f0f0',
-  muted: '#8a8a8a',
-  dimmed: '#555555',
-  green: '#22c55e',
-  greenDim: 'rgba(34,197,94,0.12)',
-  red: '#ef4444',
-  redDim: 'rgba(239,68,68,0.12)',
-  blue: '#60a5fa',
-  blueDim: 'rgba(96,165,250,0.12)',
-  amber: '#f59e0b',
-  amberDim: 'rgba(245,158,11,0.12)',
+  bg:           '#f8fafc',
+  surface:      '#f1f5f9',
+  card:         '#ffffff',
+  cardHover:    '#f8fafc',
+  border:       '#e2e8f0',
+  borderStrong: '#cbd5e1',
+  accent:       '#1e3a5f',
+  accentHover:  '#1e40af',
+  accentDim:    'rgba(30,58,95,0.08)',
+  text:         '#1e293b',
+  muted:        '#64748b',
+  dimmed:       '#94a3b8',
+  green:        '#16a34a',
+  greenDim:     'rgba(22,163,74,0.1)',
+  red:          '#dc2626',
+  redDim:       'rgba(220,38,38,0.1)',
+  blue:         '#2563eb',
+  blueDim:      'rgba(37,99,235,0.1)',
+  amber:        '#d97706',
+  amberDim:     'rgba(217,119,6,0.1)',
 }
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
