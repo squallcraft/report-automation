@@ -19,7 +19,7 @@ from sqlalchemy import func as sqlfunc
 
 from app.database import get_db
 from app.auth import require_admin_or_administracion
-from app.models import TareaPendiente, Seller, GestionComercialEntry, Envio
+from app.models import TareaPendiente, Seller, GestionComercialEntry, Envio, SellerSnapshot
 
 router = APIRouter(prefix="/tareas", tags=["Tareas"])
 
@@ -295,3 +295,144 @@ def eliminar_tarea(
     db.delete(t)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/resumen-semanal")
+def resumen_semanal(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Resumen de la semana actual (lunes-hoy) para la vista de inteligencia comercial.
+    Incluye: tareas resueltas, nuevas alertas, sellers en movimiento, oportunidades.
+    """
+    hoy = date.today()
+    lunes = hoy - timedelta(days=hoy.weekday())
+    lunes_pasado = lunes - timedelta(weeks=1)
+    domingo_pasado = lunes - timedelta(days=1)
+
+    # ── Tareas esta semana ─────────────────────────────────────────────────────
+    resueltas_semana = db.query(sqlfunc.count(TareaPendiente.id)).filter(
+        TareaPendiente.estado == "resuelta",
+        TareaPendiente.fecha_resolucion >= lunes,
+    ).scalar() or 0
+
+    nuevas_semana = db.query(sqlfunc.count(TareaPendiente.id)).filter(
+        TareaPendiente.fecha_creacion >= lunes,
+    ).scalar() or 0
+
+    criticas_pendientes = db.query(sqlfunc.count(TareaPendiente.id)).filter(
+        TareaPendiente.estado == "pendiente",
+        TareaPendiente.severidad == "critico",
+    ).scalar() or 0
+
+    # ── Sellers en movimiento (últimos 7 días via snapshots) ──────────────────
+    mejoraron = []
+    empeoraron = []
+
+    snaps_hoy = {
+        s.seller_id: s for s in
+        db.query(SellerSnapshot).filter(SellerSnapshot.fecha == hoy).all()
+    }
+    snaps_semana = {
+        s.seller_id: s for s in
+        db.query(SellerSnapshot).filter(SellerSnapshot.fecha == lunes).all()
+    }
+
+    ESTADO_SCORE = {
+        "activo": 10, "recuperado": 9, "nuevo": 8, "seguimiento": 7,
+        "en_gestion": 6, "en_pausa_lifecycle": 4, "en_pausa": 4,
+        "en_riesgo": 3, "inactivo": 2, "pendiente_validacion": 1,
+        "perdido": 0, "cerrado": -1,
+    }
+    sellers_map = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+
+    for sid, snap_hoy in snaps_hoy.items():
+        snap_ant = snaps_semana.get(sid)
+        if not snap_ant:
+            continue
+        score_hoy = ESTADO_SCORE.get(snap_hoy.estado_efectivo or "", 5)
+        score_ant = ESTADO_SCORE.get(snap_ant.estado_efectivo or "", 5)
+        delta = score_hoy - score_ant
+        if delta >= 2:
+            mejoraron.append({
+                "seller_id": sid,
+                "nombre": sellers_map.get(sid, f"Seller {sid}"),
+                "estado_anterior": snap_ant.estado_efectivo,
+                "estado_actual": snap_hoy.estado_efectivo,
+                "tier": snap_hoy.tier,
+            })
+        elif delta <= -2:
+            empeoraron.append({
+                "seller_id": sid,
+                "nombre": sellers_map.get(sid, f"Seller {sid}"),
+                "estado_anterior": snap_ant.estado_efectivo,
+                "estado_actual": snap_hoy.estado_efectivo,
+                "tier": snap_hoy.tier,
+                "vol_mes": snap_hoy.vol_mes,
+            })
+
+    # Ordenar empeoraron por tier (más importantes primero)
+    TIER_SCORE = {"EPICO": 0, "CLAVE": 1, "BUENO": 2, "NORMAL": 3}
+    empeoraron.sort(key=lambda x: TIER_SCORE.get(x["tier"] or "NORMAL", 3))
+    mejoraron.sort(key=lambda x: TIER_SCORE.get(x["tier"] or "NORMAL", 3))
+
+    # ── Top oportunidades: sellers creciendo este mes vs mes anterior ─────────
+    mes_actual = hoy.month
+    mes_anterior = mes_actual - 1 if mes_actual > 1 else 12
+    anio_actual = hoy.year
+    anio_anterior = anio_actual if mes_actual > 1 else anio_actual - 1
+
+    vol_mes_actual = {
+        r.seller_id: r.paquetes for r in
+        db.query(Envio.seller_id, sqlfunc.count(Envio.id).label("paquetes"))
+        .filter(Envio.anio == anio_actual, Envio.mes == mes_actual, Envio.seller_id.isnot(None))
+        .group_by(Envio.seller_id).all()
+    }
+    vol_mes_anterior = {
+        r.seller_id: r.paquetes for r in
+        db.query(Envio.seller_id, sqlfunc.count(Envio.id).label("paquetes"))
+        .filter(Envio.anio == anio_anterior, Envio.mes == mes_anterior, Envio.seller_id.isnot(None))
+        .group_by(Envio.seller_id).all()
+    }
+
+    oportunidades = []
+    sellers_activos = {s.id: s for s in db.query(Seller).filter(Seller.activo == True).all()}
+    for sid, vol_act in vol_mes_actual.items():
+        vol_ant = vol_mes_anterior.get(sid, 0)
+        if vol_ant > 0 and vol_act > vol_ant:
+            delta_pct = round((vol_act - vol_ant) / vol_ant * 100)
+            if delta_pct >= 20:
+                seller = sellers_activos.get(sid)
+                if seller and not seller.tipo_cierre:
+                    oportunidades.append({
+                        "seller_id": sid,
+                        "nombre": sellers_map.get(sid, f"Seller {sid}"),
+                        "vol_actual": vol_act,
+                        "vol_anterior": vol_ant,
+                        "delta_pct": delta_pct,
+                        "tier": snaps_hoy.get(sid, {}).tier if hasattr(snaps_hoy.get(sid, {}), "tier") else None,
+                    })
+
+    oportunidades.sort(key=lambda x: -x["delta_pct"])
+
+    # ── Seguimientos pendientes de CRM vencidos esta semana ───────────────────
+    recordatorios_vencidos = db.query(TareaPendiente).filter(
+        TareaPendiente.tipo == "seguimiento_crm",
+        TareaPendiente.estado == "pendiente",
+    ).count()
+
+    return {
+        "periodo": {"desde": lunes.isoformat(), "hasta": hoy.isoformat()},
+        "tareas": {
+            "resueltas_semana": resueltas_semana,
+            "nuevas_semana": nuevas_semana,
+            "criticas_pendientes": criticas_pendientes,
+            "seguimientos_vencidos": recordatorios_vencidos,
+        },
+        "movimiento": {
+            "mejoraron": mejoraron[:5],
+            "empeoraron": empeoraron[:5],
+        },
+        "oportunidades": oportunidades[:5],
+    }

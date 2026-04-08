@@ -50,6 +50,7 @@ import Retencion from './pages/admin/Retencion'
 import SellerPerfil from './pages/admin/SellerPerfil'
 import ReportesSellers from './pages/admin/ReportesSellers'
 import Bandeja from './pages/admin/Bandeja'
+import WhatsApp from './pages/admin/WhatsApp'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
 import PickupDashboard from './pages/pickup/PickupDashboard'
@@ -119,6 +120,7 @@ export default function App() {
         <Route path="retencion" element={<Retencion />} />
         <Route path="reportes-sellers" element={<ReportesSellers />} />
         <Route path="bandeja" element={<Bandeja />} />
+        <Route path="whatsapp" element={<WhatsApp />} />
         <Route path="sellers/:sellerId/perfil" element={<SellerPerfil />} />
         <Route path="sellers/grupo/:grupoName/perfil" element={<SellerPerfil />} />
       </Route>

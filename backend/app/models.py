@@ -1076,3 +1076,55 @@ class SellerSnapshot(Base):
     ingreso_mes = Column(Integer, default=0)
     semanas_sin_actividad = Column(Integer, default=0)
     datos = Column(JSON, default=dict)
+
+
+class WhatsAppTemplate(Base):
+    """Plantillas de mensajes para envíos masivos por WhatsApp."""
+    __tablename__ = "wa_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(100), nullable=False)
+    categoria = Column(String(50), default="marketing")  # marketing | utility | authentication
+    idioma = Column(String(10), default="es_CL")
+    cuerpo = Column(Text, nullable=False)                # texto con {{1}}, {{2}}, etc.
+    variables = Column(JSON, default=list)               # nombres descriptivos
+    wa_template_name = Column(String(100), nullable=True)  # nombre aprobado en Meta
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WhatsAppEnvio(Base):
+    """Registro de un envío masivo de WhatsApp."""
+    __tablename__ = "wa_envios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre_campaña = Column(String(200), nullable=True)
+    template_id = Column(Integer, ForeignKey("wa_templates.id"), nullable=False)
+    segmento = Column(String(50), nullable=False)        # todos | tier_epico | en_riesgo | manual
+    seller_ids = Column(JSON, default=list)              # para segmento=manual
+    variables_valores = Column(JSON, default=dict)       # valores de las variables
+    estado = Column(String(20), default="pendiente")     # pendiente | enviando | completado | error
+    total = Column(Integer, default=0)
+    enviados = Column(Integer, default=0)
+    errores = Column(Integer, default=0)
+    leidos = Column(Integer, default=0)
+    respondidos = Column(Integer, default=0)
+    fecha_inicio = Column(DateTime, nullable=True)
+    fecha_fin = Column(DateTime, nullable=True)
+
+
+class WhatsAppMensaje(Base):
+    """Registro individual de cada mensaje enviado en un envío masivo."""
+    __tablename__ = "wa_mensajes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    envio_id = Column(Integer, ForeignKey("wa_envios.id"), nullable=False, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True, index=True)
+    numero = Column(String(20), nullable=False)
+    wa_message_id = Column(String(100), nullable=True, index=True)
+    estado = Column(String(20), default="pendiente")     # pendiente | enviado | entregado | leido | respondido | error
+    leido = Column(Boolean, default=False)
+    respondido = Column(Boolean, default=False)
+    respuesta = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    enviado_at = Column(DateTime, default=datetime.utcnow)

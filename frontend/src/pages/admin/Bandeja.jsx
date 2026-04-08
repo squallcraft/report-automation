@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, CheckCircle, XCircle, Clock, RefreshCw,
   User, MessageSquare, TrendingDown, Star, Plus, ChevronRight,
+  TrendingUp, ArrowUpRight, ArrowDownRight, Calendar, ChevronDown,
 } from 'lucide-react'
 import api from '../../api'
 
@@ -48,7 +49,140 @@ function TipoIcon({ tipo }) {
   return <Icon size={15} color={cfg.color} />
 }
 
-function dias(fecha) {
+const MESES = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
+const ESTADO_LABEL = {
+  activo: 'Activo', nuevo: 'Nuevo', recuperado: 'Recuperado',
+  en_riesgo: 'En riesgo', inactivo: 'Inactivo', perdido: 'Perdido',
+  en_gestion: 'En gestión', seguimiento: 'Seguimiento',
+  en_pausa_lifecycle: 'En pausa', cerrado: 'Cerrado',
+  pendiente_validacion: 'Validar',
+}
+
+const ESTADO_COLOR = {
+  activo: C.green, nuevo: C.blue, recuperado: C.purple,
+  en_riesgo: C.amber, inactivo: '#f97316', perdido: C.red,
+  en_gestion: C.amber, seguimiento: C.blue,
+  en_pausa_lifecycle: '#f97316', cerrado: '#6b7280',
+  pendiente_validacion: C.red,
+}
+
+function ResumenSemanal() {
+  const navigate = useNavigate()
+  const [data, setData] = useState(null)
+  const [open, setOpen] = useState(true)
+
+  useEffect(() => {
+    api.get('/tareas/resumen-semanal').then(r => setData(r.data)).catch(() => {})
+  }, [])
+
+  if (!data) return null
+
+  const { periodo, tareas, movimiento, oportunidades } = data
+  const desde = new Date(periodo.desde)
+  const hasta = new Date(periodo.hasta)
+  const fmtFecha = d => `${d.getDate()} ${MESES[d.getMonth() + 1]}`
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, marginBottom: 20, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', color: C.text }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Calendar size={15} color={C.blue} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Resumen de la semana</span>
+          <span style={{ fontSize: 11, color: C.muted }}>
+            {fmtFecha(desde)} – {fmtFecha(hasta)}
+          </span>
+        </div>
+        <ChevronDown size={14} color={C.dimmed} style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />
+      </button>
+
+      {open && (
+        <div style={{ padding: '0 18px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* KPIs de tareas */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {[
+              { label: 'Resueltas esta semana', val: tareas.resueltas_semana, color: C.green, icon: CheckCircle },
+              { label: 'Nuevas alertas',        val: tareas.nuevas_semana,     color: C.blue,  icon: AlertTriangle },
+              { label: 'Críticas pendientes',   val: tareas.criticas_pendientes, color: tareas.criticas_pendientes > 0 ? C.red : C.muted, icon: AlertTriangle },
+              { label: 'Seguimientos vencidos', val: tareas.seguimientos_vencidos, color: tareas.seguimientos_vencidos > 0 ? C.amber : C.muted, icon: Clock },
+            ].map(k => {
+              const Icon = k.icon
+              return (
+                <div key={k.label} style={{ background: C.card, borderRadius: 8, padding: '10px 12px', border: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.val}</div>
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 2, lineHeight: 1.3 }}>{k.label}</div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            {/* Empeoraron */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <ArrowDownRight size={12} color={C.red} /> Señales de alerta
+              </div>
+              {movimiento.empeoraron.length === 0
+                ? <p style={{ fontSize: 11, color: C.dimmed }}>Sin cambios negativos</p>
+                : movimiento.empeoraron.map(s => (
+                  <button key={s.seller_id} onClick={() => navigate(`/admin/sellers/${s.seller_id}/perfil`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textAlign: 'left' }}>
+                    <span style={{ fontSize: 11, color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</span>
+                    <span style={{ fontSize: 9, color: ESTADO_COLOR[s.estado_anterior] || C.muted }}>
+                      {ESTADO_LABEL[s.estado_anterior] || s.estado_anterior}
+                    </span>
+                    <span style={{ fontSize: 9, color: C.dimmed }}>→</span>
+                    <span style={{ fontSize: 9, color: ESTADO_COLOR[s.estado_actual] || C.muted, fontWeight: 700 }}>
+                      {ESTADO_LABEL[s.estado_actual] || s.estado_actual}
+                    </span>
+                  </button>
+                ))}
+            </div>
+
+            {/* Mejoraron */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <ArrowUpRight size={12} color={C.green} /> Recuperaciones
+              </div>
+              {movimiento.mejoraron.length === 0
+                ? <p style={{ fontSize: 11, color: C.dimmed }}>Sin recuperaciones esta semana</p>
+                : movimiento.mejoraron.map(s => (
+                  <button key={s.seller_id} onClick={() => navigate(`/admin/sellers/${s.seller_id}/perfil`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textAlign: 'left' }}>
+                    <span style={{ fontSize: 11, color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</span>
+                    <span style={{ fontSize: 9, color: ESTADO_COLOR[s.estado_anterior] || C.muted }}>
+                      {ESTADO_LABEL[s.estado_anterior] || s.estado_anterior}
+                    </span>
+                    <span style={{ fontSize: 9, color: C.dimmed }}>→</span>
+                    <span style={{ fontSize: 9, color: ESTADO_COLOR[s.estado_actual] || C.muted, fontWeight: 700 }}>
+                      {ESTADO_LABEL[s.estado_actual] || s.estado_actual}
+                    </span>
+                  </button>
+                ))}
+            </div>
+
+            {/* Oportunidades */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <TrendingUp size={12} color={C.purple} /> Creciendo este mes
+              </div>
+              {oportunidades.length === 0
+                ? <p style={{ fontSize: 11, color: C.dimmed }}>Sin crecimientos destacados</p>
+                : oportunidades.map(s => (
+                  <button key={s.seller_id} onClick={() => navigate(`/admin/sellers/${s.seller_id}/perfil`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', textAlign: 'left' }}>
+                    <span style={{ fontSize: 11, color: C.text, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</span>
+                    <span style={{ fontSize: 10, color: C.green, fontWeight: 700 }}>+{s.delta_pct}%</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
   if (!fecha) return ''
   const diff = Math.floor((Date.now() - new Date(fecha).getTime()) / 86400000)
   if (diff === 0) return 'hoy'
@@ -139,9 +273,10 @@ export default function Bandeja() {
         </div>
       </div>
 
+      <ResumenSemanal />
+
       {/* KPIs */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-        {[
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>        {[
           { label: 'Críticas', val: criticas, color: C.red, bg: C.redDim },
           { label: 'Alertas', val: alertas, color: C.amber, bg: C.amberDim },
           { label: 'Total pendientes', val: tareas.length, color: C.blue, bg: C.blueDim },

@@ -48,6 +48,7 @@ const adminMenu = [
       { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
       { to: '/admin/retencion', icon: Users, label: 'Retención Comercial' },
       { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de Tareas' },
+      { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
