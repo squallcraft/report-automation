@@ -80,6 +80,9 @@ class Seller(Base):
     condicion_recuperacion = Column(Text, nullable=True)
     nota_cierre = Column(Text, nullable=True)
     cerrado_por = Column(String(100), nullable=True)
+    # ── Comportamiento comercial ─────────────────────────────────────────────
+    estacional = Column(Boolean, default=False)           # exime de regla auto-perdido a 3 meses
+    telefono_whatsapp = Column(String(20), nullable=True) # número para WhatsApp Business
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -1037,3 +1040,39 @@ class GestionComercialEntry(Base):
     nota = Column(Text, nullable=True)
     recordatorio = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class TareaPendiente(Base):
+    """Bandeja de tareas pendientes generadas automática o manualmente."""
+    __tablename__ = "tareas_pendientes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tipo = Column(String(50), nullable=False)
+    # validar_perdido | contactar_riesgo | seguimiento_crm | factura_vencida | tier_cambio | manual
+    severidad = Column(String(20), default="alerta")   # critico | alerta | info
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True, index=True)
+    titulo = Column(String(200), nullable=False)
+    descripcion = Column(Text, nullable=True)
+    estado = Column(String(20), default="pendiente")   # pendiente | resuelta | descartada
+    resuelta_por = Column(String(100), nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    fecha_resolucion = Column(DateTime, nullable=True)
+    datos = Column(JSON, default=dict)                 # contexto adicional (monto, meses, etc.)
+
+
+class SellerSnapshot(Base):
+    """Snapshot diario del estado consolidado de cada seller."""
+    __tablename__ = "seller_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=False, index=True)
+    fecha = Column(Date, nullable=False)
+    estado_efectivo = Column(String(50), nullable=True)
+    estado_operativo = Column(String(50), nullable=True)
+    estado_crm = Column(String(50), nullable=True)
+    tipo_cierre = Column(String(20), nullable=True)
+    tier = Column(String(20), nullable=True)
+    vol_mes = Column(Integer, default=0)
+    ingreso_mes = Column(Integer, default=0)
+    semanas_sin_actividad = Column(Integer, default=0)
+    datos = Column(JSON, default=dict)

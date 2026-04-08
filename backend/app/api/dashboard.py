@@ -867,24 +867,96 @@ def analisis_retencion(
             ids = [row["seller_id"]] if row["seller_id"] else []
         row["ultima_gestion"] = _latest_gestion_for_ids(ids)
 
-    counts = Counter(s["estado"] for s in sellers_out)
+    # ── Obtener lifecycle + estacional por seller_id ────────────────────────
+    seller_lifecycle: dict = {
+        s.id: {"tipo_cierre": s.tipo_cierre, "estacional": s.estacional}
+        for s in db.query(Seller.id, Seller.tipo_cierre, Seller.estacional).all()
+    }
+
+    def _lifecycle_for_ids(ids):
+        """Devuelve el lifecycle más restrictivo entre los miembros del grupo."""
+        for sid in ids:
+            lc = seller_lifecycle.get(sid, {})
+            if lc.get("tipo_cierre") in ("cerrado", "desactivado"):
+                return lc
+        for sid in ids:
+            lc = seller_lifecycle.get(sid, {})
+            if lc.get("tipo_cierre") == "pausa":
+                return lc
+        estacional = any(seller_lifecycle.get(sid, {}).get("estacional") for sid in ids)
+        return {"tipo_cierre": None, "estacional": estacional}
+
+    def _compute_estado_efectivo(row, lc):
+        from datetime import date as _date, timedelta
+        tipo_cierre = lc.get("tipo_cierre")
+        estacional = lc.get("estacional", False)
+
+        # P1 — Lifecycle (verdad administrativa, nunca expira)
+        if tipo_cierre in ("cerrado", "desactivado"):
+            return "cerrado"
+        if tipo_cierre == "pausa":
+            return "en_pausa_lifecycle"
+
+        # P2 — CRM (expira a los 60 días sin nueva gestión)
+        ug = row.get("ultima_gestion")
+        if ug and ug.get("estado") and ug.get("fecha"):
+            try:
+                dias = (_date.today() - _date.fromisoformat(ug["fecha"])).days
+                if dias <= 60:
+                    return ug["estado"]
+            except Exception:
+                pass
+
+        # P3 — Auto-perdido propuesto (90 días sin envíos, no estacional)
+        semanas = row.get("semanas_sin_actividad", 0)
+        if not estacional and semanas >= 12:
+            return "pendiente_validacion"
+
+        # P4 — Operativo calculado
+        return row["estado"]
+
+    for row in sellers_out:
+        if row.get("es_grupo"):
+            ids = grupo_member_ids.get(row["nombre"], [])
+        else:
+            ids = [row["seller_id"]] if row["seller_id"] else []
+        lc = _lifecycle_for_ids(ids)
+        row["estado_efectivo"] = _compute_estado_efectivo(row, lc)
+        row["estacional"] = lc.get("estacional", False)
+
+    # ── Reordenar usando estado_efectivo ────────────────────────────────────
+    estado_efectivo_order = {
+        "cerrado": -1, "pendiente_validacion": 0, "perdido": 1,
+        "en_riesgo": 2, "inactivo": 3, "en_pausa_lifecycle": 4,
+        "en_gestion": 5, "seguimiento": 6, "recuperado": 7, "nuevo": 8, "activo": 9,
+    }
+    sellers_out.sort(key=lambda x: (
+        estado_efectivo_order.get(x["estado_efectivo"], 10),
+        -x["ingreso_mensual_avg"]
+    ))
+
+    counts = Counter(s["estado_efectivo"] for s in sellers_out)
     prev_counts = Counter(classify(dict(by_seller[sid]["meses"]), mes_ref - 1) for sid in by_seller) if mes_ref > 1 else Counter()
 
     resumen = {
-        "activo": counts["activo"],
+        "activo": counts["activo"] + counts["nuevo"] + counts["recuperado"],
         "nuevo": counts["nuevo"],
         "recuperado": counts["recuperado"],
         "en_riesgo": counts["en_riesgo"],
         "inactivo": counts["inactivo"],
         "perdido": counts["perdido"],
+        "en_gestion": counts["en_gestion"] + counts["seguimiento"],
+        "pendiente_validacion": counts["pendiente_validacion"],
+        "cerrado": counts["cerrado"],
         "total_sellers": len(sellers_out),
         "prev_en_riesgo": prev_counts.get("en_riesgo", 0),
         "prev_perdido": prev_counts.get("perdido", 0),
         "prev_activo": prev_counts.get("activo", 0) + prev_counts.get("recuperado", 0),
     }
 
+    # Top riesgo excluye los que ya están siendo gestionados o son conocidos
     top_riesgo = sorted(
-        [s for s in sellers_out if s["estado"] in ("en_riesgo", "inactivo", "perdido")],
+        [s for s in sellers_out if s["estado_efectivo"] in ("en_riesgo", "inactivo")],
         key=lambda x: -x["ingreso_mensual_avg"]
     )[:10]
 

@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Esquema Definitivo — Efectividad de Entregas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; background: #f1f5f9; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .badge-green  { background:#dcfce7; color:#15803d; }
+  .badge-amber  { background:#fef9c3; color:#a16207; }
+  .badge-red    { background:#fee2e2; color:#b91c1c; }
+  .badge-blue   { background:#dbeafe; color:#1d4ed8; }
+  .badge-gray   { background:#f1f5f9; color:#64748b; }
+  .bar-track    { background:#f1f5f9; border-radius:99px; overflow:hidden; }
+  .driver-card  { transition: all .15s; cursor: pointer; }
+  .driver-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.10); }
+  .driver-card.active { outline: 2.5px solid #3b82f6; outline-offset: 2px; }
+  .sparkline    { display:flex; align-items:flex-end; gap:2px; height:28px; }
+  .spark-bar    { width:5px; border-radius:2px 2px 0 0; }
+  .tab          { cursor:pointer; padding: 5px 14px; border-radius: 8px; font-size:11px; font-weight:600; color:#6b7280; transition:.1s; }
+  .tab.active   { background:#eff6ff; color:#1d4ed8; }
+  .section-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#94a3b8; }
+  .anno         { font-size:10px; color:#94a3b8; font-style:italic; }
+  .new-tag      { background:#fefce8;color:#854d0e;border:1px solid #fde047;font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.05em; }
+  .today-tag    { background:#f0fdf4;color:#166534;border:1px solid #86efac;font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.05em; }
+  .soon-tag     { background:#f8fafc;color:#94a3b8;border:1px solid #e2e8f0;font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.05em; }
+  .role-pill-admin  { background:#ede9fe;color:#6d28d9;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em; }
+  .role-pill-seller { background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em; }
+  .role-pill-driver { background:#f1f5f9;color:#475569;font-size:10px;font-weight:700;padding:3px 10px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em; }
+  .soon-overlay { opacity: 0.45; pointer-events: none; }
+  .ring-green   { border: 1.5px solid #86efac; }
+  .ring-amber   { border: 1.5px solid #fde047; }
+  .ring-red     { border: 1.5px solid #fca5a5; }
+</style>
+</head>
+<body class="p-6 space-y-10">
+
+<!-- ════════════════════════════════════════
+     SECCIÓN 0 — MODELO DE DATOS Y ESTADO
+════════════════════════════════════════ -->
+<div>
+  <div class="section-label mb-3">Modelo de datos — qué está disponible hoy vs qué viene después</div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+    <!-- HOY: Ciclo de entrega -->
+    <div class="card p-4 border-l-4 border-emerald-500">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="today-tag">Disponible hoy</span>
+        <p class="text-sm font-bold text-gray-800">Ciclo de entrega</p>
+      </div>
+      <div class="bg-emerald-50 rounded-lg p-3 mb-3 text-center">
+        <p class="text-xs font-bold text-emerald-800">fecha_carga → fecha_entrega</p>
+        <p class="text-[10px] text-emerald-600 mt-0.5">tabla <code>envios</code> · sin cambios</p>
+      </div>
+      <ul class="space-y-1 text-xs text-gray-600">
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> % entregas exitosas (entregados / total)</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Tiempo promedio de ciclo (días)</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Distribución: 0d / 1d / 2d / 3d / +4d</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Tendencia semanal y mensual</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Vista Admin + Seller + Driver</li>
+      </ul>
+    </div>
+
+    <!-- PRONTO: Same-day real -->
+    <div class="card p-4 border-l-4 border-amber-400 opacity-70">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="soon-tag">Requiere Excel</span>
+        <p class="text-sm font-bold text-gray-600">Same-day real</p>
+      </div>
+      <div class="bg-amber-50 rounded-lg p-3 mb-3 text-center">
+        <p class="text-xs font-bold text-amber-800">fecha_retiro → fecha_entrega</p>
+        <p class="text-[10px] text-amber-600 mt-0.5">tabla <code>metricas_ruta</code> · nueva</p>
+      </div>
+      <ul class="space-y-1 text-xs text-gray-500">
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Retiro físico en pickup → entrega mismo día</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Tasa same-day por conductor</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Histórico 2026 retroactivo</li>
+      </ul>
+      <p class="anno mt-3">Pendiente: Excel con fecha_retiro</p>
+    </div>
+
+    <!-- PRONTO: Completitud de ruta -->
+    <div class="card p-4 border-l-4 border-blue-400 opacity-70">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="soon-tag">Requiere carga</span>
+        <p class="text-sm font-bold text-gray-600">Completitud de ruta</p>
+      </div>
+      <div class="bg-blue-50 rounded-lg p-3 mb-3 text-center">
+        <p class="text-xs font-bold text-blue-800">paquetes_entregados ÷ paquetes_asignados</p>
+        <p class="text-[10px] text-blue-600 mt-0.5">tabla <code>metricas_ruta</code> · nueva</p>
+      </div>
+      <ul class="space-y-1 text-xs text-gray-500">
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> Paquetes asignados a la ruta</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> Paquetes efectivamente entregados</li>
+        <li class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> No afecta pagos ni costos</li>
+        <li class="flex items-center gap-1.5 text-gray-400"><span class="w-2 h-2 rounded-full bg-gray-300 inline-block"></span> Base para bonos (futuro)</li>
+      </ul>
+      <p class="anno mt-3">Pendiente: datos de ruta por driver</p>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     SECCIÓN 1 — VISTA ADMIN
+════════════════════════════════════════ -->
+<div>
+  <div class="flex items-center gap-2 mb-3">
+    <span class="role-pill-admin">Vista Admin</span>
+    <p class="text-sm text-gray-500">"¿Quién entrega mejor y más rápido?"</p>
+  </div>
+
+  <div class="card p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Efectividad de Entregas</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Ciclo de entrega · Marzo 2026</p>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <span class="tab">Diario</span>
+        <span class="tab active">Semanal</span>
+        <span class="tab">Mensual</span>
+      </div>
+      <select class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-700">
+        <option>Semana 3 · Marzo 2026</option>
+        <option>Semana 2 · Marzo 2026</option>
+        <option>Semana 1 · Marzo 2026</option>
+      </select>
+      <select class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-700">
+        <option>Todos los sellers</option>
+        <option>Puro y Claro</option>
+        <option>ModaStore</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- KPIs globales admin -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+    <div class="card p-3 border-l-4 border-emerald-500">
+      <p class="text-[10px] text-gray-400 mb-1">Tasa de entrega global</p>
+      <p class="text-2xl font-bold text-emerald-600">89.3%</p>
+      <div class="bar-track mt-1.5" style="height:4px"><div style="width:89%;height:4px;background:#22c55e;border-radius:99px"></div></div>
+      <p class="anno mt-1">3,814 de 4,272 envíos</p>
+    </div>
+    <div class="card p-3 border-l-4 border-blue-500">
+      <p class="text-[10px] text-gray-400 mb-1">Ciclo promedio</p>
+      <p class="text-2xl font-bold text-blue-600">2.1 <span class="text-sm font-normal text-gray-400">días</span></p>
+      <p class="anno mt-1.5">recepción → entrega</p>
+    </div>
+    <div class="card p-3 border-l-4 border-gray-300">
+      <p class="text-[10px] text-gray-400 mb-1">Sin entregar</p>
+      <p class="text-2xl font-bold text-gray-700">458</p>
+      <p class="anno mt-1.5">10.7% · aún sin fecha_entrega</p>
+    </div>
+    <div class="card p-3 border-l-4 border-red-400">
+      <p class="text-[10px] text-gray-400 mb-1">Drivers con alerta</p>
+      <p class="text-2xl font-bold text-red-500">3</p>
+      <p class="anno mt-1.5">tasa &lt; 80% esta semana</p>
+    </div>
+  </div>
+
+  <!-- Tabla comparativa sellers -->
+  <div class="card p-4 mb-4">
+    <p class="section-label mb-3">Comparativa por Seller — semana actual</p>
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-[10px] text-gray-400 uppercase tracking-wide border-b border-gray-100">
+          <th class="pb-2 text-left font-semibold">Seller</th>
+          <th class="pb-2 text-center font-semibold">Total</th>
+          <th class="pb-2 text-center font-semibold">Entregados</th>
+          <th class="pb-2 font-semibold">Tasa de entrega</th>
+          <th class="pb-2 text-center font-semibold">Ciclo prom.</th>
+          <th class="pb-2 text-center font-semibold">Mismo día</th>
+          <th class="pb-2 text-center font-semibold">+4 días</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        <tr class="text-gray-700">
+          <td class="py-2 font-medium">Nuevo Genesis</td>
+          <td class="py-2 text-center text-gray-500">820</td>
+          <td class="py-2 text-center text-gray-500">763</td>
+          <td class="py-2 w-36">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-gray-100 rounded-full h-2"><div class="bg-emerald-500 h-2 rounded-full" style="width:93%"></div></div>
+              <span class="text-[10px] font-bold text-emerald-700 w-8">93%</span>
+            </div>
+          </td>
+          <td class="py-2 text-center font-medium text-blue-600">1.8d</td>
+          <td class="py-2 text-center"><span class="badge-green text-[10px] px-1.5 py-0.5 rounded-full font-semibold">41%</span></td>
+          <td class="py-2 text-center"><span class="text-gray-400 text-[10px]">2%</span></td>
+        </tr>
+        <tr class="text-gray-700">
+          <td class="py-2 font-medium">Comercial Element SpA</td>
+          <td class="py-2 text-center text-gray-500">502</td>
+          <td class="py-2 text-center text-gray-500">437</td>
+          <td class="py-2 w-36">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-gray-100 rounded-full h-2"><div class="bg-emerald-400 h-2 rounded-full" style="width:87%"></div></div>
+              <span class="text-[10px] font-bold text-emerald-600 w-8">87%</span>
+            </div>
+          </td>
+          <td class="py-2 text-center font-medium text-blue-600">2.4d</td>
+          <td class="py-2 text-center"><span class="badge-green text-[10px] px-1.5 py-0.5 rounded-full font-semibold">35%</span></td>
+          <td class="py-2 text-center"><span class="text-amber-500 text-[10px] font-semibold">8%</span></td>
+        </tr>
+        <tr class="text-gray-700 bg-red-50/30">
+          <td class="py-2 font-medium flex items-center gap-1">
+            Talestock
+            <span class="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">⚠ Alerta</span>
+          </td>
+          <td class="py-2 text-center text-gray-500">241</td>
+          <td class="py-2 text-center text-gray-500">168</td>
+          <td class="py-2 w-36">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 bg-gray-100 rounded-full h-2"><div class="bg-red-400 h-2 rounded-full" style="width:70%"></div></div>
+              <span class="text-[10px] font-bold text-red-600 w-8">70%</span>
+            </div>
+          </td>
+          <td class="py-2 text-center font-medium text-red-500">4.2d</td>
+          <td class="py-2 text-center"><span class="badge-amber text-[10px] px-1.5 py-0.5 rounded-full font-semibold">18%</span></td>
+          <td class="py-2 text-center"><span class="text-red-500 text-[10px] font-bold">22%</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Cards de drivers (clicables) -->
+  <p class="section-label mb-2">Conductores — clic para ver detalle</p>
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 mb-4">
+
+    <div class="card p-3 driver-card ring-green active" onclick="selectDriver(this,'Carlos Mendoza',96,1.6,[92,94,95,96,96,97,96])">
+      <div class="flex justify-between items-start mb-2">
+        <div class="w-8 h-8 rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 flex items-center justify-center">CM</div>
+        <span class="badge-green text-[10px] font-semibold px-1.5 py-0.5 rounded-full">96%</span>
+      </div>
+      <p class="text-xs font-semibold text-gray-800">Carlos M.</p>
+      <p class="text-[10px] text-gray-400">312 asignados</p>
+      <div class="sparkline mt-2">
+        <div class="spark-bar bg-emerald-300" style="height:65%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:72%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:78%"></div>
+        <div class="spark-bar bg-emerald-500" style="height:82%"></div>
+        <div class="spark-bar bg-emerald-500" style="height:86%"></div>
+        <div class="spark-bar bg-emerald-600" style="height:92%"></div>
+        <div class="spark-bar bg-emerald-500" style="height:88%"></div>
+      </div>
+      <p class="anno mt-1">↑ mejorando</p>
+    </div>
+
+    <div class="card p-3 driver-card ring-green" onclick="selectDriver(this,'Andrea Rojas',90,2.0,[88,89,90,90,91,90,90])">
+      <div class="flex justify-between items-start mb-2">
+        <div class="w-8 h-8 rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 flex items-center justify-center">AR</div>
+        <span class="badge-green text-[10px] font-semibold px-1.5 py-0.5 rounded-full">90%</span>
+      </div>
+      <p class="text-xs font-semibold text-gray-800">Andrea R.</p>
+      <p class="text-[10px] text-gray-400">278 asignados</p>
+      <div class="sparkline mt-2">
+        <div class="spark-bar bg-emerald-300" style="height:60%"></div>
+        <div class="spark-bar bg-emerald-300" style="height:62%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:68%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:70%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:72%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:74%"></div>
+        <div class="spark-bar bg-emerald-400" style="height:72%"></div>
+      </div>
+      <p class="anno mt-1">→ estable</p>
+    </div>
+
+    <div class="card p-3 driver-card ring-amber" onclick="selectDriver(this,'Roberto Silva',82,2.8,[80,79,83,82,81,83,82])">
+      <div class="flex justify-between items-start mb-2">
+        <div class="w-8 h-8 rounded-full bg-amber-100 text-xs font-bold text-amber-700 flex items-center justify-center">RS</div>
+        <span class="badge-amber text-[10px] font-semibold px-1.5 py-0.5 rounded-full">82%</span>
+      </div>
+      <p class="text-xs font-semibold text-gray-800">Roberto S.</p>
+      <p class="text-[10px] text-gray-400">195 asignados</p>
+      <div class="sparkline mt-2">
+        <div class="spark-bar bg-amber-300" style="height:58%"></div>
+        <div class="spark-bar bg-amber-300" style="height:56%"></div>
+        <div class="spark-bar bg-amber-400" style="height:62%"></div>
+        <div class="spark-bar bg-amber-400" style="height:60%"></div>
+        <div class="spark-bar bg-amber-400" style="height:58%"></div>
+        <div class="spark-bar bg-amber-400" style="height:62%"></div>
+        <div class="spark-bar bg-amber-400" style="height:60%"></div>
+      </div>
+      <p class="anno mt-1">→ estable límite</p>
+    </div>
+
+    <div class="card p-3 driver-card ring-red" onclick="selectDriver(this,'Pedro Soto',72,3.8,[78,76,74,72,70,71,72])">
+      <div class="flex justify-between items-start mb-2">
+        <div class="w-8 h-8 rounded-full bg-red-100 text-xs font-bold text-red-700 flex items-center justify-center">PS</div>
+        <span class="badge-red text-[10px] font-semibold px-1.5 py-0.5 rounded-full">72%</span>
+      </div>
+      <p class="text-xs font-semibold text-gray-800">Pedro S.</p>
+      <p class="text-[10px] text-gray-400">152 asignados</p>
+      <div class="sparkline mt-2">
+        <div class="spark-bar bg-red-300" style="height:60%"></div>
+        <div class="spark-bar bg-red-400" style="height:56%"></div>
+        <div class="spark-bar bg-red-400" style="height:52%"></div>
+        <div class="spark-bar bg-red-400" style="height:48%"></div>
+        <div class="spark-bar bg-red-500" style="height:44%"></div>
+        <div class="spark-bar bg-red-500" style="height:46%"></div>
+        <div class="spark-bar bg-red-400" style="height:48%"></div>
+      </div>
+      <p class="anno mt-1 text-red-400">↓ bajando</p>
+    </div>
+
+  </div>
+
+  <!-- Panel de detalle del conductor -->
+  <p class="section-label mb-2" id="detail-title-admin">Detalle — Carlos Mendoza · Semana actual</p>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+    <!-- Col 1: Métricas -->
+    <div class="card p-4">
+      <p class="section-label mb-3">Métricas del período</p>
+      <div class="space-y-4">
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-gray-600 font-medium">Tasa de entrega</span>
+            <span class="font-bold text-emerald-600" id="d-tasa">96%</span>
+          </div>
+          <div class="bar-track" style="height:8px">
+            <div id="bar-tasa" style="width:96%;height:8px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <p class="text-[10px] text-gray-400 mt-0.5" id="d-counts">299 entregados de 312 asignados</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-emerald-50 rounded-lg p-2.5 text-center">
+            <p class="text-[10px] text-emerald-600">Ciclo promedio</p>
+            <p class="text-lg font-bold text-emerald-700" id="d-ciclo">1.6d</p>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2.5 text-center">
+            <p class="text-[10px] text-gray-400">No entregados</p>
+            <p class="text-lg font-bold text-gray-700" id="d-noent">13</p>
+          </div>
+        </div>
+        <!-- Distribución días -->
+        <div>
+          <p class="text-[10px] text-gray-400 font-semibold mb-2 uppercase tracking-wide">Distribución del ciclo</p>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-gray-500 w-16">Mismo día</span>
+              <div class="flex-1 bar-track" style="height:5px">
+                <div id="bar-0d" style="width:45%;height:5px;background:#22c55e;border-radius:99px"></div>
+              </div>
+              <span class="text-gray-400 w-6 text-right" id="pct-0d">45%</span>
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-gray-500 w-16">1 día</span>
+              <div class="flex-1 bar-track" style="height:5px">
+                <div id="bar-1d" style="width:35%;height:5px;background:#34d399;border-radius:99px"></div>
+              </div>
+              <span class="text-gray-400 w-6 text-right" id="pct-1d">35%</span>
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-gray-500 w-16">2 días</span>
+              <div class="flex-1 bar-track" style="height:5px">
+                <div id="bar-2d" style="width:12%;height:5px;background:#f59e0b;border-radius:99px"></div>
+              </div>
+              <span class="text-gray-400 w-6 text-right" id="pct-2d">12%</span>
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-gray-500 w-16">3 días</span>
+              <div class="flex-1 bar-track" style="height:5px">
+                <div id="bar-3d" style="width:4%;height:5px;background:#f97316;border-radius:99px"></div>
+              </div>
+              <span class="text-gray-400 w-6 text-right" id="pct-3d">4%</span>
+            </div>
+            <div class="flex items-center gap-2 text-[10px]">
+              <span class="text-gray-500 w-16">+4 días</span>
+              <div class="flex-1 bar-track" style="height:5px">
+                <div id="bar-4d" style="width:4%;height:5px;background:#ef4444;border-radius:99px"></div>
+              </div>
+              <span class="text-gray-400 w-6 text-right" id="pct-4d">4%</span>
+            </div>
+          </div>
+        </div>
+        <!-- Coming soon: same-day y completitud -->
+        <div class="soon-overlay bg-gray-50 rounded-lg p-2.5 border border-dashed border-gray-200">
+          <p class="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Próximamente</p>
+          <p class="text-[10px] text-gray-400 mt-0.5">Same-day real · Completitud de ruta</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Col 2: Tendencia diaria -->
+    <div class="card p-4">
+      <p class="section-label mb-3">Tendencia diaria — esta semana</p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-7 text-gray-400 font-medium">Lun</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:100%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-[10px] text-gray-500 w-16 text-right">62/62 · 100%</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-7 text-gray-400 font-medium">Mar</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:95%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-[10px] text-gray-500 w-16 text-right">57/60 · 95%</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-7 text-gray-400 font-medium">Mié</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:98%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-[10px] text-gray-500 w-16 text-right">59/60 · 98%</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-7 text-gray-400 font-medium">Jue</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:93%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-[10px] text-gray-500 w-16 text-right">56/60 · 93%</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="w-7 text-gray-400 font-medium">Vie</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:92%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-[10px] text-gray-500 w-16 text-right">65/70 · 92%</span>
+        </div>
+      </div>
+      <!-- Ranking -->
+      <div class="mt-4 pt-3 border-t border-gray-100">
+        <p class="section-label mb-2">Ranking de conductores</p>
+        <table class="w-full text-[10px]">
+          <tbody class="divide-y divide-gray-50">
+            <tr class="text-gray-700">
+              <td class="py-1 text-gray-400 w-4">1</td>
+              <td class="py-1 font-medium">Carlos M.</td>
+              <td class="py-1 text-right"><span class="badge-green px-1.5 py-0.5 rounded-full font-bold">96%</span></td>
+              <td class="py-1 text-right text-blue-600 font-medium">1.6d</td>
+            </tr>
+            <tr class="text-gray-700">
+              <td class="py-1 text-gray-400 w-4">2</td>
+              <td class="py-1 font-medium">Andrea R.</td>
+              <td class="py-1 text-right"><span class="badge-green px-1.5 py-0.5 rounded-full font-bold">90%</span></td>
+              <td class="py-1 text-right text-blue-600 font-medium">2.0d</td>
+            </tr>
+            <tr class="text-gray-700">
+              <td class="py-1 text-gray-400 w-4">3</td>
+              <td class="py-1 font-medium">Roberto S.</td>
+              <td class="py-1 text-right"><span class="badge-amber px-1.5 py-0.5 rounded-full font-bold">82%</span></td>
+              <td class="py-1 text-right text-amber-600 font-medium">2.8d</td>
+            </tr>
+            <tr class="text-gray-700 bg-red-50/40">
+              <td class="py-1 text-red-400 w-4">4</td>
+              <td class="py-1 font-medium text-red-700">Pedro S.</td>
+              <td class="py-1 text-right"><span class="badge-red px-1.5 py-0.5 rounded-full font-bold">72%</span></td>
+              <td class="py-1 text-right text-red-500 font-medium">3.8d</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Col 3: Envíos con más días -->
+    <div class="card p-0 overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-100">
+        <p class="text-xs font-semibold text-gray-700">Envíos que tardaron +3 días</p>
+        <p class="anno">Del conductor seleccionado · semana actual</p>
+      </div>
+      <table class="w-full">
+        <thead>
+          <tr class="bg-gray-50 text-[10px] text-gray-500 border-b border-gray-100">
+            <th class="px-3 py-2 text-left font-medium">Tracking</th>
+            <th class="px-3 py-2 text-left font-medium">Seller</th>
+            <th class="px-3 py-2 text-center font-medium">Días</th>
+            <th class="px-3 py-2 text-left font-medium">Comuna</th>
+          </tr>
+        </thead>
+        <tbody class="text-xs">
+          <tr class="border-b border-gray-50 hover:bg-gray-50">
+            <td class="px-3 py-2 font-mono text-blue-600">TK-00481</td>
+            <td class="px-3 py-2 text-gray-700">Puro y Claro</td>
+            <td class="px-3 py-2 text-center"><span class="badge-red px-1.5 py-0.5 rounded-full font-bold text-[10px]">+4</span></td>
+            <td class="px-3 py-2 text-gray-500">Puente Alto</td>
+          </tr>
+          <tr class="border-b border-gray-50 hover:bg-gray-50">
+            <td class="px-3 py-2 font-mono text-blue-600">TK-00512</td>
+            <td class="px-3 py-2 text-gray-700">ModaStore</td>
+            <td class="px-3 py-2 text-center"><span class="badge-red px-1.5 py-0.5 rounded-full font-bold text-[10px]">+3</span></td>
+            <td class="px-3 py-2 text-gray-500">La Pintana</td>
+          </tr>
+          <tr class="border-b border-gray-50 hover:bg-gray-50">
+            <td class="px-3 py-2 font-mono text-blue-600">TK-00533</td>
+            <td class="px-3 py-2 text-gray-700">Puro y Claro</td>
+            <td class="px-3 py-2 text-center"><span class="badge-amber px-1.5 py-0.5 rounded-full font-bold text-[10px]">+3</span></td>
+            <td class="px-3 py-2 text-gray-500">San Bernardo</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="px-3 py-2 bg-amber-50 border-t border-amber-100">
+        <p class="anno text-amber-700">Patrón: zona sur concentra retrasos &gt;3 días</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     SECCIÓN 2 — VISTA SELLER
+════════════════════════════════════════ -->
+<div>
+  <div class="flex items-center gap-2 mb-3">
+    <span class="role-pill-seller">Vista Seller</span>
+    <p class="text-sm text-gray-500">"¿Qué tan rápido se entregan mis pedidos?"</p>
+  </div>
+
+  <div class="max-w-2xl space-y-4">
+
+    <div class="card p-4 flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-base font-bold text-gray-800">Mis Entregas</h2>
+        <p class="text-xs text-gray-400">Comercial Element SpA · Marzo 2026</p>
+      </div>
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <span class="tab active">Mensual</span>
+        <span class="tab">Semanal</span>
+      </div>
+    </div>
+
+    <!-- KPIs seller -->
+    <div class="grid grid-cols-3 gap-3">
+      <div class="card p-4 text-center border-l-4 border-emerald-500">
+        <p class="text-[11px] text-emerald-600 font-semibold uppercase tracking-wide">Tasa de entrega</p>
+        <p class="text-4xl font-black text-emerald-700 mt-1">87%</p>
+        <p class="text-xs text-emerald-500 mt-1">437 de 502</p>
+        <div class="mt-2 bg-emerald-100 rounded-full h-1.5">
+          <div class="bg-emerald-500 h-1.5 rounded-full" style="width:87%"></div>
+        </div>
+        <p class="text-[10px] text-gray-400 mt-1.5">↑ +3% vs mes anterior</p>
+      </div>
+      <div class="card p-4 text-center border-l-4 border-blue-500">
+        <p class="text-[11px] text-blue-600 font-semibold uppercase tracking-wide">Ciclo promedio</p>
+        <p class="text-4xl font-black text-blue-700 mt-1">2.4<span class="text-xl font-semibold">d</span></p>
+        <p class="text-xs text-blue-500 mt-1">Recepción → Entrega</p>
+        <p class="text-[10px] text-gray-400 mt-3">↓ 0.3d más rápido</p>
+      </div>
+      <div class="card p-4 text-center border-l-4 border-gray-300">
+        <p class="text-[11px] text-gray-500 font-semibold uppercase tracking-wide">Sin entregar</p>
+        <p class="text-4xl font-black text-gray-700 mt-1">65</p>
+        <p class="text-xs text-gray-400 mt-1">13% del total</p>
+        <p class="text-[10px] text-gray-400 mt-3">aún sin fecha_entrega</p>
+      </div>
+    </div>
+
+    <!-- Distribución del ciclo (seller) -->
+    <div class="card p-4">
+      <p class="text-xs font-semibold text-gray-700 mb-3">¿En cuántos días se entregan tus pedidos?</p>
+      <div class="space-y-2.5">
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right flex-shrink-0">Mismo día</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+            <div class="bg-emerald-500 h-6 rounded-full flex items-center pl-2.5" style="width:22%">
+              <span class="text-[10px] text-white font-bold">22%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8 flex-shrink-0">111</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right flex-shrink-0">1 día</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+            <div class="bg-emerald-400 h-6 rounded-full flex items-center pl-2.5" style="width:38%">
+              <span class="text-[10px] text-white font-bold">38%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8 flex-shrink-0">191</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right flex-shrink-0">2 días</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+            <div class="bg-amber-400 h-6 rounded-full flex items-center pl-2.5" style="width:20%">
+              <span class="text-[10px] text-white font-bold">20%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8 flex-shrink-0">101</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right flex-shrink-0">3 días</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+            <div class="bg-orange-400 h-6 rounded-full flex items-center pl-2.5" style="width:7%">
+              <span class="text-[10px] text-white font-bold">7%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8 flex-shrink-0">35</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right flex-shrink-0">+4 días</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+            <div class="bg-red-400 h-6 rounded-full flex items-center pl-2.5" style="width:13%">
+              <span class="text-[10px] text-white font-bold">13%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8 flex-shrink-0">65</span>
+        </div>
+      </div>
+      <p class="text-[10px] text-emerald-600 font-medium mt-3">El 60% de tus pedidos se entregan en 1 día o menos.</p>
+    </div>
+
+    <!-- Tendencia semanal seller -->
+    <div class="card p-4">
+      <p class="text-xs font-semibold text-gray-700 mb-3">Tasa de entrega — semana a semana</p>
+      <div class="flex items-end gap-4 h-20">
+        <div class="flex-1 flex flex-col items-center gap-1">
+          <div class="w-full bg-emerald-400 rounded-t" style="height:83%"></div>
+          <p class="text-[10px] text-gray-400">S1</p>
+          <p class="text-[10px] font-semibold text-gray-600">83%</p>
+        </div>
+        <div class="flex-1 flex flex-col items-center gap-1">
+          <div class="w-full bg-emerald-400 rounded-t" style="height:85%"></div>
+          <p class="text-[10px] text-gray-400">S2</p>
+          <p class="text-[10px] font-semibold text-gray-600">85%</p>
+        </div>
+        <div class="flex-1 flex flex-col items-center gap-1">
+          <div class="w-full bg-emerald-600 rounded-t" style="height:91%"></div>
+          <p class="text-[10px] text-gray-400">S3</p>
+          <p class="text-[10px] font-semibold text-emerald-700">91%</p>
+        </div>
+        <div class="flex-1 flex flex-col items-center gap-1">
+          <div class="w-full bg-blue-300 rounded-t" style="height:40%"></div>
+          <p class="text-[10px] text-gray-400">S4</p>
+          <p class="text-[10px] font-semibold text-blue-500">en curso</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     SECCIÓN 3 — VISTA DRIVER (PORTAL)
+════════════════════════════════════════ -->
+<div>
+  <div class="flex items-center gap-2 mb-3">
+    <span class="role-pill-driver">Vista Driver</span>
+    <p class="text-sm text-gray-500">"¿Cómo estoy rindiendo?"</p>
+  </div>
+
+  <div class="max-w-md space-y-3">
+
+    <div class="card p-4 flex items-center gap-3">
+      <div class="w-10 h-10 rounded-full bg-emerald-100 text-sm font-bold text-emerald-700 flex items-center justify-center">CM</div>
+      <div>
+        <p class="font-bold text-gray-800">Carlos Mendoza</p>
+        <p class="text-xs text-gray-400">Mi rendimiento · Marzo 2026</p>
+      </div>
+      <div class="ml-auto flex gap-1 bg-gray-100 rounded-lg p-0.5">
+        <span class="tab text-[10px]">Hoy</span>
+        <span class="tab active text-[10px]">Semana</span>
+        <span class="tab text-[10px]">Mes</span>
+      </div>
+    </div>
+
+    <!-- KPIs driver -->
+    <div class="grid grid-cols-2 gap-3">
+      <div class="card p-4 text-center bg-emerald-50 border border-emerald-100">
+        <p class="text-[11px] text-emerald-600 font-semibold uppercase tracking-wide">Tasa de entrega</p>
+        <p class="text-4xl font-black text-emerald-700 mt-1">96%</p>
+        <p class="text-xs text-emerald-500 mt-1">299 de 312</p>
+        <div class="mt-2 bg-emerald-200 rounded-full h-1.5">
+          <div class="bg-emerald-600 h-1.5 rounded-full" style="width:96%"></div>
+        </div>
+      </div>
+      <div class="card p-4 text-center bg-blue-50 border border-blue-100">
+        <p class="text-[11px] text-blue-600 font-semibold uppercase tracking-wide">Ciclo promedio</p>
+        <p class="text-4xl font-black text-blue-700 mt-1">1.6<span class="text-xl font-semibold">d</span></p>
+        <p class="text-xs text-blue-500 mt-1">recepción → entrega</p>
+        <p class="text-[10px] text-gray-400 mt-2">Equipo: 2.1d</p>
+      </div>
+    </div>
+
+    <!-- Distribución ciclo driver -->
+    <div class="card p-4">
+      <p class="text-xs font-semibold text-gray-700 mb-3">¿En cuántos días entregas?</p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right">Mismo día</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+            <div class="bg-emerald-500 h-5 rounded-full flex items-center pl-2" style="width:45%">
+              <span class="text-[10px] text-white font-bold">45%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8">135</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right">1 día</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+            <div class="bg-emerald-400 h-5 rounded-full flex items-center pl-2" style="width:35%">
+              <span class="text-[10px] text-white font-bold">35%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8">105</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right">2+ días</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+            <div class="bg-amber-400 h-5 rounded-full flex items-center pl-2" style="width:16%">
+              <span class="text-[10px] text-white font-bold">16%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8">48</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-gray-500 w-20 text-right">No entregado</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+            <div class="bg-gray-300 h-5 rounded-full flex items-center pl-2" style="width:4%">
+              <span class="text-[10px] text-gray-600 font-bold">4%</span>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400 w-8">13</span>
+        </div>
+      </div>
+      <p class="text-[10px] text-emerald-600 font-medium mt-2">80% de tus entregas se hacen en el día o al siguiente.</p>
+    </div>
+
+    <!-- Tendencia diaria esta semana -->
+    <div class="card p-4">
+      <p class="section-label mb-3">Esta semana — tasa diaria</p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-3 text-xs">
+          <span class="w-8 text-gray-400">Lun</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:100%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-emerald-600 font-semibold w-12 text-right">62/62</span>
+          <span class="badge-green text-[9px] px-1 py-0.5 rounded-full">100%</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="w-8 text-gray-400">Mar</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:95%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-emerald-600 font-semibold w-12 text-right">57/60</span>
+          <span class="badge-green text-[9px] px-1 py-0.5 rounded-full">95%</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="w-8 text-gray-400">Mié</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:98%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-emerald-600 font-semibold w-12 text-right">59/60</span>
+          <span class="badge-green text-[9px] px-1 py-0.5 rounded-full">98%</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="w-8 text-gray-400">Jue</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:93%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-emerald-600 font-semibold w-12 text-right">56/60</span>
+          <span class="badge-green text-[9px] px-1 py-0.5 rounded-full">93%</span>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span class="w-8 text-gray-400">Vie</span>
+          <div class="flex-1 bar-track" style="height:6px">
+            <div style="width:93%;height:6px;background:#22c55e;border-radius:99px"></div>
+          </div>
+          <span class="text-emerald-600 font-semibold w-12 text-right">65/70</span>
+          <span class="badge-green text-[9px] px-1 py-0.5 rounded-full">93%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ranking anónimo -->
+    <div class="card p-3 bg-gray-50">
+      <p class="text-xs font-semibold text-gray-600 mb-2">Tu posición en el equipo (esta semana)</p>
+      <div class="space-y-1.5">
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-gray-400 w-4">1</span>
+          <div class="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden"><div class="bg-emerald-500 h-3 rounded-full" style="width:96%"></div></div>
+          <span class="font-bold text-emerald-700 w-8">96%</span>
+          <span class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-bold">Tú</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-gray-400 w-4">2</span>
+          <div class="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden"><div class="bg-emerald-400 h-3 rounded-full" style="width:90%"></div></div>
+          <span class="text-gray-500 w-8">90%</span>
+          <span class="text-[10px] text-gray-300 w-10">• • •</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-gray-400 w-4">3</span>
+          <div class="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden"><div class="bg-amber-400 h-3 rounded-full" style="width:82%"></div></div>
+          <span class="text-gray-500 w-8">82%</span>
+          <span class="text-[10px] text-gray-300 w-10">• • •</span>
+        </div>
+      </div>
+      <p class="text-[10px] text-gray-400 mt-2">Los demás conductores aparecen de forma anónima.</p>
+    </div>
+
+    <!-- Bonos: preparado pero no activo -->
+    <div class="card p-3 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-100 flex items-start gap-2">
+      <span class="text-base">🎯</span>
+      <div>
+        <p class="text-xs font-semibold text-blue-800">Bonificaciones por rendimiento</p>
+        <p class="text-[10px] text-blue-600 mt-0.5">Próximamente — sistema en preparación</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════
+     NOTAS FINALES
+════════════════════════════════════════ -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+    <p class="text-sm font-bold text-emerald-800 mb-1">Fase 1 — Disponible hoy (sin datos nuevos)</p>
+    <ul class="text-xs text-emerald-700 space-y-1 mt-2">
+      <li>✓ Tasa de entrega por seller, driver, global</li>
+      <li>✓ Ciclo promedio (fecha_carga → fecha_entrega)</li>
+      <li>✓ Distribución: mismo día / 1d / 2d / 3d / +4d</li>
+      <li>✓ Tendencia diaria, semanal, mensual</li>
+      <li>✓ Ranking de drivers con detalle clickeable</li>
+      <li>✓ Envíos que tardaron +3 días</li>
+    </ul>
+  </div>
+  <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+    <p class="text-sm font-bold text-amber-800 mb-1">Fase 2 — Cuando tengas el Excel</p>
+    <ul class="text-xs text-amber-700 space-y-1 mt-2">
+      <li>○ Tasa same-day real (fecha_retiro → fecha_entrega)</li>
+      <li>○ Completitud de ruta (paquetes asignados vs entregados)</li>
+      <li>○ Histórico retroactivo desde enero 2026</li>
+      <li>○ Base lista para bonificaciones futuras</li>
+    </ul>
+  </div>
+</div>
+
+<p class="text-center text-[10px] text-gray-400 pb-4">Esquema de referencia · datos ficticios · v2.0</p>
+
+<script>
+function selectDriver(el, nombre, tasa, ciclo, spark) {
+  document.querySelectorAll('.driver-card').forEach(c => c.classList.remove('active'))
+  el.classList.add('active')
+  document.getElementById('detail-title-admin').textContent = 'Detalle — ' + nombre + ' · Semana actual'
+  document.getElementById('d-tasa').textContent = tasa + '%'
+  document.getElementById('bar-tasa').style.width = tasa + '%'
+  document.getElementById('bar-tasa').style.background = tasa >= 85 ? '#22c55e' : tasa >= 70 ? '#f59e0b' : '#ef4444'
+  document.getElementById('d-tasa').style.color = tasa >= 85 ? '#16a34a' : tasa >= 70 ? '#d97706' : '#dc2626'
+  const total = parseInt(el.querySelector('p.text-\\[10px\\]').textContent)
+  document.getElementById('d-ciclo').textContent = ciclo + 'd'
+  document.getElementById('d-noent').textContent = Math.round(total * (100 - tasa) / 100)
+  document.getElementById('d-counts').textContent = Math.round(total * tasa / 100) + ' entregados de ' + total + ' asignados'
+}
+</script>
+</body>
+</html>

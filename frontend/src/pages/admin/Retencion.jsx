@@ -24,12 +24,18 @@ const MESES_S = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Se
 const MESES_L = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 const ESTADO_CFG = {
-  activo:     { label: 'Activo',     color: C.green,  bg: C.greenDim,  border: '#22c55e33' },
-  nuevo:      { label: 'Nuevo',      color: C.blue,   bg: C.blueDim,   border: '#60a5fa33' },
-  recuperado: { label: 'Recuperado', color: C.purple, bg: C.purpleDim, border: '#a78bfa33' },
-  en_riesgo:  { label: 'En riesgo',  color: C.amber,  bg: C.amberDim,  border: '#f59e0b33' },
-  inactivo:   { label: 'Inactivo',   color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: '#f9731633' },
-  perdido:    { label: 'Perdido',    color: C.red,    bg: C.redDim,    border: '#ef444433' },
+  activo:               { label: 'Activo',              color: C.green,   bg: C.greenDim,  border: '#22c55e33' },
+  nuevo:                { label: 'Nuevo',               color: C.blue,    bg: C.blueDim,   border: '#60a5fa33' },
+  recuperado:           { label: 'Recuperado',          color: C.purple,  bg: C.purpleDim, border: '#a78bfa33' },
+  en_riesgo:            { label: 'En riesgo',           color: C.amber,   bg: C.amberDim,  border: '#f59e0b33' },
+  inactivo:             { label: 'Inactivo',            color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: '#f9731633' },
+  perdido:              { label: 'Perdido',             color: C.red,     bg: C.redDim,    border: '#ef444433' },
+  en_gestion:           { label: 'En gestión',          color: C.amber,   bg: C.amberDim,  border: '#f59e0b33' },
+  seguimiento:          { label: 'Seguimiento',         color: C.blue,    bg: C.blueDim,   border: '#60a5fa33' },
+  en_pausa:             { label: 'En pausa',            color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: '#f9731633' },
+  en_pausa_lifecycle:   { label: 'En pausa',            color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: '#f9731633' },
+  cerrado:              { label: 'Cerrado',             color: '#6b7280', bg: 'rgba(107,114,128,0.1)', border: '#6b728033' },
+  pendiente_validacion: { label: '⚠ Validar estado',   color: C.red,     bg: C.redDim,    border: '#ef444433' },
 }
 
 const GESTION_ESTADO_CFG = {
@@ -41,7 +47,11 @@ const GESTION_ESTADO_CFG = {
   seguimiento: { label: 'Seguimiento', color: C.blue,    bg: C.blueDim,    border: '#60a5fa33' },
 }
 
-const ESTADO_ORDER = { perdido: 0, en_riesgo: 1, inactivo: 2, recuperado: 3, nuevo: 4, activo: 5 }
+const ESTADO_ORDER = {
+  pendiente_validacion: 0, cerrado: 1, perdido: 2, en_riesgo: 3,
+  inactivo: 4, en_pausa_lifecycle: 5, en_pausa: 5,
+  en_gestion: 6, seguimiento: 7, recuperado: 8, nuevo: 9, activo: 10,
+}
 
 const TIER_COLORS = {
   EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33', min: 500 },
@@ -234,7 +244,7 @@ export default function Retencion() {
     if (!data?.sellers) return []
     let rows = data.sellers.filter(s => {
       const matchSearch = s.nombre.toLowerCase().includes(search.toLowerCase())
-      const matchEstado = filterEstado === 'todos' || s.estado === filterEstado
+      const matchEstado = filterEstado === 'todos' || s.estado_efectivo === filterEstado
       return matchSearch && matchEstado
     })
     rows = [...rows].sort((a, b) => {
@@ -243,7 +253,7 @@ export default function Retencion() {
         return sortDir === 'asc' ? c : -c
       }
       if (sortCol === 'estado') {
-        const c = (ESTADO_ORDER[a.estado] ?? 9) - (ESTADO_ORDER[b.estado] ?? 9)
+        const c = (ESTADO_ORDER[a.estado_efectivo] ?? 9) - (ESTADO_ORDER[b.estado_efectivo] ?? 9)
         return sortDir === 'asc' ? c : -c
       }
       const va = a[sortCol] ?? -1
@@ -362,21 +372,35 @@ export default function Retencion() {
             />
             <KpiCard
               label="En riesgo" value={r.en_riesgo}
-              sub="Activos el mes pasado, silencio ahora"
+              sub="Sin señal este mes, sin gestión activa"
               color="amber" icon={AlertTriangle}
               delta={r.en_riesgo - r.prev_en_riesgo} deltaLabel={MESES_S[period.mes - 1] || 'prev'}
             />
             <KpiCard
               label="Inactivos" value={r.inactivo}
-              sub="Sin envíos hace 2-4 meses"
+              sub="Sin envíos hace 2-4 meses, sin gestión"
               color="amber" icon={UserMinus}
             />
             <KpiCard
               label="Perdidos" value={r.perdido}
-              sub="Sin actividad hace +4 meses"
+              sub="CRM o sistema: baja definitiva"
               color="red" icon={UserX}
               delta={r.perdido - r.prev_perdido} deltaLabel={MESES_S[period.mes - 1] || 'prev'}
             />
+            {(r.en_gestion > 0) && (
+              <KpiCard
+                label="En gestión" value={r.en_gestion}
+                sub="Con gestión comercial activa"
+                color="blue" icon={UserCheck}
+              />
+            )}
+            {(r.pendiente_validacion > 0) && (
+              <KpiCard
+                label="⚠ Validar estado" value={r.pendiente_validacion}
+                sub="90+ días sin envíos — requiere acción"
+                color="red" icon={AlertTriangle}
+              />
+            )}
             <KpiCard
               label="Total sellers año" value={r.total_sellers}
               sub={`${period.anio}`}
@@ -448,8 +472,8 @@ export default function Retencion() {
                   </thead>
                   <tbody>
                     {sellersVisible.map((s, i) => {
-                      const cfg = ESTADO_CFG[s.estado] || {}
-                      const isRisk = ['perdido', 'en_riesgo'].includes(s.estado)
+                      const cfg = ESTADO_CFG[s.estado_efectivo] || {}
+                      const isRisk = ['perdido', 'en_riesgo', 'pendiente_validacion'].includes(s.estado_efectivo)
                       const handlePerfilClick = () => {
                         if (s.es_grupo) navigate(`/admin/sellers/grupo/${encodeURIComponent(s.grupo_nombre)}/perfil?mes=${period.mes}&anio=${period.anio}`)
                         else navigate(`/admin/sellers/${s.seller_id}/perfil?mes=${period.mes}&anio=${period.anio}`)
@@ -464,23 +488,15 @@ export default function Retencion() {
                           <td style={{ padding: '9px 12px', color: C.text, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {s.nombre}
                             {s.es_grupo && <span style={{ marginLeft: 6, background: C.purpleDim, color: C.purple, border: `1px solid ${C.purple}33`, borderRadius: 4, padding: '1px 6px', fontSize: 9, fontWeight: 700 }}>Grupo</span>}
+                            {s.estacional && <span style={{ marginLeft: 4, background: 'rgba(96,165,250,0.1)', color: C.blue, border: `1px solid ${C.blue}33`, borderRadius: 4, padding: '1px 5px', fontSize: 9, fontWeight: 700 }}>Estacional</span>}
                           </td>
                           <td style={{ padding: '9px 12px' }}>
-                            {s.ultima_gestion?.estado && GESTION_ESTADO_CFG[s.ultima_gestion.estado] ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                {(() => {
-                                  const gcfg = GESTION_ESTADO_CFG[s.ultima_gestion.estado]
-                                  return (
-                                    <span style={{ background: gcfg.bg, color: gcfg.color, border: `1px solid ${gcfg.border}`, borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                      <span style={{ fontSize: 8 }}>●</span> {gcfg.label}
-                                    </span>
-                                  )
-                                })()}
-                                <span style={{ color: C.dimmed, fontSize: 9 }}>Envíos: <EstadoBadge estado={s.estado} /></span>
-                              </div>
-                            ) : (
-                              <EstadoBadge estado={s.estado} />
-                            )}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <EstadoBadge estado={s.estado_efectivo} />
+                              {s.estado_efectivo !== s.estado && (
+                                <span style={{ fontSize: 9, color: C.dimmed }}>Envíos: {ESTADO_CFG[s.estado]?.label || s.estado}</span>
+                              )}
+                            </div>
                           </td>
                           <td style={{ padding: '9px 12px', textAlign: 'center', color: C.muted }}>{s.ultimo_mes_activo ? MESES_S[s.ultimo_mes_activo] : '—'}</td>
                           <td style={{ padding: '9px 12px', textAlign: 'right', color: C.muted }}>{s.meses_activo}</td>

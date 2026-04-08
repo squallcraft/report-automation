@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Esquema — KPIs Seller Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f1f5f9; }
+    .card { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .bar { transition: width .6s ease; }
+  </style>
+</head>
+<body class="p-6">
+
+  <!-- Header -->
+  <div class="max-w-5xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-bold text-gray-800">Mi Rendimiento</h1>
+        <p class="text-xs text-gray-400 mt-0.5">Comercial Ejemplo SpA · Datos de Marzo 2026</p>
+      </div>
+      <!-- Selector período -->
+      <div class="flex items-center gap-2">
+        <select class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 text-gray-600 bg-white">
+          <option>Marzo 2026</option>
+          <option>Febrero 2026</option>
+          <option>Enero 2026</option>
+        </select>
+        <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <button class="text-xs px-2.5 py-1 rounded-md bg-white shadow-sm font-medium text-gray-700">Mensual</button>
+          <button class="text-xs px-2.5 py-1 rounded-md text-gray-500">Semanal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KPI Cards Row ── -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+      <!-- 1. Tasa de entrega -->
+      <div class="card p-4 border-l-4 border-emerald-500">
+        <p class="text-[11px] text-gray-400 uppercase tracking-wide font-semibold">Tasa de Entrega</p>
+        <p class="text-3xl font-bold text-gray-800 mt-1">87<span class="text-lg text-gray-400">%</span></p>
+        <p class="text-xs text-gray-500 mt-1">437 de 502 envíos entregados</p>
+        <div class="mt-2 flex items-center gap-1">
+          <span class="badge bg-emerald-100 text-emerald-700">↑ +3% vs mes anterior</span>
+        </div>
+        <!-- mini progress -->
+        <div class="mt-3 bg-gray-100 rounded-full h-1.5">
+          <div class="bar bg-emerald-500 h-1.5 rounded-full" style="width:87%"></div>
+        </div>
+      </div>
+
+      <!-- 2. Tiempo promedio de entrega -->
+      <div class="card p-4 border-l-4 border-blue-500">
+        <p class="text-[11px] text-gray-400 uppercase tracking-wide font-semibold">Tiempo Promedio</p>
+        <p class="text-3xl font-bold text-gray-800 mt-1">2.4<span class="text-lg text-gray-400"> días</span></p>
+        <p class="text-xs text-gray-500 mt-1">Desde pedido hasta entrega</p>
+        <div class="mt-2 flex items-center gap-1">
+          <span class="badge bg-blue-100 text-blue-700">↓ -0.3d vs mes anterior</span>
+        </div>
+        <div class="mt-3 flex gap-1 items-end h-6">
+          <!-- sparkline simulada -->
+          <div class="flex-1 bg-blue-200 rounded-sm" style="height:60%"></div>
+          <div class="flex-1 bg-blue-300 rounded-sm" style="height:80%"></div>
+          <div class="flex-1 bg-blue-400 rounded-sm" style="height:50%"></div>
+          <div class="flex-1 bg-blue-500 rounded-sm" style="height:70%"></div>
+          <div class="flex-1 bg-blue-400 rounded-sm" style="height:90%"></div>
+          <div class="flex-1 bg-blue-500 rounded-sm" style="height:65%"></div>
+          <div class="flex-1 bg-blue-600 rounded-sm" style="height:55%"></div>
+        </div>
+      </div>
+
+      <!-- 3. En tránsito ahora -->
+      <div class="card p-4 border-l-4 border-amber-400">
+        <p class="text-[11px] text-gray-400 uppercase tracking-wide font-semibold">En Tránsito</p>
+        <p class="text-3xl font-bold text-gray-800 mt-1">38</p>
+        <p class="text-xs text-gray-500 mt-1">Pedidos actualmente en ruta</p>
+        <div class="mt-2 flex items-center gap-1">
+          <span class="badge bg-amber-100 text-amber-700">12 con +3 días en ruta</span>
+        </div>
+        <div class="mt-3 bg-gray-100 rounded-full h-1.5">
+          <div class="bar bg-amber-400 h-1.5 rounded-full" style="width:62%"></div>
+        </div>
+      </div>
+
+      <!-- 4. Devoluciones -->
+      <div class="card p-4 border-l-4 border-red-400">
+        <p class="text-[11px] text-gray-400 uppercase tracking-wide font-semibold">Devoluciones</p>
+        <p class="text-3xl font-bold text-gray-800 mt-1">27</p>
+        <p class="text-xs text-gray-500 mt-1">5.4% del total del mes</p>
+        <div class="mt-2 flex items-center gap-1">
+          <span class="badge bg-red-100 text-red-700">↑ +8 vs mes anterior</span>
+        </div>
+        <div class="mt-3 bg-gray-100 rounded-full h-1.5">
+          <div class="bar bg-red-400 h-1.5 rounded-full" style="width:5.4%"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Fila media: Tendencia + Distribución de estados ── -->
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+
+      <!-- Tendencia semanal (span 3) -->
+      <div class="card p-4 md:col-span-3">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-semibold text-gray-700">Tendencia Semanal</h2>
+            <p class="text-xs text-gray-400">Envíos totales vs entregados por semana</p>
+          </div>
+        </div>
+        <div class="flex items-end gap-3 h-32">
+          <!-- Semana 1 -->
+          <div class="flex-1 flex flex-col items-center gap-1">
+            <div class="w-full flex items-end gap-0.5 h-24 justify-center">
+              <div class="w-5 bg-gray-200 rounded-t" style="height:70%" title="Total: 118"></div>
+              <div class="w-5 bg-emerald-400 rounded-t" style="height:60%" title="Entregados: 98"></div>
+            </div>
+            <p class="text-[10px] text-gray-400">Sem 1</p>
+            <p class="text-[10px] font-semibold text-gray-600">83%</p>
+          </div>
+          <!-- Semana 2 -->
+          <div class="flex-1 flex flex-col items-center gap-1">
+            <div class="w-full flex items-end gap-0.5 h-24 justify-center">
+              <div class="w-5 bg-gray-200 rounded-t" style="height:85%" title="Total: 143"></div>
+              <div class="w-5 bg-emerald-400 rounded-t" style="height:76%" title="Entregados: 122"></div>
+            </div>
+            <p class="text-[10px] text-gray-400">Sem 2</p>
+            <p class="text-[10px] font-semibold text-gray-600">85%</p>
+          </div>
+          <!-- Semana 3 -->
+          <div class="flex-1 flex flex-col items-center gap-1">
+            <div class="w-full flex items-end gap-0.5 h-24 justify-center">
+              <div class="w-5 bg-gray-200 rounded-t" style="height:100%"></div>
+              <div class="w-5 bg-emerald-500 rounded-t" style="height:91%"></div>
+            </div>
+            <p class="text-[10px] text-gray-400">Sem 3</p>
+            <p class="text-[10px] font-semibold text-emerald-600">91%</p>
+          </div>
+          <!-- Semana 4 (parcial) -->
+          <div class="flex-1 flex flex-col items-center gap-1">
+            <div class="w-full flex items-end gap-0.5 h-24 justify-center">
+              <div class="w-5 bg-gray-200 rounded-t" style="height:55%" title="Total: 92"></div>
+              <div class="w-5 bg-blue-400 rounded-t" style="height:49%" title="En curso"></div>
+            </div>
+            <p class="text-[10px] text-gray-400">Sem 4</p>
+            <p class="text-[10px] font-semibold text-blue-600">En curso</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-4 mt-2 text-[10px] text-gray-500">
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-gray-200 inline-block"></span> Total enviados</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span> Entregados</span>
+          <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-blue-400 inline-block"></span> En curso</span>
+        </div>
+      </div>
+
+      <!-- Distribución de estados (span 2) -->
+      <div class="card p-4 md:col-span-2">
+        <h2 class="text-sm font-semibold text-gray-700 mb-1">Estado de Envíos</h2>
+        <p class="text-xs text-gray-400 mb-4">Acumulado del mes</p>
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-gray-600 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                Entregados
+              </span>
+              <span class="font-semibold text-gray-700">437 <span class="text-gray-400 font-normal">(87%)</span></span>
+            </div>
+            <div class="bg-gray-100 rounded-full h-2"><div class="bar bg-emerald-500 h-2 rounded-full" style="width:87%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-gray-600 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>
+                En tránsito
+              </span>
+              <span class="font-semibold text-gray-700">38 <span class="text-gray-400 font-normal">(7.6%)</span></span>
+            </div>
+            <div class="bg-gray-100 rounded-full h-2"><div class="bar bg-amber-400 h-2 rounded-full" style="width:7.6%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-gray-600 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-red-400 inline-block"></span>
+                Devueltos
+              </span>
+              <span class="font-semibold text-gray-700">27 <span class="text-gray-400 font-normal">(5.4%)</span></span>
+            </div>
+            <div class="bg-gray-100 rounded-full h-2"><div class="bar bg-red-400 h-2 rounded-full" style="width:5.4%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-gray-600 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-gray-400 inline-block"></span>
+                En bodega / sin asignar
+              </span>
+              <span class="font-semibold text-gray-700">0</span>
+            </div>
+            <div class="bg-gray-100 rounded-full h-2"><div class="bar bg-gray-300 h-2 rounded-full" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-gray-100">
+          <p class="text-[10px] text-gray-400 font-medium uppercase tracking-wide">Total del período</p>
+          <p class="text-xl font-bold text-gray-700 mt-0.5">502 <span class="text-sm font-normal text-gray-400">envíos</span></p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Tabla: pedidos en alerta ── -->
+    <div class="card p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="text-sm font-semibold text-gray-700">Pedidos con Alerta</h2>
+          <p class="text-xs text-gray-400">En tránsito con más de 3 días sin actualización</p>
+        </div>
+        <span class="badge bg-amber-100 text-amber-700">12 pedidos</span>
+      </div>
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left text-[10px] text-gray-400 uppercase tracking-wide border-b border-gray-100">
+            <th class="pb-2 font-semibold">Pedido</th>
+            <th class="pb-2 font-semibold">Fecha carga</th>
+            <th class="pb-2 font-semibold">Días en tránsito</th>
+            <th class="pb-2 font-semibold">Destino</th>
+            <th class="pb-2 font-semibold">Estado</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <tr class="text-gray-700 hover:bg-amber-50/40">
+            <td class="py-2 font-mono font-medium text-gray-800">#TRK-00481</td>
+            <td class="py-2 text-gray-500">24 mar 2026</td>
+            <td class="py-2"><span class="badge bg-red-100 text-red-700">7 días</span></td>
+            <td class="py-2 text-gray-500">Las Condes</td>
+            <td class="py-2"><span class="badge bg-amber-100 text-amber-700">En tránsito</span></td>
+          </tr>
+          <tr class="text-gray-700 hover:bg-amber-50/40">
+            <td class="py-2 font-mono font-medium text-gray-800">#TRK-00512</td>
+            <td class="py-2 text-gray-500">25 mar 2026</td>
+            <td class="py-2"><span class="badge bg-red-100 text-red-700">6 días</span></td>
+            <td class="py-2 text-gray-500">Providencia</td>
+            <td class="py-2"><span class="badge bg-amber-100 text-amber-700">En tránsito</span></td>
+          </tr>
+          <tr class="text-gray-700 hover:bg-amber-50/40">
+            <td class="py-2 font-mono font-medium text-gray-800">#TRK-00533</td>
+            <td class="py-2 text-gray-500">26 mar 2026</td>
+            <td class="py-2"><span class="badge bg-amber-100 text-amber-700">5 días</span></td>
+            <td class="py-2 text-gray-500">Ñuñoa</td>
+            <td class="py-2"><span class="badge bg-amber-100 text-amber-700">En tránsito</span></td>
+          </tr>
+          <tr class="text-gray-700">
+            <td class="py-2 text-gray-400 text-[10px]" colspan="5">…y 9 más</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Nota: qué viene con datos futuros ── -->
+    <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
+      <div class="text-blue-500 mt-0.5">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-blue-800">Con datos de fecha de retiro (próximamente)</p>
+        <p class="text-xs text-blue-600 mt-0.5">
+          Cuando cargues el Excel de <code class="bg-blue-100 px-1 rounded">fecha_retiro</code>, se agregarán 2 métricas extra:
+          <strong> Efectividad Same-Day</strong> (retiro vs entrega en el mismo día)
+          y <strong>Tiempo real de despacho</strong> (desde retiro en pickup hasta entrega).
+        </p>
+      </div>
+    </div>
+
+    <!-- Footer nota técnica -->
+    <p class="text-center text-[10px] text-gray-400 pb-2">
+      Esquema de referencia — todos los datos son 100% calculables con la tabla <code>envios</code> actual, sin tablas adicionales
+    </p>
+
+  </div>
+</body>
+</html>

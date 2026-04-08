@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -47,6 +47,7 @@ const adminMenu = [
       { to: '/admin/reportes-sellers', icon: Store, label: 'Reportes Sellers' },
       { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
       { to: '/admin/retencion', icon: Users, label: 'Retención Comercial' },
+      { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de Tareas' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
@@ -90,7 +91,7 @@ function filterMenu(menu, permisos) {
   }, [])
 }
 
-function SidebarLink({ to, icon: Icon, label, collapsed, end = false }) {
+function SidebarLink({ to, icon: Icon, label, collapsed, end = false, badge = 0, badgeCritical = false }) {
   return (
     <NavLink
       to={to}
@@ -102,8 +103,29 @@ function SidebarLink({ to, icon: Icon, label, collapsed, end = false }) {
         ${isActive ? 'bg-primary-700 text-white' : 'text-primary-200 hover:bg-primary-800 hover:text-white'}`
       }
     >
-      <Icon size={18} className="shrink-0" />
-      {!collapsed && <span>{label}</span>}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <Icon size={18} />
+        {badge > 0 && collapsed && (
+          <span style={{
+            position: 'absolute', top: -5, right: -5,
+            background: badgeCritical ? '#ef4444' : '#f59e0b',
+            color: '#fff', borderRadius: 99, fontSize: 9, fontWeight: 700,
+            padding: '1px 4px', minWidth: 14, textAlign: 'center', lineHeight: '14px',
+          }}>{badge > 99 ? '99+' : badge}</span>
+        )}
+      </div>
+      {!collapsed && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+          {label}
+          {badge > 0 && (
+            <span style={{
+              background: badgeCritical ? '#ef4444' : '#f59e0b',
+              color: '#fff', borderRadius: 99, fontSize: 9, fontWeight: 700,
+              padding: '1px 6px', marginLeft: 'auto',
+            }}>{badge > 99 ? '99+' : badge}</span>
+          )}
+        </span>
+      )}
     </NavLink>
   )
 }
@@ -148,8 +170,19 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   const [collapsed, setCollapsed] = useState(false)
   const [pickupProfile, setPickupProfile] = useState(null)
   const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true, 'Análisis': true })
+  const [tareasCount, setTareasCount] = useState({ total: 0, criticas: 0 })
 
   const toggleGroup = (name) => setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }))
+
+  useEffect(() => {
+    if (user?.rol === 'ADMIN' || user?.rol === 'ADMINISTRACION') {
+      api.get('/tareas/count').then(r => setTareasCount(r.data)).catch(() => {})
+      const iv = setInterval(() => {
+        api.get('/tareas/count').then(r => setTareasCount(r.data)).catch(() => {})
+      }, 60000)
+      return () => clearInterval(iv)
+    }
+  }, [user?.rol])
 
   useEffect(() => {
     if (user?.rol === 'PICKUP') {
@@ -250,6 +283,8 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
               {...item}
               collapsed={collapsed}
               end={item.to === '/admin' || item.to === '/seller' || item.to === '/driver' || item.to === '/pickup'}
+              badge={item.to === '/admin/bandeja' ? tareasCount.total : 0}
+              badgeCritical={item.to === '/admin/bandeja' ? tareasCount.criticas > 0 : false}
             />
           )
         )}
