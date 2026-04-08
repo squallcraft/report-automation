@@ -375,7 +375,32 @@ function TabNuevoEnvio({ onEnviado }) {
       )}
 
       {/* Step 4: Confirmar */}
-      {step === 4 && preview && (
+      {step === 4 && form.segmento === 'numeros_directos' && (
+        <div>
+          <div style={{ background: C.waDim, border: `1px solid ${C.wa}33`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: C.wa }}>
+              {(form.numeros_directos_texto || '').split(/[\n,]/).filter(n => n.trim()).length}
+            </div>
+            <div style={{ fontSize: 12, color: C.muted }}>números recibirán este mensaje</div>
+          </div>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 16 }}>
+            <p style={{ fontSize: 11, color: C.muted, margin: '0 0 8px', fontWeight: 600 }}>Números a enviar:</p>
+            {(form.numeros_directos_texto || '').split(/[\n,]/).filter(n => n.trim()).map((n, i) => (
+              <div key={i} style={{ padding: '3px 0', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.text }}>{n.trim()}</div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setStep(2)} style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>← Volver</button>
+            <button onClick={enviar} disabled={enviando}
+              style={{ flex: 1, background: C.wa, border: 'none', color: '#fff', borderRadius: 8, padding: '10px', fontSize: 13, cursor: enviando ? 'not-allowed' : 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: enviando ? 0.7 : 1 }}>
+              {enviando ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Enviando…</> : <><Send size={13} /> Enviar ahora</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Confirmar (sellers) */}
+      {step === 4 && form.segmento !== 'numeros_directos' && preview && (
         <div>
           <div style={{ background: C.waDim, border: `1px solid ${C.wa}33`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: C.wa }}>{preview.total}</div>
