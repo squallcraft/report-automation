@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle, Mail, MessageCircle, Tag, X as XIcon } from 'lucide-react'
 
 const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO', 'VALPARAISO', 'MELIPILLA']
 
@@ -52,6 +52,7 @@ const initialForm = {
   cmna_fiscal: '',
   correo_dte: '',
   telefono_whatsapp: '',
+  tags: [],
   email: '',
   password: '',
   tiene_sucursales: false,
@@ -70,6 +71,7 @@ export default function Sellers() {
   const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
   const [toDelete, setToDelete] = useState(null)
+  const [tagInput, setTagInput] = useState('')
 
   const [importing, setImporting] = useState(false)
   const [importingRutGiro, setImportingRutGiro] = useState(false)
@@ -166,6 +168,7 @@ export default function Sellers() {
   const openCreate = () => {
     setEditing(null)
     setForm(initialForm)
+    setTagInput('')
     setModalOpen(true)
   }
 
@@ -195,11 +198,13 @@ export default function Sellers() {
       cmna_fiscal: seller.cmna_fiscal || '',
       correo_dte: seller.correo_dte || '',
       telefono_whatsapp: seller.telefono_whatsapp || '',
+      tags: seller.tags || [],
       email: seller.email || '',
       password: '',
       tiene_sucursales: sucs.length > 0,
       sucursales: sucs,
     })
+    setTagInput('')
     setModalOpen(true)
   }
 
@@ -266,6 +271,7 @@ export default function Sellers() {
       cmna_fiscal: (form.cmna_fiscal || '').trim() || null,
       correo_dte: (form.correo_dte || '').trim() || null,
       telefono_whatsapp: (form.telefono_whatsapp || '').trim() || null,
+      tags: form.tags || [],
       email: (form.email || '').trim() || null,
     }
     if (!payload.password) delete payload.password
@@ -613,19 +619,87 @@ export default function Sellers() {
             />
             <p className="text-xs text-gray-500 mt-1">Haulmer enviará la factura electrónica a este correo — máx. 80 caracteres</p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              WhatsApp <span className="text-xs font-normal text-gray-400">(para envíos masivos)</span>
-            </label>
-            <input
-              type="tel"
-              className="input-field"
-              placeholder="Ej: +56912345678"
-              maxLength={20}
-              value={form.telefono_whatsapp}
-              onChange={(e) => setForm((f) => ({ ...f, telefono_whatsapp: e.target.value }))}
-            />
-            <p className="text-xs text-gray-500 mt-1">Número en formato internacional — se usa para campañas de WhatsApp Business</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* WhatsApp */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <MessageCircle size={14} className="text-green-600" />
+                <span className="text-green-700 font-semibold">WhatsApp</span>
+                <span className="text-xs font-normal text-gray-400">(envíos masivos)</span>
+              </label>
+              <input
+                type="tel"
+                className="input-field border-green-300 focus:ring-green-400"
+                placeholder="Ej: +56912345678"
+                maxLength={20}
+                value={form.telefono_whatsapp}
+                onChange={(e) => setForm((f) => ({ ...f, telefono_whatsapp: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Formato internacional — campañas WhatsApp Business</p>
+            </div>
+            {/* Tags */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <Tag size={14} className="text-indigo-500" />
+                Tags
+              </label>
+              <div className="flex flex-wrap gap-1 mb-1.5 min-h-[28px]">
+                {(form.tags || []).map((t) => (
+                  <span
+                    key={t}
+                    className={`inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full font-medium ${
+                      t.startsWith('auto:')
+                        ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                        : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                    }`}
+                  >
+                    {t.startsWith('auto:') ? '⚡' : ''}{t}
+                    {!t.startsWith('auto:') && (
+                      <button
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, tags: f.tags.filter((x) => x !== t) }))}
+                        className="ml-0.5 hover:text-red-500"
+                      >
+                        <XIcon size={10} />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  className="input-field text-sm py-1"
+                  placeholder="nuevo tag…"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
+                      e.preventDefault()
+                      const t = tagInput.trim().toLowerCase().replace(/\s+/g, '_')
+                      if (!form.tags.includes(t) && !t.startsWith('auto:')) {
+                        setForm((f) => ({ ...f, tags: [...(f.tags || []), t] }))
+                      }
+                      setTagInput('')
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                  onClick={() => {
+                    const t = tagInput.trim().toLowerCase().replace(/\s+/g, '_')
+                    if (t && !form.tags.includes(t) && !t.startsWith('auto:')) {
+                      setForm((f) => ({ ...f, tags: [...(f.tags || []), t] }))
+                    }
+                    setTagInput('')
+                  }}
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Enter o coma para agregar · Los tags <span className="text-sky-600">⚡auto:</span> son automáticos</p>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -820,7 +894,10 @@ export default function Sellers() {
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email (opcional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <Mail size={14} className="text-blue-500" />
+                Email <span className="text-xs font-normal text-gray-400">(opcional)</span>
+              </label>
               <input
                 type="email"
                 className="input-field"
