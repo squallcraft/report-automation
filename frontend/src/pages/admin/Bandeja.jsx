@@ -183,6 +183,8 @@ function ResumenSemanal() {
     </div>
   )
 }
+
+function diasDesde(fecha) {
   if (!fecha) return ''
   const diff = Math.floor((Date.now() - new Date(fecha).getTime()) / 86400000)
   if (diff === 0) return 'hoy'
@@ -332,7 +334,7 @@ export default function Bandeja() {
                       <TipoIcon tipo={t.tipo} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{t.titulo}</span>
                       <SevBadge sev={t.severidad} />
-                      <span style={{ fontSize: 10, color: C.dimmed, marginLeft: 'auto' }}>{dias(t.fecha_creacion)}</span>
+                      <span style={{ fontSize: 10, color: C.dimmed, marginLeft: 'auto' }}>{diasDesde(t.fecha_creacion)}</span>
                     </div>
                     {t.descripcion && (
                       <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0 23px', lineHeight: 1.5 }}>{t.descripcion}</p>
