@@ -55,8 +55,9 @@ class TemplateCreate(BaseModel):
 
 class EnvioCreate(BaseModel):
     template_id: int
-    segmento: str             # todos | tier_epico | tier_clave | tier_bueno | en_riesgo | manual
+    segmento: str             # todos | tier_epico | tier_clave | tier_bueno | en_riesgo | manual | numeros_directos
     seller_ids: List[int] = [] # solo para segmento=manual
+    numeros_directos: List[str] = []  # solo para segmento=numeros_directos, ej ["+56912345678"]
     variables_valores: Dict[str, str] = {}  # valores para reemplazar {{1}}, {{2}}, etc.
     nombre_campaña: Optional[str] = None
 
@@ -120,6 +121,10 @@ def _resolver_segmento(
             Seller.telefono_whatsapp.isnot(None),
         ).all()
 
+    if segmento == "numeros_directos":
+        # Retorna lista vacía — los números se manejan directamente en _ejecutar_envio
+        return []
+
     q = db.query(Seller).filter(
         Seller.activo == True,
         Seller.tipo_cierre.is_(None),
@@ -174,8 +179,18 @@ async def _ejecutar_envio(envio_id: int, db: Session):
             db2,
         )
 
+        # Para números directos, construir lista sintética
+        numeros_directos = []
+        if envio.segmento == "numeros_directos":
+            raw = envio.seller_ids or []  # reutilizamos seller_ids para guardar índices
+            # Los números directos se guardan en el campo datos del envio
+            datos = envio.seller_ids  # en realidad se guarda en variables_valores["_numeros"]
+            nd_str = (envio.variables_valores or {}).get("_numeros", "")
+            numeros_directos = [n.strip() for n in nd_str.split(",") if n.strip()]
+
+        total = len(sellers) + len(numeros_directos)
         envio.estado = "enviando"
-        envio.total = len(sellers)
+        envio.total = total
         db2.commit()
 
         enviados = errores = 0
@@ -185,7 +200,7 @@ async def _ejecutar_envio(envio_id: int, db: Session):
                 numero = "+56" + numero.lstrip("0")
 
             # Decidir payload según si tiene nombre aprobado en Meta
-            variables = envio.variables_valores or {}
+            variables = {k: v for k, v in (envio.variables_valores or {}).items() if not k.startswith("_")}
             if template.wa_template_name:
                 payload = _build_template_payload(
                     template.wa_template_name, template.idioma, variables
@@ -211,6 +226,39 @@ async def _ejecutar_envio(envio_id: int, db: Session):
             db2.add(WhatsAppMensaje(
                 envio_id=envio_id,
                 seller_id=seller.id,
+                numero=numero,
+                wa_message_id=wa_msg_id,
+                estado=estado_msg,
+                error=error_msg,
+            ))
+            db2.commit()
+
+        # Números directos (sin seller asociado)
+        for numero in numeros_directos:
+            if not numero.startswith("+"):
+                numero = "+56" + numero.lstrip("0")
+            variables = {k: v for k, v in (envio.variables_valores or {}).items() if not k.startswith("_")}
+            if template.wa_template_name:
+                payload = _build_template_payload(template.wa_template_name, template.idioma, variables)
+            else:
+                payload = _build_text_payload(template.cuerpo, variables)
+            try:
+                resp = await _send_wa_message(numero, payload)
+                wa_msg_id = resp.get("messages", [{}])[0].get("id")
+                estado_msg = "enviado" if wa_msg_id else "error"
+                error_msg = json.dumps(resp.get("error")) if resp.get("error") else None
+                if wa_msg_id:
+                    enviados += 1
+                else:
+                    errores += 1
+            except Exception as e:
+                wa_msg_id = None
+                estado_msg = "error"
+                error_msg = str(e)
+                errores += 1
+            db2.add(WhatsAppMensaje(
+                envio_id=envio_id,
+                seller_id=None,
                 numero=numero,
                 wa_message_id=wa_msg_id,
                 estado=estado_msg,
@@ -339,6 +387,30 @@ async def crear_envio(
     template = db.query(WhatsAppTemplate).filter(WhatsAppTemplate.id == body.template_id).first()
     if not template:
         raise HTTPException(404, "Plantilla no encontrada")
+
+    # Para números directos, no se valida por sellers
+    if body.segmento == "numeros_directos":
+        if not body.numeros_directos:
+            raise HTTPException(400, "Debes ingresar al menos un número de teléfono")
+        # Guardamos los números en variables_valores con clave reservada _numeros
+        variables_con_numeros = dict(body.variables_valores or {})
+        variables_con_numeros["_numeros"] = ",".join(body.numeros_directos)
+        envio = WhatsAppEnvio(
+            template_id=body.template_id,
+            segmento=body.segmento,
+            seller_ids=[],
+            variables_valores=variables_con_numeros,
+            nombre_campaña=body.nombre_campaña or f"Test {template.nombre}",
+            estado="pendiente",
+            total=len(body.numeros_directos),
+            enviados=0, errores=0, leidos=0, respondidos=0,
+            fecha_inicio=datetime.utcnow(),
+        )
+        db.add(envio)
+        db.commit()
+        db.refresh(envio)
+        background_tasks.add_task(_ejecutar_envio, envio.id, db)
+        return {"envio_id": envio.id, "total": len(body.numeros_directos)}
 
     # Preview del segmento (sin enviar)
     sellers = _resolver_segmento(body.segmento, body.seller_ids, db)

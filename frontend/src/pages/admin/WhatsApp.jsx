@@ -18,13 +18,14 @@ const C = {
 }
 
 const SEGMENTOS = [
-  { value: 'todos',      label: 'Todos los sellers activos' },
-  { value: 'tier_epico', label: 'Tier Épico (500+ envíos/día)' },
-  { value: 'tier_clave', label: 'Tier Clave (100-499 envíos/día)' },
-  { value: 'tier_bueno', label: 'Tier Bueno (20-99 envíos/día)' },
-  { value: 'en_riesgo',  label: 'En riesgo / Validar estado' },
-  { value: 'en_gestion', label: 'En gestión / Seguimiento' },
-  { value: 'manual',     label: 'Selección manual' },
+  { value: 'todos',             label: 'Todos los sellers activos' },
+  { value: 'tier_epico',        label: 'Tier Épico (500+ envíos/día)' },
+  { value: 'tier_clave',        label: 'Tier Clave (100-499 envíos/día)' },
+  { value: 'tier_bueno',        label: 'Tier Bueno (20-99 envíos/día)' },
+  { value: 'en_riesgo',         label: 'En riesgo / Validar estado' },
+  { value: 'en_gestion',        label: 'En gestión / Seguimiento' },
+  { value: 'manual',            label: 'Selección manual de sellers' },
+  { value: 'numeros_directos',  label: '📱 Números directos (prueba / equipo)' },
 ]
 
 const ESTADO_MSG = {
@@ -214,7 +215,12 @@ function TabNuevoEnvio({ onEnviado }) {
   const enviar = async () => {
     setEnviando(true)
     try {
-      await api.post('/whatsapp/envios', form)
+      const payload = { ...form }
+      if (form.segmento === 'numeros_directos') {
+        payload.numeros_directos = (form.numeros_directos_texto || '')
+          .split(/[\n,]/).map(n => n.trim()).filter(Boolean)
+      }
+      await api.post('/whatsapp/envios', payload)
       onEnviado()
     } finally {
       setEnviando(false)
@@ -296,6 +302,25 @@ function TabNuevoEnvio({ onEnviado }) {
               placeholder="Ej: Aviso feriado 18 septiembre"
               style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, boxSizing: 'border-box' }} />
           </div>
+
+          {/* Campo de números directos */}
+          {form.segmento === 'numeros_directos' && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 11, color: C.muted, display: 'block', marginBottom: 4 }}>
+                Números de teléfono — uno por línea o separados por coma (formato +569XXXXXXXX)
+              </label>
+              <textarea
+                rows={4}
+                value={form.numeros_directos_texto || ''}
+                onChange={e => setForm(p => ({ ...p, numeros_directos_texto: e.target.value }))}
+                placeholder={"+56912345678\n+56987654321\n+56911111111"}
+                style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }}
+              />
+              <p style={{ fontSize: 10, color: C.muted, margin: '4px 0 0' }}>
+                {(form.numeros_directos_texto || '').split(/[\n,]/).filter(n => n.trim()).length} número(s) ingresado(s)
+              </p>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setStep(1)} style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>← Volver</button>
             <button onClick={() => setStep(3)} style={{ background: C.wa, border: 'none', color: '#fff', borderRadius: 8, padding: '10px 20px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>Siguiente →</button>
@@ -337,7 +362,10 @@ function TabNuevoEnvio({ onEnviado }) {
           )}
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button onClick={() => setStep(2)} style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>← Volver</button>
-            <button onClick={async () => { await cargarPreview(); setStep(4) }}
+            <button onClick={async () => {
+                if (form.segmento === 'numeros_directos') { setStep(4); return }
+                await cargarPreview(); setStep(4)
+              }}
               disabled={loadingPreview}
               style={{ background: C.wa, border: 'none', color: '#fff', borderRadius: 8, padding: '10px 20px', fontSize: 13, cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
               {loadingPreview ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Cargando…</> : 'Ver preview →'}
