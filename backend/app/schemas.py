@@ -90,6 +90,8 @@ class SellerUpdate(BaseModel):
     dir_fiscal: Optional[str] = None
     cmna_fiscal: Optional[str] = None
     correo_dte: Optional[str] = None
+    telefono_whatsapp: Optional[str] = None
+    estacional: Optional[bool] = None
     activo: Optional[bool] = None
     email: Optional[str] = None
     password: Optional[str] = None

@@ -5,12 +5,12 @@ import toast from 'react-hot-toast'
 import { Search, TrendingUp, TrendingDown, Minus, ExternalLink } from 'lucide-react'
 
 const C = {
-  bg: '#0d0d0d', surface: '#161616', card: '#1e1e1e', cardHover: '#242424',
-  border: '#2a2a2a',
-  accent: '#e8521a',
-  text: '#f0f0f0', muted: '#8a8a8a', dimmed: '#555555',
-  green: '#22c55e', red: '#ef4444', blue: '#60a5fa',
-  amber: '#f59e0b', purple: '#a78bfa',
+  bg: '#f8fafc', surface: '#f1f5f9', card: '#ffffff', cardHover: '#f8fafc',
+  border: '#e2e8f0',
+  accent: '#1e3a5f',
+  text: '#1e293b', muted: '#64748b', dimmed: '#94a3b8',
+  green: '#16a34a', red: '#dc2626', blue: '#2563eb',
+  amber: '#d97706', purple: '#7c3aed',
 }
 
 const MESES_L = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']

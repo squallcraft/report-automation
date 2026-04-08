@@ -51,6 +51,7 @@ const initialForm = {
   dir_fiscal: '',
   cmna_fiscal: '',
   correo_dte: '',
+  telefono_whatsapp: '',
   email: '',
   password: '',
   tiene_sucursales: false,
@@ -193,6 +194,7 @@ export default function Sellers() {
       dir_fiscal: seller.dir_fiscal || '',
       cmna_fiscal: seller.cmna_fiscal || '',
       correo_dte: seller.correo_dte || '',
+      telefono_whatsapp: seller.telefono_whatsapp || '',
       email: seller.email || '',
       password: '',
       tiene_sucursales: sucs.length > 0,
@@ -263,6 +265,7 @@ export default function Sellers() {
       dir_fiscal: (form.dir_fiscal || '').trim() || null,
       cmna_fiscal: (form.cmna_fiscal || '').trim() || null,
       correo_dte: (form.correo_dte || '').trim() || null,
+      telefono_whatsapp: (form.telefono_whatsapp || '').trim() || null,
       email: (form.email || '').trim() || null,
     }
     if (!payload.password) delete payload.password
@@ -609,6 +612,20 @@ export default function Sellers() {
               onChange={(e) => setForm((f) => ({ ...f, correo_dte: e.target.value }))}
             />
             <p className="text-xs text-gray-500 mt-1">Haulmer enviará la factura electrónica a este correo — máx. 80 caracteres</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              WhatsApp <span className="text-xs font-normal text-gray-400">(para envíos masivos)</span>
+            </label>
+            <input
+              type="tel"
+              className="input-field"
+              placeholder="Ej: +56912345678"
+              maxLength={20}
+              value={form.telefono_whatsapp}
+              onChange={(e) => setForm((f) => ({ ...f, telefono_whatsapp: e.target.value }))}
+            />
+            <p className="text-xs text-gray-500 mt-1">Número en formato internacional — se usa para campañas de WhatsApp Business</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
