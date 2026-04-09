@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, XCircle, PauseCircle } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, XCircle, PauseCircle, X } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -49,6 +49,15 @@ export default function Dashboard() {
   const [period, setPeriod] = useState({ semana: null, mes: now.getMonth() + 1, anio: now.getFullYear() })
   const [filterSemana, setFilterSemana] = useState(false)
   const [noActivos, setNoActivos] = useState({ pausados: [], cerrados: [] })
+  const [alertasOcultas, setAlertasOcultas] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dashboard_alertas_ocultas') || '[]') } catch { return [] }
+  })
+
+  const ocultarAlerta = (id) => {
+    const nuevas = [...alertasOcultas, id]
+    setAlertasOcultas(nuevas)
+    localStorage.setItem('dashboard_alertas_ocultas', JSON.stringify(nuevas))
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -103,50 +112,61 @@ export default function Dashboard() {
 
       {/* ── Alertas de cierre: Épico / Clave ──────────────────────────────── */}
       {(noActivos.cerrados.length > 0 || noActivos.pausados.length > 0) && (() => {
-        const TIER_THRESHOLD = ['EPICO', 'CLAVE']
-        // We show alerts for recently closed sellers (last 30 days) regardless of tier,
-        // but with special emphasis for high-tier ones.
         const recientes = noActivos.cerrados.filter(s => {
           if (!s.fecha_cierre) return false
           const dias = (Date.now() - new Date(s.fecha_cierre).getTime()) / (1000 * 60 * 60 * 24)
-          return dias <= 30
+          return dias <= 30 && !alertasOcultas.includes(`c_${s.id}`)
         })
         const pausados = noActivos.pausados.filter(s => {
           if (!s.fecha_cierre) return false
           const dias = (Date.now() - new Date(s.fecha_cierre).getTime()) / (1000 * 60 * 60 * 24)
-          return dias <= 7
+          return dias <= 7 && !alertasOcultas.includes(`p_${s.id}`)
         })
         if (recientes.length === 0 && pausados.length === 0) return null
         return (
           <div className="mb-6 flex flex-col gap-2">
             {recientes.map(s => (
               <div key={s.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-red-200 bg-red-50 cursor-pointer hover:bg-red-100 transition-colors"
-                onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${now.getMonth() + 1}&anio=${now.getFullYear()}`)}>
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-red-200 bg-red-50">
                 <XCircle size={16} className="text-red-500 shrink-0" />
-                <div className="flex-1 min-w-0">
+                <div
+                  className="flex-1 min-w-0 cursor-pointer hover:underline"
+                  onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${now.getMonth() + 1}&anio=${now.getFullYear()}`)}>
                   <span className="text-sm font-semibold text-red-800">{s.nombre}</span>
                   <span className="text-sm text-red-600 ml-2">fue cerrado{s.fecha_cierre ? ` el ${s.fecha_cierre}` : ''}</span>
                   {s.potencial_recuperacion && s.potencial_recuperacion !== 'ninguno' && (
                     <span className="ml-2 text-xs font-medium text-red-500">· Potencial de recuperación: {s.potencial_recuperacion}</span>
                   )}
                 </div>
-                <span className="text-xs text-red-400 shrink-0">Ver perfil →</span>
+                <button
+                  onClick={() => ocultarAlerta(`c_${s.id}`)}
+                  title="Descartar alerta"
+                  className="p-1 rounded hover:bg-red-100 text-red-300 hover:text-red-500 transition-colors shrink-0"
+                >
+                  <X size={14} />
+                </button>
               </div>
             ))}
             {pausados.map(s => (
               <div key={s.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-orange-200 bg-orange-50 cursor-pointer hover:bg-orange-100 transition-colors"
-                onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${now.getMonth() + 1}&anio=${now.getFullYear()}`)}>
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-orange-200 bg-orange-50">
                 <PauseCircle size={16} className="text-orange-500 shrink-0" />
-                <div className="flex-1 min-w-0">
+                <div
+                  className="flex-1 min-w-0 cursor-pointer hover:underline"
+                  onClick={() => navigate(`/admin/sellers/${s.id}/perfil?mes=${now.getMonth() + 1}&anio=${now.getFullYear()}`)}>
                   <span className="text-sm font-semibold text-orange-800">{s.nombre}</span>
                   <span className="text-sm text-orange-600 ml-2">fue puesto en pausa{s.fecha_cierre ? ` el ${s.fecha_cierre}` : ''}</span>
                   {s.fecha_pausa_fin && (
                     <span className="ml-2 text-xs text-orange-500">· Retorno estimado: {s.fecha_pausa_fin}</span>
                   )}
                 </div>
-                <span className="text-xs text-orange-400 shrink-0">Ver perfil →</span>
+                <button
+                  onClick={() => ocultarAlerta(`p_${s.id}`)}
+                  title="Descartar alerta"
+                  className="p-1 rounded hover:bg-orange-100 text-orange-300 hover:text-orange-500 transition-colors shrink-0"
+                >
+                  <X size={14} />
+                </button>
               </div>
             ))}
           </div>
