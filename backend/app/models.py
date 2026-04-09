@@ -130,6 +130,11 @@ class Driver(Base):
     contratado = Column(Boolean, default=False)
     email = Column(String, unique=True, nullable=True)
     password_hash = Column(String, nullable=True)
+    acuerdo_aceptado = Column(Boolean, default=False, nullable=False)
+    acuerdo_version = Column(String, nullable=True)
+    acuerdo_fecha = Column(DateTime, nullable=True)
+    acuerdo_ip = Column(String, nullable=True)
+    acuerdo_firma = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

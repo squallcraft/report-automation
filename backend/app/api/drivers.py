@@ -13,7 +13,7 @@ import pandas as pd
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, require_permission, require_driver, get_current_user, hash_password
 from app.models import Driver, RolEnum, Retiro, PagoSemanaDriver, EstadoPagoEnum
-from app.schemas import DriverCreate, DriverUpdate, DriverOut
+from app.schemas import DriverCreate, DriverUpdate, DriverOut, AcuerdoAceptarRequest
 from app.services.audit import registrar as audit
 from app.services.audit import diff_campos
 
@@ -631,3 +631,53 @@ def obtener_mi_flota(db: Session = Depends(get_db), user=Depends(get_current_use
         "es_jefe_flota": len(subordinados) > 0,
         "subordinados": [{"id": s.id, "nombre": s.nombre} for s in subordinados],
     }
+
+
+@router.post("/me/acuerdo")
+def aceptar_acuerdo(
+    body: AcuerdoAceptarRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Registra la aceptación digital del acuerdo de colaboración."""
+    from datetime import datetime, timezone
+    from app.auth import create_access_token
+    from app.schemas import TokenResponse
+
+    if user["rol"] != RolEnum.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo para drivers")
+
+    driver = db.get(Driver, user["id"])
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+
+    ip = request.headers.get("X-Forwarded-For", "")
+    if ip:
+        ip = ip.split(",")[0].strip()
+    else:
+        ip = request.client.host if request.client else "unknown"
+
+    driver.acuerdo_aceptado = True
+    driver.acuerdo_version = body.version
+    driver.acuerdo_fecha = datetime.now(timezone.utc)
+    driver.acuerdo_ip = ip
+    driver.acuerdo_firma = body.firma_base64
+
+    audit(
+        db, "aceptar_acuerdo",
+        usuario=user, request=request,
+        entidad="driver", entidad_id=driver.id,
+        metadata={"version": body.version, "ip": ip, "rut": body.rut},
+    )
+    db.commit()
+    db.refresh(driver)
+
+    token = create_access_token({"sub": str(driver.id), "rol": RolEnum.DRIVER})
+    return TokenResponse(
+        access_token=token,
+        rol=RolEnum.DRIVER,
+        nombre=driver.nombre,
+        entidad_id=driver.id,
+        acuerdo_aceptado=True,
+    )
