@@ -37,6 +37,7 @@ import DriverLiquidacion from './pages/driver/DriverLiquidacion'
 import DriverConsultas from './pages/driver/DriverConsultas'
 import DriverGanancias from './pages/driver/DriverGanancias'
 import DriverFacturas from './pages/driver/DriverFacturas'
+import AcuerdoAceptacion from './pages/driver/AcuerdoAceptacion'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Trabajadores from './pages/admin/Trabajadores'
@@ -66,6 +67,15 @@ function ProtectedRoute({ children, roles }) {
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
   if (!user) return <Navigate to="/login" replace />
   if (roles && !roles.includes(user.rol)) return <Navigate to="/login" replace />
+  return children
+}
+
+function DriverRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
+  if (!user) return <Navigate to="/login" replace />
+  if (user.rol !== 'DRIVER') return <Navigate to="/login" replace />
+  if (!user.acuerdo_aceptado) return <Navigate to="/driver/acuerdo" replace />
   return children
 }
 
@@ -144,7 +154,9 @@ export default function App() {
         <Route path="facturas" element={<PickupFacturas />} />
       </Route>
 
-      <Route path="/driver" element={<ProtectedRoute roles={['DRIVER']}><Layout /></ProtectedRoute>}>
+      <Route path="/driver/acuerdo" element={<ProtectedRoute roles={['DRIVER']}><AcuerdoAceptacion /></ProtectedRoute>} />
+
+      <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>
         <Route index element={<DriverDashboard />} />
         <Route path="entregas" element={<DriverEntregas />} />
         <Route path="liquidacion" element={<DriverLiquidacion />} />

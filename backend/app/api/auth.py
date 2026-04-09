@@ -155,6 +155,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             rol=RolEnum.DRIVER,
             nombre=driver.nombre,
             entidad_id=driver.id,
+            acuerdo_aceptado=bool(driver.acuerdo_aceptado),
         )
 
     pickup = db.query(Pickup).filter(Pickup.email == data.username, Pickup.activo == True).first()

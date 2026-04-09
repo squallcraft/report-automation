@@ -57,6 +57,16 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE drivers ADD COLUMN tarifa_melipilla INTEGER NOT NULL DEFAULT 0")
         if "zona" not in cols:
             safe_exec("ALTER TABLE drivers ADD COLUMN zona TEXT")
+        if "acuerdo_aceptado" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_aceptado BOOLEAN NOT NULL DEFAULT FALSE")
+        if "acuerdo_version" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_version TEXT")
+        if "acuerdo_fecha" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_fecha TIMESTAMP")
+        if "acuerdo_ip" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_ip TEXT")
+        if "acuerdo_firma" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_firma TEXT")
     if "admin_users" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "permisos" not in cols:

@@ -40,6 +40,13 @@ class TokenResponse(BaseModel):
     nombre: str
     entidad_id: Optional[int] = None
     permisos: Optional[List[str]] = None
+    acuerdo_aceptado: Optional[bool] = None
+
+
+class AcuerdoAceptarRequest(BaseModel):
+    rut: str
+    firma_base64: str
+    version: str = "1.0"
 
 
 # ── Sellers ──

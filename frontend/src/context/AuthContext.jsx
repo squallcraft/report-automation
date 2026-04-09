@@ -28,10 +28,19 @@ export function AuthProvider({ children }) {
       nombre: data.nombre,
       entidad_id: data.entidad_id,
       permisos: data.permisos || [],
+      acuerdo_aceptado: data.acuerdo_aceptado ?? null,
     }
     localStorage.setItem('user', JSON.stringify(userData))
     setUser(userData)
     return userData
+  }
+
+  const updateUser = (patch) => {
+    setUser(prev => {
+      const updated = { ...prev, ...patch }
+      localStorage.setItem('user', JSON.stringify(updated))
+      return updated
+    })
   }
 
   const logout = () => {
@@ -50,7 +59,7 @@ export function AuthProvider({ children }) {
   const puedeVer = (seccion) => tienePermiso(`${seccion}:ver`) || tienePermiso(`${seccion}:editar`)
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, tienePermiso, puedeEditar, puedeVer }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, tienePermiso, puedeEditar, puedeVer, updateUser }}>
       {children}
     </AuthContext.Provider>
   )
