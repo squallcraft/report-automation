@@ -71,12 +71,15 @@ function ProtectedRoute({ children, roles }) {
   return children
 }
 
+// ─── Cambiar a true cuando el acuerdo esté listo para activarse ───
+const ACUERDO_ACTIVO = false
+
 function DriverRoute({ children }) {
   const { user, loading } = useAuth()
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
   if (!user) return <Navigate to="/login" replace />
   if (user.rol !== 'DRIVER') return <Navigate to="/login" replace />
-  if (!user.acuerdo_aceptado) return <Navigate to="/driver/acuerdo" replace />
+  if (ACUERDO_ACTIVO && !user.acuerdo_aceptado) return <Navigate to="/driver/acuerdo" replace />
   return children
 }
 
