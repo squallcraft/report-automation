@@ -3,7 +3,7 @@ set -e
 
 # ─────────────────────────────────────────────────
 # ECourier — Script de deploy para DigitalOcean
-# Droplet: 165.22.144.142
+# Droplet: 159.65.248.113
 # Dominio: facturacion.e-courier.cl
 # ─────────────────────────────────────────────────
 
@@ -88,8 +88,8 @@ echo "  https://${DOMAIN}"
 echo "════════════════════════════════════════════"
 echo ""
 echo "Siguiente paso: migrar datos desde SQLite"
-echo "  scp backend/ecourier.db root@165.22.144.142:/tmp/"
-echo "  ssh root@165.22.144.142"
+echo "  scp backend/ecourier.db root@159.65.248.113:/tmp/"
+echo "  ssh root@159.65.248.113"
 echo "  cd /opt/ecourier"
 echo "  docker compose exec backend pip install psycopg2-binary"
 echo "  # Ejecutar migración dentro del container"
