@@ -686,22 +686,26 @@ export default function SellerPerfil() {
                 const costoMes = kpis?.costo_mes || 0
                 const totalPaq = kpis?.total_mes || 0
                 const margenActual = ingresoMes - costoMes
-                const ingPorPaq = totalPaq > 0 ? ingresoMes / totalPaq : 0
+                // Si no hay datos del mes, usar precio_base del seller como referencia
+                const ingPorPaq = totalPaq > 0 ? ingresoMes / totalPaq : (seller?.precio_base || 0)
+                const costoPorPaq = totalPaq > 0 ? costoMes / totalPaq : 0
                 const descPct = parseFloat(simDescuento) || 0
-                const paqProy = parseFloat(simPaquetes) || totalPaq
+                const paqProy = parseFloat(simPaquetes) || (totalPaq > 0 ? totalPaq : 0)
                 const nuevoPrecio = ingPorPaq * (1 - descPct / 100)
                 const nuevoIngreso = nuevoPrecio * paqProy
-                const nuevoMargen = nuevoIngreso - (paqProy * (totalPaq > 0 ? costoMes / totalPaq : 0))
+                const nuevoMargen = nuevoIngreso - (paqProy * costoPorPaq)
                 const impactoMensual = nuevoIngreso - ingresoMes
                 const impactoAnual = impactoMensual * 12
                 const margenNuevoPct = nuevoIngreso > 0 ? Math.round(nuevoMargen / nuevoIngreso * 100) : 0
                 const threshold = ingPorPaq > 0 ? Math.max(0, Math.round((1 - costoMes / ingresoMes) * 100 * 0.5)) : 0
+                const sinDatosMes = totalPaq === 0
 
                 return (
                   <>
                     <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 14 }}>
                       Precio actual: <strong style={{ color: C.text }}>{fmt(Math.round(ingPorPaq))}/paq.</strong>
-                      {' '}· Costo: <strong style={{ color: C.amber }}>{fmt(Math.round(totalPaq > 0 ? costoMes / totalPaq : 0))}/paq.</strong>
+                      {' '}· Costo: <strong style={{ color: C.amber }}>{fmt(Math.round(costoPorPaq))}/paq.</strong>
+                      {sinDatosMes && <span style={{ color: C.amber, marginLeft: 6 }}>(sin datos este mes — usando precio base)</span>}
                     </p>
 
                     <div style={{ marginBottom: 12 }}>
