@@ -38,6 +38,7 @@ import DriverConsultas from './pages/driver/DriverConsultas'
 import DriverGanancias from './pages/driver/DriverGanancias'
 import DriverFacturas from './pages/driver/DriverFacturas'
 import AcuerdoAceptacion from './pages/driver/AcuerdoAceptacion'
+import DriverMiAcuerdo from './pages/driver/DriverMiAcuerdo'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Trabajadores from './pages/admin/Trabajadores'
@@ -163,6 +164,7 @@ export default function App() {
         <Route path="ganancias" element={<DriverGanancias />} />
         <Route path="facturas" element={<DriverFacturas />} />
         <Route path="consultas" element={<DriverConsultas />} />
+        <Route path="acuerdo-info" element={<DriverMiAcuerdo />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />

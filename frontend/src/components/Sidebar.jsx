@@ -74,6 +74,7 @@ const driverLinks = [
   { to: '/driver/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
   { to: '/driver/facturas', icon: Receipt, label: 'Mis Facturas' },
   { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
+  { to: '/driver/acuerdo-info', icon: ClipboardList, label: 'Mi Acuerdo' },
 ]
 
 function tieneAcceso(permisos, slug) {
