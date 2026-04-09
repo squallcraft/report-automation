@@ -24,6 +24,8 @@ from app.auth import resolver_permisos
 
 logger = logging.getLogger(__name__)
 
+CURRENT_ACUERDO_VERSION = "1.0"
+
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 # ---------------------------------------------------------------------------
@@ -150,12 +152,16 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if driver and driver.password_hash and verify_password(data.password, driver.password_hash):
         token = create_access_token({"sub": str(driver.id), "rol": RolEnum.DRIVER})
         _audit(db, "LOGIN_SUCCESS", driver.email, ip)
+        acuerdo_ok = bool(
+            driver.acuerdo_aceptado and
+            driver.acuerdo_version == CURRENT_ACUERDO_VERSION
+        )
         return TokenResponse(
             access_token=token,
             rol=RolEnum.DRIVER,
             nombre=driver.nombre,
             entidad_id=driver.id,
-            acuerdo_aceptado=bool(driver.acuerdo_aceptado),
+            acuerdo_aceptado=acuerdo_ok,
         )
 
     pickup = db.query(Pickup).filter(Pickup.email == data.username, Pickup.activo == True).first()

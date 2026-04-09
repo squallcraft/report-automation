@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock } from 'lucide-react'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -13,6 +13,15 @@ function EstadoBadge({ activo }) {
     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
       {activo ? 'Activo' : 'Inactivo'}
     </span>
+  )
+}
+
+function AcuerdoRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5 bg-white">
+      <span className="text-gray-500">{label}</span>
+      <span className="font-medium text-gray-900">{value}</span>
+    </div>
   )
 }
 
@@ -116,6 +125,9 @@ export default function Drivers() {
 
   const [importingHomolog, setImportingHomolog] = useState(false)
   const [importingTarifas, setImportingTarifas] = useState(false)
+  const [acuerdoModal, setAcuerdoModal] = useState(false)
+  const [acuerdoData, setAcuerdoData] = useState(null)
+  const [loadingAcuerdo, setLoadingAcuerdo] = useState(false)
 
   const fetchDrivers = () => {
     api.get('/drivers')
@@ -258,6 +270,22 @@ export default function Drivers() {
       .finally(() => setSaving(false))
   }
 
+  const verAcuerdo = async (e, row) => {
+    e.stopPropagation()
+    setAcuerdoData(null)
+    setAcuerdoModal(true)
+    setLoadingAcuerdo(true)
+    try {
+      const { data } = await api.get(`/drivers/${row.id}/acuerdo`)
+      setAcuerdoData(data)
+    } catch {
+      toast.error('No se pudo cargar el acuerdo')
+      setAcuerdoModal(false)
+    } finally {
+      setLoadingAcuerdo(false)
+    }
+  }
+
   const columns = [
     { key: 'nombre', label: 'Nombre', render: (v, row) => (
       <div className="flex items-center gap-1.5 flex-wrap">
@@ -283,27 +311,59 @@ export default function Drivers() {
     { key: 'tarifa_melipilla', label: 'T. Melipilla', align: 'right', render: (v) => v ? fmtClp(v) : '—' },
     { key: 'activo', label: 'Estado', align: 'center', render: (v) => <EstadoBadge activo={v} /> },
     {
+      key: 'acuerdo_aceptado',
+      label: 'Acuerdo',
+      align: 'center',
+      render: (v, row) => v ? (
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+            <CheckCircle size={11} /> Firmado
+          </span>
+          {row.acuerdo_fecha && (
+            <span className="text-[10px] text-gray-400">
+              {new Date(row.acuerdo_fecha).toLocaleDateString('es-CL')}
+            </span>
+          )}
+        </div>
+      ) : (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+          <Clock size={11} /> Pendiente
+        </span>
+      ),
+    },
+    {
       key: 'acciones',
       label: '',
       align: 'right',
-      render: (_, row) => canEdit ? (
+      render: (_, row) => (
         <div className="flex items-center justify-end gap-1">
           <button
-            onClick={(e) => { e.stopPropagation(); openEdit(row) }}
-            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
-            title="Editar"
+            onClick={(e) => verAcuerdo(e, row)}
+            className="p-1.5 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+            title="Ver acuerdo"
           >
-            <Pencil size={16} />
+            <FileText size={16} />
           </button>
-          <button
-            onClick={(e) => handleDeleteClick(e, row)}
-            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-            title="Desactivar"
-          >
-            <Trash2 size={16} />
-          </button>
+          {canEdit && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); openEdit(row) }}
+                className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-primary-600 transition-colors"
+                title="Editar"
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                onClick={(e) => handleDeleteClick(e, row)}
+                className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                title="Desactivar"
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          )}
         </div>
-      ) : null,
+      ),
     },
   ]
 
@@ -590,6 +650,47 @@ export default function Drivers() {
                 Desactivar
               </button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={acuerdoModal} onClose={() => { setAcuerdoModal(false); setAcuerdoData(null) }} title="Acuerdo de Colaboración">
+        {loadingAcuerdo && (
+          <div className="py-10 text-center text-sm text-gray-400">Cargando...</div>
+        )}
+        {acuerdoData && !loadingAcuerdo && (
+          <div className="space-y-4">
+            {acuerdoData.acuerdo_aceptado ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 text-green-700 text-sm font-medium">
+                <CheckCircle size={16} /> Acuerdo vigente — versión {acuerdoData.acuerdo_version}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 text-amber-700 text-sm font-medium">
+                <Clock size={16} />
+                {acuerdoData.acuerdo_version && acuerdoData.acuerdo_version !== acuerdoData.version_actual
+                  ? `Versión anterior firmada (v${acuerdoData.acuerdo_version}). Versión actual: v${acuerdoData.version_actual}`
+                  : 'Acuerdo pendiente de firma'}
+              </div>
+            )}
+            <div className="divide-y divide-gray-100 rounded-xl border border-gray-100 overflow-hidden text-sm">
+              <AcuerdoRow label="Conductor" value={acuerdoData.nombre} />
+              <AcuerdoRow label="RUT firmante" value={acuerdoData.rut || '—'} />
+              <AcuerdoRow label="Versión firmada" value={acuerdoData.acuerdo_version ? `v${acuerdoData.acuerdo_version}` : '—'} />
+              <AcuerdoRow label="Fecha y hora" value={acuerdoData.acuerdo_fecha
+                ? new Date(acuerdoData.acuerdo_fecha).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : '—'} />
+              <AcuerdoRow label="IP de origen" value={acuerdoData.acuerdo_ip || '—'} />
+            </div>
+            {acuerdoData.acuerdo_firma ? (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Firma registrada</p>
+                <div className="border border-gray-200 rounded-xl bg-gray-50 p-3 flex items-center justify-center" style={{ minHeight: 100 }}>
+                  <img src={acuerdoData.acuerdo_firma} alt="Firma" className="max-h-28 object-contain" />
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-4">Sin firma registrada</p>
+            )}
           </div>
         )}
       </Modal>
