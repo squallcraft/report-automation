@@ -1093,107 +1093,99 @@ def pickup_ganancias(
     if anio is None:
         anio = hoy.year
 
-    semanas_rows = db.query(CalendarioSemanas).filter(
-        CalendarioSemanas.mes == mes, CalendarioSemanas.anio == anio,
-    ).order_by(CalendarioSemanas.semana).all()
-    semanas_lista = [r.semana for r in semanas_rows] if semanas_rows else [1, 2, 3, 4]
+    # ── Cálculo mensual completo (primer día hábil al último del mes) ─────────
+    recs_mes = db.query(RecepcionPaquete).filter(
+        RecepcionPaquete.pickup_id == pickup_id,
+        RecepcionPaquete.mes == mes, RecepcionPaquete.anio == anio,
+    ).all()
+
+    comision_mes = 0
+    for r in recs_mes:
+        skip = False
+        if r.envio_id:
+            envio = db.get(Envio, r.envio_id)
+            if envio:
+                if pickup.driver_id and envio.driver_id == pickup.driver_id:
+                    skip = True
+                elif pickup.seller_id and envio.seller_id == pickup.seller_id:
+                    skip = True
+        if not skip:
+            comision_mes += r.comision
+
+    ganancia_driver_mes = 0
+    entregas_mes = 0
+    if pickup.driver_id:
+        envios_d = db.query(Envio).filter(
+            Envio.driver_id == pickup.driver_id,
+            Envio.mes == mes, Envio.anio == anio,
+        ).all()
+        entregas_mes = len(envios_d)
+        driver = db.get(Driver, pickup.driver_id)
+        ganancia_driver_mes = sum(e.costo_driver + e.pago_extra_manual for e in envios_d)
+        if driver and not driver.contratado:
+            ganancia_driver_mes += sum(e.extra_producto_driver + e.extra_comuna_driver for e in envios_d)
+        retiros_d = db.query(Retiro).filter(
+            Retiro.driver_id == pickup.driver_id,
+            Retiro.mes == mes, Retiro.anio == anio,
+        ).all()
+        if driver:
+            ganancia_driver_mes += _calcular_retiro_driver(driver, retiros_d)
+
+    cargo_seller_mes = 0
+    envios_seller_mes = 0
+    if pickup.seller_id:
+        seller = db.get(Seller, pickup.seller_id)
+        if seller:
+            envios_s = db.query(Envio).filter(
+                Envio.seller_id == seller.id,
+                Envio.mes == mes, Envio.anio == anio,
+            ).all()
+            envios_seller_mes = len(envios_s)
+            cargo_seller_mes = sum(
+                e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller
+                for e in envios_s
+            )
+            cargo_seller_mes += _calcular_retiro_seller(seller, envios_s)
+
+    liquidado_mes = comision_mes + ganancia_driver_mes - cargo_seller_mes
+
+    # Pagos del mes completo (sin filtrar por semana)
+    pagado_mes = 0
+    pcs_pickup_mes = db.query(PagoCartolaPickup).filter(
+        PagoCartolaPickup.pickup_id == pickup_id,
+        PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
+    ).all()
+    pagado_mes += sum(p.monto for p in pcs_pickup_mes)
+    if pickup.driver_id:
+        pcs_driver_mes = db.query(PagoCartola).filter(
+            PagoCartola.driver_id == pickup.driver_id,
+            PagoCartola.mes == mes, PagoCartola.anio == anio,
+        ).all()
+        pagado_mes += sum(p.monto for p in pcs_driver_mes)
+
+    estado_mes = "PENDIENTE"
+    if pagado_mes > 0 and pagado_mes >= liquidado_mes:
+        estado_mes = "PAGADO"
+    elif pagado_mes > 0:
+        estado_mes = "INCOMPLETO"
+
+    total_liquidado = liquidado_mes
+    total_pagado = pagado_mes
 
     semanas = []
-    total_liquidado = 0
-    total_pagado = 0
-
-    for sem in semanas_lista:
-        recs = db.query(RecepcionPaquete).filter(
-            RecepcionPaquete.pickup_id == pickup_id,
-            RecepcionPaquete.semana == sem, RecepcionPaquete.mes == mes, RecepcionPaquete.anio == anio,
-        ).all()
-        comision_sem = 0
-        for r in recs:
-            skip = False
-            if r.envio_id:
-                envio = db.get(Envio, r.envio_id)
-                if envio:
-                    if pickup.driver_id and envio.driver_id == pickup.driver_id:
-                        skip = True
-                    elif pickup.seller_id and envio.seller_id == pickup.seller_id:
-                        skip = True
-            if not skip:
-                comision_sem += r.comision
-
-        ganancia_driver_sem = 0
-        entregas_sem = 0
-        if pickup.driver_id:
-            envios_d = db.query(Envio).filter(
-                Envio.driver_id == pickup.driver_id,
-                Envio.semana == sem, Envio.mes == mes, Envio.anio == anio,
-            ).all()
-            entregas_sem = len(envios_d)
-            driver = db.get(Driver, pickup.driver_id)
-            ganancia_driver_sem = sum(e.costo_driver + e.pago_extra_manual for e in envios_d)
-            if driver and not driver.contratado:
-                ganancia_driver_sem += sum(e.extra_producto_driver + e.extra_comuna_driver for e in envios_d)
-            retiros_d = db.query(Retiro).filter(
-                Retiro.driver_id == pickup.driver_id,
-                Retiro.semana == sem, Retiro.mes == mes, Retiro.anio == anio,
-            ).all()
-            if driver:
-                ganancia_driver_sem += _calcular_retiro_driver(driver, retiros_d)
-
-        cargo_seller_sem = 0
-        envios_seller_sem = 0
-        if pickup.seller_id:
-            seller = db.get(Seller, pickup.seller_id)
-            if seller:
-                envios_s = db.query(Envio).filter(
-                    Envio.seller_id == seller.id,
-                    Envio.semana == sem, Envio.mes == mes, Envio.anio == anio,
-                ).all()
-                envios_seller_sem = len(envios_s)
-                cargo_seller_sem = sum(
-                    e.cobro_seller + e.cobro_extra_manual + e.extra_producto_seller + e.extra_comuna_seller
-                    for e in envios_s
-                )
-                cargo_seller_sem += _calcular_retiro_seller(seller, envios_s)
-
-        liquidado_sem = comision_sem + ganancia_driver_sem - cargo_seller_sem
-
-        pagado_sem = 0
-        # Pagos directos al pickup via CPP
-        pcs_pickup = db.query(PagoCartolaPickup).filter(
-            PagoCartolaPickup.pickup_id == pickup_id,
-            PagoCartolaPickup.semana == sem, PagoCartolaPickup.mes == mes, PagoCartolaPickup.anio == anio,
-        ).all()
-        pagado_sem += sum(p.monto for p in pcs_pickup)
-        # Pagos via driver vinculado (legacy / CPC)
-        if pickup.driver_id:
-            pcs = db.query(PagoCartola).filter(
-                PagoCartola.driver_id == pickup.driver_id,
-                PagoCartola.semana == sem, PagoCartola.mes == mes, PagoCartola.anio == anio,
-            ).all()
-            pagado_sem += sum(p.monto for p in pcs)
-
-        estado = "PENDIENTE"
-        if pagado_sem > 0 and pagado_sem >= liquidado_sem:
-            estado = "PAGADO"
-        elif pagado_sem > 0:
-            estado = "INCOMPLETO"
-
-        total_liquidado += liquidado_sem
-        total_pagado += pagado_sem
-
-        if liquidado_sem > 0 or pagado_sem > 0 or len(recs) > 0:
-            semanas.append({
-                "semana": sem,
-                "paquetes": len(recs),
-                "comision": comision_sem,
-                "ganancias_driver": ganancia_driver_sem,
-                "entregas": entregas_sem,
-                "cargo_seller": cargo_seller_sem,
-                "envios_seller": envios_seller_sem,
-                "liquidado": liquidado_sem,
-                "pagado": pagado_sem,
-                "estado": estado,
-            })
+    if liquidado_mes > 0 or pagado_mes > 0 or len(recs_mes) > 0:
+        semanas.append({
+            "semana": None,
+            "paquetes": len(recs_mes),
+            "comision": comision_mes,
+            "ganancias_driver": ganancia_driver_mes,
+            "entregas": entregas_mes,
+            "cargo_seller": cargo_seller_mes,
+            "envios_seller": envios_seller_mes,
+            "liquidado": liquidado_mes,
+            "pagado": pagado_mes,
+            "estado": estado_mes,
+        })
 
     pagos = []
     # Pagos directos al pickup via CPP

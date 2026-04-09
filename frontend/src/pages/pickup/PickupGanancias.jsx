@@ -117,14 +117,16 @@ export default function PickupGanancias() {
           <div className="card mb-4 sm:mb-6 p-0 overflow-hidden">
             <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-gray-100">
               <h2 className="text-xs sm:text-sm font-semibold text-gray-700">
-                Desglose semanal — {MESES[mes - 1]} {anio}
+                Resumen del mes — {MESES[mes - 1]} {anio}
               </h2>
+              <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5">Período completo: primer día hábil al último del mes</p>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-[10px] sm:text-sm min-w-[560px]">
+              <table className="w-full text-[10px] sm:text-sm min-w-[500px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Sem</th>
+                    <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Período</th>
+                    <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Paquetes</th>
                     <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Comisión</th>
                     <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Entregas</th>
                     <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Cargo</th>
@@ -135,9 +137,10 @@ export default function PickupGanancias() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.semanas.map(s => (
-                    <tr key={s.semana} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-2 sm:px-4 py-2 sm:py-3 font-semibold whitespace-nowrap">{s.semana}</td>
+                  {data.semanas.map((s, i) => (
+                    <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 font-semibold whitespace-nowrap">{MESES[mes - 1]} {anio}</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 text-right whitespace-nowrap">{s.paquetes}</td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-emerald-700 whitespace-nowrap">{fmt(s.comision)}</td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right whitespace-nowrap">{s.ganancias_driver > 0 ? fmt(s.ganancias_driver) : '—'}</td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-red-600 whitespace-nowrap">{s.cargo_seller > 0 ? `-${fmt(s.cargo_seller)}` : '—'}</td>
@@ -154,25 +157,6 @@ export default function PickupGanancias() {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
-                    <td className="px-2 sm:px-4 py-2 sm:py-3">Total</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-emerald-700 whitespace-nowrap">
-                      {fmt(data.semanas.reduce((a, s) => a + s.comision, 0))}
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right whitespace-nowrap">
-                      {fmt(data.semanas.reduce((a, s) => a + s.ganancias_driver, 0))}
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-red-600 whitespace-nowrap">
-                      {data.semanas.reduce((a, s) => a + s.cargo_seller, 0) > 0
-                        ? `-${fmt(data.semanas.reduce((a, s) => a + s.cargo_seller, 0))}`
-                        : '—'}
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right whitespace-nowrap">{fmt(data.resumen.total_liquidado)}</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-emerald-700 whitespace-nowrap">{fmt(data.resumen.total_pagado)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
               </table>
             </div>
           </div>
@@ -192,7 +176,6 @@ export default function PickupGanancias() {
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Fecha</th>
-                      <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Sem</th>
                       <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Monto</th>
                       <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600 hidden sm:table-cell">Origen</th>
                       <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600 hidden sm:table-cell">Descripción</th>
@@ -206,7 +189,6 @@ export default function PickupGanancias() {
                             ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
                             : '—'}
                         </td>
-                        <td className="px-2 sm:px-4 py-2 sm:py-3">{p.semana}</td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-emerald-700 whitespace-nowrap">{fmt(p.monto)}</td>
                         <td className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell">
                           <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
@@ -225,7 +207,7 @@ export default function PickupGanancias() {
                   </tbody>
                   <tfoot>
                     <tr className="bg-gray-50 border-t-2 border-gray-200">
-                      <td className="px-2 sm:px-4 py-2 sm:py-3 font-semibold text-gray-700" colSpan={2}>Total</td>
+                      <td className="px-2 sm:px-4 py-2 sm:py-3 font-semibold text-gray-700">Total</td>
                       <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-bold text-emerald-700 whitespace-nowrap">
                         {fmt((data.pagos || []).reduce((a, p) => a + p.monto, 0))}
                       </td>
