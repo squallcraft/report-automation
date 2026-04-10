@@ -137,6 +137,8 @@ export default function SellerPerfil() {
   // Simulador de descuento
   const [simDescuento, setSimDescuento] = useState('')     // % descuento
   const [simPaquetes, setSimPaquetes] = useState('')        // paquetes proyectados (opcional)
+  const [simModo, setSimModo] = useState('pct')             // 'pct' | 'precio'
+  const [simPrecioDirecto, setSimPrecioDirecto] = useState('') // precio directo por paquete
 
   // Lifecycle comercial (cerrar / pausar / reabrir)
   const [showCierreModal, setShowCierreModal] = useState(false)
@@ -686,36 +688,91 @@ export default function SellerPerfil() {
                 const costoMes = kpis?.costo_mes || 0
                 const totalPaq = kpis?.total_mes || 0
                 const margenActual = ingresoMes - costoMes
-                // Si no hay datos del mes, usar precio_base del seller como referencia
                 const ingPorPaq = totalPaq > 0 ? ingresoMes / totalPaq : (seller?.precio_base || 0)
                 const costoPorPaq = totalPaq > 0 ? costoMes / totalPaq : 0
-                const descPct = parseFloat(simDescuento) || 0
+                const sinDatosMes = totalPaq === 0
+
+                // Calcular precio y descuento según modo
+                const precioDirectoVal = parseFloat(simPrecioDirecto) || 0
+                const descPct = simModo === 'pct'
+                  ? (parseFloat(simDescuento) || 0)
+                  : (ingPorPaq > 0 && precioDirectoVal > 0 ? Math.round((1 - precioDirectoVal / ingPorPaq) * 1000) / 10 : 0)
+                const nuevoPrecio = simModo === 'pct'
+                  ? ingPorPaq * (1 - descPct / 100)
+                  : precioDirectoVal
+
                 const paqProy = parseFloat(simPaquetes) || (totalPaq > 0 ? totalPaq : 0)
-                const nuevoPrecio = ingPorPaq * (1 - descPct / 100)
                 const nuevoIngreso = nuevoPrecio * paqProy
                 const nuevoMargen = nuevoIngreso - (paqProy * costoPorPaq)
-                const impactoMensual = nuevoIngreso - ingresoMes
+                const impactoMensual = nuevoIngreso - (ingresoMes || nuevoPrecio * (totalPaq > 0 ? totalPaq : paqProy))
                 const impactoAnual = impactoMensual * 12
                 const margenNuevoPct = nuevoIngreso > 0 ? Math.round(nuevoMargen / nuevoIngreso * 100) : 0
-                const threshold = ingPorPaq > 0 ? Math.max(0, Math.round((1 - costoMes / ingresoMes) * 100 * 0.5)) : 0
-                const sinDatosMes = totalPaq === 0
+                const threshold = ingPorPaq > 0 && ingresoMes > 0 ? Math.max(0, Math.round((1 - costoMes / ingresoMes) * 100 * 0.5)) : 0
+
+                const haySimulacion = simModo === 'pct' ? descPct > 0 : precioDirectoVal > 0
 
                 return (
                   <>
+                    {/* Fila de precio actual */}
                     <p style={{ color: C.dimmed, fontSize: 11, marginBottom: 14 }}>
                       Precio actual: <strong style={{ color: C.text }}>{fmt(Math.round(ingPorPaq))}/paq.</strong>
                       {' '}· Costo: <strong style={{ color: C.amber }}>{fmt(Math.round(costoPorPaq))}/paq.</strong>
                       {sinDatosMes && <span style={{ color: C.amber, marginLeft: 6 }}>(sin datos este mes — usando precio base)</span>}
                     </p>
 
-                    <div style={{ marginBottom: 12 }}>
-                      <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Descuento propuesto (%)</label>
-                      <input type="number" min="0" max="50" step="0.5"
-                        value={simDescuento} onChange={e => setSimDescuento(e.target.value)}
-                        placeholder="Ej: 5"
-                        style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
-                      />
+                    {/* Toggle modo */}
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: C.surface, borderRadius: 8, padding: 3 }}>
+                      {[['pct', '% Descuento'], ['precio', 'Precio por paquete']].map(([val, label]) => (
+                        <button key={val} onClick={() => setSimModo(val)}
+                          style={{
+                            flex: 1, padding: '5px 8px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                            fontSize: 11, fontWeight: 600, transition: 'all 0.15s',
+                            background: simModo === val ? C.accent : 'transparent',
+                            color: simModo === val ? '#fff' : C.muted,
+                          }}>
+                          {label}
+                        </button>
+                      ))}
                     </div>
+
+                    {/* Input principal */}
+                    {simModo === 'pct' ? (
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Descuento propuesto (%)</label>
+                        <input type="number" min="0" max="50" step="0.5"
+                          value={simDescuento} onChange={e => setSimDescuento(e.target.value)}
+                          placeholder="Ej: 5"
+                          style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                        />
+                        {descPct > 0 && ingPorPaq > 0 && (
+                          <p style={{ marginTop: 5, fontSize: 11, color: C.muted }}>
+                            Precio resultante:{' '}
+                            <strong style={{ color: C.text, fontSize: 13 }}>{fmt(Math.round(nuevoPrecio))}/paq.</strong>
+                            <span style={{ color: C.red, marginLeft: 6 }}>(-{fmt(Math.round(ingPorPaq - nuevoPrecio))})</span>
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Precio propuesto por paquete ($)</label>
+                        <input type="number" min="0" step="10"
+                          value={simPrecioDirecto} onChange={e => setSimPrecioDirecto(e.target.value)}
+                          placeholder={`Actual: ${fmt(Math.round(ingPorPaq))}`}
+                          style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                        />
+                        {precioDirectoVal > 0 && ingPorPaq > 0 && (
+                          <p style={{ marginTop: 5, fontSize: 11, color: C.muted }}>
+                            Equivale a un descuento de{' '}
+                            <strong style={{ color: descPct > 0 ? C.red : C.green }}>
+                              {descPct > 0 ? `-${descPct.toFixed(1)}%` : `+${Math.abs(descPct).toFixed(1)}%`}
+                            </strong>
+                            {' '}respecto al precio actual
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Paquetes proyectados */}
                     <div style={{ marginBottom: 16 }}>
                       <label style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4 }}>Paquetes proyectados (opcional)</label>
                       <input type="number" min="0"
@@ -725,7 +782,7 @@ export default function SellerPerfil() {
                       />
                     </div>
 
-                    {descPct > 0 && (
+                    {haySimulacion && paqProy > 0 && (
                       <div style={{ background: C.surface, borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {[
                           ['Ingreso proyectado/mes', fmt(Math.round(nuevoIngreso)), nuevoIngreso >= ingresoMes ? C.green : C.red],
@@ -750,8 +807,10 @@ export default function SellerPerfil() {
                         </div>
                       </div>
                     )}
-                    {!descPct && (
-                      <p style={{ color: C.dimmed, fontSize: 11 }}>Ingresa un porcentaje de descuento para ver el impacto.</p>
+                    {!haySimulacion && (
+                      <p style={{ color: C.dimmed, fontSize: 11 }}>
+                        {simModo === 'pct' ? 'Ingresa un % de descuento para ver el impacto.' : 'Ingresa el precio propuesto por paquete para ver el impacto.'}
+                      </p>
                     )}
                   </>
                 )
