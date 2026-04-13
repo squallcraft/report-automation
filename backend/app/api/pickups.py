@@ -10,6 +10,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func as sqla_func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from openpyxl import Workbook
@@ -485,7 +486,9 @@ async def importar_recepciones(
 
             envio_id = None
             envio = db.query(Envio).filter(
-                (Envio.tracking_id == pedido_raw) | (Envio.venta_id == pedido_raw)
+                (Envio.tracking_id == pedido_raw)
+                | (Envio.venta_id == pedido_raw)
+                | (sqla_func.trim(Envio.seller_code) == pedido_raw)
             ).first()
             if envio:
                 envio_id = envio.id
@@ -628,7 +631,9 @@ def _run_trackingtech_import(
                             else:
                                 envio_id = None
                                 envio = db.query(Envio).filter(
-                                    (Envio.tracking_id == pedido) | (Envio.venta_id == pedido)
+                                    (Envio.tracking_id == pedido)
+                                    | (Envio.venta_id == pedido)
+                                    | (sqla_func.trim(Envio.seller_code) == pedido)
                                 ).first()
                                 if envio:
                                     envio_id = envio.id
