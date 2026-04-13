@@ -500,7 +500,10 @@ async def importar_recepciones(
             if pickup_id:
                 pickup_obj = pickup_obj_cache.get(pickup_id)
                 comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
-                if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                if pickup_obj and envio and (
+                    (pickup_obj.seller_id and envio.seller_id == pickup_obj.seller_id)
+                    or (pickup_obj.driver_id and envio.driver_id == pickup_obj.driver_id)
+                ):
                     comision = 0
 
             rec = RecepcionPaquete(
@@ -644,7 +647,10 @@ def _run_trackingtech_import(
                                 if pickup_id:
                                     pickup_obj = pickup_obj_cache.get(pickup_id)
                                     comision = pickup_obj.comision_paquete if pickup_obj else COMISION_PAQUETE
-                                    if pickup_obj and pickup_obj.seller_id and envio and envio.seller_id == pickup_obj.seller_id:
+                                    if pickup_obj and envio and (
+                                        (pickup_obj.seller_id and envio.seller_id == pickup_obj.seller_id)
+                                        or (pickup_obj.driver_id and envio.driver_id == pickup_obj.driver_id)
+                                    ):
                                         comision = 0
 
                                 db.add(RecepcionPaquete(
