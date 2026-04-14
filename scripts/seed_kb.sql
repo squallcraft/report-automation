@@ -1,0 +1,24 @@
+INSERT INTO conocimiento_agente (categoria, titulo, contenido, keywords, activo, orden, created_at, updated_at) VALUES
+('empresa', 'Qué es Ecourier', 'Ecourier es una empresa de logística y courier en Chile, especializada en entregas same-day y next-day en la Región Metropolitana y zonas de cobertura nacional. Somos partners oficiales de Mercado Libre, Falabella y otras plataformas de e-commerce. Nos diferenciamos por ofrecer un servicio rápido, confiable y con trazabilidad en tiempo real a través de nuestra plataforma tecnológica propia.', '["ecourier","empresa","quienes somos","que hacen","courier","logistica"]', true, 1, NOW(), NOW()),
+
+('servicios', 'Servicio de envíos same-day', 'Ofrecemos entregas el mismo día dentro de la Región Metropolitana. Recogemos los paquetes al mediodía y los despachamos en la tarde. Ideal para sellers que necesitan despacho rápido para mantener la reputación en sus plataformas.', '["same day","envio","entrega","rapido","mismo dia","despacho"]', true, 1, NOW(), NOW()),
+
+('servicios', 'Servicio de pickup (retiro)', 'Tenemos puntos de pickup donde los sellers pueden dejar sus paquetes para despacho. También ofrecemos retiro en la bodega del seller. El servicio de pickup facilita la operación para quienes manejan volumen y prefieren centralizar.', '["pickup","retiro","punto","bodega","recoleccion"]', true, 2, NOW(), NOW()),
+
+('servicios', 'Integraciones con marketplaces', 'Estamos integrados con Mercado Libre, Falabella, Shopify y otras plataformas de e-commerce. Los pedidos se importan automáticamente a nuestro sistema para su despacho. La integración se configura rápido y sin costo adicional.', '["mercado libre","falabella","shopify","integracion","marketplace","plataforma"]', true, 3, NOW(), NOW()),
+
+('cobertura', 'Cobertura geográfica', 'Nuestra cobertura principal es la Región Metropolitana (Santiago y alrededores). También realizamos envíos a regiones a través de partners logísticos. Para zonas como Valparaíso y Melipilla tenemos tarifas especiales. Para consultas de cobertura específica, un ejecutivo puede validar tu zona exacta.', '["cobertura","santiago","region metropolitana","regiones","zona","comunas","valparaiso","melipilla"]', true, 1, NOW(), NOW()),
+
+('tarifas', 'Información general de tarifas', 'Nuestras tarifas dependen del volumen de envíos, la zona de entrega y el tipo de servicio. Ofrecemos planes escalonados: a mayor volumen, menor costo por envío. Para una cotización precisa, un ejecutivo necesita conocer tu volumen mensual estimado, zona de despacho y canal de venta. Te podemos hacer una cotización personalizada.', '["tarifa","precio","costo","cuanto cuesta","cotizacion","plan","valor"]', true, 1, NOW(), NOW()),
+
+('faq', 'Cómo empezar a trabajar con Ecourier', 'El proceso es simple: 1) Nos cuentas sobre tu negocio y volumen. 2) Te hacemos una cotización personalizada. 3) Te creamos una cuenta en nuestra plataforma. 4) Integramos tu tienda o marketplace. 5) Empezamos a despachar. Todo el proceso puede estar listo en 24-48 horas.', '["empezar","comenzar","como funciona","proceso","registro","cuenta"]', true, 1, NOW(), NOW()),
+
+('faq', 'Qué necesito para ser seller en Ecourier', 'Necesitas: un negocio con productos para despachar, un canal de venta (Mercado Libre, tienda propia, etc.), y boleta o factura. No hay mínimo de envíos ni contratos de permanencia. Puedes empezar con pocos envíos y escalar.', '["requisitos","necesito","seller","registro"]', true, 2, NOW(), NOW()),
+
+('faq', 'Seguimiento y trazabilidad', 'Todos los envíos tienen trazabilidad en tiempo real a través de nuestra plataforma. Tanto tú como tus clientes pueden ver el estado del envío. Nuestros conductores usan una app de trazabilidad donde registran cada etapa de la entrega con fotos.', '["seguimiento","tracking","trazabilidad","estado","rastreo"]', true, 3, NOW(), NOW()),
+
+('objeciones', 'Ya tengo otro courier', 'Muchos de nuestros sellers actuales llegaron porque su courier anterior no cumplía con los tiempos o la calidad. Podemos trabajar en paralelo: prueba con algunos envíos y compara el servicio. No hay exclusividad ni permanencia mínima.', '["otro courier","ya tengo","competencia","cambiar"]', true, 1, NOW(), NOW()),
+
+('objeciones', 'Es muy caro', 'Nuestras tarifas son competitivas y escalan con tu volumen. Muchos sellers descubren que el costo total es menor cuando consideran la tasa de entrega exitosa, menos devoluciones y mejor reputación en sus plataformas. Hagamos una cotización y comparamos.', '["caro","precio alto","costoso","barato"]', true, 2, NOW(), NOW()),
+
+('objeciones', 'Necesito envíos a regiones', 'Tenemos cobertura en regiones a través de partners logísticos. La Región Metropolitana es nuestro fuerte con same-day, pero para regiones podemos ofrecerte una solución integral. Un ejecutivo te puede detallar las tarifas y tiempos.', '["regiones","fuera de santiago","provincia"]', true, 3, NOW(), NOW());

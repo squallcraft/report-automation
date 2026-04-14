@@ -30,16 +30,19 @@ export default function NotificationBell() {
   const [open, setOpen]     = useState(false)
   const [tareas, setTareas] = useState([])
   const [count, setCount]   = useState({ total: 0, criticas: 0 })
+  const [leadsCount, setLeadsCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const panelRef = useRef(null)
   const navigate = useNavigate()
 
   // Polling del badge cada 60s
   useEffect(() => {
-    api.get('/tareas/count').then(r => setCount(r.data)).catch(() => {})
-    const iv = setInterval(() => {
+    const fetchAll = () => {
       api.get('/tareas/count').then(r => setCount(r.data)).catch(() => {})
-    }, 60000)
+      api.get('/leads/notificaciones/count').then(r => setLeadsCount(r.data.no_leidas || 0)).catch(() => {})
+    }
+    fetchAll()
+    const iv = setInterval(fetchAll, 60000)
     return () => clearInterval(iv)
   }, [])
 
@@ -70,7 +73,8 @@ export default function NotificationBell() {
     setCount(c => ({ ...c, total: Math.max(0, c.total - 1) }))
   }
 
-  const hasCritical = count.criticas > 0
+  const totalBadge = count.total + leadsCount
+  const hasCritical = count.criticas > 0 || leadsCount > 0
 
   return (
     <div ref={panelRef} style={{ position: 'relative' }}>
@@ -94,7 +98,7 @@ export default function NotificationBell() {
         }}
       >
         <Bell size={18} />
-        {count.total > 0 && (
+        {totalBadge > 0 && (
           <span style={{
             position: 'absolute',
             top: 4,
@@ -135,7 +139,7 @@ export default function NotificationBell() {
               <Bell size={15} color="#1e293b" />
               <span style={{ fontWeight: 700, fontSize: 14, color: '#1e293b' }}>Notificaciones</span>
             </div>
-            {count.total > 0 ? (
+            {totalBadge > 0 ? (
               <span style={{
                 background: hasCritical ? '#fef2f2' : '#fefce8',
                 color: hasCritical ? '#ef4444' : '#d97706',
@@ -145,7 +149,7 @@ export default function NotificationBell() {
                 borderRadius: 99,
                 border: `1px solid ${hasCritical ? '#fecaca' : '#fde68a'}`,
               }}>
-                {count.total} pendiente{count.total !== 1 ? 's' : ''}
+                {totalBadge} pendiente{totalBadge !== 1 ? 's' : ''}
               </span>
             ) : (
               <span style={{ fontSize: 11, color: '#94a3b8' }}>Al día ✓</span>
@@ -245,26 +249,51 @@ export default function NotificationBell() {
           </div>
 
           {/* Footer */}
-          <div
-            onClick={() => { navigate('/admin/bandeja'); setOpen(false) }}
-            style={{
-              padding: '11px 16px',
-              borderTop: '1px solid #f1f5f9',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              color: '#1e3a5f',
-              cursor: 'pointer',
-              background: '#fafafa',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
-            onMouseLeave={e => e.currentTarget.style.background = '#fafafa'}
-          >
-            Ver todas en Bandeja de Tareas
-            <ArrowRight size={13} />
+          <div style={{ borderTop: '1px solid #f1f5f9' }}>
+            {leadsCount > 0 && (
+              <div
+                onClick={() => { navigate('/admin/leads'); setOpen(false) }}
+                style={{
+                  padding: '9px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#7c3aed',
+                  cursor: 'pointer',
+                  background: '#faf5ff',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f3e8ff'}
+                onMouseLeave={e => e.currentTarget.style.background = '#faf5ff'}
+              >
+                <span style={{ background: '#7c3aed', color: '#fff', borderRadius: 99, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>
+                  {leadsCount}
+                </span>
+                Leads WhatsApp pendientes
+                <ArrowRight size={13} style={{ marginLeft: 'auto' }} />
+              </div>
+            )}
+            <div
+              onClick={() => { navigate('/admin/bandeja'); setOpen(false) }}
+              style={{
+                padding: '11px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#1e3a5f',
+                cursor: 'pointer',
+                background: '#fafafa',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+              onMouseLeave={e => e.currentTarget.style.background = '#fafafa'}
+            >
+              Ver todas en Bandeja de Tareas
+              <ArrowRight size={13} />
+            </div>
           </div>
         </div>
       )}

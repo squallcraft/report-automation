@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -49,6 +49,13 @@ const adminMenu = [
       { to: '/admin/retencion', icon: Users, label: 'Retención Comercial' },
       { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de Tareas' },
       { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },
+    ],
+  },
+  {
+    group: 'Comercial', icon: Store, children: [
+      { to: '/admin/leads', icon: MessageSquare, label: 'Leads WhatsApp' },
+      { to: '/admin/leads/pipeline', icon: Kanban, label: 'Pipeline' },
+      { to: '/admin/leads/kb', icon: BookOpen, label: 'Base Conocimiento' },
     ],
   },
   { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
@@ -171,7 +178,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [pickupProfile, setPickupProfile] = useState(null)
-  const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true, 'Análisis': true })
+  const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true, 'Análisis': true, Comercial: true })
   const [tareasCount, setTareasCount] = useState({ total: 0, criticas: 0 })
 
   const toggleGroup = (name) => setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }))

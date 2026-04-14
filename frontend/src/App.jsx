@@ -55,6 +55,9 @@ import Bandeja from './pages/admin/Bandeja'
 import WhatsApp from './pages/admin/WhatsApp'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
+import LeadsInbox from './pages/admin/LeadsInbox'
+import LeadsPipeline from './pages/admin/LeadsPipeline'
+import LeadsKB from './pages/admin/LeadsKB'
 import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
 import PickupEnvios from './pages/pickup/PickupEnvios'
@@ -137,6 +140,9 @@ export default function App() {
         <Route path="whatsapp" element={<WhatsApp />} />
         <Route path="sellers/:sellerId/perfil" element={<SellerPerfil />} />
         <Route path="sellers/grupo/:grupoName/perfil" element={<SellerPerfil />} />
+        <Route path="leads" element={<LeadsInbox />} />
+        <Route path="leads/pipeline" element={<LeadsPipeline />} />
+        <Route path="leads/kb" element={<LeadsKB />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>
