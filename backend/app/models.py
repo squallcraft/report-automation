@@ -1134,3 +1134,106 @@ class WhatsAppMensaje(Base):
     respuesta = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     enviado_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Leads WhatsApp ────────────────────────────────────────────────────────────
+
+class EtapaLeadEnum(str, enum.Enum):
+    NUEVO = "nuevo"
+    IA_GESTIONANDO = "ia_gestionando"
+    CALIFICADO = "calificado"
+    REQUIERE_HUMANO = "requiere_humano"
+    CONTACTADO = "contactado"
+    PROPUESTA = "propuesta"
+    GANADO = "ganado"
+    PERDIDO = "perdido"
+
+
+class TemperaturaLeadEnum(str, enum.Enum):
+    FRIO = "frio"
+    TIBIO = "tibio"
+    CALIENTE = "caliente"
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    phone = Column(String(20), unique=True, nullable=False, index=True)
+    nombre = Column(String(200), nullable=True)
+    email = Column(String(200), nullable=True)
+    origen = Column(String(50), default="directo")  # sitio_web | referido | directo | redes | otro
+
+    # Calificación comercial (llenada por la IA progresivamente)
+    negocio = Column(String(200), nullable=True)
+    canal_venta = Column(String(100), nullable=True)
+    volumen_estimado = Column(String(100), nullable=True)
+    ubicacion = Column(String(200), nullable=True)
+    intencion = Column(String(100), nullable=True)  # precio | cobertura | servicio | integracion | otro
+
+    # Pipeline
+    etapa = Column(String(30), default=EtapaLeadEnum.NUEVO.value, index=True)
+    temperatura = Column(String(20), default=TemperaturaLeadEnum.FRIO.value)
+    resumen_ia = Column(Text, nullable=True)
+    asignado_a = Column(String(100), nullable=True)
+    notas_humano = Column(Text, nullable=True)
+    tags = Column(JSON, default=list)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
+
+    # Estado conversacional (máquina de estados)
+    estado_conversacion = Column(String(30), default="saludo")  # saludo | intencion | calificacion | resolucion | cierre
+    interacciones_ia = Column(Integer, default=0)
+    gestionado_por = Column(String(10), default="ia")  # ia | humano | mixto
+
+    # Ventana 24h y actividad
+    ventana_24h_expira = Column(DateTime, nullable=True)
+    ultimo_mensaje_lead = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    mensajes = relationship("MensajeLead", back_populates="lead", order_by="MensajeLead.timestamp")
+
+
+class MensajeLead(Base):
+    __tablename__ = "mensajes_leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    direccion = Column(String(10), nullable=False)  # inbound | outbound
+    autor = Column(String(10), nullable=False)       # lead | ia | humano
+    contenido = Column(Text, nullable=False)
+    tipo_contenido = Column(String(20), default="texto")  # texto | audio | imagen | documento | sticker
+    wa_message_id = Column(String(100), nullable=True, index=True)
+    estado_wa = Column(String(20), nullable=True)  # enviado | entregado | leido | error
+    metadata = Column(JSON, nullable=True)  # tool calls, razón escalada, etc.
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    lead = relationship("Lead", back_populates="mensajes")
+
+
+class ConocimientoAgente(Base):
+    __tablename__ = "conocimiento_agente"
+
+    id = Column(Integer, primary_key=True, index=True)
+    categoria = Column(String(50), nullable=False, index=True)  # empresa | servicios | tarifas | cobertura | integraciones | faq | objeciones
+    titulo = Column(String(200), nullable=False)
+    contenido = Column(Text, nullable=False)
+    keywords = Column(JSON, default=list)
+    activo = Column(Boolean, default=True)
+    orden = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NotificacionComercial(Base):
+    __tablename__ = "notificaciones_comerciales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False, index=True)
+    tipo = Column(String(30), nullable=False)  # lead_nuevo | requiere_humano | ventana_expirando | sin_actividad_24h | sin_actividad_3d | sin_actividad_7d | lead_reactivado | agente_error
+    titulo = Column(String(200), nullable=False)
+    detalle = Column(Text, nullable=True)
+    prioridad = Column(String(10), default="normal")  # normal | alta | urgente
+    leida = Column(Boolean, default=False)
+    accion_url = Column(String(200), nullable=True)  # wa.me link o ruta interna
+    created_at = Column(DateTime, default=datetime.utcnow)

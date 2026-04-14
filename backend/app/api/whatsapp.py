@@ -29,6 +29,7 @@ from app.auth import require_admin_or_administracion
 from app.models import (
     WhatsAppTemplate, WhatsAppEnvio, WhatsAppMensaje,
     Seller, SellerSnapshot,
+    Lead, MensajeLead, EtapaLeadEnum, NotificacionComercial,
 )
 
 logger = logging.getLogger(__name__)
@@ -508,69 +509,101 @@ def webhook_verify(
 @router.post("/webhook")
 async def webhook_eventos(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Recepción de actualizaciones de estado de mensajes desde Meta."""
+    """Recepción de actualizaciones de estado + mensajes inbound (sellers y leads)."""
     try:
         payload = await request.json()
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
 
-                # Actualizaciones de estado (enviado → entregado → leído)
+                # ── Status updates (enviado → entregado → leído) ──────────
                 for status in value.get("statuses", []):
                     wa_msg_id = status.get("id")
-                    estado = status.get("status")  # sent | delivered | read | failed
+                    estado = status.get("status")
                     if not wa_msg_id:
                         continue
 
+                    # Check in campaign messages
                     msg = db.query(WhatsAppMensaje).filter(
                         WhatsAppMensaje.wa_message_id == wa_msg_id
                     ).first()
-                    if not msg:
-                        continue
-
-                    if estado == "delivered":
-                        msg.estado = "entregado"
-                    elif estado == "read":
-                        msg.estado = "leido"
-                        msg.leido = True
-                    elif estado == "failed":
-                        msg.estado = "error"
-                        msg.error = json.dumps(status.get("errors", []))
-
-                    db.commit()
-
-                    # Actualizar contadores del envio
-                    if estado in ("read",):
-                        envio = db.query(WhatsAppEnvio).filter(
-                            WhatsAppEnvio.id == msg.envio_id
-                        ).first()
-                        if envio:
-                            envio.leidos = db.query(sqlfunc.count(WhatsAppMensaje.id)).filter(
-                                WhatsAppMensaje.envio_id == envio.id,
-                                WhatsAppMensaje.leido == True,
-                            ).scalar()
-                            db.commit()
-
-                # Mensajes entrantes (respuestas del seller)
-                for message in value.get("messages", []):
-                    wa_msg_id = message.get("context", {}).get("id")  # ID del mensaje original
-                    texto = message.get("text", {}).get("body", "")
-                    from_num = message.get("from")
-
-                    if wa_msg_id:
-                        msg = db.query(WhatsAppMensaje).filter(
-                            WhatsAppMensaje.wa_message_id == wa_msg_id
-                        ).first()
-                        if msg:
-                            msg.respondido = True
-                            msg.respuesta = texto[:500]
-                            msg.estado = "respondido"
-                            db.commit()
-
+                    if msg:
+                        if estado == "delivered":
+                            msg.estado = "entregado"
+                        elif estado == "read":
+                            msg.estado = "leido"
+                            msg.leido = True
+                        elif estado == "failed":
+                            msg.estado = "error"
+                            msg.error = json.dumps(status.get("errors", []))
+                        db.commit()
+                        if estado == "read":
                             envio = db.query(WhatsAppEnvio).filter(
                                 WhatsAppEnvio.id == msg.envio_id
+                            ).first()
+                            if envio:
+                                envio.leidos = db.query(sqlfunc.count(WhatsAppMensaje.id)).filter(
+                                    WhatsAppMensaje.envio_id == envio.id,
+                                    WhatsAppMensaje.leido == True,
+                                ).scalar()
+                                db.commit()
+                        continue
+
+                    # Check in lead messages
+                    lead_msg = db.query(MensajeLead).filter(
+                        MensajeLead.wa_message_id == wa_msg_id
+                    ).first()
+                    if lead_msg:
+                        if estado in ("delivered", "read"):
+                            lead_msg.estado_wa = "leido" if estado == "read" else "entregado"
+                        elif estado == "failed":
+                            lead_msg.estado_wa = "error"
+                        db.commit()
+
+                # ── Inbound messages ──────────────────────────────────────
+                for message in value.get("messages", []):
+                    from_num = message.get("from", "")
+                    msg_id_inbound = message.get("id", "")
+                    msg_type = message.get("type", "text")
+                    texto = ""
+                    tipo_contenido = "texto"
+
+                    if msg_type == "text":
+                        texto = message.get("text", {}).get("body", "")
+                    elif msg_type in ("image", "audio", "video", "document", "sticker"):
+                        tipo_contenido = msg_type
+                        texto = message.get(msg_type, {}).get("caption", "") or f"[{msg_type}]"
+                    else:
+                        tipo_contenido = msg_type
+                        texto = f"[{msg_type}]"
+
+                    if not from_num:
+                        continue
+
+                    # Idempotency: skip if already processed
+                    if msg_id_inbound:
+                        existing = db.query(MensajeLead).filter(
+                            MensajeLead.wa_message_id == msg_id_inbound
+                        ).first()
+                        if existing:
+                            continue
+
+                    # ── Is this a reply to a campaign message? ────────────
+                    context_msg_id = message.get("context", {}).get("id")
+                    if context_msg_id:
+                        campaign_msg = db.query(WhatsAppMensaje).filter(
+                            WhatsAppMensaje.wa_message_id == context_msg_id
+                        ).first()
+                        if campaign_msg:
+                            campaign_msg.respondido = True
+                            campaign_msg.respuesta = texto[:500]
+                            campaign_msg.estado = "respondido"
+                            db.commit()
+                            envio = db.query(WhatsAppEnvio).filter(
+                                WhatsAppEnvio.id == campaign_msg.envio_id
                             ).first()
                             if envio:
                                 envio.respondidos = db.query(sqlfunc.count(WhatsAppMensaje.id)).filter(
@@ -578,8 +611,124 @@ async def webhook_eventos(
                                     WhatsAppMensaje.respondido == True,
                                 ).scalar()
                                 db.commit()
+                            continue
+
+                    # ── Is this number a known seller? Skip lead flow ─────
+                    is_seller = db.query(Seller).filter(
+                        Seller.telefono_whatsapp == from_num,
+                        Seller.activo == True,
+                    ).first()
+                    if is_seller:
+                        continue
+
+                    # ── Lead flow ─────────────────────────────────────────
+                    lead = db.query(Lead).filter(Lead.phone == from_num).first()
+                    is_new = False
+
+                    if not lead:
+                        is_new = True
+                        contact_name = ""
+                        contacts = value.get("contacts", [])
+                        if contacts:
+                            profile = contacts[0].get("profile", {})
+                            contact_name = profile.get("name", "")
+                        lead = Lead(
+                            phone=from_num,
+                            nombre=contact_name or None,
+                            etapa=EtapaLeadEnum.NUEVO.value,
+                            ventana_24h_expira=datetime.utcnow() + timedelta(hours=24),
+                            ultimo_mensaje_lead=datetime.utcnow(),
+                        )
+                        db.add(lead)
+                        db.flush()
+
+                    elif lead.etapa == EtapaLeadEnum.PERDIDO.value:
+                        lead.etapa = EtapaLeadEnum.IA_GESTIONANDO.value
+                        lead.interacciones_ia = 0
+                        lead.estado_conversacion = "saludo"
+                        lead.gestionado_por = "ia"
+                        from app.services.agente_leads import _crear_notificacion
+                        _crear_notificacion(db, lead, "lead_reactivado",
+                                            f"Lead reactivado: {lead.nombre or lead.phone}",
+                                            f"Lead que estaba perdido volvió a escribir: {texto[:200]}",
+                                            prioridad="alta")
+
+                    lead.ventana_24h_expira = datetime.utcnow() + timedelta(hours=24)
+                    lead.ultimo_mensaje_lead = datetime.utcnow()
+
+                    db.add(MensajeLead(
+                        lead_id=lead.id,
+                        direccion="inbound",
+                        autor="lead",
+                        contenido=texto,
+                        tipo_contenido=tipo_contenido,
+                        wa_message_id=msg_id_inbound or None,
+                    ))
+                    db.commit()
+
+                    if is_new:
+                        from app.services.agente_leads import _crear_notificacion
+                        _crear_notificacion(db, lead, "lead_nuevo",
+                                            f"Nuevo lead: {lead.nombre or lead.phone}",
+                                            f"Primer mensaje: {texto[:200]}",
+                                            prioridad="alta")
+                        db.commit()
+
+                    # Non-text content: acknowledge and escalate
+                    if tipo_contenido != "texto":
+                        lead.etapa = EtapaLeadEnum.REQUIERE_HUMANO.value
+                        media_msg = "Recibí tu mensaje pero no puedo procesar ese tipo de archivo. ¿Me lo puedes escribir? O si prefieres te conecto con un ejecutivo."
+                        try:
+                            wa_resp = await _send_wa_message(from_num, {"type": "text", "text": {"body": media_msg}})
+                            wa_out_id = wa_resp.get("messages", [{}])[0].get("id")
+                        except Exception:
+                            wa_out_id = None
+                        db.add(MensajeLead(
+                            lead_id=lead.id, direccion="outbound", autor="ia",
+                            contenido=media_msg, wa_message_id=wa_out_id, tipo_contenido="texto",
+                        ))
+                        from app.services.agente_leads import _crear_notificacion
+                        _crear_notificacion(db, lead, "requiere_humano",
+                                            f"Lead envió {tipo_contenido}: {lead.nombre or lead.phone}",
+                                            f"No se puede procesar {tipo_contenido}. Requiere atención humana.",
+                                            prioridad="alta")
+                        db.commit()
+                        continue
+
+                    # ── Trigger AI agent (in background to not block webhook) ──
+                    if lead.etapa in (EtapaLeadEnum.NUEVO.value, EtapaLeadEnum.IA_GESTIONANDO.value,
+                                      EtapaLeadEnum.CALIFICADO.value):
+                        background_tasks.add_task(
+                            _process_lead_with_agent, lead.id, texto
+                        )
 
     except Exception as e:
         logger.exception(f"Error procesando webhook WhatsApp: {e}")
 
     return {"status": "ok"}
+
+
+async def _send_wa_text(phone: str, text: str) -> Optional[str]:
+    """Envía un texto libre por WA y retorna el wa_message_id."""
+    try:
+        resp = await _send_wa_message(phone, {"type": "text", "text": {"body": text}})
+        return resp.get("messages", [{}])[0].get("id")
+    except Exception as e:
+        logger.exception("Error enviando WA a %s: %s", phone, e)
+        return None
+
+
+async def _process_lead_with_agent(lead_id: int, texto: str):
+    """Background task: procesa mensaje del lead con el agente IA."""
+    from app.database import SessionLocal
+    from app.services.agente_leads import procesar_mensaje_lead
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead:
+            return
+        await procesar_mensaje_lead(lead, texto, db, _send_wa_text)
+    except Exception as e:
+        logger.exception("Error en agente IA para lead %d: %s", lead_id, e)
+    finally:
+        db.close()
