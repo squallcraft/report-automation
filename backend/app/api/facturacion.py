@@ -149,6 +149,15 @@ def tabla_facturacion(
 
     seller_ids_con_envios = {r.seller_id for r in envio_rows}
 
+    envio_dia_rows = db.query(
+        Envio.seller_id, Envio.semana, Envio.fecha_entrega, func.count(Envio.id).label("cnt"),
+    ).filter(Envio.mes == mes, Envio.anio == anio).group_by(
+        Envio.seller_id, Envio.semana, Envio.fecha_entrega,
+    ).all()
+    envio_dia_map: dict = {}
+    for r in envio_dia_rows:
+        envio_dia_map.setdefault((r.seller_id, r.semana), {})[r.fecha_entrega] = r.cnt
+
     ajuste_rows = db.query(
         AjusteLiquidacion.entidad_id, AjusteLiquidacion.semana,
         func.sum(AjusteLiquidacion.monto).label("total"),
@@ -177,7 +186,14 @@ def tabla_facturacion(
         t_env, t_ep, t_ec, cant, dias = envio_agg[key]
         total_retiros = 0
         if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
-            if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
+            if seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
+                dia_counts = envio_dia_map.get(key, {})
+                dias_cobrar = sum(
+                    1 for cnt_d in dia_counts.values()
+                    if cnt_d < seller.min_paquetes_retiro_gratis
+                )
+                total_retiros = seller.tarifa_retiro * dias_cobrar
+            elif not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
                 total_retiros = seller.tarifa_retiro * dias
         return t_env + t_ep + t_ec + total_retiros + t_aj
 

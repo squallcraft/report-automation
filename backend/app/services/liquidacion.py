@@ -67,19 +67,44 @@ def _calcular_retiro_driver(driver, retiros: list, semana_cerrada: bool = False)
     return sum(r.tarifa_driver or 0 for r in retiros)
 
 
-def _calcular_retiro_seller(seller, envios: list, retiros_seller: list = None) -> int:
+def _calcular_retiro_seller(seller, envios: list, retiros_seller: list = None,
+                            mes: int = 0, anio: int = 0) -> int:
     """
     Cobro de retiro al seller para una semana.
-    Si existen retiros con tarifa_seller > 0 los usa directamente (inmutables).
-    Fallback dinámico para semanas sin retiros importados.
+
+    Desde abril 2026 se aplica la regla por día: si el seller tiene
+    min_paquetes_retiro_gratis y un día tuvo >= ese mínimo de envíos,
+    ese día NO se cobra retiro (independiente de retiros almacenados).
+
+    Períodos anteriores: si existen retiros almacenados los usa; sino
+    fallback dinámico con conteo semanal.
     """
     if not seller.tiene_retiro or seller.usa_pickup or not envios:
         return 0
+
+    if not anio and envios:
+        anio = getattr(envios[0], 'anio', 0) or 0
+        mes = getattr(envios[0], 'mes', 0) or 0
+
+    if seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
+        if not seller.tarifa_retiro:
+            return 0
+        envios_por_dia: dict = {}
+        for e in envios:
+            if e.fecha_entrega:
+                envios_por_dia[e.fecha_entrega] = envios_por_dia.get(e.fecha_entrega, 0) + 1
+        retiro_fechas = {r.fecha for r in retiros_seller} if retiros_seller else set(envios_por_dia.keys())
+        dias_cobrar = sum(
+            1 for f in retiro_fechas
+            if envios_por_dia.get(f, 0) < seller.min_paquetes_retiro_gratis
+        )
+        return seller.tarifa_retiro * dias_cobrar
+
     if retiros_seller:
         total_stored = sum(r.tarifa_seller or 0 for r in retiros_seller)
         if total_stored > 0:
             return total_stored
-    # Fallback dinámico
+    # Fallback dinámico (pre abril 2026)
     if seller.min_paquetes_retiro_gratis > 0 and len(envios) >= seller.min_paquetes_retiro_gratis:
         return 0
     if not seller.tarifa_retiro:
@@ -103,6 +128,15 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
         Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
     ).group_by(Envio.seller_id).all()
     envio_agg = {r.seller_id: (r.t_envios or 0, r.t_extras_prod or 0, r.t_extras_com or 0, r.cant, r.dias) for r in envio_rows}
+
+    envio_dia_rows = db.query(
+        Envio.seller_id, Envio.fecha_entrega, func.count(Envio.id).label("cnt"),
+    ).filter(
+        Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
+    ).group_by(Envio.seller_id, Envio.fecha_entrega).all()
+    envio_dia_map: dict[int, dict] = {}
+    for r in envio_dia_rows:
+        envio_dia_map.setdefault(r.seller_id, {})[r.fecha_entrega] = r.cnt
 
     user_rows = db.query(Envio.seller_id, Envio.user_nombre).filter(
         Envio.semana == semana, Envio.mes == mes, Envio.anio == anio,
@@ -142,7 +176,16 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
         t_envios, t_ep, t_ec, cant, dias = envio_agg[seller.id]
 
         retiros_directos = retiro_directo_map.get(seller.id, [])
-        if retiros_directos:
+        if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro \
+                and seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
+            dia_counts = envio_dia_map.get(seller.id, {})
+            retiro_fechas = {r.fecha for r in retiros_directos} if retiros_directos else set(dia_counts.keys())
+            dias_cobrar = sum(
+                1 for f in retiro_fechas
+                if dia_counts.get(f, 0) < seller.min_paquetes_retiro_gratis
+            )
+            total_retiro_directo = seller.tarifa_retiro * dias_cobrar
+        elif retiros_directos:
             total_retiro_directo = sum(r.tarifa_seller or 0 for r in retiros_directos)
         elif seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
             if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
@@ -326,7 +369,7 @@ def calcular_rentabilidad(db: Session, semana: int, mes: int, anio: int) -> List
             for e in seller_envios
         )
         retiros_directos = [r for r in retiros_by_seller.get(seller.id, []) if not r.sucursal_id]
-        ingreso += _calcular_retiro_seller(seller, seller_envios, retiros_directos)
+        ingreso += _calcular_retiro_seller(seller, seller_envios, retiros_directos, mes=mes, anio=anio)
         ingreso += sum(r.tarifa_seller for r in retiros_suc_by_seller.get(seller.id, []))
 
         costo_drivers = sum(
