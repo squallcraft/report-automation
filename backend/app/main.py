@@ -7,10 +7,12 @@ from app.database import engine, Base
 from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads
 from app.middleware.timing import TimingMiddleware
 
-try:
-    Base.metadata.create_all(bind=engine, checkfirst=True)
-except Exception:
-    pass  # Race condition entre workers — la tabla ya fue creada por otro worker
+for _attempt in range(3):
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        break
+    except Exception:
+        import time as _t; _t.sleep(1)
 
 with engine.connect() as conn:
     insp = inspect(engine)
