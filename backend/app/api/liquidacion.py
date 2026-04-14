@@ -1068,3 +1068,97 @@ def descargar_mi_pdf_driver(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=mi_liquidacion_S{semana}.pdf"},
     )
+
+
+# ── Auditoría de extras ──────────────────────────────────────────────
+
+@router.get("/auditoria/extras")
+def auditoria_extras(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    corregir: bool = Query(False),
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    """
+    Detecta envíos cuya comuna tiene tarifa extra configurada pero el extra
+    no fue aplicado (extra_comuna_driver=0 o extra_comuna_seller=0).
+    Con corregir=true aplica los valores correctos.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    tarifas = db.query(TarifaComuna).all()
+    if not tarifas:
+        return {"ok": True, "mensaje": "No hay tarifas de comuna configuradas"}
+
+    comunas_map = {t.comuna.lower(): t for t in tarifas}
+    comunas_list = list(comunas_map.keys())
+
+    envios = db.query(Envio).filter(
+        Envio.mes == mes, Envio.anio == anio,
+        sqlfunc.lower(Envio.comuna).in_(comunas_list),
+    ).all()
+
+    problemas = []
+    corregidos = 0
+
+    for e in envios:
+        tc = comunas_map.get(e.comuna.lower())
+        if not tc:
+            continue
+
+        driver = db.get(Driver, e.driver_id) if e.driver_id else None
+        es_contratado = driver and getattr(driver, 'contratado', False)
+
+        esperado_seller = tc.extra_seller
+        esperado_driver = 0 if es_contratado else tc.extra_driver
+
+        if (e.extra_producto_driver or 0) > 0 and esperado_driver > 0:
+            if (e.extra_producto_driver or 0) >= esperado_driver:
+                esperado_driver = 0
+
+        mal_seller = e.extra_comuna_seller != esperado_seller
+        mal_driver = e.extra_comuna_driver != esperado_driver
+
+        if mal_seller or mal_driver:
+            problemas.append({
+                "envio_id": e.id,
+                "fecha": str(e.fecha_entrega),
+                "semana": e.semana,
+                "comuna": e.comuna,
+                "driver_id": e.driver_id,
+                "driver_nombre": driver.nombre if driver else None,
+                "seller_id": e.seller_id,
+                "extra_seller_actual": e.extra_comuna_seller,
+                "extra_seller_esperado": esperado_seller,
+                "extra_driver_actual": e.extra_comuna_driver,
+                "extra_driver_esperado": esperado_driver,
+            })
+
+            if corregir:
+                if mal_seller:
+                    e.extra_comuna_seller = esperado_seller
+                if mal_driver:
+                    e.extra_comuna_driver = esperado_driver
+                corregidos += 1
+
+    if corregir and corregidos:
+        db.commit()
+        semanas_afectadas = {p["semana"] for p in problemas}
+        for sem in semanas_afectadas:
+            invalidar_snapshots(db, sem, mes, anio)
+        db.commit()
+
+    resumen_driver = defaultdict(lambda: {"cantidad": 0, "monto_faltante": 0})
+    for p in problemas:
+        key = p["driver_nombre"] or f"driver_{p['driver_id']}"
+        resumen_driver[key]["cantidad"] += 1
+        resumen_driver[key]["monto_faltante"] += p["extra_driver_esperado"] - p["extra_driver_actual"]
+
+    return {
+        "total_envios_revisados": len(envios),
+        "problemas_encontrados": len(problemas),
+        "corregidos": corregidos,
+        "resumen_por_driver": dict(resumen_driver),
+        "detalle": problemas[:100],
+    }
