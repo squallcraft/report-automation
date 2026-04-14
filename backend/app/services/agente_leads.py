@@ -406,7 +406,7 @@ async def procesar_mensaje_lead(
             db.add(MensajeLead(
                 lead_id=lead.id, direccion="outbound", autor="ia",
                 contenido=FALLBACK_MSG, wa_message_id=fallback_id, tipo_contenido="texto",
-                metadata={"error": "grok_api_failed"},
+                meta_datos={"error": "grok_api_failed"},
             ))
             _crear_notificacion(db, lead, "agente_error",
                                 "Agente IA no pudo responder",
@@ -441,7 +441,7 @@ async def procesar_mensaje_lead(
                         db.add(MensajeLead(
                             lead_id=lead.id, direccion="outbound", autor="ia",
                             contenido=final_text, wa_message_id=wa_id, tipo_contenido="texto",
-                            metadata={"escalada": True},
+                            meta_datos={"escalada": True},
                         ))
                         lead.interacciones_ia += 1
                         db.commit()

@@ -253,7 +253,7 @@ def listar_mensajes(
         {
             "id": m.id, "direccion": m.direccion, "autor": m.autor,
             "contenido": m.contenido, "tipo_contenido": m.tipo_contenido,
-            "estado_wa": m.estado_wa, "metadata": m.metadata,
+            "estado_wa": m.estado_wa, "meta_datos": m.meta_datos,
             "timestamp": str(m.timestamp) if m.timestamp else None,
         }
         for m in msgs

@@ -1205,7 +1205,7 @@ class MensajeLead(Base):
     tipo_contenido = Column(String(20), default="texto")  # texto | audio | imagen | documento | sticker
     wa_message_id = Column(String(100), nullable=True, index=True)
     estado_wa = Column(String(20), nullable=True)  # enviado | entregado | leido | error
-    metadata = Column(JSON, nullable=True)  # tool calls, razón escalada, etc.
+    meta_datos = Column(JSON, nullable=True)  # tool calls, razón escalada, etc.
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     lead = relationship("Lead", back_populates="mensajes")
