@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, XCircle, PauseCircle, X } from 'lucide-react'
+import { Users, Truck, Package, DollarSign, TrendingUp, TrendingDown, AlertTriangle, MessageSquare, Wallet, XCircle, PauseCircle, X, LayoutDashboard } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -105,10 +106,12 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-1">Resumen del período seleccionado</p>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Resumen del período seleccionado"
+        icon={LayoutDashboard}
+        accent="blue"
+      />
 
       {/* ── Alertas de cierre: Épico / Clave ──────────────────────────────── */}
       {(noActivos.cerrados.length > 0 || noActivos.pausados.length > 0) && (() => {

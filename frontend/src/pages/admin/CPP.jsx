@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { Store, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, Eye, CheckCircle, XCircle, Clock } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const SEMANAS = [1, 2, 3, 4, 5]
@@ -741,44 +742,43 @@ export default function CPP() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <Store size={24} className="text-primary-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">CPP — Control de Pagos a Pickups</h1>
-            <p className="text-sm text-gray-500">Seguimiento semanal de egresos a pickup partners</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => setModalFacturas(true)}
-            className="btn btn-secondary flex items-center gap-2 text-sm relative">
-            <FileText size={15} /> Facturas
-            {facturasPendientes > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                {facturasPendientes}
-              </span>
-            )}
-          </button>
-          <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
-            <Upload size={15} /> Cargar Cartola
-          </button>
-          {semanas.length > 0 && (
-            <div className="relative group">
-              <button className="btn btn-primary flex items-center gap-2 text-sm">
-                <FileText size={15} /> Planilla TEF <ChevronDown size={14} />
-              </button>
-              <div className="absolute right-0 top-full mt-1 bg-white shadow-lg border border-gray-200 rounded-lg z-10 hidden group-hover:block min-w-[130px]">
-                {semanas.map(s => (
-                  <button key={s} onClick={() => setModalTEF(s)}
-                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50">
-                    Semana {s}
-                  </button>
-                ))}
+      <PageHeader
+        title="CPP — Control de Pagos a Pickups"
+        subtitle="Seguimiento semanal de egresos a pickup partners"
+        icon={Store}
+        accent="teal"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setModalFacturas(true)}
+              className="btn btn-secondary flex items-center gap-2 text-sm relative">
+              <FileText size={15} /> Facturas
+              {facturasPendientes > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold">
+                  {facturasPendientes}
+                </span>
+              )}
+            </button>
+            <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
+              <Upload size={15} /> Cargar Cartola
+            </button>
+            {semanas.length > 0 && (
+              <div className="relative group">
+                <button className="btn btn-primary flex items-center gap-2 text-sm">
+                  <FileText size={15} /> Planilla TEF <ChevronDown size={14} />
+                </button>
+                <div className="absolute right-0 top-full mt-1 bg-white shadow-lg border border-gray-200 rounded-lg z-10 hidden group-hover:block min-w-[130px]">
+                  {semanas.map(s => (
+                    <button key={s} onClick={() => setModalTEF(s)}
+                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50">
+                      Semana {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        }
+      />
 
       <div className="card">
         <div className="flex flex-wrap items-center gap-4">

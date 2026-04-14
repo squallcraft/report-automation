@@ -4,7 +4,8 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import PeriodSelector from '../../components/PeriodSelector'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, Download, Upload, Check, AlertCircle, X, FileText, Edit2, Lock } from 'lucide-react'
+import { Plus, Trash2, Download, Upload, Check, AlertCircle, X, FileText, Edit2, Lock, RotateCcw } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import { useAuth } from '../../context/AuthContext'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
@@ -567,12 +568,12 @@ export default function Retiros() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Retiros</h1>
-          <p className="text-sm text-gray-500 mt-1">Gestión de retiros por seller/driver</p>
-        </div>
-        {canEdit && (
+      <PageHeader
+        title="Retiros"
+        subtitle="Gestión de retiros por seller/driver"
+        icon={RotateCcw}
+        accent="amber"
+        actions={canEdit ? (
           <div className="flex items-center gap-2">
             <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
               <Download size={16} /> Plantilla
@@ -584,8 +585,8 @@ export default function Retiros() {
               <Plus size={16} /> Nuevo Retiro
             </button>
           </div>
-        )}
-      </div>
+        ) : null}
+      />
 
       <div className="card mb-6">
         <PeriodSelector {...period} onChange={setPeriod} />

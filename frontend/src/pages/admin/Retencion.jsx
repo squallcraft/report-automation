@@ -6,6 +6,7 @@ import {
   Users, AlertTriangle, TrendingDown, TrendingUp,
   UserCheck, UserX, UserMinus, Search, Download, ExternalLink,
 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 // ─── Design tokens (matching BI dark theme) ──────────────────────────────────
 const C = {
@@ -36,6 +37,11 @@ const ESTADO_CFG = {
   en_pausa_lifecycle:   { label: 'En pausa',            color: '#f97316', bg: 'rgba(249,115,22,0.1)', border: '#f9731633' },
   cerrado:              { label: 'Cerrado',             color: '#6b7280', bg: 'rgba(107,114,128,0.1)', border: '#6b728033' },
   pendiente_validacion: { label: '⚠ Validar estado',   color: C.red,     bg: C.redDim,    border: '#ef444433' },
+}
+
+const FILTER_GROUPS = {
+  _activos: ['activo', 'nuevo', 'recuperado'],
+  _en_gestion: ['en_gestion', 'seguimiento'],
 }
 
 const GESTION_ESTADO_CFG = {
@@ -254,7 +260,8 @@ export default function Retencion() {
     if (!data?.sellers) return []
     let rows = data.sellers.filter(s => {
       const matchSearch = s.nombre.toLowerCase().includes(search.toLowerCase())
-      const matchEstado = filterEstado === 'todos' || s.estado_efectivo === filterEstado
+      const group = FILTER_GROUPS[filterEstado]
+      const matchEstado = filterEstado === 'todos' || (group ? group.includes(s.estado_efectivo) : s.estado_efectivo === filterEstado)
       return matchSearch && matchEstado
     })
     rows = [...rows].sort((a, b) => {
@@ -344,29 +351,30 @@ export default function Retencion() {
   return (
     <div style={{ background: C.bg, minHeight: '100vh', padding: '24px 20px', color: C.text, fontFamily: 'system-ui, sans-serif' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Retención y Salud Comercial</h1>
-          <p style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>¿Quiénes siguen enviando, quiénes están en riesgo y cuánto vale perderlos?</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select
-            value={period.anio}
-            onChange={e => setPeriod(p => ({ ...p, anio: +e.target.value }))}
-            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}
-          >
-            {[now.getFullYear() - 1, now.getFullYear()].map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <select
-            value={period.mes}
-            onChange={e => setPeriod(p => ({ ...p, mes: +e.target.value }))}
-            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}
-          >
-            {MESES_L.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        title="Retención y Salud Comercial"
+        subtitle="Análisis del estado de cada seller"
+        icon={UserCheck}
+        accent="green"
+        actions={(
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              value={period.anio}
+              onChange={e => setPeriod(p => ({ ...p, anio: +e.target.value }))}
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}
+            >
+              {[now.getFullYear() - 1, now.getFullYear()].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select
+              value={period.mes}
+              onChange={e => setPeriod(p => ({ ...p, mes: +e.target.value }))}
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}
+            >
+              {MESES_L.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+        )}
+      />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '80px 0', color: C.muted }}>Cargando análisis…</div>
@@ -379,7 +387,7 @@ export default function Retencion() {
               sub={`${r.nuevo} nuevos · ${r.recuperado} recuperados`}
               color="green" icon={UserCheck}
               delta={r.activo - r.prev_activo} deltaLabel={MESES_S[period.mes - 1] || 'prev'}
-              active={filterEstado === 'activo'} onClick={() => { setFilterEstado(f => f === 'activo' ? 'todos' : 'activo'); setVista('semaforo'); setPage(1) }}
+              active={filterEstado === '_activos'} onClick={() => { setFilterEstado(f => f === '_activos' ? 'todos' : '_activos'); setVista('semaforo'); setPage(1) }}
             />
             <KpiCard
               label="En riesgo" value={r.en_riesgo}
@@ -406,7 +414,7 @@ export default function Retencion() {
                 label="En gestión" value={r.en_gestion}
                 sub="Con gestión comercial activa"
                 color="blue" icon={UserCheck}
-                active={filterEstado === 'en_gestion'} onClick={() => { setFilterEstado(f => f === 'en_gestion' ? 'todos' : 'en_gestion'); setVista('semaforo'); setPage(1) }}
+                active={filterEstado === '_en_gestion'} onClick={() => { setFilterEstado(f => f === '_en_gestion' ? 'todos' : '_en_gestion'); setVista('semaforo'); setPage(1) }}
               />
             )}
             {(r.pendiente_validacion > 0) && (

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { TrendingUp, AlertTriangle, Clock, ChevronUp, ChevronDown, Search, ArrowRight, Download } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const now = new Date()
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -213,45 +214,43 @@ export default function EfectividadEntregas() {
 
   return (
     <div className="space-y-6 pb-10">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <TrendingUp size={20} className="text-blue-600" />
-            Efectividad de Entregas
-          </h1>
-          <p className="text-xs text-gray-400 mt-0.5">Ciclo recepción → entrega · días hábiles (L-V) · solo admin</p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-            <button onClick={() => setVista('mensual')} className={`text-xs px-3 py-1 rounded-md font-medium transition-all ${vista === 'mensual' ? 'bg-white shadow text-gray-700' : 'text-gray-500'}`}>Mensual</button>
-            <button onClick={() => setVista('semanal')} className={`text-xs px-3 py-1 rounded-md font-medium transition-all ${vista === 'semanal' ? 'bg-white shadow text-gray-700' : 'text-gray-500'}`}>Semanal</button>
-          </div>
-          {vista === 'semanal' && (
-            <select className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-700"
-              value={period.semana || ''} onChange={e => setPeriod(p => ({ ...p, semana: e.target.value ? +e.target.value : null }))}>
-              <option value="">Todas las semanas</option>
-              {[1,2,3,4,5].map(s => <option key={s} value={s}>Semana {s}</option>)}
-            </select>
-          )}
-          <select className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-700"
-            value={`${period.mes}-${period.anio}`}
-            onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod(p => ({ ...p, mes: +m, anio: +a })) }}>
-            {[now.getFullYear() - 1, now.getFullYear()].flatMap(anio =>
-              Array.from({ length: 12 }, (_, i) => {
-                const mes = i + 1
-                return <option key={`${mes}-${anio}`} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
-              })
+      <PageHeader
+        title="Efectividad de Entregas"
+        subtitle="Métricas de desempeño por conductor"
+        icon={TrendingUp}
+        accent="green"
+        actions={(
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex gap-1 bg-slate-800/80 rounded-lg p-1 border border-slate-600/50">
+              <button type="button" onClick={() => setVista('mensual')} className={`text-xs px-3 py-1 rounded-md font-medium transition-all ${vista === 'mensual' ? 'bg-slate-700 text-slate-100 shadow' : 'text-slate-400'}`}>Mensual</button>
+              <button type="button" onClick={() => setVista('semanal')} className={`text-xs px-3 py-1 rounded-md font-medium transition-all ${vista === 'semanal' ? 'bg-slate-700 text-slate-100 shadow' : 'text-slate-400'}`}>Semanal</button>
+            </div>
+            {vista === 'semanal' && (
+              <select className="border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200"
+                value={period.semana || ''} onChange={e => setPeriod(p => ({ ...p, semana: e.target.value ? +e.target.value : null }))}>
+                <option value="">Todas las semanas</option>
+                {[1,2,3,4,5].map(s => <option key={s} value={s}>Semana {s}</option>)}
+              </select>
             )}
-          </select>
-          {data && (
-            <button onClick={exportCSV}
-              className="flex items-center gap-1.5 border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-600 hover:bg-gray-50 transition-colors">
-              <Download size={13} /> Exportar CSV
-            </button>
-          )}
-        </div>
-      </div>
+            <select className="border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200"
+              value={`${period.mes}-${period.anio}`}
+              onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod(p => ({ ...p, mes: +m, anio: +a })) }}>
+              {[now.getFullYear() - 1, now.getFullYear()].flatMap(anio =>
+                Array.from({ length: 12 }, (_, i) => {
+                  const mes = i + 1
+                  return <option key={`${mes}-${anio}`} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
+                })
+              )}
+            </select>
+            {data && (
+              <button type="button" onClick={exportCSV}
+                className="flex items-center gap-1.5 border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors">
+                <Download size={13} /> Exportar CSV
+              </button>
+            )}
+          </div>
+        )}
+      />
 
       {loading ? (
         <div className="text-center py-16 text-gray-400 text-sm">Cargando métricas…</div>

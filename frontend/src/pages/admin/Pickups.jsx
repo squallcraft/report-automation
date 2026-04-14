@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Upload, Download, AlertTriangle, Link, Search, Package } from 'lucide-react'
+import { Plus, Pencil, Trash2, Upload, Download, AlertTriangle, Link, Search, Package, Store } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 const now = new Date()
@@ -392,12 +393,12 @@ export default function Pickups() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Pickup Points</h1>
-          <p className="text-sm text-gray-500 mt-1">Centros de recepción de paquetes — comisión configurable + IVA por paquete</p>
-        </div>
-        {canEdit && mainTab === 'pickups' && (
+      <PageHeader
+        title="Pickup Points"
+        subtitle="Centros de recepción de paquetes — comisión configurable + IVA por paquete"
+        icon={Store}
+        accent="teal"
+        actions={canEdit && mainTab === 'pickups' ? (
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => { setImportResult(null); setImportModalOpen(true) }}
@@ -409,8 +410,8 @@ export default function Pickups() {
               <Plus size={18} /> Nuevo Pickup
             </button>
           </div>
-        )}
-      </div>
+        ) : null}
+      />
 
       <div className="flex border-b border-gray-200 mb-1 overflow-x-auto">
         <button

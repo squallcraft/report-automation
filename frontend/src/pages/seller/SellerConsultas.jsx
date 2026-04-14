@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
+import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
 import { MessageSquare, Plus, Send } from 'lucide-react'
 
@@ -49,15 +50,17 @@ export default function SellerConsultas() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Mis Consultas</h1>
-          <p className="text-sm text-gray-500 mt-1">Consultas sobre envíos y liquidaciones</p>
-        </div>
-        <button onClick={() => setShowNew(true)} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Nueva Consulta
-        </button>
-      </div>
+      <PageHeader
+        title="Mis Consultas"
+        subtitle="Consultas y soporte"
+        icon={MessageSquare}
+        accent="blue"
+        actions={
+          <button type="button" onClick={() => setShowNew(true)} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Nueva Consulta
+          </button>
+        }
+      />
 
       {loading ? (
         <div className="text-center py-12 text-gray-400">Cargando...</div>

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
+import PageHeader from '../../components/PageHeader'
+import { FileText } from 'lucide-react'
 
 function fmtFecha(iso) {
   if (!iso) return '—'
@@ -34,11 +36,12 @@ export default function DriverMiAcuerdo() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
 
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Mi Acuerdo de Colaboración</h1>
-        <p className="text-sm text-gray-500 mt-1">Registro de tu aceptación digital del acuerdo con Ecourier</p>
-      </div>
+      <PageHeader
+        title="Mi Acuerdo de Colaboración"
+        subtitle="Términos y condiciones del servicio"
+        icon={FileText}
+        accent="blue"
+      />
 
       {/* Estado badge */}
       {pendiente ? (

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { CalendarDays, RefreshCw, Pencil, Lock, ChevronDown } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
 
 const MESES = [
@@ -110,19 +111,12 @@ export default function Calendario() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <CalendarDays size={24} className="text-primary-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Calendario de Semanas</h1>
-            <p className="text-sm text-gray-500">
-              Define qué días pertenecen a cada semana de facturación.
-              Regla: si algún Lun-Vie cae en el mes siguiente, toda la semana es Semana 1 de ese mes.
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Calendario de Semanas"
+        subtitle="Definición de períodos semanales por año"
+        icon={CalendarDays}
+        accent="blue"
+      />
 
       {/* Controles */}
       <div className="card mb-6">

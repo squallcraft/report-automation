@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import api from '../../api'
+import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
 import { Upload, FileText, CheckCircle, XCircle, Clock, AlertCircle, Download, RefreshCw } from 'lucide-react'
 import { fmt, MESES } from '../../utils/format'
@@ -90,10 +91,12 @@ export default function DriverFacturas() {
 
   return (
     <div>
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Facturas</h1>
-        <p className="text-xs sm:text-sm text-gray-500 mt-1">Sube tu factura por cada semana trabajada</p>
-      </div>
+      <PageHeader
+        title="Mis Facturas"
+        subtitle="Gestión de facturas mensuales"
+        icon={FileText}
+        accent="blue"
+      />
 
       {/* Formulario de carga */}
       <div className="card mb-4 sm:mb-6">

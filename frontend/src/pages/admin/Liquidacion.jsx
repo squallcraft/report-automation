@@ -4,7 +4,8 @@ import PeriodSelector from '../../components/PeriodSelector'
 import DataTable from '../../components/DataTable'
 import LiquidacionDetalle from '../../components/LiquidacionDetalle'
 import toast from 'react-hot-toast'
-import { Calculator, Download, RefreshCw, Search, X, FileArchive, CheckCircle } from 'lucide-react'
+import { Calculator, Download, RefreshCw, Search, X, FileArchive, CheckCircle, Receipt } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -239,10 +240,12 @@ export default function Liquidacion() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Liquidación</h1>
-        <p className="text-sm text-gray-500 mt-1">Calcula cobros, pagos y rentabilidad por período</p>
-      </div>
+      <PageHeader
+        title="Liquidación"
+        subtitle="Calcula cobros, pagos y rentabilidad por período"
+        icon={Receipt}
+        accent="green"
+      />
 
       <div className="card">
         <div className="flex flex-wrap items-end gap-4">

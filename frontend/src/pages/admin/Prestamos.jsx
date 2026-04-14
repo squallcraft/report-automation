@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import api from '../../api'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Eye, XCircle, Check } from 'lucide-react'
+import { Plus, Eye, XCircle, Check, Banknote } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const fmt = (n) => `$${(n ?? 0).toLocaleString('es-CL')}`
@@ -126,15 +127,17 @@ export default function Prestamos() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Préstamos</h1>
-          <p className="text-sm text-gray-500">Préstamos a trabajadores y conductores</p>
-        </div>
-        <button onClick={openNew} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Nuevo Préstamo
-        </button>
-      </div>
+      <PageHeader
+        title="Préstamos"
+        subtitle="Préstamos a trabajadores y conductores"
+        icon={Banknote}
+        accent="amber"
+        actions={
+          <button onClick={openNew} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Nuevo Préstamo
+          </button>
+        }
+      />
 
       <div className="flex items-center gap-3">
         <select value={filterEstado} onChange={e => setFilterEstado(e.target.value)} className="input w-40">

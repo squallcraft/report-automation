@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import PeriodSelector from '../../components/PeriodSelector'
+import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
-import { Download, FileSpreadsheet } from 'lucide-react'
+import { Download, FileSpreadsheet, Package } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -66,10 +67,12 @@ export default function SellerEnvios() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mis Envíos</h1>
-        <p className="text-sm text-gray-500 mt-1">Detalle de envíos y cobros por período</p>
-      </div>
+      <PageHeader
+        title="Mis Envíos"
+        subtitle="Historial de envíos por período"
+        icon={Package}
+        accent="blue"
+      />
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-end gap-4">

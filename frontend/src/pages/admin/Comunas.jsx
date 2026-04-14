@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, Trash2, MapPin } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (v) => `$${Number(v || 0).toLocaleString('es-CL')}`
 
@@ -130,19 +131,17 @@ export default function Comunas() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <MapPin size={28} className="text-primary-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Tarifas por Comuna</h1>
-            <p className="text-sm text-gray-500 mt-1">Gestiona los extras de tarifa por comuna</p>
-          </div>
-        </div>
-        <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <Plus size={18} />
-          Nueva Comuna
-        </button>
-      </div>
+      <PageHeader
+        title="Tarifas por Comuna"
+        subtitle="Gestiona los extras de tarifa por comuna"
+        icon={MapPin}
+        accent="red"
+        actions={
+          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+            <Plus size={18} /> Nueva Comuna
+          </button>
+        }
+      />
 
       <DataTable
         columns={columns}

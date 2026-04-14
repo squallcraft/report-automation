@@ -1,4 +1,5 @@
 import PickupDataPage from '../../components/PickupDataPage'
+import { Send } from 'lucide-react'
 import { fmt } from '../../utils/format'
 
 const columns = [
@@ -19,6 +20,8 @@ export default function PickupEnvios() {
     <PickupDataPage
       title="Mis Envíos"
       subtitle="Envíos emitidos desde tu pickup"
+      icon={Send}
+      accent="blue"
       endpoint="/pickups/portal/envios-seller"
       columns={columns}
       emptyMessage="No hay envíos en este período"

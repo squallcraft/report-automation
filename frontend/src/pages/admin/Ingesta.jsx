@@ -4,7 +4,8 @@ import FileUpload from '../../components/FileUpload'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Upload, AlertTriangle, CheckCircle, Link, Download, RefreshCw, Clock, Loader2 } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle, Link, Download, RefreshCw, Clock, Loader2, DatabaseZap } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 function formatTime(seconds) {
   if (!seconds || seconds <= 0) return '...'
@@ -273,10 +274,12 @@ export default function Ingesta() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Ingesta de Reportes</h1>
-        <p className="text-sm text-gray-500 mt-1">Sube el archivo Excel del software de gestión</p>
-      </div>
+      <PageHeader
+        title="Ingesta de Reportes"
+        subtitle="Sube el archivo Excel del software de gestión"
+        icon={DatabaseZap}
+        accent="purple"
+      />
 
       <div className="card mb-6">
         <div className="flex items-center justify-between mb-4">

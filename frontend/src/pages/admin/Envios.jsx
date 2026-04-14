@@ -4,7 +4,8 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { FileText, Search, PackagePlus, Pencil, X, Lock } from 'lucide-react'
+import { FileText, Search, PackagePlus, Pencil, X, Lock, Package } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const ESTADO_BADGE = {
   pendiente:     { label: 'Pendiente',  cls: 'bg-gray-100 text-gray-600' },
@@ -295,15 +296,12 @@ export default function Envios() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <FileText size={28} />
-            Envíos
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">{envios.length.toLocaleString()} envíos encontrados</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Envíos"
+        subtitle={`${envios.length.toLocaleString()} envíos encontrados`}
+        icon={Package}
+        accent="blue"
+      />
 
       <div className="card mb-4">
         <form onSubmit={handleSearch} className="flex flex-wrap items-end gap-3">

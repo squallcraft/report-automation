@@ -3,7 +3,8 @@ import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
 import PeriodSelector from '../../components/PeriodSelector'
 import StatsCard from '../../components/StatsCard'
-import { Truck, DollarSign, TrendingUp, Users, CheckCircle } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { Truck, DollarSign, TrendingUp, Users, CheckCircle, LayoutDashboard } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -79,12 +80,12 @@ export default function DriverDashboard() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Hola, {user?.nombre}</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {esJefe ? 'Resumen de tu flota y entregas' : 'Resumen de tus entregas y pagos'}
-        </p>
-      </div>
+      <PageHeader
+        title={user?.nombre ? `Hola, ${user.nombre}` : 'Hola'}
+        subtitle="Tu panel de control"
+        icon={LayoutDashboard}
+        accent="blue"
+      />
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-end gap-4">

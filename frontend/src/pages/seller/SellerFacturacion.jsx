@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
+import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
-import { Receipt } from 'lucide-react'
+import { Receipt, FileText } from 'lucide-react'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -43,10 +44,12 @@ export default function SellerFacturacion() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mi Facturación</h1>
-        <p className="text-sm text-gray-500 mt-1">Estado de cobros mensuales</p>
-      </div>
+      <PageHeader
+        title="Mi Facturación"
+        subtitle="Cobros y facturación mensual"
+        icon={FileText}
+        accent="blue"
+      />
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-center gap-4">

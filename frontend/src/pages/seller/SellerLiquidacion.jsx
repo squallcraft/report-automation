@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import PeriodSelector from '../../components/PeriodSelector'
+import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
-import { Download, FileSpreadsheet, Calculator } from 'lucide-react'
+import { Download, FileSpreadsheet, Calculator, Receipt } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -73,10 +74,12 @@ export default function SellerLiquidacion() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mi Liquidación</h1>
-        <p className="text-sm text-gray-500 mt-1">Resumen de cobros por período</p>
-      </div>
+      <PageHeader
+        title="Mi Liquidación"
+        subtitle="Detalle de tu liquidación mensual"
+        icon={Receipt}
+        accent="green"
+      />
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-end gap-4">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
-import { ChevronLeft, ChevronRight, Package, DollarSign } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { ChevronLeft, ChevronRight, Package, DollarSign, CalendarDays } from 'lucide-react'
 import { fmt, MESES } from '../../utils/format'
 
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -58,10 +59,12 @@ export default function PickupCalendario() {
 
   return (
     <div>
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mi Calendario</h1>
-        <p className="text-xs sm:text-sm text-gray-500 mt-1">Recepciones y comisiones por día del mes</p>
-      </div>
+      <PageHeader
+        title="Mi Calendario"
+        subtitle="Calendario de recepciones"
+        icon={CalendarDays}
+        accent="blue"
+      />
 
       {/* Navegación mes */}
       <div className="card mb-4 sm:mb-6">

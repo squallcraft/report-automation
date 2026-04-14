@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import { Shield, ChevronLeft, ChevronRight, FileText, Search } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const PAGE_SIZE = 50
@@ -123,31 +124,30 @@ export default function Auditoria() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary-50">
-            <Shield size={22} className="text-primary-600" />
+      <PageHeader
+        title="Auditoría"
+        subtitle="Registro de actividades del sistema"
+        icon={Shield}
+        accent="red"
+        actions={
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() => { setTab('logs'); setPage(0) }}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${tab === 'logs' ? 'bg-white shadow text-gray-900 font-medium' : 'text-gray-500'}`}
+            >
+              Timeline
+            </button>
+            <button
+              type="button"
+              onClick={() => { setTab('cargas'); setPage(0) }}
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${tab === 'cargas' ? 'bg-white shadow text-gray-900 font-medium' : 'text-gray-500'}`}
+            >
+              Cargas de cartola
+            </button>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Auditoría</h1>
-            <p className="text-sm text-gray-500">Registro de acciones del sistema</p>
-          </div>
-        </div>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-          <button
-            onClick={() => { setTab('logs'); setPage(0) }}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${tab === 'logs' ? 'bg-white shadow text-gray-900 font-medium' : 'text-gray-500'}`}
-          >
-            Timeline
-          </button>
-          <button
-            onClick={() => { setTab('cargas'); setPage(0) }}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${tab === 'cargas' ? 'bg-white shadow text-gray-900 font-medium' : 'text-gray-500'}`}
-          >
-            Cargas de cartola
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {tab === 'logs' && (
         <>

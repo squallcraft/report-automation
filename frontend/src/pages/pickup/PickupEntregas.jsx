@@ -1,4 +1,5 @@
 import PickupDataPage from '../../components/PickupDataPage'
+import { Truck } from 'lucide-react'
 import { fmt } from '../../utils/format'
 
 const columns = [
@@ -14,6 +15,8 @@ export default function PickupEntregas() {
     <PickupDataPage
       title="Mis Entregas"
       subtitle="Entregas realizadas con tu perfil de conductor"
+      icon={Truck}
+      accent="purple"
       endpoint="/pickups/portal/entregas"
       columns={columns}
       emptyMessage="No hay entregas en este período"

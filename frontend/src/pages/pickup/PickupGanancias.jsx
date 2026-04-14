@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
-import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle, Wallet } from 'lucide-react'
 import { fmt, MESES } from '../../utils/format'
 
 const now = new Date()
@@ -54,10 +55,12 @@ export default function PickupGanancias() {
 
   return (
     <div>
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Ganancias</h1>
-        <p className="text-xs sm:text-sm text-gray-500 mt-1">Resumen de lo liquidado y pagado por período</p>
-      </div>
+      <PageHeader
+        title="Mis Ganancias"
+        subtitle="Detalle de comisiones por período"
+        icon={Wallet}
+        accent="green"
+      />
 
       <div className="card mb-4 sm:mb-6">
         <div className="flex flex-wrap items-end gap-3 sm:gap-4">

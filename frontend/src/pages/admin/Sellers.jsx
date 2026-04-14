@@ -5,7 +5,8 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle, Mail, MessageCircle, Tag, X as XIcon } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle, Mail, MessageCircle, Tag, X as XIcon, Users } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO', 'VALPARAISO', 'MELIPILLA']
 
@@ -362,42 +363,33 @@ export default function Sellers() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Sellers</h1>
-          <p className="text-sm text-gray-500 mt-1">Gestiona los sellers del sistema</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {canEdit && (
-            <>
-              <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
-                <Download size={16} /> Plantilla
+      <PageHeader
+        title="Sellers"
+        subtitle="Gestiona los sellers del sistema"
+        icon={Users}
+        accent="green"
+        stats={[{ value: sellers.length, label: 'Total sellers' }]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit && (
+              <>
+                <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
+                  <Download size={16} /> Plantilla
+                </button>
+                <label className={`btn-secondary flex items-center gap-2 text-sm cursor-pointer ${importing ? 'opacity-50' : ''}`}>
+                  <Upload size={16} /> {importing ? 'Importando...' : 'Importar Excel'}
+                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={importing} />
+                </label>
+              </>
+            )}
+            {canEdit && (
+              <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+                <Plus size={18} /> Nuevo Seller
               </button>
-              <label className={`btn-secondary flex items-center gap-2 text-sm cursor-pointer ${importing ? 'opacity-50' : ''}`}>
-                <Upload size={16} /> {importing ? 'Importando...' : 'Importar Excel'}
-                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={importing} />
-              </label>
-              <span className="text-gray-400 text-sm mx-1">|</span>
-            </>
-          )}
-          {(canEdit || user?.rol === 'ADMINISTRACION') && (
-            <>
-              <button onClick={handleDownloadPlantillaRutGiro} className="btn-secondary flex items-center gap-2 text-sm" title="Descarga sellers actuales con columnas RUT y Giro (vacías) para completar y volver a subir">
-                <Download size={16} /> Plantilla RUT/Giro
-              </button>
-              <label className={`btn-secondary flex items-center gap-2 text-sm cursor-pointer ${importingRutGiro ? 'opacity-50' : ''}`} title="Sube el Excel con RUT y Giro completados">
-                <Upload size={16} /> {importingRutGiro ? 'Importando...' : 'Importar RUT/Giro'}
-                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportRutGiro} disabled={importingRutGiro} />
-              </label>
-            </>
-          )}
-          {canEdit && (
-            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-              <Plus size={18} /> Nuevo Seller
-            </button>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        }
+      />
 
       <div className="flex-1 min-h-0">
 

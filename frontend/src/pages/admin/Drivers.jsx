@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock, Truck } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -373,14 +374,14 @@ export default function Drivers() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Drivers</h1>
-          <p className="text-sm text-gray-500 mt-1">Gestiona los conductores del sistema</p>
-        </div>
-        {canEdit && (
+      <PageHeader
+        title="Drivers"
+        subtitle="Gestiona los conductores del sistema"
+        icon={Truck}
+        accent="amber"
+        actions={canEdit ? (
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-1 bg-gray-50">
+            <div className="flex items-center gap-1 border border-gray-200/20 rounded-lg p-1 bg-white/5">
               <button onClick={() => downloadFile('/drivers/plantilla/homologacion/descargar', 'plantilla_homologacion_drivers.xlsx')} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5" title="Descargar plantilla de homologación">
                 <Download size={14} /> Homologar
               </button>
@@ -389,7 +390,7 @@ export default function Drivers() {
                 <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImportHomologacion} disabled={importingHomolog} />
               </label>
             </div>
-            <div className="flex items-center gap-1 border border-gray-200 rounded-lg p-1 bg-gray-50">
+            <div className="flex items-center gap-1 border border-gray-200/20 rounded-lg p-1 bg-white/5">
               <button onClick={() => downloadFile('/drivers/plantilla/tarifas/descargar', 'plantilla_tarifas_drivers.xlsx')} className="btn-secondary flex items-center gap-1.5 text-xs py-1.5 px-2.5" title="Descargar plantilla de tarifas">
                 <Download size={14} /> Tarifas
               </button>
@@ -402,8 +403,8 @@ export default function Drivers() {
               <Plus size={18} /> Nuevo Driver
             </button>
           </div>
-        )}
-      </div>
+        ) : null}
+      />
 
       <div className="flex-1 min-h-0">
       <DataTable

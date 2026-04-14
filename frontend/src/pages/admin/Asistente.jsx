@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import api from '../../api'
 import { Bot, Send, User, Trash2, Loader2, Zap, ChevronDown } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const SUGERENCIAS = [
   '¿Cuántos envíos hubo en febrero 2026?',
@@ -176,24 +177,21 @@ export default function Asistente() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-md">
-            <Bot size={20} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Asistente IA</h1>
-            <p className="text-xs text-gray-500">Powered by Gemini · Datos en tiempo real</p>
-          </div>
-        </div>
-        <button
-          onClick={limpiar}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-500 transition-colors"
-        >
-          <Trash2 size={14} /> Limpiar
-        </button>
-      </div>
+      <PageHeader
+        title="Asistente IA"
+        subtitle="Powered by Gemini — Pregunta lo que necesites"
+        icon={Bot}
+        accent="purple"
+        actions={
+          <button
+            type="button"
+            onClick={limpiar}
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-500 transition-colors"
+          >
+            <Trash2 size={14} /> Limpiar
+          </button>
+        }
+      />
 
       {/* Área de mensajes */}
       <div className="flex-1 overflow-y-auto space-y-4 pb-4 pr-1">

@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   MessageSquare, Send, Plus, Pencil, Trash2, Eye, RefreshCw,
   CheckCircle, Clock, AlertTriangle, Users, ChevronRight,
-  X, Check, Loader2,
+  X, Check, Loader2, MessageCircle,
 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import api from '../../api'
 
 const C = {
@@ -571,18 +572,12 @@ export default function WhatsApp() {
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', padding: '24px 28px', color: C.text }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <div style={{ background: C.waDim, border: `1px solid ${C.wa}33`, borderRadius: 8, padding: '6px 8px', display: 'flex', alignItems: 'center' }}>
-            <MessageSquare size={18} color={C.wa} />
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>WhatsApp Business</h1>
-        </div>
-        <p style={{ color: C.muted, fontSize: 13, margin: 0 }}>
-          Comunicados masivos segmentados por tier, estado comercial o selección manual
-        </p>
-      </div>
+      <PageHeader
+        title="WhatsApp Business"
+        subtitle="Envío de mensajes y gestión de plantillas"
+        icon={MessageCircle}
+        accent="green"
+      />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 2, background: C.surface, borderRadius: 10, padding: 4, marginBottom: 24, width: 'fit-content' }}>

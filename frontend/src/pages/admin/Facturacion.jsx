@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X, RotateCcw } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -737,15 +738,12 @@ export default function Facturacion() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <FileText size={24} className="text-primary-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Facturación</h1>
-            <p className="text-sm text-gray-500">Control de cobros semanales y facturación mensual a sellers</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Facturación"
+        subtitle="Control de cobros semanales y facturación mensual a sellers"
+        icon={FileText}
+        accent="blue"
+      />
 
       <div className="flex gap-1 border-b border-gray-200">
         {[

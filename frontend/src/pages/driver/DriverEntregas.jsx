@@ -3,8 +3,9 @@ import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import PeriodSelector from '../../components/PeriodSelector'
+import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
-import { Download, FileSpreadsheet } from 'lucide-react'
+import { Download, FileSpreadsheet, Package } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -104,13 +105,28 @@ export default function DriverEntregas() {
 
   return (
     <div>
-      <div className="mb-4 sm:mb-6">
-        <p className="text-xs text-amber-600 mb-1">Solo se muestra información desde la semana 4 de febrero 2026.</p>
-        <h1 className="page-title">
-          {esJefe ? 'Entregas de la Flota' : 'Mis Entregas'}
-        </h1>
-        <p className="page-subtitle">Detalle de entregas y pagos por período</p>
-      </div>
+      <PageHeader
+        title={esJefe ? 'Entregas de la Flota' : 'Mis Entregas'}
+        subtitle="Detalle de entregas y pagos por período"
+        icon={Package}
+        accent="blue"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button onClick={descargarPDF} disabled={downloadingPdf}
+              className="btn-secondary flex items-center gap-2">
+              <Download size={16} />
+              {downloadingPdf ? 'Descargando...' : 'PDF'}
+            </button>
+            <button onClick={descargarExcel} disabled={downloadingXls}
+              className="btn-secondary flex items-center gap-2">
+              <FileSpreadsheet size={16} />
+              {downloadingXls ? 'Descargando...' : 'Excel'}
+            </button>
+          </div>
+        }
+      >
+        <p className="text-xs text-amber-300/90 mt-2 mb-0">Solo se muestra información desde la semana 4 de febrero 2026.</p>
+      </PageHeader>
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-end gap-4">
@@ -131,18 +147,6 @@ export default function DriverEntregas() {
               </select>
             </div>
           )}
-          <div className="flex items-center gap-2 ml-auto">
-            <button onClick={descargarPDF} disabled={downloadingPdf}
-              className="btn-secondary flex items-center gap-2">
-              <Download size={16} />
-              {downloadingPdf ? 'Descargando...' : 'PDF'}
-            </button>
-            <button onClick={descargarExcel} disabled={downloadingXls}
-              className="btn-secondary flex items-center gap-2">
-              <FileSpreadsheet size={16} />
-              {downloadingXls ? 'Descargando...' : 'Excel'}
-            </button>
-          </div>
         </div>
       </div>
 

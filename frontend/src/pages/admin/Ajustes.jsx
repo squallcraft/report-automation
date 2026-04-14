@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import PeriodSelector from '../../components/PeriodSelector'
 import toast from 'react-hot-toast'
 import { Plus, Trash2, CircleDollarSign, Eye, XCircle, Check, Gift } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (v) => `$${Number(v || 0).toLocaleString('es-CL')}`
 
@@ -619,13 +620,12 @@ export default function Ajustes() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <CircleDollarSign size={28} className="text-primary-600" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestión Financiera</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Ajustes, préstamos y bonificaciones</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Gestión Financiera"
+        subtitle="Ajustes, préstamos y bonificaciones"
+        icon={CircleDollarSign}
+        accent="green"
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200 mb-6">

@@ -5,6 +5,7 @@ import {
   Users, Download, Upload, FileText, X, Check, AlertCircle,
   DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle,
 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -604,36 +605,30 @@ export default function PagosTrabajadores() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-100 rounded-xl"><Users size={22} className="text-indigo-600" /></div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Pagos Trabajadores</h1>
-            <p className="text-sm text-gray-500">
-              Nómina mensual · El período indica <em>a qué mes corresponde</em> la nómina, no la fecha del pago
-            </p>
+      <PageHeader
+        title="Pagos Trabajadores"
+        subtitle="Nómina mensual · El período indica a qué mes corresponde la nómina"
+        icon={Users}
+        accent="purple"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <select className="input w-36" value={mes} onChange={e => setMes(Number(e.target.value))}>
+                {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+              </select>
+              <select className="input w-24" value={anio} onChange={e => setAnio(Number(e.target.value))}>
+                {anos.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <button onClick={descargarPlantilla} className="btn btn-secondary flex items-center gap-2 text-sm">
+              <Download size={14} /> Plantilla
+            </button>
+            <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
+              <Upload size={14} /> Cargar Cartola
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 font-medium">Nómina de:</span>
-            <select className="input w-36" value={mes} onChange={e => setMes(Number(e.target.value))}>
-              {MESES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-            </select>
-            <select className="input w-24" value={anio} onChange={e => setAnio(Number(e.target.value))}>
-              {anos.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <button onClick={descargarPlantilla} className="btn btn-secondary flex items-center gap-2 text-sm">
-            <Download size={14} /> Plantilla
-          </button>
-          <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
-            <Upload size={14} /> Cargar Cartola
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

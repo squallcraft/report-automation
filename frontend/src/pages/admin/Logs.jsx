@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import { ClipboardList, ChevronDown, ChevronUp, AlertCircle, CheckCircle } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 export default function Logs() {
   const [logs, setLogs] = useState([])
@@ -17,12 +18,12 @@ export default function Logs() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <ClipboardList size={24} /> Logs de Ingesta
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">Historial de cargas de archivos y errores</p>
-      </div>
+      <PageHeader
+        title="Logs de Ingesta"
+        subtitle="Historial de procesamiento de reportes"
+        icon={ClipboardList}
+        accent="slate"
+      />
 
       {logs.length === 0 ? (
         <div className="card text-center py-12 text-gray-500">No hay logs registrados</div>

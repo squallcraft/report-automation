@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
 import StatsCard from '../../components/StatsCard'
-import { Package, DollarSign, TrendingUp, Truck, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { Package, DollarSign, TrendingUp, Truck, ArrowUpRight, ArrowDownRight, Minus, LayoutDashboard } from 'lucide-react'
 import { fmt } from '../../utils/format'
 
 const now = new Date()
@@ -43,24 +44,26 @@ export default function PickupDashboard() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 sm:mb-6 flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Hola, {user?.nombre}</h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1">Resumen financiero del pickup</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select className="input-field text-xs sm:text-sm py-1.5 w-28 sm:w-auto" value={mes} onChange={e => setMes(+e.target.value)}>
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {new Date(anio, i).toLocaleString('es-CL', { month: 'long' })}
-              </option>
-            ))}
-          </select>
-          <select className="input-field text-xs sm:text-sm py-1.5 w-20 sm:w-auto" value={anio} onChange={e => setAnio(+e.target.value)}>
-            {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        title={`Hola, ${user?.nombre}`}
+        subtitle="Tu panel de control"
+        icon={LayoutDashboard}
+        accent="teal"
+        actions={(
+          <div className="flex items-center gap-2">
+            <select className="input-field text-xs sm:text-sm py-1.5 w-28 sm:w-auto" value={mes} onChange={e => setMes(+e.target.value)}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(anio, i).toLocaleString('es-CL', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+            <select className="input-field text-xs sm:text-sm py-1.5 w-20 sm:w-auto" value={anio} onChange={e => setAnio(+e.target.value)}>
+              {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+        )}
+      />
 
       {data && (
         <>

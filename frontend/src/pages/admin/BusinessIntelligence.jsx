@@ -8,6 +8,7 @@ import {
   BookOpen, Bookmark, Trash2, ChevronDown, ChevronRight,
   Database, RefreshCw,
 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 // ─── Design tokens (light theme — consistente con el resto del sistema) ───────
 const C = {
@@ -1390,35 +1391,29 @@ export default function BusinessIntelligence() {
         select option { background: #1e1e1e; color: #f0f0f0; }
       `}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <div style={{ background: C.accentDim, padding: 8, borderRadius: 10, display: 'flex' }}>
-              <BarChart3 size={20} style={{ color: C.accent }} />
-            </div>
-            <h1 style={{ color: C.text, fontSize: 22, fontWeight: 700, margin: 0 }}>Business Intelligence</h1>
+      <PageHeader
+        title="Business Intelligence"
+        subtitle="Análisis avanzado del negocio"
+        icon={BarChart3}
+        accent="blue"
+        actions={(
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {[
+              { label: 'Mes', val: mes, set: v => { const n = +v; setMes(n); if (n === 0) setTab('yoy') }, opts: [{ v: 0, l: 'Todos los meses' }, ...MESES.slice(1).map((m, i) => ({ v: i + 1, l: m }))] },
+              { label: 'Año', val: anio, set: v => setAnio(+v), opts: [2024, 2025, 2026].map(y => ({ v: y, l: y })) },
+              { label: 'Empresa', val: empresa, set: setEmpresa, opts: [{ v: '', l: 'Todas' }, { v: 'ECOURIER', l: 'ECOURIER' }, { v: 'OVIEDO', l: 'OVIEDO' }] },
+              { label: 'Zona', val: zona, set: setZona, opts: [{ v: '', l: 'Todas' }, { v: 'santiago', l: 'Santiago' }, { v: 'valparaiso', l: 'Valparaíso' }, { v: 'melipilla', l: 'Melipilla' }] },
+            ].map(({ label, val, set, opts }) => (
+              <div key={label}>
+                <p style={{ color: '#94a3b8', fontSize: 10, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
+                <select value={val} onChange={e => set(e.target.value)} style={selectStyle}>
+                  {opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                </select>
+              </div>
+            ))}
           </div>
-          <p style={{ color: C.dimmed, fontSize: 13, margin: 0, paddingLeft: 46 }}>Análisis financiero y operacional · E-Courier</p>
-        </div>
-
-        {/* Filtros */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {[
-            { label: 'Mes', val: mes, set: v => { const n = +v; setMes(n); if (n === 0) setTab('yoy') }, opts: [{ v: 0, l: 'Todos los meses' }, ...MESES.slice(1).map((m, i) => ({ v: i + 1, l: m }))] },
-            { label: 'Año', val: anio, set: v => setAnio(+v), opts: [2024, 2025, 2026].map(y => ({ v: y, l: y })) },
-            { label: 'Empresa', val: empresa, set: setEmpresa, opts: [{ v: '', l: 'Todas' }, { v: 'ECOURIER', l: 'ECOURIER' }, { v: 'OVIEDO', l: 'OVIEDO' }] },
-            { label: 'Zona', val: zona, set: setZona, opts: [{ v: '', l: 'Todas' }, { v: 'santiago', l: 'Santiago' }, { v: 'valparaiso', l: 'Valparaíso' }, { v: 'melipilla', l: 'Melipilla' }] },
-          ].map(({ label, val, set, opts }) => (
-            <div key={label}>
-              <p style={{ color: C.dimmed, fontSize: 10, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
-              <select value={val} onChange={e => set(e.target.value)} style={selectStyle}>
-                {opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-              </select>
-            </div>
-          ))}
-        </div>
-      </div>
+        )}
+      />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 24, borderBottom: `1px solid ${C.border}`, paddingBottom: 1 }}>

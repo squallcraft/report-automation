@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { UserCog, Plus, Edit2, Trash2, ShieldCheck, RotateCcw, KeyRound, UserCheck, UserX, Store, Truck } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
 
 const ROL_LABELS = { ADMIN: 'Admin', ADMINISTRACION: 'Administración' }
@@ -256,20 +257,19 @@ export default function Usuarios() {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <UserCog size={24} className="text-primary-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Usuarios del Sistema</h1>
-            <p className="text-sm text-gray-500">Gestión de accesos y permisos</p>
-          </div>
-        </div>
-        {tab === 'admin' && (
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Nuevo Usuario
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Usuarios del Sistema"
+        subtitle="Gestión de accesos y permisos"
+        icon={UserCog}
+        accent="blue"
+        actions={
+          tab === 'admin' ? (
+            <button type="button" onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <Plus size={16} /> Nuevo Usuario
+            </button>
+          ) : null
+        }
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">

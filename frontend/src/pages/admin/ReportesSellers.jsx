@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Search, TrendingUp, TrendingDown, Minus, ExternalLink } from 'lucide-react'
+import { Search, TrendingUp, TrendingDown, Minus, ExternalLink, BarChart3 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const C = {
   bg: '#f8fafc', surface: '#f1f5f9', card: '#ffffff', cardHover: '#f8fafc',
@@ -137,23 +138,24 @@ export default function ReportesSellers() {
   return (
     <div style={{ background: C.bg, minHeight: '100vh', padding: '24px 20px', color: C.text, fontFamily: 'system-ui, sans-serif' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>Reportes Sellers</h1>
-          <p style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>Volumen, márgenes y tier de cada seller. Clic en una fila para ver el perfil completo.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={period.anio} onChange={e => setPeriod(p => ({ ...p, anio: +e.target.value }))}
-            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
-            {[now.getFullYear() - 1, now.getFullYear()].map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <select value={period.mes} onChange={e => setPeriod(p => ({ ...p, mes: +e.target.value }))}
-            style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
-            {MESES_L.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        title="Reportes Sellers"
+        subtitle="Análisis de rendimiento por tier y período"
+        icon={BarChart3}
+        accent="purple"
+        actions={(
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select value={period.anio} onChange={e => setPeriod(p => ({ ...p, anio: +e.target.value }))}
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
+              {[now.getFullYear() - 1, now.getFullYear()].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select value={period.mes} onChange={e => setPeriod(p => ({ ...p, mes: +e.target.value }))}
+              style={{ background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
+              {MESES_L.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+        )}
+      />
 
       {/* Tier summary cards */}
       {data && (

@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -175,15 +176,17 @@ export default function Trabajadores() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Trabajadores</h1>
-          <p className="text-sm text-gray-500">Gestión de personal contratado</p>
-        </div>
-        <button onClick={openNew} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Nuevo Trabajador
-        </button>
-      </div>
+      <PageHeader
+        title="Trabajadores"
+        subtitle="Gestión de personal contratado"
+        icon={Users}
+        accent="purple"
+        actions={
+          <button onClick={openNew} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Nuevo Trabajador
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatsCard icon={Users}       label="Trabajadores activos" value={activos.length}    color="blue" />

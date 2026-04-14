@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
-import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle, Users, ExternalLink } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle, Users, ExternalLink, Wallet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -73,13 +74,12 @@ export default function DriverGanancias() {
 
   return (
     <div>
-      {/* Encabezado */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mis Ganancias</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Resumen de lo liquidado y pagado por período
-        </p>
-      </div>
+      <PageHeader
+        title="Mis Ganancias"
+        subtitle="Detalle de pagos por período"
+        icon={Wallet}
+        accent="green"
+      />
 
       {/* Selector de período */}
       <div className="card mb-6">

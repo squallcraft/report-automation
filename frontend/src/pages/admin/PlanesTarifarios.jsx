@@ -3,6 +3,7 @@ import api from '../../api'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, Trash2, Layers, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmt = (v) => `$${Number(v || 0).toLocaleString('es-CL')}`
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
@@ -152,19 +153,17 @@ export default function PlanesTarifarios() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Layers size={28} className="text-primary-600" />
-          <div>
-            <h1 className="page-title text-2xl font-bold text-gray-900">Planes Tarifarios</h1>
-            <p className="page-subtitle text-sm text-gray-500 mt-1">Tarifas por comuna para grupos de sellers</p>
-          </div>
-        </div>
-        <button onClick={() => setNewPlanModal(true)} className="btn-primary flex items-center gap-2">
-          <Plus size={18} />
-          Nuevo Plan
-        </button>
-      </div>
+      <PageHeader
+        title="Planes Tarifarios"
+        subtitle="Tarifas por comuna para grupos de sellers"
+        icon={Layers}
+        accent="blue"
+        actions={
+          <button onClick={() => setNewPlanModal(true)} className="btn-primary flex items-center gap-2">
+            <Plus size={18} /> Nuevo Plan
+          </button>
+        }
+      />
 
       {planes.length === 0 && (
         <div className="text-center text-gray-400 py-16">No hay planes tarifarios configurados</div>

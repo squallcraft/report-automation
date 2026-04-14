@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
 import { Plus, Pencil, Trash2, Package, Download, Upload } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const fmtClp = (v) => `$${(v ?? 0).toLocaleString('es-CL')}`
 
@@ -176,28 +177,27 @@ export default function Productos() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Package size={28} />
-            Productos
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">Gestiona los productos con extras (productos_con_extra)</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
-            <Download size={16} /> Plantilla
-          </button>
-          <label className="btn-secondary flex items-center gap-2 text-sm cursor-pointer">
-            <Upload size={16} /> Importar
-            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+      <PageHeader
+        title="Productos"
+        subtitle="Gestiona los productos con extras (productos_con_extra)"
+        icon={Package}
+        accent="blue"
+        actions={
+          <div className="flex items-center gap-2">
+            <button onClick={handleDownloadPlantilla} className="btn-secondary flex items-center gap-2 text-sm">
+              <Download size={16} /> Plantilla
+            </button>
+            <label className="btn-secondary flex items-center gap-2 text-sm cursor-pointer">
+              <Upload size={16} /> Importar
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
           </label>
           <button onClick={openCreate} className="btn-primary flex items-center gap-2">
             <Plus size={18} />
             Nuevo Producto
           </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       <DataTable
         columns={columns}

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
-import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
+import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle, ExternalLink, Wallet } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -62,12 +63,12 @@ export default function SellerGanancias() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Mis Pagos</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Registro de pagos emitidos a eCourier por período
-        </p>
-      </div>
+      <PageHeader
+        title="Mis Pagos"
+        subtitle="Registro de pagos recibidos"
+        icon={Wallet}
+        accent="green"
+      />
 
       {/* Selector de período */}
       <div className="card mb-6">

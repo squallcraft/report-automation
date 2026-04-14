@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
+import PageHeader from '../../components/PageHeader'
 import PeriodSelector from '../../components/PeriodSelector'
+import { Package } from 'lucide-react'
 import { fmt, fmtDateLong, IVA_RATE } from '../../utils/format'
 
 const now = new Date()
@@ -24,10 +26,12 @@ export default function PickupRecepciones() {
 
   return (
     <div className="flex flex-col h-full gap-3 sm:gap-4">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Recepciones</h1>
-        <p className="text-xs sm:text-sm text-gray-500 mt-1">Resumen diario de paquetes recepcionados</p>
-      </div>
+      <PageHeader
+        title="Mis Recepciones"
+        subtitle="Historial de recepciones por período"
+        icon={Package}
+        accent="teal"
+      />
 
       <div className="card">
         <div className="flex flex-wrap items-end justify-between gap-3">

@@ -304,18 +304,31 @@ export default function SellerPerfil() {
         </div>
       </div>
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-        <HealthRing score={health_score} />
-          <div style={{ flex: 1, minWidth: 180 }}>
+      {/* ── Header (premium dark style) ────────────────────────────────────── */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)',
+        borderRadius: 16, padding: '28px 32px', marginBottom: 20,
+        display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 20% 50%, rgba(30,58,95,0.5) 0%, transparent 70%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.08) 0%, transparent 50%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, width: '40%', height: '100%', background: 'linear-gradient(135deg, transparent 40%, rgba(37,99,235,0.06) 100%)', pointerEvents: 'none' }} />
+
+        {/* Score ring (glow effect) */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ position: 'absolute', inset: -8, borderRadius: '50%', background: `radial-gradient(circle, ${health_score >= 70 ? 'rgba(22,163,74,0.2)' : health_score >= 40 ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)'} 0%, transparent 70%)` }} />
+          <HealthRing score={health_score} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 180, position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: C.text, margin: 0 }}>{seller.nombre}</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#f1f5f9', margin: 0, letterSpacing: '-0.01em' }}>{seller.nombre}</h1>
             <TierBadge tier={tier} />
             {seller.es_grupo && (
               <span style={{
                 display: 'flex', alignItems: 'center', gap: 4,
-                background: 'rgba(167,139,250,0.12)', color: '#a78bfa',
-                border: '1px solid #a78bfa33', borderRadius: 6, padding: '2px 10px',
+                background: 'rgba(167,139,250,0.15)', color: '#a78bfa',
+                border: '1px solid rgba(167,139,250,0.3)', borderRadius: 6, padding: '3px 10px',
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
               }}>
                 <Users size={10} /> Grupo analítico
@@ -324,8 +337,8 @@ export default function SellerPerfil() {
             {seller.tipo_cierre === 'pausa' && (
               <span style={{
                 display: 'flex', alignItems: 'center', gap: 4,
-                background: 'rgba(249,115,22,0.12)', color: '#f97316',
-                border: '1px solid #f9731633', borderRadius: 6, padding: '2px 10px',
+                background: 'rgba(249,115,22,0.15)', color: '#fb923c',
+                border: '1px solid rgba(249,115,22,0.3)', borderRadius: 6, padding: '3px 10px',
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
               }}>
                 <PauseCircle size={10} /> En pausa {seller.fecha_pausa_fin ? `· retorno est. ${seller.fecha_pausa_fin}` : ''}
@@ -334,44 +347,44 @@ export default function SellerPerfil() {
             {seller.tipo_cierre === 'cerrado' && (
               <span style={{
                 display: 'flex', alignItems: 'center', gap: 4,
-                background: 'rgba(239,68,68,0.12)', color: '#ef4444',
-                border: '1px solid #ef444433', borderRadius: 6, padding: '2px 10px',
+                background: 'rgba(239,68,68,0.15)', color: '#f87171',
+                border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, padding: '3px 10px',
                 fontSize: 10, fontWeight: 700, letterSpacing: '0.04em',
               }}>
                 <XCircle size={10} /> Cerrado {seller.fecha_cierre ? `· ${seller.fecha_cierre}` : ''}
               </span>
             )}
           </div>
-          <p style={{ color: C.muted, fontSize: 12, marginTop: 4 }}>
+          <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 6 }}>
             {seller.empresa || 'ECOURIER'} · RUT {seller.rut || '—'} · {MESES_L[period.mes]} {period.anio}
           </p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, position: 'relative', zIndex: 1 }}>
           <div style={{ textAlign: 'right' }}>
-            <p style={{ color: C.dimmed, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Último envío</p>
-            <p style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{data.ultimo_envio || '—'}</p>
+            <p style={{ color: '#64748b', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Último envío</p>
+            <p style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 700 }}>{data.ultimo_envio || '—'}</p>
             {mejor_mes && (
-              <p style={{ color: C.dimmed, fontSize: 10, marginTop: 4 }}>Mejor mes: {MESES_S[mejor_mes.mes]}/{mejor_mes.anio} ({fmtN(mejor_mes.total)} paq.)</p>
+              <p style={{ color: '#64748b', fontSize: 10, marginTop: 4 }}>Mejor mes: {MESES_S[mejor_mes.mes]}/{mejor_mes.anio} ({fmtN(mejor_mes.total)} paq.)</p>
             )}
           </div>
-          {/* Lifecycle actions — only for individual sellers */}
           {!isGrupo && (
             <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
               {(!seller.tipo_cierre) && (
                 <>
                   <button onClick={() => { setLifecycleForm({}); setShowPausaModal(true) }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid #f9731666', color: '#f97316', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid rgba(249,115,22,0.4)', color: '#fb923c', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
                     <PauseCircle size={12} /> Poner en pausa
                   </button>
                   <button onClick={() => { setLifecycleForm({ razones_cierre: [] }); setShowCierreModal(true) }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid #ef444466', color: '#ef4444', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#f87171', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
                     <XCircle size={12} /> Cerrar cliente
                   </button>
                 </>
               )}
               {seller.tipo_cierre && (
                 <button onClick={() => { setLifecycleForm({}); setShowReabrirModal(true) }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: `1px solid ${C.green}66`, color: C.green, borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid rgba(22,163,74,0.4)', color: '#4ade80', borderRadius: 7, padding: '5px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
                   <PlayCircle size={12} /> Reabrir cliente
                 </button>
               )}

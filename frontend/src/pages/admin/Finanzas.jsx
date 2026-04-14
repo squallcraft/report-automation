@@ -5,8 +5,9 @@ import {
   Plus, Trash2, Edit2, ChevronRight, ChevronDown, ChevronLeft,
   Copy, TrendingUp, TrendingDown, Minus, Check, X,
   FileText, Upload, Download, Paperclip, ArrowUpRight, ArrowDownRight,
-  BookOpen, RefreshCw, Search,
+  BookOpen, RefreshCw, Search, Wallet,
 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -336,16 +337,17 @@ export default function Finanzas() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Finanzas</h1>
-          <p className="text-sm text-gray-500">Panorama financiero consolidado</p>
-        </div>
-        <button onClick={openNew} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Nueva Transacción
-        </button>
-      </div>
+      <PageHeader
+        title="Finanzas"
+        subtitle="Panorama financiero consolidado"
+        icon={Wallet}
+        accent="green"
+        actions={
+          <button onClick={openNew} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Nueva Transacción
+          </button>
+        }
+      />
 
       {/* Period + Tabs */}
       <div className="flex flex-wrap items-center gap-3">

@@ -4,6 +4,7 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
 import { MessageSquare, Send, XCircle } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const truncate = (str, len = 50) => {
   if (!str) return ''
@@ -99,15 +100,12 @@ export default function Consultas() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <MessageSquare size={28} className="text-primary-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Consultas del Portal</h1>
-            <p className="text-sm text-gray-500 mt-1">Gestiona las consultas de sellers y drivers</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Consultas del Portal"
+        subtitle="Gestiona las consultas de sellers y conductores"
+        icon={MessageSquare}
+        accent="blue"
+      />
 
       <DataTable
         columns={columns}

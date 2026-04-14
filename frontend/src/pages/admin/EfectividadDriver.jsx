@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import { ArrowLeft, TrendingUp, AlertTriangle } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 
 const now = new Date()
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -196,35 +197,36 @@ export default function EfectividadDriver() {
 
   return (
     <div className="space-y-6 pb-10">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/admin/efectividad')}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
-            title="Volver"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <TrendingUp size={20} className="text-blue-600" />
-              {loading ? 'Cargando…' : (r?.nombre || `Conductor #${driverId}`)}
-            </h1>
-            <p className="text-xs text-gray-400 mt-0.5">Efectividad de entrega · días hábiles (L-V)</p>
-          </div>
-        </div>
-        <select
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white text-gray-700"
-          value={`${period.mes}-${period.anio}`}
-          onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod({ mes: +m, anio: +a }) }}
+      <div className="flex gap-3 items-stretch flex-wrap w-full">
+        <button
+          type="button"
+          onClick={() => navigate('/admin/efectividad')}
+          className="self-center p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors flex-shrink-0"
+          title="Volver"
         >
-          {Array.from({ length: 12 }, (_, i) => {
-            const mes = i + 1
-            const anio = now.getFullYear()
-            return <option key={i} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
-          })}
-        </select>
+          <ArrowLeft size={18} />
+        </button>
+        <div className="flex-1 min-w-[280px]">
+          <PageHeader
+            title={loading ? 'Cargando…' : (r?.nombre || `Conductor #${driverId}`)}
+            subtitle="Detalle de efectividad por período"
+            icon={TrendingUp}
+            accent="green"
+            actions={(
+              <select
+                className="border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200"
+                value={`${period.mes}-${period.anio}`}
+                onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod({ mes: +m, anio: +a }) }}
+              >
+                {Array.from({ length: 12 }, (_, i) => {
+                  const mes = i + 1
+                  const anio = now.getFullYear()
+                  return <option key={i} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
+                })}
+              </select>
+            )}
+          />
+        </div>
       </div>
 
       {loading ? (

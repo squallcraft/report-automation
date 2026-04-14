@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle, CheckCircle, XCircle, Clock, RefreshCw,
   User, MessageSquare, TrendingDown, Star, Plus, ChevronRight,
-  TrendingUp, ArrowUpRight, ArrowDownRight, Calendar, ChevronDown,
+  TrendingUp, ArrowUpRight, ArrowDownRight, Calendar, ChevronDown, ClipboardList,
 } from 'lucide-react'
+import PageHeader from '../../components/PageHeader'
 import api from '../../api'
 
 const C = {
@@ -254,26 +255,25 @@ export default function Bandeja() {
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', padding: '24px 28px', color: C.text }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Bandeja de Tareas</h1>
-          <p style={{ color: C.muted, fontSize: 13, margin: '4px 0 0' }}>
-            Señales detectadas que requieren tu atención
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setShowNueva(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
-            <Plus size={14} /> Nueva tarea
-          </button>
-          <button onClick={generarAuto} disabled={generando}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1a6db8', border: 'none', color: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', opacity: generando ? 0.6 : 1 }}>
-            <RefreshCw size={14} style={{ animation: generando ? 'spin 1s linear infinite' : 'none' }} />
-            {generando ? 'Generando…' : 'Detectar señales'}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Bandeja de Tareas"
+        subtitle="Gestión de tareas y señales comerciales"
+        icon={ClipboardList}
+        accent="amber"
+        actions={(
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setShowNueva(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+              <Plus size={14} /> Nueva tarea
+            </button>
+            <button onClick={generarAuto} disabled={generando}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1a6db8', border: 'none', color: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', opacity: generando ? 0.6 : 1 }}>
+              <RefreshCw size={14} style={{ animation: generando ? 'spin 1s linear infinite' : 'none' }} />
+              {generando ? 'Generando…' : 'Detectar señales'}
+            </button>
+          </div>
+        )}
+      />
 
       <ResumenSemanal />
 
