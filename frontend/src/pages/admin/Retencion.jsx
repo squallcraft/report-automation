@@ -134,10 +134,20 @@ function heatColor(val, maxVal) {
   return '#2090f0'
 }
 
-function KpiCard({ label, value, sub, color, icon: Icon, delta, deltaLabel }) {
+function KpiCard({ label, value, sub, color, icon: Icon, delta, deltaLabel, onClick, active }) {
   const valColor = color === 'green' ? C.green : color === 'red' ? C.red : color === 'amber' ? C.amber : color === 'blue' ? C.blue : color === 'purple' ? C.purple : C.text
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: active ? `${valColor}11` : C.card,
+        border: `1px solid ${active ? valColor : C.border}`,
+        borderRadius: 12, padding: '16px 18px',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.15s',
+        boxShadow: active ? `0 0 0 1px ${valColor}44` : 'none',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <p style={{ color: C.muted, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</p>
         {Icon && <Icon size={14} style={{ color: valColor, opacity: 0.7 }} />}
@@ -306,7 +316,7 @@ export default function Retencion() {
     if (!data?.sellers) return
     const header = 'Seller,Estado,Último mes activo,Meses activo,Prom. paquetes/mes,Ingreso mensual prom.,Impacto anual,Semanas sin actividad'
     const rows = sellersFiltrados.map(s =>
-      `"${s.nombre}",${ESTADO_CFG[s.estado]?.label || s.estado},${MESES_L[s.ultimo_mes_activo] || '—'},${s.meses_activo},${s.promedio_mensual},${s.ingreso_mensual_avg},${s.impacto_anual},${s.semanas_sin_actividad}`
+      `"${s.nombre}",${ESTADO_CFG[s.estado_efectivo]?.label || s.estado_efectivo || s.estado},${MESES_L[s.ultimo_mes_activo] || '—'},${s.meses_activo},${s.promedio_mensual},${s.ingreso_mensual_avg},${s.impacto_anual},${s.semanas_sin_actividad}`
     )
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
@@ -362,36 +372,41 @@ export default function Retencion() {
         <div style={{ textAlign: 'center', padding: '80px 0', color: C.muted }}>Cargando análisis…</div>
       ) : !data ? null : (
         <>
-          {/* BLOQUE A: KPIs */}
+          {/* BLOQUE A: KPIs (clickeables para filtrar) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
             <KpiCard
               label="Activos este mes" value={r.activo}
               sub={`${r.nuevo} nuevos · ${r.recuperado} recuperados`}
               color="green" icon={UserCheck}
               delta={r.activo - r.prev_activo} deltaLabel={MESES_S[period.mes - 1] || 'prev'}
+              active={filterEstado === 'activo'} onClick={() => { setFilterEstado(f => f === 'activo' ? 'todos' : 'activo'); setVista('semaforo'); setPage(1) }}
             />
             <KpiCard
               label="En riesgo" value={r.en_riesgo}
               sub="Sin señal este mes, sin gestión activa"
               color="amber" icon={AlertTriangle}
               delta={r.en_riesgo - r.prev_en_riesgo} deltaLabel={MESES_S[period.mes - 1] || 'prev'}
+              active={filterEstado === 'en_riesgo'} onClick={() => { setFilterEstado(f => f === 'en_riesgo' ? 'todos' : 'en_riesgo'); setVista('semaforo'); setPage(1) }}
             />
             <KpiCard
               label="Inactivos" value={r.inactivo}
               sub="Sin envíos hace 2-4 meses, sin gestión"
               color="amber" icon={UserMinus}
+              active={filterEstado === 'inactivo'} onClick={() => { setFilterEstado(f => f === 'inactivo' ? 'todos' : 'inactivo'); setVista('semaforo'); setPage(1) }}
             />
             <KpiCard
               label="Perdidos" value={r.perdido}
               sub="CRM o sistema: baja definitiva"
               color="red" icon={UserX}
               delta={r.perdido - r.prev_perdido} deltaLabel={MESES_S[period.mes - 1] || 'prev'}
+              active={filterEstado === 'perdido'} onClick={() => { setFilterEstado(f => f === 'perdido' ? 'todos' : 'perdido'); setVista('semaforo'); setPage(1) }}
             />
             {(r.en_gestion > 0) && (
               <KpiCard
                 label="En gestión" value={r.en_gestion}
                 sub="Con gestión comercial activa"
                 color="blue" icon={UserCheck}
+                active={filterEstado === 'en_gestion'} onClick={() => { setFilterEstado(f => f === 'en_gestion' ? 'todos' : 'en_gestion'); setVista('semaforo'); setPage(1) }}
               />
             )}
             {(r.pendiente_validacion > 0) && (
@@ -399,12 +414,14 @@ export default function Retencion() {
                 label="⚠ Validar estado" value={r.pendiente_validacion}
                 sub="90+ días sin envíos — requiere acción"
                 color="red" icon={AlertTriangle}
+                active={filterEstado === 'pendiente_validacion'} onClick={() => { setFilterEstado(f => f === 'pendiente_validacion' ? 'todos' : 'pendiente_validacion'); setVista('semaforo'); setPage(1) }}
               />
             )}
             <KpiCard
               label="Total sellers año" value={r.total_sellers}
               sub={`${period.anio}`}
               color="blue" icon={Users}
+              active={filterEstado === 'todos'} onClick={() => { setFilterEstado('todos'); setVista('semaforo'); setPage(1) }}
             />
           </div>
 
@@ -709,7 +726,7 @@ export default function Retencion() {
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                           <td style={{ padding: '6px 12px', color: C.text, whiteSpace: 'nowrap', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             <span style={{ marginRight: 6 }}>
-                              <EstadoBadge estado={s.estado} />
+                              <EstadoBadge estado={s.estado_efectivo || s.estado} />
                             </span>
                             {s.nombre}
                           </td>
@@ -764,7 +781,7 @@ export default function Retencion() {
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <td style={{ padding: '9px 12px', color: C.dimmed, fontWeight: 700 }}>{i + 1}</td>
                         <td style={{ padding: '9px 12px', color: C.text, fontWeight: 600 }}>{s.nombre}</td>
-                        <td style={{ padding: '9px 12px' }}><EstadoBadge estado={s.estado} /></td>
+                        <td style={{ padding: '9px 12px' }}><EstadoBadge estado={s.estado_efectivo || s.estado} /></td>
                         <td style={{ padding: '9px 12px', textAlign: 'right', color: s.semanas_sin_actividad > 8 ? C.red : C.amber }}>
                           {s.semanas_sin_actividad > 0 ? `~${s.semanas_sin_actividad} sem.` : '< 1 mes'}
                         </td>
