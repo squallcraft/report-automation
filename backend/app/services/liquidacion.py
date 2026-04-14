@@ -176,13 +176,16 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
 
         if not seller.tiene_retiro or seller.usa_pickup or not seller.tarifa_retiro:
             total_retiro_directo = 0
-        elif seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
-            dia_counts = envio_dia_map.get(seller.id, {})
-            dias_cobrar = sum(
-                1 for cnt_d in dia_counts.values()
-                if cnt_d < seller.min_paquetes_retiro_gratis
-            )
-            total_retiro_directo = seller.tarifa_retiro * dias_cobrar
+        elif (anio, mes) >= (2026, 4):
+            if seller.min_paquetes_retiro_gratis > 0:
+                dia_counts = envio_dia_map.get(seller.id, {})
+                dias_cobrar = sum(
+                    1 for cnt_d in dia_counts.values()
+                    if cnt_d < seller.min_paquetes_retiro_gratis
+                )
+                total_retiro_directo = seller.tarifa_retiro * dias_cobrar
+            else:
+                total_retiro_directo = seller.tarifa_retiro * dias
         else:
             retiros_directos = retiro_directo_map.get(seller.id, [])
             if retiros_directos:
