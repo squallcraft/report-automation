@@ -128,7 +128,7 @@ def crear_prestamo(
     data: PrestamoCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("prestamos:editar")),
 ):
     if data.tipo_beneficiario == TipoBeneficiarioEnum.TRABAJADOR.value:
         if not data.trabajador_id or not db.get(Trabajador, data.trabajador_id):
@@ -172,7 +172,7 @@ def pagar_cuota(
     request: Request,
     cuota_id: int = Query(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("prestamos:editar")),
 ):
     """Marca una cuota como pagada y actualiza el saldo del préstamo."""
     prestamo = db.get(Prestamo, prestamo_id)
@@ -205,7 +205,7 @@ def cancelar_prestamo(
     prestamo_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("prestamos:editar")),
 ):
     prestamo = db.get(Prestamo, prestamo_id)
     if not prestamo:
