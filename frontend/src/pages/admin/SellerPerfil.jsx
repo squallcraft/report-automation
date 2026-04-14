@@ -306,13 +306,13 @@ export default function SellerPerfil() {
 
       {/* ── Header (premium dark style) ────────────────────────────────────── */}
       <div style={{
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)',
-        borderRadius: 16, padding: '28px 32px', marginBottom: 20,
-        display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap',
-        position: 'relative', overflow: 'hidden',
+        background: 'linear-gradient(135deg, #1e3a5f 0%, #264a73 50%, #1e3a5f 100%)',
+        borderRadius: 16, padding: '40px 36px', marginBottom: 20,
+        display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap',
+        position: 'relative', overflow: 'hidden', minHeight: 140,
       }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 20% 50%, rgba(30,58,95,0.5) 0%, transparent 70%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.08) 0%, transparent 50%)', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', top: 0, right: 0, width: '40%', height: '100%', background: 'linear-gradient(135deg, transparent 40%, rgba(37,99,235,0.06) 100%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 20% 50%, rgba(30,58,95,0.6) 0%, transparent 70%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.1) 0%, transparent 50%)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', top: 0, right: 0, width: '40%', height: '100%', background: 'linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.03) 100%)', pointerEvents: 'none' }} />
 
         {/* Score ring (glow effect) */}
         <div style={{ position: 'relative', zIndex: 1 }}>
@@ -322,7 +322,7 @@ export default function SellerPerfil() {
 
         <div style={{ flex: 1, minWidth: 180, position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: '#f1f5f9', margin: 0, letterSpacing: '-0.01em' }}>{seller.nombre}</h1>
+            <h1 style={{ fontSize: 33, fontWeight: 800, color: '#f1f5f9', margin: 0, letterSpacing: '0.02em', textTransform: 'uppercase' }}>{seller.nombre}</h1>
             <TierBadge tier={tier} />
             {seller.es_grupo && (
               <span style={{
@@ -363,7 +363,7 @@ export default function SellerPerfil() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, position: 'relative', zIndex: 1 }}>
           <div style={{ textAlign: 'right' }}>
             <p style={{ color: '#64748b', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Último envío</p>
-            <p style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 700 }}>{data.ultimo_envio || '—'}</p>
+            <p style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 700 }}>{data.ultimo_envio || '—'}</p>
             {mejor_mes && (
               <p style={{ color: '#64748b', fontSize: 10, marginTop: 4 }}>Mejor mes: {MESES_S[mejor_mes.mes]}/{mejor_mes.anio} ({fmtN(mejor_mes.total)} paq.)</p>
             )}

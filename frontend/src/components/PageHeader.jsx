@@ -1,42 +1,42 @@
 const HEADER_STYLES = {
   wrapper: {
-    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)',
+    background: 'linear-gradient(135deg, #1e3a5f 0%, #264a73 50%, #1e3a5f 100%)',
     borderRadius: 16,
-    padding: '28px 32px',
+    padding: '40px 36px',
     marginBottom: 24,
     position: 'relative',
     overflow: 'hidden',
-    minHeight: 100,
+    minHeight: 140,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 24,
+    gap: 28,
   },
   meshOverlay: {
     position: 'absolute',
     inset: 0,
-    background: 'radial-gradient(ellipse at 20% 50%, rgba(30,58,95,0.5) 0%, transparent 70%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.08) 0%, transparent 50%)',
+    background: 'radial-gradient(ellipse at 20% 50%, rgba(30,58,95,0.6) 0%, transparent 70%), radial-gradient(ellipse at 80% 20%, rgba(37,99,235,0.1) 0%, transparent 50%)',
     pointerEvents: 'none',
   },
   diagonalAccent: {
     position: 'absolute',
     top: 0, right: 0,
     width: '40%', height: '100%',
-    background: 'linear-gradient(135deg, transparent 40%, rgba(37,99,235,0.06) 100%)',
+    background: 'linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.03) 100%)',
     pointerEvents: 'none',
   },
   left: {
     display: 'flex',
     alignItems: 'center',
-    gap: 20,
+    gap: 24,
     position: 'relative',
     zIndex: 1,
     flex: 1,
     minWidth: 0,
   },
   iconBox: {
-    width: 48, height: 48,
-    borderRadius: 12,
+    width: 56, height: 56,
+    borderRadius: 14,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -45,16 +45,17 @@ const HEADER_STYLES = {
   textBlock: { minWidth: 0, flex: 1 },
   title: {
     color: '#f1f5f9',
-    fontSize: 22,
+    fontSize: 33,
     fontWeight: 800,
-    lineHeight: 1.2,
+    lineHeight: 1.15,
     margin: 0,
-    letterSpacing: '-0.01em',
+    letterSpacing: '0.02em',
+    textTransform: 'uppercase',
   },
   subtitle: {
     color: '#94a3b8',
-    fontSize: 13,
-    marginTop: 4,
+    fontSize: 15,
+    marginTop: 6,
     lineHeight: 1.3,
   },
   badgeRow: {
@@ -83,16 +84,16 @@ const HEADER_STYLES = {
   },
   statValue: {
     color: '#f1f5f9',
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: 700,
     lineHeight: 1.2,
   },
   statLabel: {
-    color: '#64748b',
-    fontSize: 10,
+    color: '#94a3b8',
+    fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: '0.06em',
-    marginTop: 2,
+    marginTop: 3,
   },
 }
 
@@ -131,7 +132,7 @@ export default function PageHeader({
       <div style={HEADER_STYLES.left}>
         {Icon && (
           <div style={{ ...HEADER_STYLES.iconBox, background: ac.bg, border: `1px solid ${ac.border}` }}>
-            <Icon size={22} style={{ color: ac.color }} />
+            <Icon size={26} style={{ color: ac.color }} />
           </div>
         )}
         <div style={HEADER_STYLES.textBlock}>
