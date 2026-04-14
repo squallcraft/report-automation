@@ -46,6 +46,7 @@ const adminMenu = [
       { to: '/admin/bi', icon: BarChart3, label: 'Business Intelligence', permiso: 'finanzas' },
       { to: '/admin/reportes-sellers', icon: Store, label: 'Reportes Sellers' },
       { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
+      { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos Conductores' },
       { to: '/admin/retencion', icon: Users, label: 'Retención Comercial' },
       { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de Tareas' },
       { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },

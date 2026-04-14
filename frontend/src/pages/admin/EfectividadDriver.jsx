@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { ArrowLeft, TrendingUp, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, TrendingUp, AlertTriangle, DollarSign, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
 const now = new Date()
@@ -173,17 +173,27 @@ export default function EfectividadDriver() {
   const [period, setPeriod] = useState({ mes: initMes, anio: initAnio })
   const [tab, setTab] = useState('semana')
   const [data, setData] = useState(null)
+  const [ingresos, setIngresos] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
   const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
+  const periodOptions = []
+  for (let a = now.getFullYear(); a >= 2024; a--) {
+    const maxM = a === now.getFullYear() ? now.getMonth() + 1 : 12
+    for (let m = maxM; m >= 1; m--) periodOptions.push({ mes: m, anio: a })
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: d } = await api.get(`/dashboard/efectividad/driver/${driverId}`, {
-        params: { mes: period.mes, anio: period.anio }
-      })
-      setData(d)
+      const [efRes, ingRes] = await Promise.all([
+        api.get(`/dashboard/efectividad/driver/${driverId}`, { params: { mes: period.mes, anio: period.anio } }),
+        api.get(`/dashboard/ingresos/driver/${driverId}`),
+      ])
+      setData(efRes.data)
+      setIngresos(ingRes.data)
     } catch {
       toast.error('Error cargando datos del conductor')
     } finally {
@@ -218,11 +228,9 @@ export default function EfectividadDriver() {
                 value={`${period.mes}-${period.anio}`}
                 onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod({ mes: +m, anio: +a }) }}
               >
-                {Array.from({ length: 12 }, (_, i) => {
-                  const mes = i + 1
-                  const anio = now.getFullYear()
-                  return <option key={i} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
-                })}
+                {periodOptions.map(p => (
+                  <option key={`${p.mes}-${p.anio}`} value={`${p.mes}-${p.anio}`}>{meses[p.mes-1]} {p.anio}</option>
+                ))}
               </select>
             )}
           />
@@ -339,8 +347,173 @@ export default function EfectividadDriver() {
               </div>
             </div>
           )}
+
+          {/* ── INGRESOS ── */}
+          {ingresos && <IngresosBlock ingresos={ingresos} meses={meses} fmtClp={fmtClp} />}
         </>
       )}
+    </div>
+  )
+}
+
+function VarBadge({ value }) {
+  if (value == null) return <span className="text-gray-300 text-[10px]">—</span>
+  const isUp = value > 0
+  const isDown = value < 0
+  const Icon = isUp ? ArrowUpRight : isDown ? ArrowDownRight : Minus
+  const color = isUp ? 'text-emerald-600 bg-emerald-50' : isDown ? 'text-red-600 bg-red-50' : 'text-gray-500 bg-gray-100'
+  return (
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${color}`}>
+      <Icon size={10} />{Math.abs(value)}%
+    </span>
+  )
+}
+
+function SparkLine({ data, maxH = 32, width = 120 }) {
+  if (!data || data.length === 0) return null
+  const max = Math.max(...data, 1)
+  const barW = Math.floor((width - (data.length - 1) * 2) / data.length)
+  return (
+    <div className="flex items-end gap-[2px]" style={{ height: maxH, width }}>
+      {data.map((v, i) => (
+        <div
+          key={i}
+          className="bg-blue-400 rounded-t-sm transition-all hover:bg-blue-600"
+          style={{ width: barW, height: Math.max(Math.round((v / max) * maxH), 2) }}
+          title={`$${(v || 0).toLocaleString('es-CL')}`}
+        />
+      ))}
+    </div>
+  )
+}
+
+function IngresosBlock({ ingresos, meses: mNombres, fmtClp }) {
+  const { driver, meses = [], stats } = ingresos
+  if (!meses.length) return null
+
+  const maxGanancia = Math.max(...meses.map(m => m.ganancia), 1)
+  const last12 = meses.slice(-12)
+
+  const promedioGlobal = stats?.promedio_mensual || 0
+  const promedioEntrega = stats?.promedio_por_entrega || 0
+
+  return (
+    <div className="space-y-4 mt-2">
+      <div className="flex items-center gap-2">
+        <DollarSign size={18} className="text-emerald-600" />
+        <h2 className="text-base font-bold text-gray-800">Ingresos del conductor</h2>
+        <span className="text-xs text-gray-400 ml-auto">{meses.length} meses de historia</span>
+      </div>
+
+      {/* KPIs ingresos */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-emerald-500">
+          <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Promedio mensual</p>
+          <p className="text-2xl font-black text-gray-800 mt-1">{fmtClp(promedioGlobal)}</p>
+          <p className="text-xs text-gray-400 mt-1">total histórico</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
+          <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Promedio por entrega</p>
+          <p className="text-2xl font-black text-gray-800 mt-1">{fmtClp(promedioEntrega)}</p>
+          <p className="text-xs text-gray-400 mt-1">ganancia / paquete</p>
+        </div>
+        {stats?.mejor_mes && (
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-yellow-400">
+            <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Mejor mes</p>
+            <p className="text-2xl font-black text-emerald-700 mt-1">{fmtClp(stats.mejor_mes.ganancia)}</p>
+            <p className="text-xs text-gray-400 mt-1">{mNombres[stats.mejor_mes.mes - 1]} {stats.mejor_mes.anio}</p>
+          </div>
+        )}
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-purple-400">
+          <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Entregas totales</p>
+          <p className="text-2xl font-black text-gray-800 mt-1">{(stats?.entregas_total || 0).toLocaleString('es-CL')}</p>
+          <p className="text-xs text-gray-400 mt-1">en {stats?.total_meses || 0} meses</p>
+        </div>
+      </div>
+
+      {/* Gráfico de barras CSS */}
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <p className="text-sm font-semibold text-gray-700 mb-4">Evolución de ganancias (últimos 12 meses)</p>
+        <div className="flex items-end gap-1" style={{ height: 180 }}>
+          {last12.map((m, i) => {
+            const h = Math.max(Math.round((m.ganancia / maxGanancia) * 160), 4)
+            const isUp = m.var_mom != null && m.var_mom > 0
+            const isDown = m.var_mom != null && m.var_mom < -5
+            const barColor = isDown ? 'bg-red-400' : isUp ? 'bg-emerald-500' : 'bg-blue-400'
+            return (
+              <div key={i} className="flex flex-col items-center flex-1 group" title={`${fmtClp(m.ganancia)}\n${m.entregas} entregas`}>
+                <span className="text-[9px] text-gray-400 opacity-0 group-hover:opacity-100 transition mb-1 whitespace-nowrap">
+                  {fmtClp(m.ganancia)}
+                </span>
+                <div className={`w-full max-w-[40px] rounded-t ${barColor} transition-all`} style={{ height: h }} />
+                <span className="text-[9px] text-gray-400 mt-1">{mNombres[m.mes - 1]}</span>
+                <span className="text-[8px] text-gray-300">{m.anio}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Evolución entregas promedio */}
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <p className="text-sm font-semibold text-gray-700 mb-4">Promedio ganancia por paquete (últimos 12 meses)</p>
+        <div className="flex items-end gap-1" style={{ height: 120 }}>
+          {last12.map((m, i) => {
+            const maxProm = Math.max(...last12.map(x => x.promedio), 1)
+            const h = Math.max(Math.round((m.promedio / maxProm) * 100), 4)
+            return (
+              <div key={i} className="flex flex-col items-center flex-1 group" title={`${fmtClp(m.promedio)}/paquete`}>
+                <span className="text-[9px] text-gray-400 opacity-0 group-hover:opacity-100 transition mb-1 whitespace-nowrap">
+                  {fmtClp(m.promedio)}
+                </span>
+                <div className="w-full max-w-[40px] rounded-t bg-purple-400 transition-all" style={{ height: h }} />
+                <span className="text-[9px] text-gray-400 mt-1">{mNombres[m.mes - 1]}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Tabla histórica */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <p className="text-sm font-semibold text-gray-700">Detalle mensual completo</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
+                <th className="px-4 py-2 text-left font-semibold">Mes</th>
+                <th className="px-4 py-2 text-right font-semibold">Entregas</th>
+                <th className="px-4 py-2 text-right font-semibold">Ganancia</th>
+                <th className="px-4 py-2 text-right font-semibold">Prom/paquete</th>
+                <th className="px-4 py-2 text-center font-semibold">MoM</th>
+                <th className="px-4 py-2 text-center font-semibold">YoY</th>
+                <th className="px-4 py-2 font-semibold">Tendencia</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {[...meses].reverse().map((m, i) => (
+                <tr key={i} className="hover:bg-gray-50 text-gray-700">
+                  <td className="px-4 py-2.5 font-semibold">{mNombres[m.mes - 1]} {m.anio}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{m.entregas.toLocaleString('es-CL')}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-gray-800">{fmtClp(m.ganancia)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-500">{fmtClp(m.promedio)}</td>
+                  <td className="px-4 py-2.5 text-center"><VarBadge value={m.var_mom} /></td>
+                  <td className="px-4 py-2.5 text-center"><VarBadge value={m.var_yoy} /></td>
+                  <td className="px-4 py-2.5">
+                    <SparkLine data={(() => {
+                      const idx = meses.findIndex(x => x.mes === m.mes && x.anio === m.anio)
+                      const start = Math.max(0, idx - 5)
+                      return meses.slice(start, idx + 1).map(x => x.ganancia)
+                    })()} width={80} maxH={20} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

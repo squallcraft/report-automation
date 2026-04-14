@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock, Truck } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock, Truck, BarChart2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/PageHeader'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
@@ -114,6 +115,7 @@ const initialForm = {
 
 export default function Drivers() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const canEdit = user?.rol === 'ADMIN'
   const [drivers, setDrivers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -338,6 +340,13 @@ export default function Drivers() {
       align: 'right',
       render: (_, row) => (
         <div className="flex items-center justify-end gap-1">
+          <button
+            onClick={(e) => { e.stopPropagation(); const now = new Date(); navigate(`/admin/efectividad/driver/${row.id}?mes=${now.getMonth()+1}&anio=${now.getFullYear()}`) }}
+            className="p-1.5 rounded-lg text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+            title="Ver efectividad e ingresos"
+          >
+            <BarChart2 size={16} />
+          </button>
           <button
             onClick={(e) => verAcuerdo(e, row)}
             className="p-1.5 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition-colors"
