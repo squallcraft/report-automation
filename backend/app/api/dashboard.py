@@ -1443,21 +1443,103 @@ def delete_gestion(
 
 # ── Ingresos Drivers ─────────────────────────────────────────────────
 
-def _ingresos_mensuales_bulk(db: Session, driver_ids: list[int] = None, meses: int = 24):
-    """
-    Retorna ingresos mensuales agrupados por driver_id, mes, anio.
-    Solo envíos (costo_driver + extras). Retiros y ajustes se agregan aparte.
-    """
-    from app.services.liquidacion import _calcular_retiro_driver
+def _semanas_liquidadas(db: Session, mes: int, anio: int) -> list[int]:
+    """Semanas que tienen al menos 1 envío con is_liquidado=True."""
+    rows = db.query(distinct(Envio.semana)).filter(
+        Envio.mes == mes, Envio.anio == anio, Envio.is_liquidado == True,
+    ).all()
+    return sorted(r[0] for r in rows)
 
+
+def _semanas_con_datos(db: Session, mes: int, anio: int) -> list[int]:
+    """Semanas que tienen al menos 1 envío (para meses históricos sin flag)."""
+    rows = db.query(distinct(Envio.semana)).filter(
+        Envio.mes == mes, Envio.anio == anio, Envio.driver_id.isnot(None),
+    ).all()
+    return sorted(r[0] for r in rows)
+
+
+def _ingresos_por_semanas(db: Session, driver_ids: list[int], mes: int, anio: int, semanas: list[int] = None):
+    """
+    Calcula ingresos para un período (mes/año) truncado a las semanas indicadas.
+    Si semanas=None, toma todas.
+    Retorna dict { driver_id: { ganancia, entregas, promedio } }
+    """
+    sem_filter = [Envio.semana.in_(semanas)] if semanas else []
+
+    envio_rows = db.query(
+        Envio.driver_id,
+        sqlfunc.sum(Envio.costo_driver + Envio.pago_extra_manual).label("t_base"),
+        sqlfunc.sum(Envio.extra_producto_driver).label("t_prod"),
+        sqlfunc.sum(Envio.extra_comuna_driver).label("t_com"),
+        sqlfunc.count(Envio.id).label("cant"),
+    ).filter(
+        Envio.driver_id.in_(driver_ids),
+        Envio.mes == mes, Envio.anio == anio,
+        *sem_filter,
+    ).group_by(Envio.driver_id).all()
+
+    data = {}
+    for r in envio_rows:
+        data[r.driver_id] = {
+            "base": r.t_base or 0,
+            "extras": (r.t_prod or 0) + (r.t_com or 0),
+            "entregas": r.cant,
+        }
+
+    retiro_rows = db.query(
+        Retiro.driver_id,
+        sqlfunc.sum(Retiro.tarifa_driver).label("t_ret"),
+    ).filter(
+        Retiro.driver_id.in_(driver_ids),
+        Retiro.mes == mes, Retiro.anio == anio,
+        *([Retiro.semana.in_(semanas)] if semanas else []),
+    ).group_by(Retiro.driver_id).all()
+
+    for r in retiro_rows:
+        if r.driver_id in data:
+            data[r.driver_id]["retiros"] = r.t_ret or 0
+        else:
+            data[r.driver_id] = {"base": 0, "extras": 0, "entregas": 0, "retiros": r.t_ret or 0}
+
+    ajuste_rows = db.query(
+        AjusteLiquidacion.entidad_id,
+        sqlfunc.sum(AjusteLiquidacion.monto).label("t_aj"),
+    ).filter(
+        AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
+        AjusteLiquidacion.entidad_id.in_(driver_ids),
+        AjusteLiquidacion.mes == mes, AjusteLiquidacion.anio == anio,
+        *([AjusteLiquidacion.semana.in_(semanas)] if semanas else []),
+    ).group_by(AjusteLiquidacion.entidad_id).all()
+
+    for r in ajuste_rows:
+        if r.entidad_id in data:
+            data[r.entidad_id]["ajustes"] = r.t_aj or 0
+        else:
+            data[r.entidad_id] = {"base": 0, "extras": 0, "entregas": 0, "ajustes": r.t_aj or 0}
+
+    result = {}
+    for did, vals in data.items():
+        g = vals["base"] + vals["extras"] + vals.get("retiros", 0) + vals.get("ajustes", 0)
+        result[did] = {
+            "ganancia": g,
+            "entregas": vals["entregas"],
+            "promedio": round(g / vals["entregas"]) if vals["entregas"] else 0,
+        }
+    return result
+
+
+def _ingresos_mensuales_bulk(db: Session, driver_ids: list[int] = None):
+    """
+    Retorna ingresos mensuales (completos) agrupados por driver_id.
+    Se usa para la tabla histórica y sparklines, sin truncamiento.
+    """
     filters = []
     if driver_ids:
         filters.append(Envio.driver_id.in_(driver_ids))
 
     envio_rows = db.query(
-        Envio.driver_id,
-        Envio.mes,
-        Envio.anio,
+        Envio.driver_id, Envio.mes, Envio.anio,
         sqlfunc.sum(Envio.costo_driver + Envio.pago_extra_manual).label("t_base"),
         sqlfunc.sum(Envio.extra_producto_driver).label("t_prod"),
         sqlfunc.sum(Envio.extra_comuna_driver).label("t_com"),
@@ -1480,7 +1562,7 @@ def _ingresos_mensuales_bulk(db: Session, driver_ids: list[int] = None, meses: i
         sqlfunc.sum(Retiro.tarifa_driver).label("t_ret"),
     ).filter(
         Retiro.driver_id.isnot(None),
-        *([ Retiro.driver_id.in_(driver_ids)] if driver_ids else []),
+        *([Retiro.driver_id.in_(driver_ids)] if driver_ids else []),
     ).group_by(Retiro.driver_id, Retiro.mes, Retiro.anio).all()
 
     for r in retiro_rows:
@@ -1496,7 +1578,7 @@ def _ingresos_mensuales_bulk(db: Session, driver_ids: list[int] = None, meses: i
         sqlfunc.sum(AjusteLiquidacion.monto).label("t_aj"),
     ).filter(
         AjusteLiquidacion.tipo == TipoEntidadEnum.DRIVER,
-        *([ AjusteLiquidacion.entidad_id.in_(driver_ids)] if driver_ids else []),
+        *([AjusteLiquidacion.entidad_id.in_(driver_ids)] if driver_ids else []),
     ).group_by(AjusteLiquidacion.entidad_id, AjusteLiquidacion.mes, AjusteLiquidacion.anio).all()
 
     for r in ajuste_rows:
@@ -1520,13 +1602,23 @@ def _ingresos_mensuales_bulk(db: Session, driver_ids: list[int] = None, meses: i
     return result
 
 
+def _prev_month(mes: int, anio: int):
+    return (mes - 1, anio) if mes > 1 else (12, anio - 1)
+
+
+def _calc_var(current_val: int, compare_val: int):
+    if not compare_val:
+        return None
+    return round((current_val - compare_val) / compare_val * 100, 1)
+
+
 @router.get("/ingresos/driver/{driver_id}")
 def ingresos_driver(
     driver_id: int,
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Historial de ingresos mensuales de un driver con variaciones MoM y YoY."""
+    """Historial de ingresos mensuales de un driver con variaciones MoM y YoY comparables."""
     driver = db.get(Driver, driver_id)
     if not driver:
         from fastapi import HTTPException
@@ -1535,16 +1627,42 @@ def ingresos_driver(
     all_data = _ingresos_mensuales_bulk(db, driver_ids=[driver_id])
     meses = sorted(all_data.get(driver_id, []), key=lambda x: (x["anio"], x["mes"]))
 
-    lookup = {(m["anio"], m["mes"]): m for m in meses}
+    sem_liq_cache: dict = {}
+
+    def get_semanas_liq(m: int, a: int) -> list[int]:
+        if (m, a) not in sem_liq_cache:
+            sem_liq_cache[(m, a)] = _semanas_liquidadas(db, m, a)
+        return sem_liq_cache[(m, a)]
 
     for m in meses:
-        prev_key = (m["anio"], m["mes"] - 1) if m["mes"] > 1 else (m["anio"] - 1, 12)
-        prev = lookup.get(prev_key)
-        m["var_mom"] = round((m["ganancia"] - prev["ganancia"]) / prev["ganancia"] * 100, 1) if prev and prev["ganancia"] else None
+        semanas_guia = get_semanas_liq(m["mes"], m["anio"])
+        es_parcial = len(semanas_guia) > 0 and len(semanas_guia) < len(_semanas_con_datos(db, m["mes"], m["anio"]))
 
-        yoy_key = (m["anio"] - 1, m["mes"])
-        yoy = lookup.get(yoy_key)
-        m["var_yoy"] = round((m["ganancia"] - yoy["ganancia"]) / yoy["ganancia"] * 100, 1) if yoy and yoy["ganancia"] else None
+        if es_parcial and semanas_guia:
+            current_trunc = _ingresos_por_semanas(db, [driver_id], m["mes"], m["anio"], semanas_guia)
+            cur_g = current_trunc.get(driver_id, {}).get("ganancia", m["ganancia"])
+
+            pm, pa = _prev_month(m["mes"], m["anio"])
+            prev_trunc = _ingresos_por_semanas(db, [driver_id], pm, pa, semanas_guia)
+            prev_g = prev_trunc.get(driver_id, {}).get("ganancia", 0)
+            m["var_mom"] = _calc_var(cur_g, prev_g)
+
+            yoy_trunc = _ingresos_por_semanas(db, [driver_id], m["mes"], m["anio"] - 1, semanas_guia)
+            yoy_g = yoy_trunc.get(driver_id, {}).get("ganancia", 0)
+            m["var_yoy"] = _calc_var(cur_g, yoy_g)
+
+            m["parcial"] = True
+            m["semanas_comparadas"] = len(semanas_guia)
+        else:
+            lookup = {(x["anio"], x["mes"]): x for x in meses}
+            pm, pa = _prev_month(m["mes"], m["anio"])
+            prev = lookup.get((pa, pm))
+            m["var_mom"] = _calc_var(m["ganancia"], prev["ganancia"]) if prev else None
+
+            yoy = lookup.get((m["anio"] - 1, m["mes"]))
+            m["var_yoy"] = _calc_var(m["ganancia"], yoy["ganancia"]) if yoy else None
+
+            m["parcial"] = False
 
     total_ganancia = sum(m["ganancia"] for m in meses)
     total_entregas = sum(m["entregas"] for m in meses)
@@ -1574,35 +1692,46 @@ def ingresos_drivers_ranking(
     _=Depends(require_admin_or_administracion),
 ):
     """
-    Ranking de ingresos de todos los drivers para un mes, con variaciones
-    MoM / YoY y sparkline de los últimos 6 meses.
+    Ranking de ingresos con comparaciones MoM/YoY por períodos equivalentes.
+    Usa semanas liquidadas del mes actual como guía.
     """
     drivers = db.query(Driver).filter(Driver.activo == True).all()
     driver_ids = [d.id for d in drivers]
     driver_map = {d.id: d for d in drivers}
 
+    semanas_guia = _semanas_liquidadas(db, mes, anio)
+    todas_semanas = _semanas_con_datos(db, mes, anio)
+    es_parcial = len(semanas_guia) > 0 and len(semanas_guia) < len(todas_semanas)
+
+    if es_parcial and semanas_guia:
+        current_data = _ingresos_por_semanas(db, driver_ids, mes, anio, semanas_guia)
+        pm, pa = _prev_month(mes, anio)
+        prev_data = _ingresos_por_semanas(db, driver_ids, pm, pa, semanas_guia)
+        yoy_data = _ingresos_por_semanas(db, driver_ids, mes, anio - 1, semanas_guia)
+    else:
+        current_data = _ingresos_por_semanas(db, driver_ids, mes, anio)
+        pm, pa = _prev_month(mes, anio)
+        prev_data = _ingresos_por_semanas(db, driver_ids, pm, pa)
+        yoy_data = _ingresos_por_semanas(db, driver_ids, mes, anio - 1)
+
     all_data = _ingresos_mensuales_bulk(db, driver_ids=driver_ids)
 
     ranking = []
     for did in driver_ids:
-        meses_data = sorted(all_data.get(did, []), key=lambda x: (x["anio"], x["mes"]))
-        lookup = {(m["anio"], m["mes"]): m for m in meses_data}
-        current = lookup.get((anio, mes))
-        if not current:
+        cur = current_data.get(did)
+        if not cur:
             continue
 
-        prev_key = (anio, mes - 1) if mes > 1 else (anio - 1, 12)
-        prev = lookup.get(prev_key)
-        var_mom = round((current["ganancia"] - prev["ganancia"]) / prev["ganancia"] * 100, 1) if prev and prev["ganancia"] else None
+        prev = prev_data.get(did)
+        yoy = yoy_data.get(did)
+        var_mom = _calc_var(cur["ganancia"], prev["ganancia"]) if prev else None
+        var_yoy = _calc_var(cur["ganancia"], yoy["ganancia"]) if yoy else None
 
-        yoy_key = (anio - 1, mes)
-        yoy = lookup.get(yoy_key)
-        var_yoy = round((current["ganancia"] - yoy["ganancia"]) / yoy["ganancia"] * 100, 1) if yoy and yoy["ganancia"] else None
-
+        meses_data = sorted(all_data.get(did, []), key=lambda x: (x["anio"], x["mes"]))
+        lookup = {(m["anio"], m["mes"]): m for m in meses_data}
         spark_months = []
         for i in range(5, -1, -1):
-            sm = mes - i
-            sa = anio
+            sm, sa = mes - i, anio
             while sm <= 0:
                 sm += 12
                 sa -= 1
@@ -1615,9 +1744,9 @@ def ingresos_drivers_ranking(
             "nombre": d.nombre,
             "zona": d.zona or "",
             "contratado": d.contratado,
-            "entregas": current["entregas"],
-            "ganancia": current["ganancia"],
-            "promedio": current["promedio"],
+            "entregas": cur["entregas"],
+            "ganancia": cur["ganancia"],
+            "promedio": cur["promedio"],
             "var_mom": var_mom,
             "var_yoy": var_yoy,
             "spark": spark_months,
@@ -1641,4 +1770,13 @@ def ingresos_drivers_ranking(
         if r["var_mom"] is not None and r["var_mom"] < -15:
             alertas.append({"driver": r["nombre"], "tipo": "caida_fuerte", "valor": r["var_mom"]})
 
-    return {"ranking": ranking, "totals": totals, "alertas": alertas}
+    return {
+        "ranking": ranking,
+        "totals": totals,
+        "alertas": alertas,
+        "comparacion": {
+            "parcial": es_parcial,
+            "semanas_comparadas": len(semanas_guia) if es_parcial else len(todas_semanas),
+            "semanas_totales": len(todas_semanas),
+        },
+    }

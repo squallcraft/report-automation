@@ -356,15 +356,15 @@ export default function EfectividadDriver() {
   )
 }
 
-function VarBadge({ value }) {
+function VarBadge({ value, parcial }) {
   if (value == null) return <span className="text-gray-300 text-[10px]">—</span>
   const isUp = value > 0
   const isDown = value < 0
   const Icon = isUp ? ArrowUpRight : isDown ? ArrowDownRight : Minus
   const color = isUp ? 'text-emerald-600 bg-emerald-50' : isDown ? 'text-red-600 bg-red-50' : 'text-gray-500 bg-gray-100'
   return (
-    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${color}`}>
-      <Icon size={10} />{Math.abs(value)}%
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${color}`} title={parcial ? 'Comparación parcial (semanas equivalentes)' : undefined}>
+      <Icon size={10} />{Math.abs(value)}%{parcial && <span className="text-[8px] ml-0.5 opacity-60">~</span>}
     </span>
   )
 }
@@ -495,12 +495,15 @@ function IngresosBlock({ ingresos, meses: mNombres, fmtClp }) {
             <tbody className="divide-y divide-gray-50">
               {[...meses].reverse().map((m, i) => (
                 <tr key={i} className="hover:bg-gray-50 text-gray-700">
-                  <td className="px-4 py-2.5 font-semibold">{mNombres[m.mes - 1]} {m.anio}</td>
+                  <td className="px-4 py-2.5 font-semibold">
+                    {mNombres[m.mes - 1]} {m.anio}
+                    {m.parcial && <span className="ml-1.5 text-[9px] bg-amber-50 text-amber-600 px-1 py-0.5 rounded font-medium" title={`Comparando ${m.semanas_comparadas} semanas`}>S1-{m.semanas_comparadas}</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right text-gray-500">{m.entregas.toLocaleString('es-CL')}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-gray-800">{fmtClp(m.ganancia)}</td>
                   <td className="px-4 py-2.5 text-right text-gray-500">{fmtClp(m.promedio)}</td>
-                  <td className="px-4 py-2.5 text-center"><VarBadge value={m.var_mom} /></td>
-                  <td className="px-4 py-2.5 text-center"><VarBadge value={m.var_yoy} /></td>
+                  <td className="px-4 py-2.5 text-center"><VarBadge value={m.var_mom} parcial={m.parcial} /></td>
+                  <td className="px-4 py-2.5 text-center"><VarBadge value={m.var_yoy} parcial={m.parcial} /></td>
                   <td className="px-4 py-2.5">
                     <SparkLine data={(() => {
                       const idx = meses.findIndex(x => x.mes === m.mes && x.anio === m.anio)

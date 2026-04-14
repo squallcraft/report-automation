@@ -9,7 +9,7 @@ const now = new Date()
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 const mNombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
-function VarBadge({ value, size = 'sm' }) {
+function VarBadge({ value, size = 'sm', parcial }) {
   if (value == null) return <span className="text-gray-300 text-[10px]">—</span>
   const isUp = value > 0
   const isDown = value < 0
@@ -17,8 +17,8 @@ function VarBadge({ value, size = 'sm' }) {
   const color = isUp ? 'text-emerald-600 bg-emerald-50' : isDown ? 'text-red-600 bg-red-50' : 'text-gray-500 bg-gray-100'
   const textSize = size === 'lg' ? 'text-xs' : 'text-[10px]'
   return (
-    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full font-bold ${color} ${textSize}`}>
-      <Icon size={size === 'lg' ? 12 : 10} />{Math.abs(value)}%
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full font-bold ${color} ${textSize}`} title={parcial ? 'Comparación parcial (semanas equivalentes)' : undefined}>
+      <Icon size={size === 'lg' ? 12 : 10} />{Math.abs(value)}%{parcial && <span className="text-[8px] ml-0.5 opacity-60">~</span>}
     </span>
   )
 }
@@ -91,7 +91,7 @@ export default function IngresosDrivers() {
     <div className="space-y-6 pb-10">
       <PageHeader
         title="Ingresos Conductores"
-        subtitle={`Ranking y estadísticas — ${mNombres[period.mes - 1]} ${period.anio}`}
+        subtitle={`Ranking y estadísticas — ${mNombres[period.mes - 1]} ${period.anio}${data?.comparacion?.parcial ? ` (semanas 1-${data.comparacion.semanas_comparadas} de ${data.comparacion.semanas_totales})` : ''}`}
         icon={DollarSign}
         accent="green"
         actions={(
@@ -136,6 +136,17 @@ export default function IngresosDrivers() {
               <p className="text-xs text-gray-400 mt-1">conductores con -2% MoM</p>
             </div>
           </div>
+
+          {/* Comparación parcial */}
+          {data.comparacion?.parcial && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-2">
+              <span className="text-blue-500 text-sm font-bold">~</span>
+              <p className="text-xs text-blue-700">
+                <span className="font-semibold">Comparación por períodos equivalentes:</span> {mNombres[period.mes - 1]} lleva {data.comparacion.semanas_comparadas} de {data.comparacion.semanas_totales} semanas liquidadas.
+                MoM y YoY comparan solo semanas 1-{data.comparacion.semanas_comparadas} de cada período.
+              </p>
+            </div>
+          )}
 
           {/* Alertas */}
           {data.alertas?.length > 0 && (
@@ -206,8 +217,8 @@ export default function IngresosDrivers() {
                       <td className="px-4 py-2.5 text-right text-gray-500">{r.entregas.toLocaleString('es-CL')}</td>
                       <td className="px-4 py-2.5 text-right font-bold text-gray-800">{fmtClp(r.ganancia)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-500">{fmtClp(r.promedio)}</td>
-                      <td className="px-4 py-2.5 text-center"><VarBadge value={r.var_mom} /></td>
-                      <td className="px-4 py-2.5 text-center"><VarBadge value={r.var_yoy} /></td>
+                      <td className="px-4 py-2.5 text-center"><VarBadge value={r.var_mom} parcial={data.comparacion?.parcial} /></td>
+                      <td className="px-4 py-2.5 text-center"><VarBadge value={r.var_yoy} parcial={data.comparacion?.parcial} /></td>
                       <td className="px-4 py-2.5"><SparkLine data={r.spark} /></td>
                       <td className="px-4 py-2.5">
                         <BarChart2 size={14} className="text-gray-400" />
