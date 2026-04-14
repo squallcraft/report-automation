@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:5173"]
     GEMINI_API_KEY: str = ""
     GROK_API_KEY: str = ""
+    XAI_API_KEY: str = ""
     HAULMER_API_KEY: str = ""
     HAULMER_API_URL: str = "https://api.haulmer.com/v2/dte/document"
     HAULMER_EMISOR_RUT: str = ""

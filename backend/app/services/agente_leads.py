@@ -301,12 +301,13 @@ def _build_messages(lead: Lead, recent: list) -> list:
 
 async def _call_grok(messages: list, use_tools: bool = True) -> Optional[dict]:
     settings = get_settings()
-    if not settings.GROK_API_KEY:
-        logger.error("GROK_API_KEY no configurada")
+    api_key = settings.XAI_API_KEY or settings.GROK_API_KEY
+    if not api_key:
+        logger.error("XAI_API_KEY / GROK_API_KEY no configurada")
         return None
 
     headers = {
-        "Authorization": f"Bearer {settings.GROK_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     body = {
