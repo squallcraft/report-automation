@@ -1,6 +1,6 @@
 """
 Agente IA para gestión de leads por WhatsApp.
-Usa Gemini 2.0 Flash (mismo que el asistente BI) con Function Calling.
+Usa Grok (xAI) con function calling via API OpenAI-compatible.
 """
 import asyncio
 import json
@@ -10,9 +10,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 
-from google import genai
-from google.genai import types
-from google.genai.errors import ClientError
+import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -23,11 +21,11 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-2.0-flash"
+GROK_API_URL = "https://api.x.ai/v1/chat/completions"
+GROK_MODEL = "grok-3-mini-fast"
 
 MAX_IA_ROUNDS = 8
 MAX_TOOL_ROUNDS = 3
-MAX_RETRIES = 3
 DELAY_MIN_S = 4
 DELAY_MAX_S = 10
 FALLBACK_MSG = "Recibí tu mensaje, te respondo en un momento."
@@ -117,43 +115,62 @@ ESTADO ACTUAL DEL LEAD:
 Responde SOLO el siguiente mensaje del lead. No generes múltiples mensajes."""
 
 
-# ── Tool definitions (Gemini format) ─────────────────────────────────────────
+# ── Tool definitions (OpenAI-compatible for xAI) ─────────────────────────────
 
-def _schema(props: dict, required: list = None) -> types.Schema:
-    schema_props = {}
-    for k, v in props.items():
-        schema_props[k] = types.Schema(type=v["type"].upper(), description=v.get("description", ""))
-    return types.Schema(type="OBJECT", properties=schema_props, required=required or [])
-
-GEMINI_TOOLS = types.Tool(function_declarations=[
-    types.FunctionDeclaration(
-        name="consultar_conocimiento",
-        description="Busca información oficial en la base de conocimiento de Ecourier. SIEMPRE usa esta herramienta antes de responder preguntas del lead.",
-        parameters=_schema(
-            {"tema": {"type": "string", "description": "Tema o pregunta a buscar (ej: 'tarifas', 'cobertura santiago', 'mercado libre')"}},
-            required=["tema"],
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="calificar_lead",
-        description="Guarda datos de calificación del lead cuando los menciona en la conversación.",
-        parameters=_schema({
-            "negocio": {"type": "string", "description": "Qué vende o a qué se dedica"},
-            "canal_venta": {"type": "string", "description": "Mercado Libre, Falabella, tienda propia, etc."},
-            "volumen_estimado": {"type": "string", "description": "Pedidos mensuales estimados"},
-            "ubicacion": {"type": "string", "description": "Desde dónde despacha"},
-            "nombre": {"type": "string", "description": "Nombre del lead si lo menciona"},
-        }),
-    ),
-    types.FunctionDeclaration(
-        name="escalar_a_humano",
-        description="Escala la conversación al equipo comercial humano. Usar cuando: el lead pide hablar con una persona, la pregunta no está en el KB, el lead está calificado y listo para propuesta, o detectas frustración.",
-        parameters=_schema(
-            {"razon": {"type": "string", "description": "Motivo de la escalada"}},
-            required=["razon"],
-        ),
-    ),
-])
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_conocimiento",
+            "description": "Busca información oficial en la base de conocimiento de Ecourier. SIEMPRE usa esta herramienta antes de responder preguntas del lead.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tema": {
+                        "type": "string",
+                        "description": "Tema o pregunta a buscar (ej: 'tarifas', 'cobertura santiago', 'mercado libre')"
+                    }
+                },
+                "required": ["tema"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calificar_lead",
+            "description": "Guarda datos de calificación del lead cuando los menciona en la conversación.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "negocio": {"type": "string", "description": "Qué vende o a qué se dedica"},
+                    "canal_venta": {"type": "string", "description": "Mercado Libre, Falabella, tienda propia, etc."},
+                    "volumen_estimado": {"type": "string", "description": "Pedidos mensuales estimados"},
+                    "ubicacion": {"type": "string", "description": "Desde dónde despacha"},
+                    "nombre": {"type": "string", "description": "Nombre del lead si lo menciona"},
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "escalar_a_humano",
+            "description": "Escala la conversación al equipo comercial humano. Usar cuando: el lead pide hablar con una persona, la pregunta no está en el KB, el lead está calificado y listo para propuesta, o detectas frustración.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "razon": {
+                        "type": "string",
+                        "description": "Motivo de la escalada"
+                    }
+                },
+                "required": ["razon"]
+            }
+        }
+    }
+]
 
 
 # ── Tool execution ────────────────────────────────────────────────────────────
@@ -271,52 +288,52 @@ def _build_lead_context(lead: Lead) -> str:
     return "\n".join(parts)
 
 
-def _build_gemini_contents(lead: Lead, recent: list) -> list:
-    """Construye el array de Contents para la API de Gemini."""
-    contents = []
+def _build_messages(lead: Lead, recent: list) -> list:
+    lead_context = _build_lead_context(lead)
+    messages = [{"role": "system", "content": SYSTEM_PROMPT.format(lead_context=lead_context)}]
     for m in recent[-6:]:
-        role = "model" if m.autor in ("ia", "humano") else "user"
-        contents.append(types.Content(
-            role=role,
-            parts=[types.Part.from_text(text=m.contenido)],
-        ))
-    return contents
+        role = "assistant" if m.autor in ("ia", "humano") else "user"
+        messages.append({"role": role, "content": m.contenido})
+    return messages
 
 
-# ── Gemini API call (sync, runs in thread) ────────────────────────────────────
+# ── Grok API call ─────────────────────────────────────────────────────────────
 
-def _call_gemini_sync(contents: list, system_prompt: str, use_tools: bool = True):
-    """Llama a Gemini con reintentos ante rate limits."""
+async def _call_grok(messages: list, use_tools: bool = True) -> Optional[dict]:
     settings = get_settings()
-    if not settings.GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY no configurada")
+    if not settings.GROK_API_KEY:
+        logger.error("GROK_API_KEY no configurada")
         return None
 
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    config = types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        tools=[GEMINI_TOOLS] if use_tools else [],
-    )
+    headers = {
+        "Authorization": f"Bearer {settings.GROK_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": GROK_MODEL,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 300,
+    }
+    if use_tools:
+        body["tools"] = TOOLS
+        body["tool_choice"] = "auto"
 
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(3):
         try:
-            return client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=config,
-            )
-        except ClientError as e:
-            if e.status_code == 429 and attempt < MAX_RETRIES - 1:
-                wait = 2 ** (attempt + 1)
-                logger.warning("Gemini rate limit (429), retry %d in %ds", attempt + 1, wait)
-                time.sleep(wait)
-                continue
-            logger.exception("Gemini ClientError: %s", e)
-            return None
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(GROK_API_URL, headers=headers, json=body)
+                if resp.status_code == 429:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning("Grok rate limit, retry %d in %ds", attempt + 1, wait)
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                return resp.json()
         except Exception as e:
-            logger.exception("Gemini error (attempt %d): %s", attempt + 1, e)
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(2)
+            logger.exception("Error calling Grok (attempt %d): %s", attempt + 1, e)
+            if attempt < 2:
+                await asyncio.sleep(2)
     return None
 
 
@@ -376,85 +393,61 @@ async def procesar_mensaje_lead(
     ).order_by(MensajeLead.timestamp.desc()).limit(10).all()
     recent.reverse()
 
-    lead_context = _build_lead_context(lead)
-    system_prompt = SYSTEM_PROMPT.format(lead_context=lead_context)
-    contents = _build_gemini_contents(lead, recent)
+    messages = _build_messages(lead, recent)
     escalated = False
 
     for _ in range(MAX_TOOL_ROUNDS):
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, _call_gemini_sync, contents, system_prompt, not escalated
-        )
-
-        if not response:
+        result = await _call_grok(messages)
+        if not result:
             fallback_id = await send_wa_fn(lead.phone, FALLBACK_MSG)
             db.add(MensajeLead(
                 lead_id=lead.id, direccion="outbound", autor="ia",
                 contenido=FALLBACK_MSG, wa_message_id=fallback_id, tipo_contenido="texto",
-                meta_datos={"error": "gemini_api_failed"},
+                meta_datos={"error": "grok_api_failed"},
             ))
             _crear_notificacion(db, lead, "agente_error",
                                 "Agente IA no pudo responder",
-                                f"Lead: {lead.nombre or lead.phone}. Gemini API falló.",
+                                f"Lead: {lead.nombre or lead.phone}. Grok API falló.",
                                 prioridad="urgente")
             db.commit()
             return FALLBACK_MSG
 
-        if not response.candidates or not response.candidates[0].content:
-            break
+        choice = result["choices"][0]
+        msg = choice["message"]
 
-        # Extract tool calls and text from response parts
-        tool_calls = []
-        response_text = ""
-        for part in response.candidates[0].content.parts:
-            if part.function_call:
-                tool_calls.append(part.function_call)
-            elif part.text:
-                response_text += part.text
-
-        if tool_calls:
-            fn_responses = []
-            for fc in tool_calls:
-                fn_name = fc.name
-                fn_args = dict(fc.args) if fc.args else {}
+        if msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                fn_name = tc["function"]["name"]
+                fn_args = json.loads(tc["function"]["arguments"])
                 tool_result = _execute_tool(fn_name, fn_args, lead, db)
                 if fn_name == "escalar_a_humano":
                     escalated = True
-                fn_responses.append(types.Part.from_function_response(
-                    name=fn_name,
-                    response={"result": tool_result},
-                ))
-
-            contents.append(response.candidates[0].content)
-            contents.append(types.Content(role="user", parts=fn_responses))
-
+                messages.append(msg)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_result,
+                })
             if escalated:
-                loop = asyncio.get_event_loop()
-                response2 = await loop.run_in_executor(
-                    None, _call_gemini_sync, contents, system_prompt, False
-                )
-                if response2 and response2.candidates and response2.candidates[0].content:
-                    final_text = ""
-                    for p in response2.candidates[0].content.parts:
-                        if p.text:
-                            final_text += p.text
-                    if final_text.strip():
+                result2 = await _call_grok(messages, use_tools=False)
+                if result2:
+                    final_text = result2["choices"][0]["message"].get("content", "")
+                    if final_text:
                         await asyncio.sleep(random.uniform(DELAY_MIN_S, DELAY_MAX_S))
-                        wa_id = await send_wa_fn(lead.phone, final_text.strip())
+                        wa_id = await send_wa_fn(lead.phone, final_text)
                         db.add(MensajeLead(
                             lead_id=lead.id, direccion="outbound", autor="ia",
-                            contenido=final_text.strip(), wa_message_id=wa_id, tipo_contenido="texto",
+                            contenido=final_text, wa_message_id=wa_id, tipo_contenido="texto",
                             meta_datos={"escalada": True},
                         ))
                         lead.interacciones_ia += 1
                         db.commit()
-                        return final_text.strip()
+                        return final_text
                 db.commit()
                 return None
             continue
 
-        response_text = response_text.strip()
+        response_text = msg.get("content", "").strip()
         if not response_text:
             break
 
