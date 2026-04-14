@@ -93,10 +93,9 @@ def _calcular_retiro_seller(seller, envios: list, retiros_seller: list = None,
         for e in envios:
             if e.fecha_entrega:
                 envios_por_dia[e.fecha_entrega] = envios_por_dia.get(e.fecha_entrega, 0) + 1
-        retiro_fechas = {r.fecha for r in retiros_seller} if retiros_seller else set(envios_por_dia.keys())
         dias_cobrar = sum(
-            1 for f in retiro_fechas
-            if envios_por_dia.get(f, 0) < seller.min_paquetes_retiro_gratis
+            1 for cnt in envios_por_dia.values()
+            if cnt < seller.min_paquetes_retiro_gratis
         )
         return seller.tarifa_retiro * dias_cobrar
 
@@ -175,25 +174,23 @@ def calcular_liquidacion_sellers(db: Session, semana: int, mes: int, anio: int) 
             continue
         t_envios, t_ep, t_ec, cant, dias = envio_agg[seller.id]
 
-        retiros_directos = retiro_directo_map.get(seller.id, [])
-        if seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro \
-                and seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
+        if not seller.tiene_retiro or seller.usa_pickup or not seller.tarifa_retiro:
+            total_retiro_directo = 0
+        elif seller.min_paquetes_retiro_gratis > 0 and (anio, mes) >= (2026, 4):
             dia_counts = envio_dia_map.get(seller.id, {})
-            retiro_fechas = {r.fecha for r in retiros_directos} if retiros_directos else set(dia_counts.keys())
             dias_cobrar = sum(
-                1 for f in retiro_fechas
-                if dia_counts.get(f, 0) < seller.min_paquetes_retiro_gratis
+                1 for cnt_d in dia_counts.values()
+                if cnt_d < seller.min_paquetes_retiro_gratis
             )
             total_retiro_directo = seller.tarifa_retiro * dias_cobrar
-        elif retiros_directos:
-            total_retiro_directo = sum(r.tarifa_seller or 0 for r in retiros_directos)
-        elif seller.tiene_retiro and not seller.usa_pickup and seller.tarifa_retiro:
-            if not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
+        else:
+            retiros_directos = retiro_directo_map.get(seller.id, [])
+            if retiros_directos:
+                total_retiro_directo = sum(r.tarifa_seller or 0 for r in retiros_directos)
+            elif not (seller.min_paquetes_retiro_gratis > 0 and cant >= seller.min_paquetes_retiro_gratis):
                 total_retiro_directo = seller.tarifa_retiro * dias
             else:
                 total_retiro_directo = 0
-        else:
-            total_retiro_directo = 0
 
         total_retiros = total_retiro_directo + retiro_suc_agg.get(seller.id, 0)
         total_ajustes = ajuste_agg.get(seller.id, 0)
