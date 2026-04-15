@@ -152,7 +152,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if driver and driver.password_hash and verify_password(data.password, driver.password_hash):
         token = create_access_token({"sub": str(driver.id), "rol": RolEnum.DRIVER})
         _audit(db, "LOGIN_SUCCESS", driver.email, ip)
-        acuerdo_ok = bool(
+        acuerdo_ok = bool(driver.contratado) or bool(
             driver.acuerdo_aceptado and
             driver.acuerdo_version == CURRENT_ACUERDO_VERSION
         )

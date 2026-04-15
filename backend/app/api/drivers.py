@@ -655,6 +655,8 @@ def aceptar_acuerdo(
     driver = db.get(Driver, user["id"])
     if not driver:
         raise HTTPException(status_code=404, detail="Driver no encontrado")
+    if driver.contratado:
+        raise HTTPException(status_code=400, detail="Los conductores contratados no requieren este acuerdo")
 
     ip = request.headers.get("X-Forwarded-For", "")
     if ip:
@@ -705,7 +707,8 @@ def mi_acuerdo_info(db: Session = Depends(get_db), user=Depends(get_current_user
         "nombre": driver.nombre,
         "nombre_completo": driver.nombre_completo,
         "rut": driver.rut,
-        "acuerdo_aceptado": bool(driver.acuerdo_aceptado and driver.acuerdo_version == CURRENT_ACUERDO_VERSION),
+        "contratado": driver.contratado,
+        "acuerdo_aceptado": bool(driver.contratado) or bool(driver.acuerdo_aceptado and driver.acuerdo_version == CURRENT_ACUERDO_VERSION),
         "acuerdo_version": driver.acuerdo_version,
         "acuerdo_fecha": driver.acuerdo_fecha.isoformat() if driver.acuerdo_fecha else None,
         "acuerdo_ip": driver.acuerdo_ip,
@@ -761,7 +764,8 @@ def acuerdo_del_driver(
         "nombre": driver.nombre,
         "nombre_completo": driver.nombre_completo,
         "rut": driver.rut,
-        "acuerdo_aceptado": bool(driver.acuerdo_aceptado and driver.acuerdo_version == CURRENT_ACUERDO_VERSION),
+        "contratado": driver.contratado,
+        "acuerdo_aceptado": bool(driver.contratado) or bool(driver.acuerdo_aceptado and driver.acuerdo_version == CURRENT_ACUERDO_VERSION),
         "acuerdo_version": driver.acuerdo_version,
         "acuerdo_fecha": driver.acuerdo_fecha.isoformat() if driver.acuerdo_fecha else None,
         "acuerdo_ip": driver.acuerdo_ip,
