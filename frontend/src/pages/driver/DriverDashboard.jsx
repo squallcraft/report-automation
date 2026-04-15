@@ -197,35 +197,42 @@ export default function DriverDashboard() {
             </div>
           )}
 
-          {esJefe && filterDriver === 'todos' && (
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Resumen por Conductor</h2>
-              <div className="card overflow-hidden p-0">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Conductor</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Entregas</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[{ id: user?.entidad_id, nombre: `${user?.nombre} (yo)` }, ...(flota?.subordinados || [])].map((d) => {
-                      const dEnvios = envios.filter((e) => e.driver_id === d.id)
-                      const dTotal = dEnvios.reduce((acc, e) => acc + envioTotal(e), 0)
-                      return (
-                        <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium">{d.nombre}</td>
-                          <td className="px-4 py-3 text-right">{dEnvios.length}</td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-700">{fmt(dTotal)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+          {esJefe && filterDriver === 'todos' && (() => {
+            const flotaMap = {}
+            if (flotaGanancias?.detalle) {
+              for (const d of flotaGanancias.detalle) flotaMap[d.driver_id] = d.total
+            }
+            const allDrivers = [{ id: user?.entidad_id, nombre: `${user?.nombre} (yo)` }, ...(flota?.subordinados || [])]
+            return (
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Resumen por Conductor</h2>
+                <div className="card overflow-hidden p-0">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-4 py-3 font-medium text-gray-600">Conductor</th>
+                        <th className="text-right px-4 py-3 font-medium text-gray-600">Entregas</th>
+                        <th className="text-right px-4 py-3 font-medium text-gray-600">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allDrivers.map((d) => {
+                        const dEnvios = envios.filter((e) => e.driver_id === d.id)
+                        const dTotal = flotaMap[d.id] ?? dEnvios.reduce((acc, e) => acc + envioTotal(e), 0)
+                        return (
+                          <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium">{d.nombre}</td>
+                            <td className="px-4 py-3 text-right">{dEnvios.length}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-emerald-700">{fmt(dTotal)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </>
       )}
     </div>
