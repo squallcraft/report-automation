@@ -156,12 +156,15 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             driver.acuerdo_aceptado and
             driver.acuerdo_version == CURRENT_ACUERDO_VERSION
         )
+        es_jefe = db.query(Driver).filter(Driver.jefe_flota_id == driver.id, Driver.activo == True).count() > 0
         return TokenResponse(
             access_token=token,
             rol=RolEnum.DRIVER,
             nombre=driver.nombre,
             entidad_id=driver.id,
             acuerdo_aceptado=acuerdo_ok,
+            contratado=driver.contratado,
+            es_jefe=es_jefe,
         )
 
     pickup = db.query(Pickup).filter(Pickup.email == data.username, Pickup.activo == True).first()

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
 import PageHeader from '../../components/PageHeader'
 import { FileText } from 'lucide-react'
@@ -12,9 +14,12 @@ function fmtFecha(iso) {
 }
 
 export default function DriverMiAcuerdo() {
+  const { user } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  if (user?.contratado) return <Navigate to="/driver" replace />
 
   useEffect(() => {
     api.get('/drivers/me/acuerdo-info')

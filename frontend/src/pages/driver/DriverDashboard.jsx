@@ -4,7 +4,7 @@ import api from '../../api'
 import PeriodSelector from '../../components/PeriodSelector'
 import StatsCard from '../../components/StatsCard'
 import PageHeader from '../../components/PageHeader'
-import { Truck, DollarSign, TrendingUp, Users, CheckCircle, LayoutDashboard } from 'lucide-react'
+import { Truck, DollarSign, TrendingUp, Users, CheckCircle, LayoutDashboard, Receipt } from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
@@ -21,6 +21,7 @@ export default function DriverDashboard() {
   const [liquidacion, setLiquidacion] = useState(null)
   const [pagosRecibidos, setPagosRecibidos] = useState(null)
   const [flota, setFlota] = useState(null)
+  const [flotaGanancias, setFlotaGanancias] = useState(null)
   const [filterDriver, setFilterDriver] = useState('todos')
   const [loading, setLoading] = useState(true)
 
@@ -36,11 +37,13 @@ export default function DriverDashboard() {
       api.get('/envios', { params: { ...period, limit: 5000 } }),
       api.get('/portal/driver/liquidacion', { params: period }).catch(() => null),
       api.get('/portal/driver/pagos-recibidos', { params: { mes: period.mes, anio: period.anio } }).catch(() => null),
+      api.get('/portal/driver/ganancias-flota', { params: { mes: period.mes, anio: period.anio } }).catch(() => null),
     ])
-      .then(([envRes, liqRes, pagosRes]) => {
+      .then(([envRes, liqRes, pagosRes, flotaRes]) => {
         setEnvios(envRes.data || [])
         setLiquidacion(liqRes?.data || null)
         setPagosRecibidos(pagosRes?.data || null)
+        setFlotaGanancias(flotaRes?.data?.es_jefe ? flotaRes.data : null)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -121,6 +124,40 @@ export default function DriverDashboard() {
               <StatsCard icon={Users} label="Conductores" value={flota.subordinados.length + 1} color="amber" />
             )}
           </div>
+
+          {/* Ganancia Total Flota - solo para jefes */}
+          {flotaGanancias && (
+            <div className="card mt-5 border-l-4 border-l-blue-500">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Receipt size={16} className="text-blue-500" />
+                  Ganancia Total Flota — {new Date(flotaGanancias.anio, flotaGanancias.mes - 1).toLocaleString('es-CL', { month: 'long', year: 'numeric' })}
+                </h2>
+                <div className="text-right">
+                  <span className="text-xs text-gray-500">Total liquidado del mes</span>
+                  <p className="text-xl font-bold text-blue-700">{fmt(flotaGanancias.total_flota)}</p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">Incluye {flotaGanancias.conductores} conductor{flotaGanancias.conductores > 1 ? 'es' : ''} · Usa este monto como referencia para tu factura</p>
+              {flotaGanancias.detalle?.length > 0 && (
+                <div className="space-y-1.5">
+                  {flotaGanancias.detalle.map(d => {
+                    const pct = flotaGanancias.total_flota > 0 ? Math.round((d.total / flotaGanancias.total_flota) * 100) : 0
+                    return (
+                      <div key={d.driver_id} className="flex items-center gap-3 text-sm">
+                        <span className="w-32 truncate text-gray-700 font-medium">{d.nombre}</span>
+                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="w-24 text-right font-semibold text-gray-800">{fmt(d.total)}</span>
+                        <span className="w-10 text-right text-xs text-gray-400">{pct}%</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Resumen de pagos recibidos del mes */}
           {!esJefe && pagosRecibidos?.semanas?.length > 0 && (

@@ -684,12 +684,15 @@ def aceptar_acuerdo(
     db.refresh(driver)
 
     token = create_access_token({"sub": str(driver.id), "rol": RolEnum.DRIVER})
+    es_jefe = db.query(Driver).filter(Driver.jefe_flota_id == driver.id, Driver.activo == True).count() > 0
     return TokenResponse(
         access_token=token,
         rol=RolEnum.DRIVER,
         nombre=driver.nombre,
         entidad_id=driver.id,
         acuerdo_aceptado=True,
+        contratado=driver.contratado,
+        es_jefe=es_jefe,
     )
 
 

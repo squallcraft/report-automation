@@ -789,6 +789,64 @@ def driver_ganancias(
     }
 
 
+@router.get("/driver/ganancias-flota")
+def driver_ganancias_flota(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_driver),
+):
+    """Ganancia total de la flota (jefe + subordinados) para facturación."""
+    from app.api.cpc import _get_monto_semanal_driver
+
+    driver_id = current_user["id"]
+    driver = db.get(Driver, driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+
+    subordinados = db.query(Driver).filter(
+        Driver.jefe_flota_id == driver_id, Driver.activo == True,
+    ).all()
+    if not subordinados:
+        return {"es_jefe": False}
+
+    all_ids = [driver_id] + [s.id for s in subordinados]
+    nombre_map = {driver_id: driver.nombre}
+    for s in subordinados:
+        nombre_map[s.id] = s.nombre
+
+    semanas_rows = db.query(CalendarioSemanas.semana).filter(
+        CalendarioSemanas.mes == mes, CalendarioSemanas.anio == anio,
+    ).order_by(CalendarioSemanas.semana).all()
+    semanas = [r[0] for r in semanas_rows] if semanas_rows else [1, 2, 3, 4, 5]
+
+    total_flota = 0
+    por_driver = {}
+    for did in all_ids:
+        por_driver[did] = 0
+
+    for sem in semanas:
+        for did in all_ids:
+            liq = _get_monto_semanal_driver(db, did, sem, mes, anio)
+            por_driver[did] += liq
+            total_flota += liq
+
+    detalle = [
+        {"driver_id": did, "nombre": nombre_map.get(did, ""), "total": por_driver[did]}
+        for did in all_ids if por_driver[did] > 0
+    ]
+    detalle.sort(key=lambda x: x["total"], reverse=True)
+
+    return {
+        "es_jefe": True,
+        "mes": mes,
+        "anio": anio,
+        "total_flota": total_flota,
+        "conductores": len(all_ids),
+        "detalle": detalle,
+    }
+
+
 # ── DRIVER: Facturas semanales ────────────────────────────────────────────────
 
 def _monto_efectivo_driver(db: Session, driver_id: int, semana: int, mes: int, anio: int) -> int:

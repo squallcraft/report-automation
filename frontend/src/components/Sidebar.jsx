@@ -75,15 +75,20 @@ const sellerLinks = [
   { to: '/seller/consultas', icon: MessageSquare, label: 'Consultas' },
 ]
 
-const driverLinks = [
-  { to: '/driver', icon: LayoutDashboard, label: 'Mi Panel' },
-  { to: '/driver/entregas', icon: FileText, label: 'Mis Entregas' },
-  { to: '/driver/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
-  { to: '/driver/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
-  { to: '/driver/facturas', icon: Receipt, label: 'Mis Facturas' },
-  { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
-  { to: '/driver/acuerdo-info', icon: ClipboardList, label: 'Mi Acuerdo' },
-]
+function getDriverLinks(user) {
+  const links = [
+    { to: '/driver', icon: LayoutDashboard, label: 'Mi Panel' },
+    { to: '/driver/entregas', icon: FileText, label: 'Mis Entregas' },
+    { to: '/driver/liquidacion', icon: Calculator, label: 'Mi Liquidación' },
+    { to: '/driver/ganancias', icon: TrendingUp, label: 'Mis Ganancias' },
+    { to: '/driver/facturas', icon: Receipt, label: 'Mis Facturas' },
+    { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
+  ]
+  if (!user?.contratado) {
+    links.push({ to: '/driver/acuerdo-info', icon: ClipboardList, label: 'Mi Acuerdo' })
+  }
+  return links
+}
 
 function tieneAcceso(permisos, slug) {
   return permisos.includes(`${slug}:ver`) || permisos.includes(`${slug}:editar`)
@@ -226,7 +231,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     }
   }
   if (user?.rol === 'SELLER') { menu = sellerLinks; isFlat = true }
-  if (user?.rol === 'DRIVER') { menu = driverLinks; isFlat = true }
+  if (user?.rol === 'DRIVER') { menu = getDriverLinks(user); isFlat = true }
   if (user?.rol === 'PICKUP') { menu = pickupLinks; isFlat = true }
 
   const handleLogout = () => {

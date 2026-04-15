@@ -41,6 +41,8 @@ class TokenResponse(BaseModel):
     entidad_id: Optional[int] = None
     permisos: Optional[List[str]] = None
     acuerdo_aceptado: Optional[bool] = None
+    contratado: Optional[bool] = None
+    es_jefe: Optional[bool] = None
 
 
 class AcuerdoAceptarRequest(BaseModel):
