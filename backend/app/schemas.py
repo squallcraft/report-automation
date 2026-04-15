@@ -44,9 +44,12 @@ class TokenResponse(BaseModel):
 
 
 class AcuerdoAceptarRequest(BaseModel):
+    nombre_completo: str
     rut: str
     firma_base64: str
-    version: str = "1.0"
+    carnet_frontal: str
+    carnet_trasero: str
+    version: str = "2.0"
 
 
 # ── Sellers ──

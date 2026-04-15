@@ -1,5 +1,6 @@
 """
 Genera el PDF del Acuerdo de Prestación de Servicios Independientes de Ecourier.
+Versión 2.0 — Fusión documento abogada + operativo Ecourier.
 Ejecutar: python3 scripts/generar_acuerdo_pdf.py
 """
 from reportlab.lib.pagesizes import LETTER
@@ -15,7 +16,7 @@ OUTPUT = (
     "/Users/oscarguzman/Library/CloudStorage/OneDrive-grupoenix.com"
     "/OneDrive Personal/PROYECTOS/Proyectos/E-Courier/Comercial/Contratos"
     "/2026/Colaboradores - Conductores"
-    "/ACUERDO DE PRESTACION DE SERVICIOS INDEPENDIENTES.pdf"
+    "/ACUERDO DE PRESTACION DE SERVICIOS INDEPENDIENTES v2.pdf"
 )
 
 GRIS_OSCURO = HexColor("#1a1a1a")
@@ -29,7 +30,7 @@ doc = SimpleDocTemplate(
     pagesize=LETTER,
     topMargin=2.5*cm, bottomMargin=2.5*cm,
     leftMargin=3*cm, rightMargin=3*cm,
-    title="Acuerdo de Prestacion de Servicios Independientes - Ecourier",
+    title="Acuerdo de Prestacion de Servicios Independientes - Ecourier v2.0",
 )
 
 base = getSampleStyleSheet()
@@ -65,16 +66,14 @@ s_pie = ParagraphStyle("pie", parent=base["Normal"],
 
 story = []
 
-# Encabezado
 story.append(Paragraph("ACUERDO DE PRESTACION DE SERVICIOS INDEPENDIENTES", s_titulo))
 story.append(Paragraph("Ecourier \u2014 Prestador de Servicios", s_subtitulo))
 story.append(HRFlowable(width="100%", thickness=1, color=GRIS_OSCURO, spaceAfter=16))
 
-# Partes
 partes = [
-    "<b>LOGISTICA Y TRANSPORTE E-COURIER SPA</b>, RUT [\xb7], con domicilio en [\xb7], Santiago (en adelante <b>\"Ecourier\"</b>),",
+    "En Santiago, entre <b>LOGISTICA Y TRANSPORTE E-COURIER SpA</b>, RUT N\xb0 77.512.163-7, con domicilio en Moneda N\xb01137, Oficina 56, comuna de Santiago, en adelante \"Ecourier\";",
     "y el <b>Prestador de Servicios</b> identificado al momento de la aceptacion digital de este Acuerdo en la plataforma de facturacion de Ecourier,",
-    "celebran el siguiente acuerdo de prestacion de servicios independientes, en conformidad con las normas del Codigo Civil y la legislacion vigente aplicable a prestadores independientes.",
+    "se ha convenido el siguiente Acuerdo de Prestacion de Servicios Independientes:",
 ]
 tabla_partes = Table(
     [[Paragraph(p, s_partes)] for p in partes],
@@ -106,41 +105,38 @@ def clausula(n, titulo_txt, parrafos=None, bullets=None, cierre=None):
     story.append(KeepTogether(bloque))
 
 
-clausula("1", "Objeto y Vigencia", parrafos=[
-    "El Prestador presta a Ecourier servicios de retiro y entrega de carga de manera <b>autonoma e independiente</b>, utilizando su propio vehiculo y recursos. Cada encargo (ruta diaria) constituye una prestacion de servicios independiente, coordinada previamente entre las partes.",
-    "Este Acuerdo es de <b>duracion indefinida</b> y puede ser terminado en cualquier momento por cualquiera de las partes conforme a lo establecido en la clausula 13.",
-    "Ecourier opera una plataforma digital de trazabilidad operativa que el Prestador utiliza como herramienta de registro de entregas durante la ejecucion de cada encargo. Esta plataforma <b>no es un sistema de intermediacion en tiempo real</b> ni determina la disponibilidad ni los ingresos del Prestador.",
+clausula("1", "Naturaleza del Acuerdo", parrafos=[
+    "Las partes declaran expresa y categoricamente que el presente acuerdo tiene caracter <b>estrictamente civil y comercial</b>, rigiendose por las disposiciones del Codigo Civil y demas normativa aplicable.",
+    "No existe entre ellas vinculo de subordinacion ni dependencia, ni relacion laboral en los terminos del Codigo del Trabajo, por cuanto el Prestador ejecuta sus servicios de manera autonoma, por cuenta propia, bajo su exclusivo riesgo y responsabilidad.",
+    "El Prestador <b>no forma parte de la estructura organizacional</b> de Ecourier, no estando sujeto a jerarquia, dependencia ni integracion funcional dentro de la empresa.",
 ])
 
-clausula("2", "Naturaleza de la Relacion", parrafos=[
-    "Las partes declaran expresamente que:",
-], bullets=[
-    "No existe vinculo de subordinacion ni dependencia laboral entre ellas.",
-    "El Prestador <b>no esta sujeto a jornada laboral</b> ni a horario fijo impuesto por Ecourier.",
-    "Cada ruta o encargo es coordinado voluntariamente y aceptado libremente por el Prestador.",
-    "El Prestador puede <b>declinar encargos</b> sin penalizacion; solo renuncia a los ingresos de esa jornada.",
-    "El Prestador <b>puede prestar servicios simultaneos o paralelos</b> a otras empresas o personas, sin restriccion ni exclusividad.",
-    "El Prestador es responsable de su propio vehiculo, permisos, seguros, documentacion y combustible.",
-    "El Prestador emite <b>boleta de honorarios o factura</b> por los servicios prestados y es responsable de sus cotizaciones previsionales y obligaciones tributarias.",
-    "El Prestador actua con plena autonomia. <b>Ecourier no asume responsabilidad alguna por danos o perjuicios causados a terceros</b> por el Prestador durante la prestacion de servicios.",
+clausula("2", "Objeto de los Servicios", parrafos=[
+    "El presente acuerdo tiene por objeto la prestacion de servicios de retiro, transporte y entrega de mercancias por parte del Prestador, quien utilizara para ello sus propios medios materiales, incluyendo vehiculo, combustible, dispositivos tecnologicos y demas herramientas necesarias. Cada servicio encomendado constituira una prestacion independiente, que debera ser previamente aceptada por el Prestador en forma libre y voluntaria.",
+    "Este Acuerdo es de <b>duracion indefinida</b> y puede ser terminado en cualquier momento por cualquiera de las partes conforme a lo establecido en la clausula de Terminacion.",
 ])
 
-clausula("3", "Coordinacion Operativa", parrafos=[
-    "Ecourier coordina con el Prestador los encargos disponibles en el dia segun el volumen de paqueteria y las zonas de entrega. La coordinacion se basa en disponibilidad informada y acuerdo mutuo.",
+clausula("3", "Autonomia, Libertad Operativa y Zona Geografica", parrafos=[
+    "El Prestador gozara de plena autonomia en la organizacion y ejecucion de sus servicios, pudiendo determinar libremente su disponibilidad, horarios, dias de trabajo y forma de prestacion. Podra <b>aceptar o rechazar cualquier servicio sin expresion de causa</b>, sin que ello implique sancion, penalizacion ni afectacion alguna. No existe clausula de exclusividad; el Prestador puede prestar servicios a terceros sin restriccion.",
+    "El Prestador podra ejecutar servicios en las zonas geograficas donde Ecourier mantenga operaciones. La sugerencia de zonas, rutas o areas de operacion tendra caracter meramente referencial, no constituyendo una instruccion obligatoria. El Prestador es responsable de evaluar las condiciones de seguridad, distancia y conveniencia de cada servicio, asumiendo los costos asociados a su desplazamiento.",
+])
+
+clausula("4", "Uso de la Plataforma Digital \u2014 Acceso Personal e Intransferible", parrafos=[
+    "La plataforma digital de Ecourier constituye unicamente una herramienta tecnologica destinada a facilitar la coordinacion, registro y trazabilidad de los servicios. Su utilizacion <b>no implica el ejercicio de facultades de direccion, control laboral o supervision jerarquica</b> por parte de Ecourier. No es un sistema de intermediacion en tiempo real y no determina la disponibilidad ni los ingresos del Prestador.",
+    "Las credenciales de acceso son <b>estrictamente personales e intransferibles</b>. Queda prohibido cederlas, compartirlas o permitir su uso a terceros. Toda actividad registrada bajo las credenciales del Prestador es de su exclusiva responsabilidad. El incumplimiento es causal de termino inmediato.",
+])
+
+clausula("5", "Coordinacion Operativa", parrafos=[
+    "Las comunicaciones y coordinaciones tendran caracter estrictamente colaborativo. Las sugerencias o recomendaciones de Ecourier tendran naturaleza referencial y no obligatoria, no constituyendo instrucciones laborales.",
     "Se valora que el Prestador informe con anticipacion cuando no este disponible:",
 ], bullets=[
     "Ausencias de un dia: aviso minimo con 12 horas de anticipacion, salvo emergencia.",
     "Ausencias de varios dias o vacaciones: aviso con al menos 15 dias de anticipacion.",
-    "En periodos de alta demanda (Navidad, CyberDay, Black Friday, Fiestas Patrias y otros informados): aviso con al menos <b>30 dias de anticipacion</b>. Las emergencias siempre son consideradas.",
+    "En periodos de alta demanda (Navidad, CyberDay, Black Friday, Fiestas Patrias y otros informados): aviso con al menos <b>30 dias de anticipacion</b>.",
 ], cierre="La falta de aviso oportuno <b>no genera penalizacion</b>, pero puede afectar la asignacion de encargos futuros.")
 
-clausula("4", "Uso de la Plataforma Digital \u2014 Acceso Personal e Intransferible", parrafos=[
-    "El Prestador utiliza la aplicacion de Ecourier como herramienta de trazabilidad durante la ejecucion de cada encargo: registro fotografico de entregas, actualizacion de estados e informe de incidencias.",
-    "Las credenciales de acceso son <b>estrictamente personales e intransferibles</b>. Queda prohibido cederlas, compartirlas o permitir su uso a terceros. Toda actividad registrada bajo las credenciales del Prestador es de su exclusiva responsabilidad. El incumplimiento es causal de termino inmediato.",
-])
-
-clausula("5", "Estandares de Calidad del Servicio", parrafos=[
-    "Para mantener una colaboracion productiva y la confianza de los clientes de Ecourier, el Prestador se compromete a:",
+clausula("6", "Estandares de Calidad del Servicio", parrafos=[
+    "El Prestador ejecutara los servicios en forma diligente conforme a los estandares de calidad y buenas practicas de la actividad. Se compromete a:",
 ], bullets=[
     "Manipular la carga con cuidado, verificando que coincida con la guia antes de retirarla, y reportando cualquier dano o anomalia.",
     "No abrir ni alterar empaques bajo ninguna circunstancia.",
@@ -148,35 +144,27 @@ clausula("5", "Estandares de Calidad del Servicio", parrafos=[
     "Respetar las normas de transito vigentes y mantener la documentacion del vehiculo al dia.",
     "Utilizar los canales oficiales de comunicacion con el equipo de operaciones.",
     "Abstenerse de realizar negociaciones paralelas con clientes de Ecourier o solicitar datos personales de destinatarios o propinas.",
-    "Abstenerse de hacer comentarios negativos sobre Ecourier, sus clientes o sus operaciones frente a terceros.",
-], cierre="El incumplimiento grave o reiterado puede ser causal de termino de la colaboracion.")
+], cierre="El incumplimiento grave o reiterado puede ser causal de termino de la colaboracion conforme a la clausula de Incumplimientos.")
 
-clausula("6", "Proteccion de Datos Personales", parrafos=[
-    "En conformidad con la <b>Ley N\xb0 19.628</b> sobre Proteccion de la Vida Privada, el Prestador utilizara los datos personales de destinatarios unicamente para los fines de la entrega, no los almacenara fuera de la plataforma de Ecourier, y no los compartira con terceros bajo ninguna circunstancia.",
-    "El incumplimiento puede derivar en responsabilidad civil y penal para el Prestador, con independencia del termino de la colaboracion.",
+clausula("7", "Regimen de Incumplimientos", parrafos=[
+    "<b>Clasificacion:</b> a) <i>Incumplimientos leves:</i> aquellos que no afecten sustancialmente la ejecucion del servicio (retrasos menores, omisiones formales, errores subsanables sin perjuicio economico relevante). b) <i>Incumplimientos graves:</i> aquellos que afecten la ejecucion del servicio, la experiencia del cliente o la integridad de la carga, especialmente cuando generen perjuicio economico (entregas fallidas imputables, manipulacion indebida, perdida o dano de carga, infracciones relevantes). c) <i>Incumplimientos reiterados:</i> dos o mas incumplimientos en un periodo de 30 dias corridos; constituyen causal suficiente para terminar el acuerdo.",
+    "<b>Medidas:</b> Los leves generan amonestacion escrita. Los graves, cuando generan perjuicio economico directo, obligan al Prestador a indemnizar el dano acreditado (dolo o culpa grave), pudiendo Ecourier compensar de pagos pendientes. Los reiterados facultan el termino inmediato.",
+    "<b>Procedimiento:</b> Previo a medidas economicas o termino, Ecourier notificara al Prestador, otorgara 5 dias habiles para descargos y resolvera con decision fundada. La responsabilidad economica se limita al dano directo con tope en el valor de la carga o servicio afectado, salvo dolo.",
 ])
 
-clausula("7", "Seguridad Personal", parrafos=[
-    "El Prestador prioriza en todo momento su integridad fisica por sobre la carga o cualquier otro objetivo operativo. Se recomienda el uso de calzado de seguridad y chaleco reflectante. El Prestador es responsable de contar con los elementos que estime necesarios para su proteccion.",
-    "Ecourier evaluara, a medida que su situacion financiera lo permita, mecanismos de apoyo en materia de seguridad y bienestar para sus prestadores.",
+clausula("8", "Responsabilidad y Riesgo", parrafos=[
+    "El Prestador actuara en todo momento por cuenta propia, respondiendo unicamente por danos consecuencia directa de su dolo o culpa grave debidamente acreditados. No respondera por caso fortuito, fuerza mayor o actos de terceros.",
+    "La responsabilidad frente a Ecourier se limita a los danos directos ocasionados por incumplimientos graves, con tope en el valor del servicio o carga involucrada, salvo dolo. <b>Ecourier no sera responsable por los actos ejecutados por el Prestador en el ejercicio autonomo de su actividad.</b>",
 ])
 
-clausula("8", "Protocolo en caso de Robo, Hurto o Asalto", parrafos=[
+clausula("9", "Seguridad Personal y Protocolo de Robo", parrafos=[
+    "El Prestador prioriza en todo momento su <b>integridad fisica</b> por sobre la carga o cualquier otro objetivo. Se recomienda el uso de calzado de seguridad y chaleco reflectante.",
     "En caso de asalto o robo durante la prestacion de servicios:",
 ], bullets=[
     "No oponer resistencia. La integridad fisica es la prioridad absoluta.",
     "Comunicar de inmediato a operaciones: ubicacion, hora, detalles y estado del Prestador.",
     "Realizar denuncia en Carabineros dentro de las 24 horas siguientes y enviar copia a Ecourier.",
     "Completar el formulario interno de incidente.",
-], cierre="Si el evento se determina como negligente del Prestador, puede ser causal de termino conforme a la clausula 9.")
-
-clausula("9", "Responsabilidad por la Carga", parrafos=[
-    "El Prestador es responsable de la carga desde su recepcion hasta la entrega, salvo fuerza mayor o delito debidamente denunciado. En casos de <b>negligencia comprobada</b>, se seguira el siguiente procedimiento:",
-], bullets=[
-    "Ecourier notificara al Prestador por escrito los hechos y el monto estimado del perjuicio.",
-    "El Prestador tendra <b>5 dias habiles</b> para presentar sus descargos.",
-    "Ecourier resolvera y comunicara su decision fundada.",
-    "El cobro, si procede, no podra exceder el <b>valor declarado de la carga afectada</b>.",
 ])
 
 clausula("10", "Responsabilidad por Infracciones de Transito", parrafos=[
@@ -184,19 +172,25 @@ clausula("10", "Responsabilidad por Infracciones de Transito", parrafos=[
 ])
 
 clausula("11", "Tarifas y Condiciones Economicas", parrafos=[
-    "Las tarifas aplicables a cada servicio son las que Ecourier tiene <b>vigentes al momento de la prestacion</b>, consultables en todo momento en el perfil del Prestador dentro de la plataforma de facturacion de Ecourier.",
-    "Ecourier podra modificarlas con <b>30 dias de aviso previo</b>, notificado mediante la plataforma y/o canal oficial de mensajeria.",
-    "Los pagos se realizan contra emision de <b>boleta de honorarios o factura</b> por parte del Prestador, en los plazos acordados operativamente.",
+    "Los servicios seran remunerados conforme a las tarifas vigentes, consultables en todo momento en el perfil del Prestador dentro de la plataforma de facturacion de Ecourier. Las tarifas se detallan en el <b>Anexo de Tarifas</b>, el cual se actualiza automaticamente ante cualquier cambio. Ecourier podra modificarlas con <b>30 dias de aviso previo</b>.",
+    "No existe remuneracion fija, continuidad asegurada ni garantia de ingresos minimos. El Prestador debera emitir <b>boleta de honorarios o factura</b> como requisito para el pago.",
 ])
 
-clausula("12", "Confidencialidad", parrafos=[
-    "Durante la colaboracion y hasta <b>24 meses despues de su termino</b>, el Prestador mantendra estricta confidencialidad sobre: datos de clientes y destinatarios, direcciones y rutas, tarifas y condiciones comerciales, procesos operativos e informacion logistica, y estrategias comerciales de Ecourier.",
-    "Queda prohibido compartir esta informacion con terceros, utilizarla para beneficio propio o de competidores, almacenar bases de datos de clientes, o difundir fotografias, documentos u operaciones internas sin autorizacion expresa.",
-    "El incumplimiento puede derivar en acciones legales, independientemente del termino de la colaboracion.",
+clausula("12", "Proteccion de Datos Personales", parrafos=[
+    "En conformidad con la <b>Ley N\xb0 19.628</b>, el Prestador usara los datos personales de destinatarios unicamente para fines de la entrega, no los almacenara fuera de la plataforma y no los compartira con terceros.",
+    "El Prestador autoriza expresamente a Ecourier para el tratamiento de sus datos personales (identificacion, contacto, ubicacion geografica y registros operativos) con la finalidad de gestionar la relacion contractual. El Prestador podra ejercer sus derechos de acceso, rectificacion, cancelacion y oposicion conforme a la normativa vigente.",
 ])
 
-clausula("13", "Termino de la Colaboracion", parrafos=[
-    "Cualquiera de las partes puede terminar esta colaboracion en cualquier momento, sin expresion de causa y <b>sin derecho a indemnizacion</b>, mediante comunicacion por correo electronico o canal oficial de mensajeria.",
+clausula("13", "Trazabilidad y Prueba", parrafos=[
+    "Las partes acuerdan que toda informacion relativa a la ejecucion de los servicios, incluyendo registros en la plataforma, comunicaciones electronicas y evidencia digital, constituira <b>medio valido de prueba</b> para determinar el cumplimiento de las obligaciones.",
+])
+
+clausula("14", "Confidencialidad", parrafos=[
+    "El Prestador mantiene estricta confidencialidad sobre datos de clientes, rutas, tarifas, procesos operativos y estrategias comerciales durante la colaboracion y por <b>24 meses despues de su termino</b>. Queda prohibido compartir esta informacion con terceros o utilizarla para beneficio propio o de competidores. El incumplimiento puede derivar en acciones legales.",
+])
+
+clausula("15", "Terminacion", parrafos=[
+    "El presente acuerdo podra ser terminado por cualquiera de las partes en cualquier momento, sin expresion de causa y <b>sin derecho a indemnizacion</b>, mediante comunicacion simple.",
     "Son causales de termino inmediato por parte de Ecourier:",
 ], bullets=[
     "Incumplimientos graves o reiterados de los estandares de calidad.",
@@ -207,24 +201,22 @@ clausula("13", "Termino de la Colaboracion", parrafos=[
     "Manipulacion indebida de paquetes o cesion de credenciales de plataforma a terceros.",
 ])
 
-clausula("14", "Ley Aplicable y Resolucion de Disputas", parrafos=[
-    "Este Acuerdo se rige por las leyes de la Republica de Chile. Cualquier controversia derivada de su interpretacion, cumplimiento o termino sera sometida a la jurisdiccion de los <b>Tribunales Ordinarios de Justicia de Santiago</b>, renunciando las partes a cualquier otro fuero que pudiera corresponderles.",
+clausula("16", "Ley Aplicable y Resolucion de Disputas", parrafos=[
+    "Este Acuerdo se rige por las leyes de la Republica de Chile. Las controversias seran sometidas a la jurisdiccion de los <b>Tribunales Ordinarios de Justicia de Santiago</b>, renunciando las partes a cualquier otro fuero.",
 ])
 
-clausula("15", "Modificaciones al Acuerdo", parrafos=[
-    "Ecourier podra modificar los terminos de este Acuerdo con <b>30 dias de aviso previo</b>, notificado mediante la plataforma y/o canal oficial de mensajeria. Si el Prestador continua prestando servicios tras el vencimiento del plazo, se entendera que acepta las modificaciones.",
+clausula("17", "Modificaciones al Acuerdo", parrafos=[
+    "Ecourier podra modificar los terminos de este Acuerdo con <b>30 dias de aviso previo</b>. Si el Prestador continua prestando servicios tras el vencimiento del plazo, se entendera que acepta las modificaciones. El Anexo de Tarifas se actualiza automaticamente y no requiere nueva aceptacion del acuerdo.",
 ])
 
-clausula("16", "Aceptacion Digital", parrafos=[
+clausula("18", "Aceptacion Digital", parrafos=[
     "Este Acuerdo se acepta de forma electronica a traves de la plataforma de facturacion de Ecourier, en conformidad con la <b>Ley N\xb0 19.799 sobre Documentos Electronicos, Firma Electronica y Servicios de Certificacion</b>.",
-    "La aceptacion se formaliza mediante el ingreso del <b>RUT del Prestador</b> y su <b>firma dibujada digitalmente</b>, quedando registrados en el sistema: nombre completo, RUT, fecha, hora y version del documento. Este registro tiene plena validez legal.",
-    "El Prestador declara haber leido y comprendido integra mente este Acuerdo antes de aceptarlo. Ante cualquier duda, puede contactar a Ecourier antes de proceder.",
+    "La aceptacion se formaliza mediante el ingreso del <b>nombre completo</b>, <b>RUT</b>, <b>firma dibujada digitalmente</b> y <b>fotografia de cedula de identidad</b> (anverso y reverso) del Prestador, quedando registrados en el sistema junto con fecha, hora, version del documento y direccion IP. Este registro tiene plena validez legal.",
 ])
 
-# Pie
 story.append(Spacer(1, 20))
 story.append(HRFlowable(width="100%", thickness=0.5, color=GRIS_LINEA, spaceAfter=10))
-story.append(Paragraph("Version 1.0 \u00b7 Abril 2026 \u00b7 Logistica y Transporte E-Courier SpA", s_pie))
+story.append(Paragraph("Version 2.0 \u00b7 Abril 2026 \u00b7 Logistica y Transporte E-Courier SpA \u00b7 RUT 77.512.163-7", s_pie))
 
 doc.build(story)
 print("PDF generado:", OUTPUT)

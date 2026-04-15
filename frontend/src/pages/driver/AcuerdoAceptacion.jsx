@@ -2,8 +2,9 @@ import { useRef, useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import { useAuth } from '../../context/AuthContext'
+import { Camera, X } from 'lucide-react'
 
-const ACUERDO_VERSION = '1.0'
+const ACUERDO_VERSION = '2.0'
 
 function SignaturePad({ onChange }) {
   const canvasRef = useRef(null)
@@ -106,6 +107,47 @@ function SignaturePad({ onChange }) {
   )
 }
 
+function PhotoUpload({ label, value, onChange }) {
+  const inputRef = useRef(null)
+
+  const handleFile = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { alert('La imagen no debe superar 5 MB'); return }
+    const reader = new FileReader()
+    reader.onload = (ev) => onChange(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {value ? (
+        <div className="relative rounded-xl border border-gray-200 overflow-hidden bg-gray-50">
+          <img src={value} alt={label} className="w-full h-40 object-contain" />
+          <button
+            type="button"
+            onClick={() => { onChange(null); if (inputRef.current) inputRef.current.value = '' }}
+            className="absolute top-2 right-2 p-1 bg-white/90 rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="w-full rounded-xl border-2 border-dashed border-gray-300 bg-white h-32 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors"
+        >
+          <Camera size={24} />
+          <span className="text-xs">Toca para tomar foto o seleccionar</span>
+        </button>
+      )}
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+    </div>
+  )
+}
+
 function formatRut(value) {
   const clean = value.replace(/[^0-9kK]/g, '').toUpperCase()
   if (clean.length <= 1) return clean
@@ -115,16 +157,26 @@ function formatRut(value) {
   return `${formatted}-${dv}`
 }
 
+const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
+
 export default function AcuerdoAceptacion() {
   const navigate = useNavigate()
   const { user, updateUser } = useAuth()
+  const [nombreCompleto, setNombreCompleto] = useState('')
   const [rut, setRut] = useState('')
   const [firma, setFirma] = useState(null)
+  const [carnetFrontal, setCarnetFrontal] = useState(null)
+  const [carnetTrasero, setCarnetTrasero] = useState(null)
   const [leido, setLeido] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [tarifas, setTarifas] = useState(null)
   const scrollRef = useRef(null)
   const [scrolledToBottom, setScrolledToBottom] = useState(false)
+
+  useEffect(() => {
+    api.get('/drivers/me/acuerdo-tarifas').then(r => setTarifas(r.data)).catch(() => {})
+  }, [])
 
   const handleScroll = () => {
     const el = scrollRef.current
@@ -134,7 +186,7 @@ export default function AcuerdoAceptacion() {
     }
   }
 
-  const canSubmit = rut.length >= 9 && firma && leido && !loading
+  const canSubmit = nombreCompleto.trim().length >= 5 && rut.length >= 9 && firma && carnetFrontal && carnetTrasero && leido && !loading
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -142,8 +194,11 @@ export default function AcuerdoAceptacion() {
     setError(null)
     try {
       const { data } = await api.post('/drivers/me/acuerdo', {
+        nombre_completo: nombreCompleto.trim(),
         rut,
         firma_base64: firma,
+        carnet_frontal: carnetFrontal,
+        carnet_trasero: carnetTrasero,
         version: ACUERDO_VERSION,
       })
       localStorage.setItem('token', data.access_token)
@@ -167,7 +222,7 @@ export default function AcuerdoAceptacion() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Acuerdo de Colaboración</h1>
+          <h1 className="text-xl font-bold text-gray-900">Acuerdo de Prestación de Servicios</h1>
           <p className="text-sm text-gray-500 mt-1">Lee el acuerdo completo antes de firmar</p>
         </div>
 
@@ -182,113 +237,197 @@ export default function AcuerdoAceptacion() {
             <p className="text-center font-bold text-gray-900 text-base mb-1 uppercase tracking-wide">
               Acuerdo de Prestación de Servicios Independientes
             </p>
-            <p className="text-center text-gray-500 mb-6">Ecourier — Prestador de Servicios · Versión {ACUERDO_VERSION} · Abril 2026</p>
+            <p className="text-center text-gray-500 mb-6">Ecourier — Prestador de Servicios · Versión {ACUERDO_VERSION}</p>
 
             <p className="mb-4">
-              <strong>LOGÍSTICA Y TRANSPORTE E-COURIER SPA</strong> y el Prestador identificado al momento de la aceptación
-              celebran el siguiente acuerdo en conformidad con las normas del Código Civil y la legislación vigente aplicable
-              a prestadores independientes.
+              En Santiago, entre <strong>LOGÍSTICA Y TRANSPORTE E-COURIER SpA</strong>, RUT N° 77.512.163-7, con domicilio en
+              Moneda N°1137, Oficina 56, comuna de Santiago, en adelante "Ecourier"; y el Prestador individualizado al momento de
+              la aceptación digital del presente instrumento, en adelante el "Prestador", se ha convenido el siguiente Acuerdo de
+              Prestación de Servicios Independientes:
             </p>
 
-            <Clausula n="1" titulo="Objeto y Vigencia">
-              El Prestador presta a Ecourier servicios de retiro y entrega de carga de manera <strong>autónoma e independiente</strong>,
-              utilizando su propio vehículo y recursos. Cada encargo (ruta diaria) constituye una prestación de servicios independiente,
-              coordinada previamente entre las partes. Este Acuerdo es de <strong>duración indefinida</strong> y puede ser terminado
-              en cualquier momento por cualquiera de las partes.<br /><br />
-              La plataforma digital de Ecourier es una herramienta de trazabilidad operativa, <strong>no un sistema de intermediación
-              en tiempo real</strong>, y no determina la disponibilidad ni los ingresos del Prestador.
+            <Clausula n="1" titulo="Naturaleza del Acuerdo">
+              Las partes declaran expresa y categóricamente que el presente acuerdo tiene carácter <strong>estrictamente civil y
+              comercial</strong>, rigiéndose por las disposiciones del Código Civil y demás normativa aplicable.
+              No existe entre ellas vínculo de subordinación ni dependencia, ni relación laboral en los términos del Código del Trabajo,
+              por cuanto el Prestador ejecuta sus servicios de manera autónoma, por cuenta propia, bajo su exclusivo riesgo y responsabilidad.
+              El Prestador <strong>no forma parte de la estructura organizacional</strong> de Ecourier, no estando sujeto a jerarquía,
+              dependencia ni integración funcional dentro de la empresa.
             </Clausula>
 
-            <Clausula n="2" titulo="Naturaleza de la Relación">
-              Las partes declaran expresamente que <strong>no existe vínculo de subordinación ni dependencia laboral</strong>.
-              El Prestador no está sujeto a jornada laboral ni horario fijo impuesto por Ecourier. Puede declinar encargos
-              sin penalización y puede prestar servicios simultáneos a otras empresas sin restricción ni exclusividad.
-              El Prestador es responsable de su vehículo, permisos, seguros, documentación y combustible, y emite
-              <strong> boleta de honorarios o factura</strong> por sus servicios, siendo responsable de sus cotizaciones
-              previsionales y obligaciones tributarias. Ecourier no asume responsabilidad por daños a terceros causados
-              por el Prestador.
+            <Clausula n="2" titulo="Objeto de los Servicios">
+              El presente acuerdo tiene por objeto la prestación de servicios de retiro, transporte y entrega de mercancías por parte
+              del Prestador, quien utilizará para ello sus propios medios materiales, incluyendo vehículo, combustible, dispositivos
+              tecnológicos y demás herramientas necesarias. Cada servicio encomendado constituirá una prestación independiente, que deberá
+              ser previamente aceptada por el Prestador en forma libre y voluntaria.
+              <br /><br />
+              Este Acuerdo es de <strong>duración indefinida</strong> y puede ser terminado en cualquier momento por cualquiera de las
+              partes conforme a lo establecido en la cláusula de Terminación.
             </Clausula>
 
-            <Clausula n="3" titulo="Coordinación Operativa">
-              La coordinación de encargos se basa en disponibilidad informada y acuerdo mutuo. Se valora que el Prestador
-              informe con anticipación cuando no esté disponible: ausencias de un día con 12 horas de anticipación; varios días
-              con 15 días; en períodos de alta demanda (Navidad, CyberDay, Black Friday, Fiestas Patrias y otros informados)
-              con <strong>30 días de anticipación</strong>. Las emergencias siempre son consideradas. La falta de aviso no
-              genera penalización, pero puede afectar la asignación de encargos futuros.
+            <Clausula n="3" titulo="Autonomía, Libertad Operativa y Zona Geográfica">
+              El Prestador gozará de plena autonomía en la organización y ejecución de sus servicios, pudiendo determinar libremente su
+              disponibilidad, horarios, días de trabajo y forma de prestación. Podrá <strong>aceptar o rechazar cualquier servicio sin
+              expresión de causa</strong>, sin que ello implique sanción, penalización ni afectación alguna. No existe cláusula de exclusividad;
+              el Prestador puede prestar servicios a terceros sin restricción.
+              <br /><br />
+              El Prestador podrá ejecutar servicios en las zonas geográficas donde Ecourier mantenga operaciones. La sugerencia de zonas,
+              rutas o áreas de operación tendrá carácter meramente referencial, no constituyendo una instrucción obligatoria.
+              El Prestador es responsable de evaluar las condiciones de seguridad, distancia y conveniencia de cada servicio.
             </Clausula>
 
-            <Clausula n="4" titulo="Uso de la Plataforma — Acceso Personal e Intransferible">
-              El Prestador usa la app de Ecourier para registro fotográfico de entregas, actualización de estados e informe
-              de incidencias. Las credenciales son <strong>estrictamente personales e intransferibles</strong>. Cederlas
-              a terceros es causal de término inmediato.
+            <Clausula n="4" titulo="Uso de la Plataforma Digital — Acceso Personal e Intransferible">
+              La plataforma digital de Ecourier constituye únicamente una herramienta tecnológica destinada a facilitar la coordinación,
+              registro y trazabilidad de los servicios. Su utilización <strong>no implica el ejercicio de facultades de dirección, control
+              laboral o supervisión jerárquica</strong> por parte de Ecourier. No es un sistema de intermediación en tiempo real y no
+              determina la disponibilidad ni los ingresos del Prestador.
+              <br /><br />
+              Las credenciales de acceso son <strong>estrictamente personales e intransferibles</strong>. Queda prohibido cederlas, compartirlas
+              o permitir su uso a terceros. Toda actividad registrada bajo las credenciales del Prestador es de su exclusiva responsabilidad.
+              El incumplimiento es causal de término inmediato.
             </Clausula>
 
-            <Clausula n="5" titulo="Estándares de Calidad del Servicio">
-              El Prestador se compromete a manipular la carga con cuidado y verificarla al recibirla; no abrir empaques;
-              mantener trato respetuoso con clientes; cuidar la imagen de Ecourier; respetar normas de tránsito; mantener
-              documentación del vehículo al día; usar canales oficiales de comunicación; y abstenerse de negociaciones
-              paralelas con clientes o solicitar datos personales de destinatarios. El incumplimiento grave puede ser causal
-              de término.
+            <Clausula n="5" titulo="Coordinación Operativa">
+              Las comunicaciones y coordinaciones tendrán carácter estrictamente colaborativo. Las sugerencias o recomendaciones de Ecourier
+              tendrán naturaleza referencial y no obligatoria, no constituyendo instrucciones laborales.
+              <br /><br />
+              Se valora que el Prestador informe con anticipación cuando no esté disponible: ausencias de un día con 12 horas; varios
+              días con 15 días; en períodos de alta demanda (Navidad, CyberDay, Black Friday, Fiestas Patrias) con <strong>30 días</strong>.
+              Las emergencias siempre son consideradas. La falta de aviso no genera penalización, pero puede afectar la asignación futura.
             </Clausula>
 
-            <Clausula n="6" titulo="Protección de Datos Personales">
-              En conformidad con la <strong>Ley N° 19.628</strong>, el Prestador usará los datos de destinatarios solo para
-              fines de la entrega, no los almacenará fuera de la plataforma y no los compartirá con terceros.
+            <Clausula n="6" titulo="Estándares de Calidad del Servicio">
+              El Prestador ejecutará los servicios en forma diligente conforme a los estándares de calidad y buenas prácticas de la actividad.
+              Se compromete a: manipular la carga con cuidado y verificarla al recibirla; no abrir ni alterar empaques; mantener trato
+              respetuoso y profesional con los destinatarios; respetar normas de tránsito y mantener documentación del vehículo al día;
+              usar canales oficiales de comunicación; y abstenerse de negociaciones paralelas con clientes o solicitar datos personales.
+              <br /><br />
+              El incumplimiento grave o reiterado puede ser causal de término de la colaboración conforme a la cláusula de Incumplimientos.
             </Clausula>
 
-            <Clausula n="7" titulo="Seguridad Personal">
-              El Prestador prioriza su integridad física por sobre la carga. Se recomienda el uso de calzado de seguridad
-              y chaleco reflectante. El Prestador es responsable de sus propios elementos de protección.
+            <Clausula n="7" titulo="Régimen de Incumplimientos">
+              <strong>Clasificación:</strong>
+              <br />
+              <strong>a)</strong> <em>Incumplimientos leves:</em> Aquellos que no afecten sustancialmente la ejecución del servicio (retrasos menores,
+              omisiones formales, errores subsanables sin perjuicio económico relevante).
+              <br />
+              <strong>b)</strong> <em>Incumplimientos graves:</em> Aquellos que afecten la ejecución del servicio, la experiencia del cliente o la
+              integridad de la carga, especialmente cuando generen perjuicio económico (entregas fallidas imputables, manipulación indebida,
+              pérdida o daño de carga, infracciones relevantes).
+              <br />
+              <strong>c)</strong> <em>Incumplimientos reiterados:</em> Dos o más incumplimientos en un período de 30 días corridos. Constituyen
+              causal suficiente para terminar el acuerdo.
+              <br /><br />
+              <strong>Medidas:</strong> Los leves generan amonestación escrita. Los graves, cuando generan perjuicio económico directo, obligan
+              al Prestador a indemnizar el daño acreditado (dolo o culpa grave), pudiendo Ecourier compensar de pagos pendientes. Los reiterados
+              facultan el término inmediato.
+              <br /><br />
+              <strong>Procedimiento:</strong> Previo a medidas económicas o término, Ecourier notificará al Prestador, otorgará 5 días hábiles
+              para descargos y resolverá con decisión fundada. La responsabilidad económica se limita al daño directo con tope en el valor
+              de la carga o servicio afectado, salvo dolo.
             </Clausula>
 
-            <Clausula n="8" titulo="Protocolo en caso de Robo o Asalto">
-              En caso de asalto: no oponer resistencia; comunicar a operaciones de inmediato; realizar denuncia en
-              Carabineros dentro de 24 horas; enviar copia a Ecourier y completar formulario interno. Si el evento
-              se determina como negligente del Prestador, puede ser causal de término.
+            <Clausula n="8" titulo="Responsabilidad y Riesgo">
+              El Prestador actuará en todo momento por cuenta propia, respondiendo únicamente por daños consecuencia directa de su dolo o
+              culpa grave debidamente acreditados. No responderá por caso fortuito, fuerza mayor o actos de terceros.
+              <br /><br />
+              La responsabilidad frente a Ecourier se limita a los daños directos ocasionados por incumplimientos graves, con tope en el valor
+              del servicio o carga involucrada, salvo dolo. <strong>Ecourier no será responsable por los actos ejecutados por el Prestador
+              en el ejercicio autónomo de su actividad.</strong>
             </Clausula>
 
-            <Clausula n="9" titulo="Responsabilidad por la Carga">
-              El Prestador es responsable de la carga desde su recepción hasta la entrega, salvo fuerza mayor o delito
-              denunciado. En casos de negligencia comprobada, Ecourier notificará al Prestador por escrito, quien tendrá
-              5 días hábiles para presentar descargos. El cobro, si procede, no excederá el valor declarado de la carga.
+            <Clausula n="9" titulo="Seguridad Personal y Protocolo de Robo">
+              El Prestador prioriza en todo momento su <strong>integridad física</strong> por sobre la carga o cualquier otro objetivo.
+              Se recomienda el uso de calzado de seguridad y chaleco reflectante.
+              <br /><br />
+              <strong>En caso de asalto o robo:</strong> no oponer resistencia; comunicar de inmediato a operaciones (ubicación, hora, detalles
+              y estado); realizar denuncia en Carabineros dentro de 24 horas y enviar copia a Ecourier; completar formulario interno de incidente.
             </Clausula>
 
             <Clausula n="10" titulo="Responsabilidad por Infracciones de Tránsito">
-              Toda multa o infracción de tránsito durante la prestación de servicios es de <strong>exclusiva responsabilidad
-              del Prestador</strong>. Ecourier no asume ninguna responsabilidad en esta materia.
+              Toda multa, infracción o sanción de tránsito ocurrida durante la prestación de servicios es de <strong>exclusiva responsabilidad
+              del Prestador</strong>, incluyendo aquellas derivadas del estado del vehículo, documentación vencida o conducta al volante.
+              Ecourier no asume ninguna responsabilidad en esta materia.
             </Clausula>
 
             <Clausula n="11" titulo="Tarifas y Condiciones Económicas">
-              Las tarifas vigentes se consultan en el perfil del Prestador dentro de la plataforma. Ecourier podrá modificarlas
-              con <strong>30 días de aviso previo</strong>. Los pagos se realizan contra boleta de honorarios o factura,
-              en los plazos acordados operativamente.
+              Los servicios serán remunerados conforme a las tarifas vigentes, consultables en todo momento en el perfil del Prestador dentro
+              de la plataforma de facturación de Ecourier. Las tarifas se detallan en el <strong>Anexo de Tarifas</strong>, el cual se actualiza
+              automáticamente ante cualquier cambio. Ecourier podrá modificarlas con <strong>30 días de aviso previo</strong>.
+              <br /><br />
+              No existe remuneración fija, continuidad asegurada ni garantía de ingresos mínimos. El Prestador deberá emitir
+              <strong> boleta de honorarios o factura</strong> como requisito para el pago.
             </Clausula>
 
-            <Clausula n="12" titulo="Confidencialidad">
-              El Prestador mantiene confidencialidad sobre datos de clientes, rutas, tarifas, procesos operativos y
-              estrategias comerciales durante la colaboración y por <strong>24 meses después de su término</strong>.
-              El incumplimiento puede derivar en acciones legales.
+            {/* Anexo de tarifas dinámico */}
+            {tarifas && Object.keys(tarifas).length > 0 && (
+              <div className="my-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <p className="font-semibold text-gray-900 text-sm mb-2">Anexo de Tarifas — Vigentes a la fecha</p>
+                <p className="text-[11px] text-gray-500 mb-3">Este anexo se actualiza automáticamente cuando cambian tus tarifas.</p>
+                <div className="space-y-1.5">
+                  {Object.entries(tarifas).map(([concepto, valor]) => (
+                    <div key={concepto} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">{concepto}</span>
+                      <span className="font-bold text-gray-900">{fmtClp(valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Clausula n="12" titulo="Protección de Datos Personales">
+              En conformidad con la <strong>Ley N° 19.628</strong>, el Prestador usará los datos personales de destinatarios únicamente
+              para fines de la entrega, no los almacenará fuera de la plataforma y no los compartirá con terceros.
+              <br /><br />
+              El Prestador autoriza expresamente a Ecourier para el tratamiento de sus datos personales (identificación, contacto, ubicación
+              geográfica y registros operativos) con la finalidad de gestionar la relación contractual. El Prestador podrá ejercer sus
+              derechos de acceso, rectificación, cancelación y oposición conforme a la normativa vigente.
             </Clausula>
 
-            <Clausula n="13" titulo="Término de la Colaboración">
-              Cualquiera de las partes puede terminar en cualquier momento <strong>sin indemnización</strong>. Son causales
-              de término inmediato: incumplimientos graves o reiterados, faltas de conducta con clientes, negligencia en
-              la carga, falsificación de información, uso indebido de datos personales, manipulación indebida de paquetes
-              o cesión de credenciales.
+            <Clausula n="13" titulo="Trazabilidad y Prueba">
+              Las partes acuerdan que toda información relativa a la ejecución de los servicios, incluyendo registros en la plataforma,
+              comunicaciones electrónicas y evidencia digital, constituirá <strong>medio válido de prueba</strong> para determinar el
+              cumplimiento de las obligaciones.
             </Clausula>
 
-            <Clausula n="14" titulo="Ley Aplicable y Resolución de Disputas">
-              Este Acuerdo se rige por las leyes de Chile. Las controversias se someten a los{' '}
-              <strong>Tribunales Ordinarios de Justicia de Santiago</strong>.
+            <Clausula n="14" titulo="Confidencialidad">
+              El Prestador mantiene estricta confidencialidad sobre datos de clientes, rutas, tarifas, procesos operativos y estrategias
+              comerciales durante la colaboración y por <strong>24 meses después de su término</strong>. Queda prohibido compartir esta
+              información con terceros o utilizarla para beneficio propio o de competidores. El incumplimiento puede derivar en acciones legales.
             </Clausula>
 
-            <Clausula n="15" titulo="Modificaciones al Acuerdo">
-              Ecourier podrá modificar este Acuerdo con 30 días de aviso previo. Si el Prestador continúa prestando
-              servicios tras el plazo, se entiende que acepta las modificaciones.
+            <Clausula n="15" titulo="Terminación">
+              El presente acuerdo podrá ser terminado por cualquiera de las partes en cualquier momento, sin expresión de causa y
+              <strong> sin derecho a indemnización</strong>, mediante comunicación simple por correo electrónico o canal oficial.
+              <br /><br />
+              Son causales de término inmediato por parte de Ecourier: incumplimientos graves o reiterados; faltas graves de conducta
+              con clientes; pérdida de carga por negligencia; falsificación de información; uso indebido de datos personales;
+              manipulación indebida de paquetes o cesión de credenciales a terceros.
+            </Clausula>
+
+            <Clausula n="16" titulo="Ley Aplicable y Resolución de Disputas">
+              Este Acuerdo se rige por las leyes de la República de Chile. Las controversias serán sometidas a la jurisdicción de los
+              <strong> Tribunales Ordinarios de Justicia de Santiago</strong>, renunciando las partes a cualquier otro fuero.
+            </Clausula>
+
+            <Clausula n="17" titulo="Modificaciones al Acuerdo">
+              Ecourier podrá modificar los términos de este Acuerdo con <strong>30 días de aviso previo</strong>. Si el Prestador
+              continúa prestando servicios tras el vencimiento del plazo, se entenderá que acepta las modificaciones.
+              El Anexo de Tarifas se actualiza automáticamente y no requiere nueva aceptación del acuerdo.
+            </Clausula>
+
+            <Clausula n="18" titulo="Aceptación Digital">
+              Este Acuerdo se acepta de forma electrónica a través de la plataforma de facturación de Ecourier, en conformidad con la
+              <strong> Ley N° 19.799 sobre Documentos Electrónicos, Firma Electrónica y Servicios de Certificación</strong>.
+              <br /><br />
+              La aceptación se formaliza mediante el ingreso del <strong>nombre completo</strong>, <strong>RUT</strong>,
+              <strong> firma dibujada digitalmente</strong> y <strong>fotografía de cédula de identidad</strong> (anverso y reverso) del
+              Prestador, quedando registrados en el sistema junto con fecha, hora, versión del documento y dirección IP. Este registro
+              tiene plena validez legal.
             </Clausula>
 
             <div className="mt-4 p-3 bg-gray-50 rounded-lg text-xs text-gray-500 text-center">
-              Versión {ACUERDO_VERSION} · Vigente desde Abril 2026 · Logística y Transporte E-Courier SpA
+              Versión {ACUERDO_VERSION} · Logística y Transporte E-Courier SpA · RUT 77.512.163-7
             </div>
           </div>
 
@@ -319,6 +458,18 @@ export default function AcuerdoAceptacion() {
             </span>
           </label>
 
+          {/* Nombre completo */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nombre completo (tal como aparece en tu cédula)</label>
+            <input
+              type="text"
+              value={nombreCompleto}
+              onChange={e => setNombreCompleto(e.target.value)}
+              placeholder="Ej: Juan Carlos Pérez González"
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+            />
+          </div>
+
           {/* RUT */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tu RUT</label>
@@ -330,6 +481,12 @@ export default function AcuerdoAceptacion() {
               maxLength={12}
               className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
             />
+          </div>
+
+          {/* Fotos carnet */}
+          <div className="grid grid-cols-2 gap-4">
+            <PhotoUpload label="Cédula — Anverso (frente)" value={carnetFrontal} onChange={setCarnetFrontal} />
+            <PhotoUpload label="Cédula — Reverso (atrás)" value={carnetTrasero} onChange={setCarnetTrasero} />
           </div>
 
           {/* Signature */}
@@ -356,7 +513,8 @@ export default function AcuerdoAceptacion() {
           </button>
 
           <p className="text-xs text-gray-400 text-center">
-            Al aceptar, se registrará tu nombre, RUT, firma, fecha y dirección IP en conformidad con la Ley N° 19.799.
+            Al aceptar, se registrará tu nombre completo, RUT, firma, fotos de cédula, fecha y dirección IP
+            en conformidad con la Ley N° 19.799.
           </p>
         </div>
 

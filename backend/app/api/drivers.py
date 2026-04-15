@@ -22,7 +22,9 @@ router = APIRouter(prefix="/drivers", tags=["Drivers"])
 
 def _enrich_driver(d: Driver, db: Session) -> dict:
     data = {c.name: getattr(d, c.name) for c in d.__table__.columns}
-    data.pop("acuerdo_firma", None)  # excluir base64 de firma del listado
+    data.pop("acuerdo_firma", None)
+    data.pop("carnet_frontal", None)
+    data.pop("carnet_trasero", None)
     data["aliases"] = d.aliases or []
     if d.jefe_flota_id:
         jefe = db.get(Driver, d.jefe_flota_id)
@@ -660,17 +662,21 @@ def aceptar_acuerdo(
     else:
         ip = request.client.host if request.client else "unknown"
 
+    driver.nombre_completo = body.nombre_completo
+    driver.rut = body.rut
     driver.acuerdo_aceptado = True
     driver.acuerdo_version = CURRENT_ACUERDO_VERSION
     driver.acuerdo_fecha = datetime.now(timezone.utc)
     driver.acuerdo_ip = ip
     driver.acuerdo_firma = body.firma_base64
+    driver.carnet_frontal = body.carnet_frontal
+    driver.carnet_trasero = body.carnet_trasero
 
     audit(
         db, "aceptar_acuerdo",
         usuario=user, request=request,
         entidad="driver", entidad_id=driver.id,
-        metadata={"version": CURRENT_ACUERDO_VERSION, "ip": ip, "rut": body.rut},
+        metadata={"version": CURRENT_ACUERDO_VERSION, "ip": ip, "rut": body.rut, "nombre_completo": body.nombre_completo},
     )
     db.commit()
     db.refresh(driver)
@@ -697,14 +703,46 @@ def mi_acuerdo_info(db: Session = Depends(get_db), user=Depends(get_current_user
         raise HTTPException(status_code=404, detail="Driver no encontrado")
     return {
         "nombre": driver.nombre,
+        "nombre_completo": driver.nombre_completo,
         "rut": driver.rut,
         "acuerdo_aceptado": bool(driver.acuerdo_aceptado and driver.acuerdo_version == CURRENT_ACUERDO_VERSION),
         "acuerdo_version": driver.acuerdo_version,
         "acuerdo_fecha": driver.acuerdo_fecha.isoformat() if driver.acuerdo_fecha else None,
         "acuerdo_ip": driver.acuerdo_ip,
         "acuerdo_firma": driver.acuerdo_firma,
+        "carnet_frontal": driver.carnet_frontal,
+        "carnet_trasero": driver.carnet_trasero,
         "version_actual": CURRENT_ACUERDO_VERSION,
+        "tarifas": _tarifas_driver(driver),
     }
+
+
+@router.get("/me/acuerdo-tarifas")
+def mi_acuerdo_tarifas(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Anexo de tarifas dinámico — siempre refleja la configuración actual."""
+    if user["rol"] != RolEnum.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo para drivers")
+    driver = db.get(Driver, user["id"])
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+    return _tarifas_driver(driver)
+
+
+def _tarifas_driver(driver: Driver) -> dict:
+    tarifas = {}
+    if driver.tarifa_ecourier:
+        tarifas["Entrega estándar (Ecourier)"] = driver.tarifa_ecourier
+    if driver.tarifa_oviedo:
+        tarifas["Entrega Oviedo"] = driver.tarifa_oviedo
+    if driver.tarifa_tercerizado:
+        tarifas["Entrega tercerizado"] = driver.tarifa_tercerizado
+    if driver.tarifa_valparaiso:
+        tarifas["Entrega Valparaíso"] = driver.tarifa_valparaiso
+    if driver.tarifa_melipilla:
+        tarifas["Entrega Melipilla"] = driver.tarifa_melipilla
+    if driver.tarifa_retiro_fija:
+        tarifas["Retiro fijo"] = driver.tarifa_retiro_fija
+    return tarifas
 
 
 @router.get("/{driver_id}/acuerdo")
@@ -721,11 +759,15 @@ def acuerdo_del_driver(
         raise HTTPException(status_code=404, detail="Driver no encontrado")
     return {
         "nombre": driver.nombre,
+        "nombre_completo": driver.nombre_completo,
         "rut": driver.rut,
         "acuerdo_aceptado": bool(driver.acuerdo_aceptado and driver.acuerdo_version == CURRENT_ACUERDO_VERSION),
         "acuerdo_version": driver.acuerdo_version,
         "acuerdo_fecha": driver.acuerdo_fecha.isoformat() if driver.acuerdo_fecha else None,
         "acuerdo_ip": driver.acuerdo_ip,
         "acuerdo_firma": driver.acuerdo_firma,
+        "carnet_frontal": driver.carnet_frontal,
+        "carnet_trasero": driver.carnet_trasero,
         "version_actual": CURRENT_ACUERDO_VERSION,
+        "tarifas": _tarifas_driver(driver),
     }

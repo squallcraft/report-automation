@@ -24,7 +24,7 @@ from app.auth import resolver_permisos
 
 logger = logging.getLogger(__name__)
 
-CURRENT_ACUERDO_VERSION = "1.0"
+CURRENT_ACUERDO_VERSION = "2.0"
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
