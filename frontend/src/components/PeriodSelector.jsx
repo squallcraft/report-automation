@@ -3,7 +3,7 @@ const MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
 
-export default function PeriodSelector({ semana, mes, anio, onChange }) {
+export default function PeriodSelector({ semana, mes, anio, onChange, showMesCompleto = false }) {
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i)
 
@@ -14,8 +14,9 @@ export default function PeriodSelector({ semana, mes, anio, onChange }) {
         <select
           value={semana}
           onChange={(e) => onChange({ semana: Number(e.target.value), mes, anio })}
-          className="input-field w-20 sm:w-24 py-1.5 sm:py-2 text-sm"
+          className="input-field w-20 sm:w-28 py-1.5 sm:py-2 text-sm"
         >
+          {showMesCompleto && <option value={0}>Mes completo</option>}
           {[1, 2, 3, 4, 5].map((s) => (
             <option key={s} value={s}>Sem {s}</option>
           ))}

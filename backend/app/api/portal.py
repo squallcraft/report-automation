@@ -793,10 +793,12 @@ def driver_ganancias(
 def driver_ganancias_flota(
     mes: int = Query(...),
     anio: int = Query(...),
+    semana: int = Query(0),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_driver),
 ):
-    """Ganancia total de la flota (jefe + subordinados) para facturación."""
+    """Ganancia total de la flota (jefe + subordinados) para facturación.
+    semana=0 → mes completo; semana=1..5 → solo esa semana."""
     from app.api.cpc import _get_monto_semanal_driver
 
     driver_id = current_user["id"]
@@ -815,10 +817,13 @@ def driver_ganancias_flota(
     for s in subordinados:
         nombre_map[s.id] = s.nombre
 
-    semanas_rows = db.query(CalendarioSemanas.semana).filter(
-        CalendarioSemanas.mes == mes, CalendarioSemanas.anio == anio,
-    ).order_by(CalendarioSemanas.semana).all()
-    semanas = [r[0] for r in semanas_rows] if semanas_rows else [1, 2, 3, 4, 5]
+    if semana > 0:
+        semanas = [semana]
+    else:
+        semanas_rows = db.query(CalendarioSemanas.semana).filter(
+            CalendarioSemanas.mes == mes, CalendarioSemanas.anio == anio,
+        ).order_by(CalendarioSemanas.semana).all()
+        semanas = [r[0] for r in semanas_rows] if semanas_rows else [1, 2, 3, 4, 5]
 
     total_flota = 0
     por_driver = {}
@@ -841,6 +846,7 @@ def driver_ganancias_flota(
         "es_jefe": True,
         "mes": mes,
         "anio": anio,
+        "semana": semana,
         "total_flota": total_flota,
         "conductores": len(all_ids),
         "detalle": detalle,

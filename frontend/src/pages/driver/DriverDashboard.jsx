@@ -8,6 +8,10 @@ import { Truck, DollarSign, TrendingUp, Users, CheckCircle, LayoutDashboard, Rec
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
+const MESES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+]
 const ESTADO_COLORS = {
   PAGADO: 'text-emerald-700 bg-emerald-50',
   PENDIENTE: 'text-amber-700 bg-amber-50',
@@ -33,11 +37,16 @@ export default function DriverDashboard() {
 
   useEffect(() => {
     setLoading(true)
+    const mesCompleto = period.semana === 0
+    const enviosParams = mesCompleto
+      ? { mes: period.mes, anio: period.anio, limit: 5000 }
+      : { ...period, limit: 5000 }
+
     Promise.all([
-      api.get('/envios', { params: { ...period, limit: 5000 } }),
-      api.get('/portal/driver/liquidacion', { params: period }).catch(() => null),
+      api.get('/envios', { params: enviosParams }),
+      mesCompleto ? Promise.resolve(null) : api.get('/portal/driver/liquidacion', { params: period }).catch(() => null),
       api.get('/portal/driver/pagos-recibidos', { params: { mes: period.mes, anio: period.anio } }).catch(() => null),
-      api.get('/portal/driver/ganancias-flota', { params: { mes: period.mes, anio: period.anio } }).catch(() => null),
+      api.get('/portal/driver/ganancias-flota', { params: { mes: period.mes, anio: period.anio, semana: period.semana } }).catch(() => null),
     ])
       .then(([envRes, liqRes, pagosRes, flotaRes]) => {
         setEnvios(envRes.data || [])
@@ -92,7 +101,7 @@ export default function DriverDashboard() {
 
       <div className="card mb-6">
         <div className="flex flex-wrap items-end gap-4">
-          <PeriodSelector {...period} onChange={setPeriod} />
+          <PeriodSelector {...period} onChange={setPeriod} showMesCompleto={esJefe} />
           {esJefe && (
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Conductor</label>
@@ -131,10 +140,10 @@ export default function DriverDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <Receipt size={16} className="text-blue-500" />
-                  Ganancia Total Flota — {new Date(flotaGanancias.anio, flotaGanancias.mes - 1).toLocaleString('es-CL', { month: 'long', year: 'numeric' })}
+                  Ganancia Total Flota — {period.semana > 0 ? `Semana ${period.semana}, ` : ''}{MESES[period.mes - 1]} {period.anio}
                 </h2>
                 <div className="text-right">
-                  <span className="text-xs text-gray-500">Total liquidado del mes</span>
+                  <span className="text-xs text-gray-500">{period.semana > 0 ? 'Total liquidado de la semana' : 'Total liquidado del mes'}</span>
                   <p className="text-xl font-bold text-blue-700">{fmt(flotaGanancias.total_flota)}</p>
                 </div>
               </div>
