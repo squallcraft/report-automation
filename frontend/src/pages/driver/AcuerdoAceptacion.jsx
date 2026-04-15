@@ -351,29 +351,41 @@ export default function AcuerdoAceptacion() {
             </Clausula>
 
             <Clausula n="11" titulo="Tarifas y Condiciones Económicas">
-              Los servicios serán remunerados conforme a las tarifas vigentes, consultables en todo momento en el perfil del Prestador dentro
-              de la plataforma de facturación de Ecourier. Las tarifas se detallan en el <strong>Anexo de Tarifas</strong>, el cual se actualiza
-              automáticamente ante cualquier cambio. Ecourier podrá modificarlas con <strong>30 días de aviso previo</strong>.
+              Los servicios serán remunerados conforme a las tarifas vigentes al momento de la prestación.
+              Ecourier podrá modificarlas con <strong>30 días de aviso previo</strong>; ante cualquier modificación
+              se generará una nueva versión de este Acuerdo que el Prestador deberá aceptar para continuar operando.
               <br /><br />
+              Las tarifas actualmente pactadas para el Prestador son las siguientes:
+
+              {tarifas && Object.keys(tarifas).length > 0 ? (
+                <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 overflow-hidden">
+                  <div className="px-4 py-2 bg-blue-100 border-b border-blue-200">
+                    <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Tarifas vigentes — al momento de la firma</p>
+                  </div>
+                  <div className="divide-y divide-blue-100">
+                    {Object.entries(tarifas).map(([concepto, valor]) => (
+                      <div key={concepto} className="flex items-center justify-between px-4 py-2.5">
+                        <span className="text-sm text-gray-700">{concepto}</span>
+                        <span className="text-sm font-bold text-gray-900">{fmtClp(valor)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-4 py-2 bg-blue-50 border-t border-blue-100">
+                    <p className="text-[11px] text-blue-600">Estos montos quedan registrados en este acuerdo al momento de su firma.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-400 text-center">
+                  Cargando tarifas…
+                </div>
+              )}
+
+              <br />
               No existe remuneración fija, continuidad asegurada ni garantía de ingresos mínimos. El Prestador deberá emitir
               <strong> boleta de honorarios o factura</strong> como requisito para el pago.
             </Clausula>
 
-            {/* Anexo de tarifas dinámico */}
-            {tarifas && Object.keys(tarifas).length > 0 && (
-              <div className="my-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                <p className="font-semibold text-gray-900 text-sm mb-2">Anexo de Tarifas — Vigentes a la fecha</p>
-                <p className="text-[11px] text-gray-500 mb-3">Este anexo se actualiza automáticamente cuando cambian tus tarifas.</p>
-                <div className="space-y-1.5">
-                  {Object.entries(tarifas).map(([concepto, valor]) => (
-                    <div key={concepto} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-600">{concepto}</span>
-                      <span className="font-bold text-gray-900">{fmtClp(valor)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* El bloque separado de tarifas ya no es necesario — está integrado en cláusula 11 */}
 
             <Clausula n="12" titulo="Protección de Datos Personales">
               En conformidad con la <strong>Ley N° 19.628</strong>, el Prestador usará los datos personales de destinatarios únicamente
@@ -411,9 +423,9 @@ export default function AcuerdoAceptacion() {
             </Clausula>
 
             <Clausula n="17" titulo="Modificaciones al Acuerdo">
-              Ecourier podrá modificar los términos de este Acuerdo con <strong>30 días de aviso previo</strong>. Si el Prestador
-              continúa prestando servicios tras el vencimiento del plazo, se entenderá que acepta las modificaciones.
-              El Anexo de Tarifas se actualiza automáticamente y no requiere nueva aceptación del acuerdo.
+              Ecourier podrá modificar los términos de este Acuerdo con <strong>30 días de aviso previo</strong>. Cualquier modificación,
+              incluyendo cambios en las tarifas pactadas, generará una nueva versión del Acuerdo que el Prestador deberá aceptar
+              expresamente para continuar prestando servicios.
             </Clausula>
 
             <Clausula n="18" titulo="Aceptación Digital">
@@ -537,7 +549,7 @@ function Clausula({ n, titulo, children }) {
   return (
     <div className="mb-4">
       <p className="font-semibold text-gray-900 mb-1">{n}. {titulo}</p>
-      <p className="text-gray-600">{children}</p>
+      <div className="text-gray-600">{children}</div>
     </div>
   )
 }
