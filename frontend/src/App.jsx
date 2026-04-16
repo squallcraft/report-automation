@@ -75,8 +75,7 @@ function ProtectedRoute({ children, roles }) {
   return children
 }
 
-// ─── Cambiar a true cuando el acuerdo esté listo para activarse ───
-const ACUERDO_ACTIVO = false
+const ACUERDO_ACTIVO = true
 
 function DriverRoute({ children }) {
   const { user, loading } = useAuth()
