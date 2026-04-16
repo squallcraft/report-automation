@@ -537,9 +537,18 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 if r.fecha in daily_map:
                     daily_map[r.fecha]["retiros"] += r.tarifa_driver or 0
         elif driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0:
+            # Preferir valores snapshot almacenados en retiro.tarifa_driver.
+            # Si existe al menos un retiro con valor, usamos sum por día.
+            by_day = {}
+            for r in retiros_list:
+                if r.fecha:
+                    by_day[r.fecha] = by_day.get(r.fecha, 0) + (r.tarifa_driver or 0)
             for d in {r.fecha for r in retiros_list if r.fecha}:
                 if d in daily_map:
-                    daily_map[d]["retiros"] = driver.tarifa_retiro_fija
+                    stored_day = by_day.get(d, 0)
+                    # Si el snapshot existe (> 0) lo usamos; si no (retiro antiguo sin snapshot)
+                    # caemos de vuelta a la tarifa actual del driver.
+                    daily_map[d]["retiros"] = stored_day if stored_day > 0 else driver.tarifa_retiro_fija
         else:
             for r in retiros_list:
                 if r.fecha in daily_map:

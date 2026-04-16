@@ -52,16 +52,29 @@ def _calcular_retiro_driver(driver, retiros: list, semana_cerrada: bool = False)
     """
     Pago al driver por retiros en una semana.
 
-    Semana cerrada  → sum(r.tarifa_driver) de las filas almacenadas. No se toca nada.
-    Semana abierta  → tarifa_retiro_fija × días distintos si tiene tarifa fija,
-                      o sum(r.tarifa_driver) si no la tiene.
+    Siempre preferimos el valor snapshot almacenado en retiro.tarifa_driver, que
+    se fija al momento de importar con el valor vigente de tarifa_retiro_fija.
+    Esto evita que cambios futuros a la tarifa afecten semanas ya procesadas.
+
+    Semana cerrada  → sum(r.tarifa_driver) almacenado. Igual que antes.
+    Semana abierta con tarifa_retiro_fija:
+        - Si los retiros ya tienen valores (> 0 en total) → usar esos snapshots.
+        - Fallback solo para retiros muy antiguos sin snapshot: recalcular con
+          la tarifa actual × días.
+    Semana abierta sin tarifa_retiro_fija → sum(r.tarifa_driver).
     """
     if not retiros:
         return 0
+    # Semana cerrada o pagada: usar siempre lo almacenado.
     if semana_cerrada:
         return sum(r.tarifa_driver or 0 for r in retiros)
     # Semana abierta
     if driver and driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
+        stored = sum(r.tarifa_driver or 0 for r in retiros)
+        if stored > 0:
+            # Los retiros tienen el snapshot correcto: usarlo sin tocar nada.
+            return stored
+        # Fallback: retiros sin snapshot (importados antes de esta lógica).
         dias = len({r.fecha for r in retiros if r.fecha})
         return driver.tarifa_retiro_fija * dias
     return sum(r.tarifa_driver or 0 for r in retiros)
