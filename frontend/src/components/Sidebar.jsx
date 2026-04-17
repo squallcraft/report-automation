@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -19,6 +19,7 @@ const adminMenu = [
       { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
       { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes Tarifarios', permiso: 'comunas' },
       { to: '/admin/trabajadores', icon: Briefcase, label: 'Trabajadores', permiso: 'trabajadores' },
+      { to: '/admin/colaboradores', icon: Users, label: 'Colaboradores', permiso: 'colaboradores' },
       { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
       { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
     ],
@@ -233,6 +234,14 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   if (user?.rol === 'SELLER') { menu = sellerLinks; isFlat = true }
   if (user?.rol === 'DRIVER') { menu = getDriverLinks(user); isFlat = true }
   if (user?.rol === 'PICKUP') { menu = pickupLinks; isFlat = true }
+  if (user?.rol === 'COLABORADOR') {
+    menu = [
+      { to: '/colaborador', icon: LayoutDashboard, label: 'Mi Portal' },
+      { to: '/colaborador/boletas', icon: Receipt, label: 'Mis Boletas' },
+      { to: '/colaborador/perfil', icon: User, label: 'Mi Perfil' },
+    ]
+    isFlat = true
+  }
 
   const handleLogout = () => {
     logout()
@@ -297,7 +306,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
               key={item.to}
               {...item}
               collapsed={collapsed}
-              end={item.to === '/admin' || item.to === '/seller' || item.to === '/driver' || item.to === '/pickup'}
+              end={item.to === '/admin' || item.to === '/seller' || item.to === '/driver' || item.to === '/pickup' || item.to === '/colaborador'}
               badge={item.to === '/admin/bandeja' ? tareasCount.total : 0}
               badgeCritical={item.to === '/admin/bandeja' ? tareasCount.criticas > 0 : false}
             />

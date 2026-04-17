@@ -21,6 +21,7 @@ class TipoEntidadEnum(str, enum.Enum):
     SELLER = "SELLER"
     DRIVER = "DRIVER"
     TRABAJADOR = "TRABAJADOR"
+    COLABORADOR = "COLABORADOR"
 
 
 class EstadoLiquidacionEnum(str, enum.Enum):
@@ -42,6 +43,7 @@ class RolEnum(str, enum.Enum):
     SELLER = "SELLER"
     DRIVER = "DRIVER"
     PICKUP = "PICKUP"
+    COLABORADOR = "COLABORADOR"
 
 
 class Seller(Base):
@@ -950,6 +952,99 @@ class CuotaPrestamo(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     prestamo = relationship("Prestamo", back_populates="cuotas")
+
+
+# ── Colaboradores ──
+
+
+class EstadoBoletaColaboradorEnum(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    APROBADA = "APROBADA"
+    RECHAZADA = "RECHAZADA"
+    PAGADA = "PAGADA"
+
+
+class Colaborador(Base):
+    __tablename__ = "colaboradores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    rut = Column(String, nullable=True)
+    email = Column(String, unique=True, nullable=True)
+    telefono = Column(String, nullable=True)
+    especialidad = Column(String, nullable=True)
+    tags = Column(JSON, default=list)
+
+    banco = Column(String, nullable=True)
+    tipo_cuenta = Column(String, nullable=True)
+    numero_cuenta = Column(String, nullable=True)
+
+    descripcion_servicio = Column(Text, nullable=True)
+    monto_acordado = Column(Integer, nullable=True)
+    frecuencia_pago = Column(String, default="mensual")
+    fecha_inicio = Column(Date, nullable=True)
+    fecha_fin = Column(Date, nullable=True)
+    activo = Column(Boolean, default=True)
+
+    cuenta_contable_id = Column(Integer, ForeignKey("cuentas_contables.id"), nullable=True)
+    categoria_financiera_id = Column(Integer, ForeignKey("categorias_financieras.id"), nullable=True)
+
+    password_hash = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    cuenta_contable = relationship("CuentaContable")
+    categoria_financiera = relationship("CategoriaFinanciera")
+    boletas = relationship("BoletaColaborador", back_populates="colaborador")
+    pagos_mes = relationship("PagoMesColaborador", back_populates="colaborador")
+
+
+class BoletaColaborador(Base):
+    __tablename__ = "boletas_colaboradores"
+    __table_args__ = (
+        UniqueConstraint("colaborador_id", "mes", "anio", name="uq_boleta_colaborador_periodo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    colaborador_id = Column(Integer, ForeignKey("colaboradores.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    numero_boleta = Column(String, nullable=True)
+    monto = Column(Integer, nullable=False, default=0)
+    archivo_nombre = Column(String, nullable=True)
+    archivo_path = Column(String, nullable=True)
+    estado = Column(String, nullable=False, default=EstadoBoletaColaboradorEnum.PENDIENTE.value)
+    nota_colaborador = Column(Text, nullable=True)
+    nota_admin = Column(Text, nullable=True)
+    revisado_por = Column(String, nullable=True)
+    revisado_en = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    colaborador = relationship("Colaborador", back_populates="boletas")
+
+
+class PagoMesColaborador(Base):
+    __tablename__ = "pagos_mes_colaboradores"
+    __table_args__ = (
+        UniqueConstraint("colaborador_id", "mes", "anio", name="uq_pago_mes_colaborador"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    colaborador_id = Column(Integer, ForeignKey("colaboradores.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto_esperado = Column(Integer, nullable=False, default=0)
+    monto_boleta = Column(Integer, nullable=False, default=0)
+    estado = Column(String, nullable=False, default="PENDIENTE_BOLETA")
+    boleta_id = Column(Integer, ForeignKey("boletas_colaboradores.id"), nullable=True)
+    fecha_pago = Column(Date, nullable=True)
+    nota = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    colaborador = relationship("Colaborador", back_populates="pagos_mes")
+    boleta = relationship("BoletaColaborador")
 
 
 # ── GL: Contabilidad de Partida Doble ──

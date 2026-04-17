@@ -60,6 +60,7 @@ import CPP from './pages/admin/CPP'
 import LeadsInbox from './pages/admin/LeadsInbox'
 import LeadsPipeline from './pages/admin/LeadsPipeline'
 import LeadsKB from './pages/admin/LeadsKB'
+import Colaboradores from './pages/admin/Colaboradores'
 import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
 import PickupEnvios from './pages/pickup/PickupEnvios'
@@ -67,6 +68,10 @@ import PickupEntregas from './pages/pickup/PickupEntregas'
 import PickupCalendario from './pages/pickup/PickupCalendario'
 import PickupGanancias from './pages/pickup/PickupGanancias'
 import PickupFacturas from './pages/pickup/PickupFacturas'
+
+import ColaboradorDashboard from './pages/colaborador/ColaboradorDashboard'
+import ColaboradorBoletas from './pages/colaborador/ColaboradorBoletas'
+import ColaboradorPerfil from './pages/colaborador/ColaboradorPerfil'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -93,6 +98,7 @@ function getDefaultRoute(rol) {
   if (rol === 'SELLER') return '/seller'
   if (rol === 'DRIVER') return '/driver'
   if (rol === 'PICKUP') return '/pickup'
+  if (rol === 'COLABORADOR') return '/colaborador'
   return '/login'
 }
 
@@ -146,6 +152,7 @@ export default function App() {
         <Route path="leads" element={<LeadsInbox />} />
         <Route path="leads/pipeline" element={<LeadsPipeline />} />
         <Route path="leads/kb" element={<LeadsKB />} />
+        <Route path="colaboradores" element={<Colaboradores />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>
@@ -169,6 +176,12 @@ export default function App() {
 
       <Route path="/driver/acuerdo" element={<ProtectedRoute roles={['DRIVER']}><AcuerdoAceptacion /></ProtectedRoute>} />
       <Route path="/driver/contrato-trabajo" element={<ProtectedRoute roles={['DRIVER']}><ContratoTrabajoAceptacion /></ProtectedRoute>} />
+
+      <Route path="/colaborador" element={<ProtectedRoute roles={['COLABORADOR']}><Layout /></ProtectedRoute>}>
+        <Route index element={<ColaboradorDashboard />} />
+        <Route path="boletas" element={<ColaboradorBoletas />} />
+        <Route path="perfil" element={<ColaboradorPerfil />} />
+      </Route>
 
       <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>
         <Route index element={<DriverDashboard />} />

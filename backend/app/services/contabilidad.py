@@ -14,7 +14,7 @@ from app.models import (
     PagoSemanaDriver, PagoSemanaSeller, PagoSemanaPickup,
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
     MovimientoFinanciero, CategoriaFinanciera,
-    Driver,
+    Driver, Colaborador, BoletaColaborador,
 )
 
 logger = logging.getLogger(__name__)
@@ -283,6 +283,29 @@ def asiento_movimiento_financiero(db: Session, mov: MovimientoFinanciero, es_bac
         f"{cat.tipo}: {mov.nombre}",
         "MovimientoFinanciero", mov.id,
         lineas,
+        es_backfill=es_backfill,
+    )
+
+
+def asiento_pago_colaborador(db: Session, boleta: BoletaColaborador, es_backfill=False):
+    """Boleta colaborador PAGADA → Debe: [cuenta asignada] / Haber: Banco"""
+    if not boleta.monto or boleta.monto <= 0:
+        return None
+    colaborador = db.get(Colaborador, boleta.colaborador_id)
+    if not colaborador:
+        return None
+    cuenta_gasto = colaborador.cuenta_contable_id
+    if not cuenta_gasto:
+        cuenta_gasto = _cuenta_id(db, CUENTA_FREELANCERS)
+    nombre = colaborador.nombre
+    fecha = date(boleta.anio, boleta.mes, 1)
+    return crear_asiento(db, fecha,
+        f"Pago colaborador {boleta.mes}/{boleta.anio} — {nombre}",
+        "BoletaColaborador", boleta.id,
+        [
+            (cuenta_gasto, boleta.monto, 0),
+            (_cuenta_id(db, CUENTA_BANCO), 0, boleta.monto),
+        ],
         es_backfill=es_backfill,
     )
 

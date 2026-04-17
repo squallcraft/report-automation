@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup
+from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup, Colaborador
 from app.schemas import LoginRequest, TokenResponse
 from app.auth import verify_password, create_access_token, hash_password
 from app.config import get_settings
@@ -110,6 +110,10 @@ def _find_entity_by_email(db: Session, email: str):
     if pickup:
         return "pickup", pickup
 
+    colab = db.query(Colaborador).filter(Colaborador.email == email, Colaborador.activo == True).first()
+    if colab:
+        return "colaborador", colab
+
     admin = db.query(AdminUser).filter(AdminUser.username == email, AdminUser.activo == True).first()
     if admin:
         return "admin", admin
@@ -181,6 +185,17 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             rol=RolEnum.PICKUP,
             nombre=pickup.nombre,
             entidad_id=pickup.id,
+        )
+
+    colab = db.query(Colaborador).filter(Colaborador.email == data.username, Colaborador.activo == True).first()
+    if colab and colab.password_hash and verify_password(data.password, colab.password_hash):
+        token = create_access_token({"sub": str(colab.id), "rol": RolEnum.COLABORADOR})
+        _audit(db, "LOGIN_SUCCESS", colab.email, ip)
+        return TokenResponse(
+            access_token=token,
+            rol=RolEnum.COLABORADOR,
+            nombre=colab.nombre,
+            entidad_id=colab.id,
         )
 
     _audit(db, "LOGIN_FAIL", data.username, ip)
@@ -255,6 +270,8 @@ def reset_password(body: ResetPasswordBody, request: Request, db: Session = Depe
         entity = db.query(Driver).filter(Driver.id == record.entity_id).first()
     elif record.entity_type == "pickup":
         entity = db.query(Pickup).filter(Pickup.id == record.entity_id).first()
+    elif record.entity_type == "colaborador":
+        entity = db.query(Colaborador).filter(Colaborador.id == record.entity_id).first()
     else:
         entity = db.query(AdminUser).filter(AdminUser.id == record.entity_id).first()
 

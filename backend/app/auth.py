@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import AdminUser, Seller, Driver, Pickup, RolEnum
+from app.models import AdminUser, Seller, Driver, Pickup, Colaborador, RolEnum
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -25,6 +25,7 @@ SECCIONES: list[str] = [
     "productos", "comunas", "calendario",
     "consultas", "logs", "asistente",
     "trabajadores", "prestamos", "pagos-trabajadores",
+    "colaboradores",
 ]
 
 _SECCIONES_SET = set(SECCIONES)
@@ -137,6 +138,13 @@ def get_current_user(
         if not pickup.activo:
             raise HTTPException(status_code=401, detail="Cuenta desactivada")
         return {"rol": RolEnum.PICKUP, "id": pickup.id, "nombre": pickup.nombre, "permisos": []}
+    elif rol == RolEnum.COLABORADOR:
+        colab = db.query(Colaborador).filter(Colaborador.id == uid).first()
+        if not colab:
+            raise HTTPException(status_code=401, detail="Colaborador no encontrado")
+        if not colab.activo:
+            raise HTTPException(status_code=401, detail="Cuenta desactivada")
+        return {"rol": RolEnum.COLABORADOR, "id": colab.id, "nombre": colab.nombre, "permisos": []}
 
     raise HTTPException(status_code=401, detail="Rol no reconocido")
 
@@ -189,6 +197,12 @@ def require_driver(current_user: dict = Depends(get_current_user)) -> dict:
 def require_pickup(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["rol"] != RolEnum.PICKUP:
         raise HTTPException(status_code=403, detail="Acceso solo para pickups")
+    return current_user
+
+
+def require_colaborador(current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["rol"] != RolEnum.COLABORADOR:
+        raise HTTPException(status_code=403, detail="Acceso solo para colaboradores")
     return current_user
 
 

@@ -17,6 +17,7 @@ class TipoEntidadEnum(str, Enum):
     SELLER = "SELLER"
     DRIVER = "DRIVER"
     TRABAJADOR = "TRABAJADOR"
+    COLABORADOR = "COLABORADOR"
 
 
 class EstadoLiquidacionEnum(str, Enum):
@@ -781,5 +782,60 @@ class VacacionOut(BaseModel):
     dias_habiles: int
     estado: str
     nota: Optional[str] = None
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+# ── Colaboradores ──
+
+class ColaboradorBase(BaseModel):
+    nombre: str
+    rut: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    especialidad: Optional[str] = None
+    tags: List[str] = []
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+    descripcion_servicio: Optional[str] = None
+    monto_acordado: Optional[int] = None
+    frecuencia_pago: str = "mensual"
+    fecha_inicio: Optional[date] = None
+    fecha_fin: Optional[date] = None
+    activo: bool = True
+    cuenta_contable_id: Optional[int] = None
+    categoria_financiera_id: Optional[int] = None
+
+
+class ColaboradorCreate(ColaboradorBase):
+    password: Optional[str] = None
+
+
+class ColaboradorUpdate(BaseModel):
+    nombre: Optional[str] = None
+    rut: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    especialidad: Optional[str] = None
+    tags: Optional[List[str]] = None
+    banco: Optional[str] = None
+    tipo_cuenta: Optional[str] = None
+    numero_cuenta: Optional[str] = None
+    descripcion_servicio: Optional[str] = None
+    monto_acordado: Optional[int] = None
+    frecuencia_pago: Optional[str] = None
+    fecha_inicio: Optional[date] = None
+    fecha_fin: Optional[date] = None
+    activo: Optional[bool] = None
+    cuenta_contable_id: Optional[int] = None
+    categoria_financiera_id: Optional[int] = None
+    password: Optional[str] = None
+
+
+class ColaboradorOut(ColaboradorBase):
+    id: int
+    cuenta_contable_nombre: Optional[str] = None
+    categoria_financiera_nombre: Optional[str] = None
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
