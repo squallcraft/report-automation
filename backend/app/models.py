@@ -138,6 +138,12 @@ class Driver(Base):
     acuerdo_firma = Column(Text, nullable=True)
     carnet_frontal = Column(Text, nullable=True)
     carnet_trasero = Column(Text, nullable=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=True)
+    contrato_trabajo_aceptado = Column(Boolean, default=False, nullable=False)
+    contrato_trabajo_version = Column(String, nullable=True)
+    contrato_trabajo_fecha = Column(DateTime, nullable=True)
+    contrato_trabajo_ip = Column(String, nullable=True)
+    contrato_trabajo_firma = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -145,6 +151,7 @@ class Driver(Base):
     subordinados = relationship("Driver", back_populates="jefe_flota")
     envios = relationship("Envio", back_populates="driver")
     retiros = relationship("Retiro", back_populates="driver")
+    trabajador = relationship("Trabajador")
 
 
 class Envio(Base):
@@ -823,9 +830,16 @@ class Trabajador(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    movilizacion = Column(Integer, nullable=False, default=0)
+    colacion = Column(Integer, nullable=False, default=0)
+    viaticos = Column(Integer, nullable=False, default=0)
+    tipo_contrato = Column(String, nullable=True)
+    monto_cotizacion_salud = Column(String, nullable=True)
+
     pagos = relationship("PagoTrabajador", back_populates="trabajador")
     pagos_mes = relationship("PagoMesTrabajador", back_populates="trabajador")
     prestamos = relationship("Prestamo", back_populates="trabajador", foreign_keys="Prestamo.trabajador_id")
+    vacaciones = relationship("VacacionTrabajador", back_populates="trabajador")
 
 
 class PagoTrabajador(Base):
@@ -869,6 +883,21 @@ class PagoMesTrabajador(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     trabajador = relationship("Trabajador", back_populates="pagos_mes")
+
+
+class VacacionTrabajador(Base):
+    __tablename__ = "vacaciones_trabajadores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False)
+    fecha_inicio = Column(Date, nullable=False)
+    fecha_fin = Column(Date, nullable=False)
+    dias_habiles = Column(Integer, nullable=False)
+    estado = Column(String, nullable=False, default="APROBADA")
+    nota = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    trabajador = relationship("Trabajador", back_populates="vacaciones")
 
 
 # ── Préstamos ──

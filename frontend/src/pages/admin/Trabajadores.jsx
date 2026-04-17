@@ -45,6 +45,8 @@ const initialForm = {
   sistema_salud: '', costo_salud: 0,
   banco: '', tipo_cuenta: '', numero_cuenta: '',
   fecha_ingreso: '', activo: true,
+  movilizacion: 0, colacion: 0, viaticos: 0,
+  tipo_contrato: '', monto_cotizacion_salud: '',
 }
 
 export default function Trabajadores() {
@@ -90,6 +92,11 @@ export default function Trabajadores() {
       numero_cuenta: t.numero_cuenta || '',
       fecha_ingreso: t.fecha_ingreso || '',
       activo: t.activo,
+      movilizacion: t.movilizacion || 0,
+      colacion: t.colacion || 0,
+      viaticos: t.viaticos || 0,
+      tipo_contrato: t.tipo_contrato || '',
+      monto_cotizacion_salud: t.monto_cotizacion_salud || '',
     })
     setShowModal(true)
   }
@@ -101,6 +108,9 @@ export default function Trabajadores() {
       sueldo_bruto: Number(form.sueldo_bruto),
       costo_afp: Number(form.costo_afp),
       costo_salud: Number(form.costo_salud),
+      movilizacion: Number(form.movilizacion),
+      colacion: Number(form.colacion),
+      viaticos: Number(form.viaticos),
       fecha_ingreso: form.fecha_ingreso || null,
     }
     try {
@@ -267,6 +277,36 @@ export default function Trabajadores() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Fecha ingreso</label>
               <input type="date" value={form.fecha_ingreso} onChange={e => setForm(f => ({ ...f, fecha_ingreso: e.target.value }))} className="input-field" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Movilización</label>
+              <input type="number" value={form.movilizacion} onChange={e => setForm(f => ({ ...f, movilizacion: e.target.value }))} className="input-field" />
+              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Colación</label>
+              <input type="number" value={form.colacion} onChange={e => setForm(f => ({ ...f, colacion: e.target.value }))} className="input-field" />
+              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Viáticos</label>
+              <input type="number" value={form.viaticos} onChange={e => setForm(f => ({ ...f, viaticos: e.target.value }))} className="input-field" />
+              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo contrato</label>
+              <select value={form.tipo_contrato} onChange={e => setForm(f => ({ ...f, tipo_contrato: e.target.value }))} className="input-field">
+                <option value="">Seleccionar...</option>
+                <option value="INDEFINIDO">Indefinido</option>
+                <option value="PLAZO_FIJO">Plazo Fijo</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monto cotización salud</label>
+              <input value={form.monto_cotizacion_salud} onChange={e => setForm(f => ({ ...f, monto_cotizacion_salud: e.target.value }))} className="input-field" placeholder="7% o UF 2.714" />
+              <p className="text-xs text-gray-400 mt-0.5">Fonasa: 7% · Isapre: UF X.XX</p>
             </div>
           </div>
 

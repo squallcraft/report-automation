@@ -69,10 +69,33 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_ip TEXT")
         if "acuerdo_firma" not in cols:
             safe_exec("ALTER TABLE drivers ADD COLUMN acuerdo_firma TEXT")
+        if "trabajador_id" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN trabajador_id INTEGER REFERENCES trabajadores(id)")
+        if "contrato_trabajo_aceptado" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN contrato_trabajo_aceptado BOOLEAN NOT NULL DEFAULT FALSE")
+        if "contrato_trabajo_version" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN contrato_trabajo_version TEXT")
+        if "contrato_trabajo_fecha" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN contrato_trabajo_fecha TIMESTAMP")
+        if "contrato_trabajo_ip" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN contrato_trabajo_ip TEXT")
+        if "contrato_trabajo_firma" not in cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN contrato_trabajo_firma TEXT")
     if "admin_users" in insp.get_table_names():
         cols = [c["name"] for c in insp.get_columns("admin_users")]
         if "permisos" not in cols:
             safe_exec("ALTER TABLE admin_users ADD COLUMN permisos JSON")
+    if "trabajadores" in insp.get_table_names():
+        trab_cols = [c["name"] for c in insp.get_columns("trabajadores")]
+        for col_name, col_def in [
+            ("movilizacion", "INTEGER NOT NULL DEFAULT 0"),
+            ("colacion", "INTEGER NOT NULL DEFAULT 0"),
+            ("viaticos", "INTEGER NOT NULL DEFAULT 0"),
+            ("tipo_contrato", "TEXT"),
+            ("monto_cotizacion_salud", "TEXT"),
+        ]:
+            if col_name not in trab_cols:
+                safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")
     if "retiros" in insp.get_table_names() and engine.dialect.name == "postgresql":
         retiro_cols = {c["name"]: c for c in insp.get_columns("retiros")}
         if retiro_cols.get("seller_id", {}).get("nullable") is False:

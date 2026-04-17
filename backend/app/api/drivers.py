@@ -13,11 +13,13 @@ import pandas as pd
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, require_permission, require_driver, get_current_user, hash_password
 from app.models import Driver, RolEnum, Retiro, PagoSemanaDriver, EstadoPagoEnum
-from app.schemas import DriverCreate, DriverUpdate, DriverOut, AcuerdoAceptarRequest
+from app.schemas import DriverCreate, DriverUpdate, DriverOut, AcuerdoAceptarRequest, ContratoTrabajoAceptarRequest
 from app.services.audit import registrar as audit
 from app.services.audit import diff_campos
 
 router = APIRouter(prefix="/drivers", tags=["Drivers"])
+
+CURRENT_CONTRATO_TRABAJO_VERSION = "1.0"
 
 
 def _enrich_driver(d: Driver, db: Session) -> dict:
@@ -34,6 +36,12 @@ def _enrich_driver(d: Driver, db: Session) -> dict:
     data["subordinados_count"] = db.query(Driver).filter(
         Driver.jefe_flota_id == d.id, Driver.activo == True
     ).count()
+    if d.trabajador_id:
+        from app.models import Trabajador
+        trab = db.get(Trabajador, d.trabajador_id)
+        data["trabajador_nombre"] = trab.nombre if trab else None
+    else:
+        data["trabajador_nombre"] = None
     return data
 
 
@@ -554,7 +562,7 @@ def actualizar_driver(
     campos_audit = [
         "nombre", "tarifa_ecourier", "tarifa_oviedo", "tarifa_tercerizado",
         "tarifa_retiro_fija", "aliases", "contratado", "jefe_flota_id",
-        "rut", "banco", "tipo_cuenta", "numero_cuenta", "email",
+        "rut", "banco", "tipo_cuenta", "numero_cuenta", "email", "trabajador_id",
     ]
     antes = {c: getattr(driver, c, None) for c in campos_audit}
     update_data = data.model_dump(exclude_unset=True, exclude={"password"})
@@ -563,6 +571,8 @@ def actualizar_driver(
             update_data[nullable_unique] = None
     for key, value in update_data.items():
         setattr(driver, key, value)
+    if "trabajador_id" in update_data:
+        driver.contratado = update_data["trabajador_id"] is not None
     if data.password:
         driver.password_hash = hash_password(data.password)
     db.flush()
@@ -778,3 +788,105 @@ def acuerdo_del_driver(
         "version_actual": CURRENT_ACUERDO_VERSION,
         "tarifas": _tarifas_driver(driver),
     }
+
+
+@router.get("/me/contrato-trabajo-info")
+def mi_contrato_trabajo_info(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Returns contract data for a contratado driver, pulling from linked Trabajador."""
+    if user["rol"] != RolEnum.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo para drivers")
+    driver = db.get(Driver, user["id"])
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+    if not driver.contratado or not driver.trabajador_id:
+        raise HTTPException(status_code=400, detail="Solo para conductores contratados vinculados")
+
+    from app.models import Trabajador
+    trabajador = db.get(Trabajador, driver.trabajador_id)
+    if not trabajador:
+        raise HTTPException(status_code=404, detail="Trabajador vinculado no encontrado")
+
+    return {
+        "driver_nombre": driver.nombre,
+        "contrato_trabajo_aceptado": driver.contrato_trabajo_aceptado,
+        "contrato_trabajo_version": driver.contrato_trabajo_version,
+        "contrato_trabajo_fecha": driver.contrato_trabajo_fecha.isoformat() if driver.contrato_trabajo_fecha else None,
+        "version_actual": CURRENT_CONTRATO_TRABAJO_VERSION,
+        "trabajador": {
+            "nombre": trabajador.nombre,
+            "rut": trabajador.rut,
+            "cargo": trabajador.cargo,
+            "sueldo_bruto": trabajador.sueldo_bruto,
+            "movilizacion": trabajador.movilizacion,
+            "colacion": trabajador.colacion,
+            "viaticos": trabajador.viaticos,
+            "afp": trabajador.afp,
+            "sistema_salud": trabajador.sistema_salud,
+            "monto_cotizacion_salud": trabajador.monto_cotizacion_salud,
+            "fecha_ingreso": trabajador.fecha_ingreso.isoformat() if trabajador.fecha_ingreso else None,
+            "tipo_contrato": trabajador.tipo_contrato,
+            "banco": trabajador.banco,
+            "tipo_cuenta": trabajador.tipo_cuenta,
+            "numero_cuenta": trabajador.numero_cuenta,
+        },
+    }
+
+
+@router.post("/me/contrato-trabajo")
+def aceptar_contrato_trabajo(
+    body: ContratoTrabajoAceptarRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Registers digital acceptance of employment contract for contratado drivers."""
+    from datetime import datetime, timezone
+    from app.auth import create_access_token
+    from app.schemas import TokenResponse
+
+    if user["rol"] != RolEnum.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo para drivers")
+
+    driver = db.get(Driver, user["id"])
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+    if not driver.contratado or not driver.trabajador_id:
+        raise HTTPException(status_code=400, detail="Solo para conductores contratados vinculados")
+
+    ip = request.headers.get("X-Forwarded-For", "")
+    if ip:
+        ip = ip.split(",")[0].strip()
+    else:
+        ip = request.client.host if request.client else "unknown"
+
+    driver.nombre_completo = body.nombre_completo
+    driver.rut = body.rut
+    driver.contrato_trabajo_aceptado = True
+    driver.contrato_trabajo_version = CURRENT_CONTRATO_TRABAJO_VERSION
+    driver.contrato_trabajo_fecha = datetime.now(timezone.utc)
+    driver.contrato_trabajo_ip = ip
+    driver.contrato_trabajo_firma = body.firma_base64
+    driver.carnet_frontal = body.carnet_frontal
+    driver.carnet_trasero = body.carnet_trasero
+
+    audit(
+        db, "aceptar_contrato_trabajo",
+        usuario=user, request=request,
+        entidad="driver", entidad_id=driver.id,
+        metadata={"version": CURRENT_CONTRATO_TRABAJO_VERSION, "ip": ip, "rut": body.rut},
+    )
+    db.commit()
+    db.refresh(driver)
+
+    token = create_access_token({"sub": str(driver.id), "rol": RolEnum.DRIVER})
+    es_jefe = db.query(Driver).filter(Driver.jefe_flota_id == driver.id, Driver.activo == True).count() > 0
+    return TokenResponse(
+        access_token=token,
+        rol=RolEnum.DRIVER,
+        nombre=driver.nombre,
+        entidad_id=driver.id,
+        acuerdo_aceptado=True,
+        contratado=driver.contratado,
+        contrato_trabajo_aceptado=True,
+        es_jefe=es_jefe,
+    )

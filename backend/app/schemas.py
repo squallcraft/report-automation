@@ -43,6 +43,7 @@ class TokenResponse(BaseModel):
     acuerdo_aceptado: Optional[bool] = None
     contratado: Optional[bool] = None
     es_jefe: Optional[bool] = None
+    contrato_trabajo_aceptado: Optional[bool] = None
 
 
 class AcuerdoAceptarRequest(BaseModel):
@@ -161,6 +162,7 @@ class DriverBase(BaseModel):
     activo: bool = True
     contratado: bool = False
     email: Optional[str] = None
+    trabajador_id: Optional[int] = None
 
 
 class DriverCreate(DriverBase):
@@ -185,6 +187,7 @@ class DriverUpdate(BaseModel):
     contratado: Optional[bool] = None
     email: Optional[str] = None
     password: Optional[str] = None
+    trabajador_id: Optional[int] = None
 
 
 class DriverOut(DriverBase):
@@ -192,6 +195,7 @@ class DriverOut(DriverBase):
     jefe_flota_nombre: Optional[str] = None
     subordinados_count: int = 0
     created_at: Optional[datetime] = None
+    trabajador_nombre: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -667,6 +671,11 @@ class TrabajadorBase(BaseModel):
     numero_cuenta: Optional[str] = None
     fecha_ingreso: Optional[date] = None
     activo: bool = True
+    movilizacion: int = 0
+    colacion: int = 0
+    viaticos: int = 0
+    tipo_contrato: Optional[str] = None
+    monto_cotizacion_salud: Optional[str] = None
 
 class TrabajadorCreate(TrabajadorBase):
     pass
@@ -687,6 +696,11 @@ class TrabajadorUpdate(BaseModel):
     numero_cuenta: Optional[str] = None
     fecha_ingreso: Optional[date] = None
     activo: Optional[bool] = None
+    movilizacion: Optional[int] = None
+    colacion: Optional[int] = None
+    viaticos: Optional[int] = None
+    tipo_contrato: Optional[str] = None
+    monto_cotizacion_salud: Optional[str] = None
 
 class TrabajadorOut(TrabajadorBase):
     id: int
@@ -736,4 +750,36 @@ class CuotaPrestamoOut(BaseModel):
     monto: int
     pagado: bool
     fecha_pago: Optional[date] = None
+    model_config = {"from_attributes": True}
+
+
+# ── Contrato de Trabajo (drivers contratados) ──
+
+class ContratoTrabajoAceptarRequest(BaseModel):
+    nombre_completo: str
+    rut: str
+    firma_base64: str
+    carnet_frontal: str
+    carnet_trasero: str
+    version: str = "1.0"
+
+
+# ── Vacaciones Trabajadores ──
+
+class VacacionCreate(BaseModel):
+    trabajador_id: int
+    fecha_inicio: date
+    fecha_fin: date
+    dias_habiles: int
+    nota: Optional[str] = None
+
+class VacacionOut(BaseModel):
+    id: int
+    trabajador_id: int
+    fecha_inicio: date
+    fecha_fin: date
+    dias_habiles: int
+    estado: str
+    nota: Optional[str] = None
+    created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}

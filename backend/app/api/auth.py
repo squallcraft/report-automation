@@ -152,10 +152,14 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if driver and driver.password_hash and verify_password(data.password, driver.password_hash):
         token = create_access_token({"sub": str(driver.id), "rol": RolEnum.DRIVER})
         _audit(db, "LOGIN_SUCCESS", driver.email, ip)
-        acuerdo_ok = bool(driver.contratado) or bool(
-            driver.acuerdo_aceptado and
-            driver.acuerdo_version == CURRENT_ACUERDO_VERSION
-        )
+        if driver.contratado:
+            acuerdo_ok = True
+        else:
+            acuerdo_ok = bool(
+                driver.acuerdo_aceptado and
+                driver.acuerdo_version == CURRENT_ACUERDO_VERSION
+            )
+        contrato_trabajo_ok = bool(driver.contrato_trabajo_aceptado) if driver.contratado else None
         es_jefe = db.query(Driver).filter(Driver.jefe_flota_id == driver.id, Driver.activo == True).count() > 0
         return TokenResponse(
             access_token=token,
@@ -164,6 +168,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             entidad_id=driver.id,
             acuerdo_aceptado=acuerdo_ok,
             contratado=driver.contratado,
+            contrato_trabajo_aceptado=contrato_trabajo_ok,
             es_jefe=es_jefe,
         )
 

@@ -13,8 +13,8 @@ from sqlalchemy import func as sqlfunc
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, require_permission
-from app.models import Trabajador, PagoTrabajador, Prestamo
-from app.schemas import TrabajadorCreate, TrabajadorUpdate, TrabajadorOut
+from app.models import Trabajador, PagoTrabajador, Prestamo, VacacionTrabajador
+from app.schemas import TrabajadorCreate, TrabajadorUpdate, TrabajadorOut, VacacionCreate, VacacionOut
 from app.services.audit import registrar as audit
 
 router = APIRouter(prefix="/trabajadores", tags=["trabajadores"])
@@ -267,3 +267,171 @@ def costos_mensuales(
         sqlfunc.sum(PagoTrabajador.monto).label("total"),
     ).filter(PagoTrabajador.anio == anio).group_by(PagoTrabajador.mes).all()
     return {str(r.mes): int(r.total) for r in rows}
+
+
+# ── Vacaciones ──
+
+@router.get("/{trabajador_id}/vacaciones", response_model=List[VacacionOut])
+def listar_vacaciones(
+    trabajador_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("trabajadores:ver")),
+):
+    t = db.get(Trabajador, trabajador_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    return (
+        db.query(VacacionTrabajador)
+        .filter(VacacionTrabajador.trabajador_id == trabajador_id)
+        .order_by(VacacionTrabajador.fecha_inicio.desc())
+        .all()
+    )
+
+
+@router.post("/{trabajador_id}/vacaciones", response_model=VacacionOut, status_code=201)
+def registrar_vacacion(
+    trabajador_id: int,
+    data: VacacionCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("trabajadores:editar")),
+):
+    t = db.get(Trabajador, trabajador_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    vac = VacacionTrabajador(
+        trabajador_id=trabajador_id,
+        fecha_inicio=data.fecha_inicio,
+        fecha_fin=data.fecha_fin,
+        dias_habiles=data.dias_habiles,
+        nota=data.nota,
+    )
+    db.add(vac)
+    audit(db, "registrar_vacacion", usuario=current_user, request=request,
+          entidad="trabajador", entidad_id=trabajador_id,
+          metadata={"fecha_inicio": str(data.fecha_inicio), "fecha_fin": str(data.fecha_fin),
+                     "dias_habiles": data.dias_habiles})
+    db.commit()
+    db.refresh(vac)
+    return vac
+
+
+@router.delete("/vacaciones/{vacacion_id}")
+def eliminar_vacacion(
+    vacacion_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("trabajadores:editar")),
+):
+    vac = db.get(VacacionTrabajador, vacacion_id)
+    if not vac:
+        raise HTTPException(status_code=404, detail="Vacación no encontrada")
+    tid = vac.trabajador_id
+    db.delete(vac)
+    audit(db, "eliminar_vacacion", usuario=current_user, request=request,
+          entidad="trabajador", entidad_id=tid,
+          metadata={"vacacion_id": vacacion_id})
+    db.commit()
+    return {"ok": True}
+
+
+# ── Situación laboral (vacaciones + finiquito) ──
+
+VALOR_UF = 39842
+
+@router.get("/{trabajador_id}/situacion-laboral")
+def situacion_laboral(
+    trabajador_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("trabajadores:ver")),
+):
+    from datetime import date as date_type
+    import math
+
+    t = db.get(Trabajador, trabajador_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+
+    hoy = date_type.today()
+    fecha_ingreso = t.fecha_ingreso or hoy
+
+    delta = (hoy.year - fecha_ingreso.year) * 12 + (hoy.month - fecha_ingreso.month)
+    if hoy.day < fecha_ingreso.day:
+        delta -= 1
+    antiguedad_meses = max(delta, 0)
+    antiguedad_anios_completos = antiguedad_meses // 12
+
+    # Vacation: 1.25 business days per month worked (15 days/year)
+    dias_derecho_total = round(antiguedad_meses * 1.25, 2)
+
+    vacaciones = (
+        db.query(VacacionTrabajador)
+        .filter(VacacionTrabajador.trabajador_id == trabajador_id,
+                VacacionTrabajador.estado == "APROBADA")
+        .order_by(VacacionTrabajador.fecha_inicio)
+        .all()
+    )
+    dias_tomados = sum(v.dias_habiles for v in vacaciones)
+    dias_disponibles = round(dias_derecho_total - dias_tomados, 2)
+
+    detalle_tomadas = [
+        {
+            "id": v.id,
+            "fecha_inicio": v.fecha_inicio.isoformat(),
+            "fecha_fin": v.fecha_fin.isoformat(),
+            "dias_habiles": v.dias_habiles,
+            "nota": v.nota,
+        }
+        for v in vacaciones
+    ]
+
+    # Severance calculation (Chilean labor law)
+    sueldo = t.sueldo_bruto or 0
+    movilizacion = t.movilizacion or 0
+    colacion = t.colacion or 0
+    viaticos = t.viaticos or 0
+    base_remuneracion = sueldo + movilizacion + colacion + viaticos
+
+    tope_90uf = VALOR_UF * 90
+    base_aplicable = min(base_remuneracion, tope_90uf)
+
+    # Years of service: full years + fraction > 6 months counts as extra year
+    meses_fraccion = antiguedad_meses % 12
+    anios_servicio = antiguedad_anios_completos + (1 if meses_fraccion > 6 else 0)
+    tope_anios = 11
+    anios_indemnizables = min(anios_servicio, tope_anios)
+
+    indemnizacion_anios = base_aplicable * anios_indemnizables
+    aviso_previo = base_aplicable
+
+    # Feriado proporcional: pending vacation days * (sueldo_bruto / 30)
+    tasa_diaria = sueldo / 30 if sueldo > 0 else 0
+    feriado_proporcional_valor = round(dias_disponibles * tasa_diaria) if dias_disponibles > 0 else 0
+
+    total_finiquito = indemnizacion_anios + aviso_previo + feriado_proporcional_valor
+
+    return {
+        "trabajador_id": t.id,
+        "nombre": t.nombre,
+        "fecha_ingreso": fecha_ingreso.isoformat(),
+        "antiguedad_meses": antiguedad_meses,
+        "antiguedad_anios_completos": antiguedad_anios_completos,
+        "vacaciones": {
+            "dias_derecho_total": dias_derecho_total,
+            "dias_tomados": dias_tomados,
+            "dias_disponibles": dias_disponibles,
+            "detalle_tomadas": detalle_tomadas,
+        },
+        "indemnizacion": {
+            "anios_servicio_indemnizables": anios_indemnizables,
+            "tope_anios": tope_anios,
+            "base_remuneracion": base_remuneracion,
+            "tope_90uf": tope_90uf,
+            "base_aplicable": base_aplicable,
+            "indemnizacion_anios_servicio": indemnizacion_anios,
+            "indemnizacion_aviso_previo": aviso_previo,
+            "feriado_proporcional_dias": dias_disponibles if dias_disponibles > 0 else 0,
+            "feriado_proporcional_valor": feriado_proporcional_valor,
+            "total_finiquito_estimado": total_finiquito,
+        },
+    }

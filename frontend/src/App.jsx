@@ -38,6 +38,7 @@ import DriverConsultas from './pages/driver/DriverConsultas'
 import DriverGanancias from './pages/driver/DriverGanancias'
 import DriverFacturas from './pages/driver/DriverFacturas'
 import AcuerdoAceptacion from './pages/driver/AcuerdoAceptacion'
+import ContratoTrabajoAceptacion from './pages/driver/ContratoTrabajoAceptacion'
 import DriverMiAcuerdo from './pages/driver/DriverMiAcuerdo'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
@@ -82,7 +83,8 @@ function DriverRoute({ children }) {
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
   if (!user) return <Navigate to="/login" replace />
   if (user.rol !== 'DRIVER') return <Navigate to="/login" replace />
-  if (ACUERDO_ACTIVO && !user.acuerdo_aceptado) return <Navigate to="/driver/acuerdo" replace />
+  if (user.contratado && !user.contrato_trabajo_aceptado) return <Navigate to="/driver/contrato-trabajo" replace />
+  if (ACUERDO_ACTIVO && !user.contratado && !user.acuerdo_aceptado) return <Navigate to="/driver/acuerdo" replace />
   return children
 }
 
@@ -166,6 +168,7 @@ export default function App() {
       </Route>
 
       <Route path="/driver/acuerdo" element={<ProtectedRoute roles={['DRIVER']}><AcuerdoAceptacion /></ProtectedRoute>} />
+      <Route path="/driver/contrato-trabajo" element={<ProtectedRoute roles={['DRIVER']}><ContratoTrabajoAceptacion /></ProtectedRoute>} />
 
       <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>
         <Route index element={<DriverDashboard />} />

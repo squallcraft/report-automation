@@ -105,6 +105,7 @@ const initialForm = {
   tarifa_retiro_fija: 0,
   jefe_flota_id: '',
   contratado: false,
+  trabajador_id: '',
   email: '',
   password: '',
   rut: '',
@@ -125,6 +126,7 @@ export default function Drivers() {
   const [form, setForm] = useState(initialForm)
   const [saving, setSaving] = useState(false)
   const [toDelete, setToDelete] = useState(null)
+  const [trabajadores, setTrabajadores] = useState([])
 
   const [importingHomolog, setImportingHomolog] = useState(false)
   const [importingTarifas, setImportingTarifas] = useState(false)
@@ -141,6 +143,9 @@ export default function Drivers() {
 
   useEffect(() => {
     fetchDrivers()
+    api.get('/trabajadores', { params: { activo: true } })
+      .then(({ data }) => setTrabajadores(data))
+      .catch(() => {})
   }, [])
 
   const downloadFile = async (url, filename) => {
@@ -204,6 +209,7 @@ export default function Drivers() {
       tarifa_retiro_fija: driver.tarifa_retiro_fija ?? 0,
       jefe_flota_id: driver.jefe_flota_id ?? '',
       contratado: driver.contratado ?? false,
+      trabajador_id: driver.trabajador_id ?? '',
       email: driver.email || '',
       password: '',
       rut: driver.rut || '',
@@ -250,6 +256,7 @@ export default function Drivers() {
       zona: form.zona || null,
       tarifa_retiro_fija: parseInt(form.tarifa_retiro_fija, 10) || 0,
       jefe_flota_id: form.jefe_flota_id ? parseInt(form.jefe_flota_id, 10) : null,
+      trabajador_id: form.trabajador_id ? parseInt(form.trabajador_id, 10) : null,
       email: form.email?.trim() || null,
       rut: form.rut?.trim() || null,
       banco: form.banco_codigo ? bancoNombreCanonicoDesde(form.banco_codigo) : null,
@@ -301,6 +308,11 @@ export default function Drivers() {
         {row.contratado && (
           <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700">
             Contratado
+          </span>
+        )}
+        {row.trabajador_nombre && (
+          <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">
+            {row.trabajador_nombre}
           </span>
         )}
       </div>
@@ -548,22 +560,42 @@ export default function Drivers() {
                 ))}
             </select>
           </div>
-          <div className="flex items-start gap-3 p-3 rounded-lg bg-orange-50 border border-orange-200">
-            <input
-              id="contratado"
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-              checked={form.contratado}
-              onChange={(e) => setForm((f) => ({ ...f, contratado: e.target.checked }))}
-            />
-            <div>
-              <label htmlFor="contratado" className="text-sm font-medium text-orange-800 cursor-pointer">
-                Conductor Contratado
-              </label>
-              <p className="text-xs text-orange-600 mt-0.5">
-                No recibe pago por extras de bultos (producto) ni por extras de comuna.
-              </p>
+          <div className="border border-orange-200 rounded-lg p-4 space-y-3 bg-orange-50">
+            <div className="flex items-start gap-3">
+              <input
+                id="contratado"
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                checked={form.contratado}
+                onChange={(e) => setForm((f) => ({ ...f, contratado: e.target.checked, trabajador_id: e.target.checked ? f.trabajador_id : '' }))}
+              />
+              <div>
+                <label htmlFor="contratado" className="text-sm font-medium text-orange-800 cursor-pointer">
+                  Conductor Contratado
+                </label>
+                <p className="text-xs text-orange-600 mt-0.5">
+                  No recibe pago por extras de bultos (producto) ni por extras de comuna.
+                </p>
+              </div>
             </div>
+            {form.contratado && (
+              <div>
+                <label className="block text-sm font-medium text-orange-800 mb-1">Vincular con Trabajador</label>
+                <select
+                  className="input-field"
+                  value={form.trabajador_id}
+                  onChange={(e) => setForm((f) => ({ ...f, trabajador_id: e.target.value }))}
+                >
+                  <option value="">— Sin vincular —</option>
+                  {trabajadores.map((t) => (
+                    <option key={t.id} value={t.id}>{t.nombre} {t.rut ? `(${t.rut})` : ''} — {t.cargo || 'Sin cargo'}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-orange-600 mt-1">
+                  Al vincular, el sistema tomará los datos de nómina (sueldo, AFP, salud) del trabajador para el contrato digital.
+                </p>
+              </div>
+            )}
           </div>
           {/* ── Datos bancarios ── */}
           <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">

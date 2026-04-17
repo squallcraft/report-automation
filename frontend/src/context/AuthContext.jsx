@@ -30,6 +30,7 @@ export function AuthProvider({ children }) {
       permisos: data.permisos || [],
       acuerdo_aceptado: data.acuerdo_aceptado ?? null,
       contratado: data.contratado ?? false,
+      contrato_trabajo_aceptado: data.contrato_trabajo_aceptado ?? null,
       es_jefe: data.es_jefe ?? false,
     }
     localStorage.setItem('user', JSON.stringify(userData))
