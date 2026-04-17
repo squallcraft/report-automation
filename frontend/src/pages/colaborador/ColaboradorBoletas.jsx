@@ -29,6 +29,7 @@ export default function ColaboradorBoletas() {
   const [mes, setMes] = useState(now.getMonth() + 1)
   const [anio, setAnio] = useState(now.getFullYear())
   const [monto, setMonto] = useState('')
+  const [concepto, setConcepto] = useState('')
   const [numeroBoleta, setNumeroBoleta] = useState('')
   const [nota, setNota] = useState('')
   const [boletas, setBoletas] = useState([])
@@ -65,10 +66,11 @@ export default function ColaboradorBoletas() {
       const form = new FormData()
       form.append('archivo', file)
       await api.post('/colaboradores/portal/boletas/upload', form, {
-        params: { mes, anio, monto: parseInt(monto), numero_boleta: numeroBoleta || undefined, nota: nota || undefined },
+        params: { mes, anio, monto: parseInt(monto), concepto: concepto || undefined, numero_boleta: numeroBoleta || undefined, nota: nota || undefined },
       })
       toast.success('Boleta subida correctamente')
       setMonto('')
+      setConcepto('')
       setNumeroBoleta('')
       setNota('')
       cargar()
@@ -93,9 +95,6 @@ export default function ColaboradorBoletas() {
     }
   }
 
-  const boletaActual = boletas.find(b => b.mes === mes && b.anio === anio)
-  const puedeSubir = !boletaActual || boletaActual.estado === 'RECHAZADA'
-
   return (
     <div>
       <PageHeader title="Mis Boletas" subtitle="Sube tus boletas de honorarios" icon={FileText} accent="blue" />
@@ -118,6 +117,11 @@ export default function ColaboradorBoletas() {
               {[now.getFullYear(), now.getFullYear() - 1].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Concepto *</label>
+            <input type="text" className="input-field text-xs sm:text-sm w-full" placeholder="Ej: Desarrollo frontend, Reparación eléctrica"
+              value={concepto} onChange={e => setConcepto(e.target.value)} />
+          </div>
           <div className="w-32">
             <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Monto *</label>
             <input type="number" className="input-field text-xs sm:text-sm w-full" placeholder="500000"
@@ -130,57 +134,22 @@ export default function ColaboradorBoletas() {
           </div>
           <div className="flex-1 min-w-[140px]">
             <label className="block text-[10px] sm:text-xs font-medium text-gray-500 mb-1">Nota (opcional)</label>
-            <input type="text" className="input-field text-xs sm:text-sm w-full" placeholder="Ej: Servicio abril"
+            <input type="text" className="input-field text-xs sm:text-sm w-full" placeholder="Ej: Trabajo extra solicitado por Oscar"
               value={nota} onChange={e => setNota(e.target.value)} />
           </div>
           <div>
             <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
               onChange={handleUpload} />
-            {puedeSubir ? (
-              <button onClick={() => inputRef.current?.click()} disabled={uploading}
-                className="btn-primary text-xs sm:text-sm px-4 py-2 rounded-lg flex items-center gap-2 font-medium">
-                {uploading ? (
-                  <><RefreshCw size={14} className="animate-spin" /> Subiendo...</>
-                ) : (
-                  <><Upload size={14} /> {boletaActual?.estado === 'RECHAZADA' ? 'Resubir boleta' : 'Subir boleta'}</>
-                )}
-              </button>
-            ) : (
-              <span className="text-xs text-gray-400 py-2 block">
-                {boletaActual?.estado === 'PENDIENTE' && 'Boleta en revisión'}
-                {boletaActual?.estado === 'APROBADA' && 'Boleta aprobada'}
-                {boletaActual?.estado === 'PAGADA' && 'Boleta pagada'}
-              </span>
-            )}
+            <button onClick={() => inputRef.current?.click()} disabled={uploading}
+              className="btn-primary text-xs sm:text-sm px-4 py-2 rounded-lg flex items-center gap-2 font-medium">
+              {uploading ? (
+                <><RefreshCw size={14} className="animate-spin" /> Subiendo...</>
+              ) : (
+                <><Upload size={14} /> Subir boleta</>
+              )}
+            </button>
           </div>
         </div>
-
-        {boletaActual && (
-          <div className={`mt-3 p-3 rounded-lg border ${ESTADO_CONFIG[boletaActual.estado]?.cls || 'bg-gray-50 border-gray-200'}`}>
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2">
-                <EstadoBadge estado={boletaActual.estado} />
-                <span className="text-xs text-gray-600">
-                  {boletaActual.estado === 'PENDIENTE' && 'Tu boleta está siendo revisada'}
-                  {boletaActual.estado === 'APROBADA' && 'Boleta aprobada, pendiente de pago'}
-                  {boletaActual.estado === 'RECHAZADA' && 'Boleta rechazada — puedes volver a subirla'}
-                  {boletaActual.estado === 'PAGADA' && 'Pago realizado'}
-                </span>
-              </div>
-              {boletaActual.archivo_nombre && (
-                <button onClick={() => descargar(boletaActual.id, boletaActual.archivo_nombre)}
-                  className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                  <Download size={12} /> {boletaActual.archivo_nombre}
-                </button>
-              )}
-            </div>
-            {boletaActual.nota_admin && (
-              <p className="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded">
-                <strong>Observación:</strong> {boletaActual.nota_admin}
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Historial */}
@@ -201,6 +170,7 @@ export default function ColaboradorBoletas() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Período</th>
+                  <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Concepto</th>
                   <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">N° Boleta</th>
                   <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Archivo</th>
                   <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-medium text-gray-600">Monto</th>
@@ -213,6 +183,9 @@ export default function ColaboradorBoletas() {
                   <tr key={b.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-2 sm:px-4 py-2 sm:py-3 font-medium whitespace-nowrap">
                       {MESES[b.mes - 1]} {b.anio}
+                    </td>
+                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-700 max-w-[200px] truncate" title={b.concepto}>
+                      {b.concepto || '—'}
                     </td>
                     <td className="px-2 sm:px-4 py-2 sm:py-3 text-gray-600">
                       {b.numero_boleta || '—'}

@@ -819,11 +819,15 @@ class Trabajador(Base):
     email = Column(String, nullable=True)
     direccion = Column(String, nullable=True)
     cargo = Column(String, nullable=True)
+    sueldo_liquido = Column(Integer, nullable=False, default=0)
+    sueldo_base = Column(Integer, nullable=False, default=0)
+    gratificacion = Column(Integer, nullable=False, default=0)
     sueldo_bruto = Column(Integer, nullable=False, default=0)
     afp = Column(String, nullable=True)
     costo_afp = Column(Integer, nullable=False, default=0)
     sistema_salud = Column(String, nullable=True)  # FONASA / nombre Isapre
     costo_salud = Column(Integer, nullable=False, default=0)
+    descuento_cesantia = Column(Integer, nullable=False, default=0)
     banco = Column(String, nullable=True)
     tipo_cuenta = Column(String, nullable=True)
     numero_cuenta = Column(String, nullable=True)
@@ -1001,14 +1005,12 @@ class Colaborador(Base):
 
 class BoletaColaborador(Base):
     __tablename__ = "boletas_colaboradores"
-    __table_args__ = (
-        UniqueConstraint("colaborador_id", "mes", "anio", name="uq_boleta_colaborador_periodo"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     colaborador_id = Column(Integer, ForeignKey("colaboradores.id"), nullable=False)
     mes = Column(Integer, nullable=False)
     anio = Column(Integer, nullable=False)
+    concepto = Column(String, nullable=True)
     numero_boleta = Column(String, nullable=True)
     monto = Column(Integer, nullable=False, default=0)
     archivo_nombre = Column(String, nullable=True)

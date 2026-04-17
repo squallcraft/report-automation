@@ -325,6 +325,13 @@ with engine.connect() as conn:
         except Exception:
             conn.rollback()
 
+    # ── Migración: agregar columna concepto a boletas_colaboradores y eliminar constraint único ──
+    if "boletas_colaboradores" in insp.get_table_names():
+        cols = [c["name"] for c in insp.get_columns("boletas_colaboradores")]
+        if "concepto" not in cols:
+            safe_exec("ALTER TABLE boletas_colaboradores ADD COLUMN concepto TEXT")
+        safe_exec("ALTER TABLE boletas_colaboradores DROP CONSTRAINT IF EXISTS uq_boleta_colaborador_periodo")
+
 # ── Seed categorías financieras ──
 from app.database import SessionLocal
 from app.models import CategoriaFinanciera

@@ -257,7 +257,7 @@ export default function Colaboradores() {
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
                       <th className="text-left px-4 py-3 font-medium text-gray-600">Colaborador</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Especialidad</th>
+                      <th className="text-left px-4 py-3 font-medium text-gray-600">Concepto</th>
                       <th className="text-left px-4 py-3 font-medium text-gray-600">N° Boleta</th>
                       <th className="text-right px-4 py-3 font-medium text-gray-600">Monto</th>
                       <th className="px-4 py-3 font-medium text-gray-600">Estado</th>
@@ -267,8 +267,13 @@ export default function Colaboradores() {
                   <tbody>
                     {boletas.map(b => (
                       <tr key={b.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium">{b.colaborador_nombre}</td>
-                        <td className="px-4 py-3 text-gray-500">{b.especialidad || '—'}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{b.colaborador_nombre}</div>
+                          <div className="text-[10px] text-gray-400">{b.especialidad || ''}</div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 max-w-[200px] truncate" title={b.concepto}>
+                          {b.concepto || '—'}
+                        </td>
                         <td className="px-4 py-3 text-gray-600">{b.numero_boleta || '—'}</td>
                         <td className="px-4 py-3 text-right font-mono">{fmt(b.monto)}</td>
                         <td className="px-4 py-3"><Badge estado={b.estado} /></td>

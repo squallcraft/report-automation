@@ -140,6 +140,7 @@ def admin_listar_boletas(
             "especialidad": colab.especialidad if colab else "",
             "mes": b.mes,
             "anio": b.anio,
+            "concepto": b.concepto,
             "numero_boleta": b.numero_boleta,
             "monto": b.monto,
             "archivo_nombre": b.archivo_nombre,
@@ -276,6 +277,7 @@ def portal_listar_boletas(
             "id": b.id,
             "mes": b.mes,
             "anio": b.anio,
+            "concepto": b.concepto,
             "numero_boleta": b.numero_boleta,
             "monto": b.monto,
             "archivo_nombre": b.archivo_nombre,
@@ -293,6 +295,7 @@ async def portal_upload_boleta(
     mes: int = Query(...),
     anio: int = Query(...),
     monto: int = Query(...),
+    concepto: Optional[str] = Query(None),
     numero_boleta: Optional[str] = Query(None),
     nota: Optional[str] = Query(None),
     archivo: UploadFile = File(...),
@@ -306,18 +309,6 @@ async def portal_upload_boleta(
     if ext not in allowed_ext:
         raise HTTPException(status_code=400, detail=f"Formato no permitido. Use: {', '.join(allowed_ext)}")
 
-    existing = db.query(BoletaColaborador).filter(
-        BoletaColaborador.colaborador_id == colab_id,
-        BoletaColaborador.mes == mes,
-        BoletaColaborador.anio == anio,
-    ).first()
-
-    if existing and existing.estado in (
-        EstadoBoletaColaboradorEnum.APROBADA.value,
-        EstadoBoletaColaboradorEnum.PAGADA.value,
-    ):
-        raise HTTPException(status_code=400, detail="La boleta de este período ya fue aprobada/pagada")
-
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     unique_name = f"{colab_id}_{mes}_{anio}_{uuid.uuid4().hex[:8]}{ext}"
     file_path = os.path.join(UPLOADS_DIR, unique_name)
@@ -326,38 +317,22 @@ async def portal_upload_boleta(
     with open(file_path, "wb") as f:
         f.write(content)
 
-    if existing:
-        if existing.archivo_path and os.path.exists(existing.archivo_path):
-            try:
-                os.remove(existing.archivo_path)
-            except OSError:
-                pass
-        existing.archivo_nombre = archivo.filename
-        existing.archivo_path = file_path
-        existing.monto = monto
-        existing.numero_boleta = numero_boleta
-        existing.estado = EstadoBoletaColaboradorEnum.PENDIENTE.value
-        existing.nota_colaborador = nota
-        existing.nota_admin = None
-        existing.revisado_por = None
-        existing.revisado_en = None
-    else:
-        existing = BoletaColaborador(
-            colaborador_id=colab_id,
-            mes=mes,
-            anio=anio,
-            monto=monto,
-            numero_boleta=numero_boleta,
-            archivo_nombre=archivo.filename,
-            archivo_path=file_path,
-            estado=EstadoBoletaColaboradorEnum.PENDIENTE.value,
-            nota_colaborador=nota,
-        )
-        db.add(existing)
-
+    boleta = BoletaColaborador(
+        colaborador_id=colab_id,
+        mes=mes,
+        anio=anio,
+        concepto=concepto,
+        monto=monto,
+        numero_boleta=numero_boleta,
+        archivo_nombre=archivo.filename,
+        archivo_path=file_path,
+        estado=EstadoBoletaColaboradorEnum.PENDIENTE.value,
+        nota_colaborador=nota,
+    )
+    db.add(boleta)
     db.commit()
-    db.refresh(existing)
-    return {"ok": True, "boleta_id": existing.id, "estado": existing.estado}
+    db.refresh(boleta)
+    return {"ok": True, "boleta_id": boleta.id, "estado": boleta.estado}
 
 
 @router.get("/portal/boletas/{boleta_id}/descargar")

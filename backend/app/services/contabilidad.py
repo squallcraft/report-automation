@@ -298,9 +298,11 @@ def asiento_pago_colaborador(db: Session, boleta: BoletaColaborador, es_backfill
     if not cuenta_gasto:
         cuenta_gasto = _cuenta_id(db, CUENTA_FREELANCERS)
     nombre = colaborador.nombre
+    concepto = boleta.concepto or ""
+    desc_extra = f" ({concepto})" if concepto else ""
     fecha = date(boleta.anio, boleta.mes, 1)
     return crear_asiento(db, fecha,
-        f"Pago colaborador {boleta.mes}/{boleta.anio} — {nombre}",
+        f"Pago colaborador {boleta.mes}/{boleta.anio} — {nombre}{desc_extra}",
         "BoletaColaborador", boleta.id,
         [
             (cuenta_gasto, boleta.monto, 0),
