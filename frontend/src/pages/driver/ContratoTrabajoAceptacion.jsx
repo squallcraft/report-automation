@@ -266,8 +266,14 @@ export default function ContratoTrabajoAceptacion() {
                 <div className="divide-y divide-blue-100">
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-sm text-gray-700">Sueldo base</span>
-                    <span className="text-sm font-bold text-gray-900">{info ? fmtClp(info.sueldo_bruto) : '—'}</span>
+                    <span className="text-sm font-bold text-gray-900">{info ? fmtClp(info.sueldo_base || info.sueldo_bruto) : '—'}</span>
                   </div>
+                  {info?.gratificacion > 0 && (
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-sm text-gray-700">Gratificación (Art. 50 CT)</span>
+                      <span className="text-sm font-bold text-gray-900">{fmtClp(info.gratificacion)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-sm text-gray-700">Movilización (no imponible)</span>
                     <span className="text-sm font-bold text-gray-900">{info ? fmtClp(info.movilizacion) : '—'}</span>

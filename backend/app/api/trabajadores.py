@@ -389,8 +389,6 @@ def eliminar_vacacion(
 
 # ── Situación laboral (vacaciones + finiquito) ──
 
-VALOR_UF = 39842
-
 @router.get("/{trabajador_id}/situacion-laboral")
 def situacion_laboral(
     trabajador_id: int,
