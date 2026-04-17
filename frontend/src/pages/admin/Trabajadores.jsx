@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
@@ -41,12 +41,86 @@ const AFPS = ['Capital', 'Cuprum', 'Habitat', 'Modelo', 'PlanVital', 'ProVida', 
 
 const initialForm = {
   nombre: '', rut: '', email: '', direccion: '', cargo: '',
-  sueldo_bruto: 0, afp: '', costo_afp: 0,
-  sistema_salud: '', costo_salud: 0,
+  sueldo_liquido: 0, afp: '', sistema_salud: '',
   banco: '', tipo_cuenta: '', numero_cuenta: '',
   fecha_ingreso: '', activo: true,
   movilizacion: 0, colacion: 0, viaticos: 0,
   tipo_contrato: '', monto_cotizacion_salud: '',
+}
+
+function CalcPreview({ form }) {
+  const [calc, setCalc] = useState(null)
+  const liq = Number(form.sueldo_liquido) || 0
+
+  const doCalc = useCallback(() => {
+    if (liq <= 0 || !form.afp) { setCalc(null); return }
+    const params = {
+      sueldo_liquido: liq,
+      afp: form.afp,
+      sistema_salud: form.sistema_salud || 'FONASA',
+      tipo_contrato: form.tipo_contrato || 'INDEFINIDO',
+      movilizacion: Number(form.movilizacion) || 0,
+      colacion: Number(form.colacion) || 0,
+      viaticos: Number(form.viaticos) || 0,
+    }
+    if (form.monto_cotizacion_salud) params.monto_cotizacion_salud = form.monto_cotizacion_salud
+    api.post('/trabajadores/simular-calculo', null, { params })
+      .then(({ data }) => setCalc(data))
+      .catch(() => setCalc(null))
+  }, [liq, form.afp, form.sistema_salud, form.tipo_contrato, form.movilizacion, form.colacion, form.viaticos, form.monto_cotizacion_salud])
+
+  useEffect(() => {
+    const t = setTimeout(doCalc, 400)
+    return () => clearTimeout(t)
+  }, [doCalc])
+
+  if (!calc) return null
+
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
+      <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
+        <Calculator size={16} /> Cálculo automático
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div>
+          <p className="text-blue-600 text-xs">Sueldo Base</p>
+          <p className="font-semibold text-blue-900">{fmt(calc.sueldo_base)}</p>
+        </div>
+        <div>
+          <p className="text-blue-600 text-xs">Gratificación</p>
+          <p className="font-semibold text-blue-900">{fmt(calc.gratificacion)}</p>
+        </div>
+        <div>
+          <p className="text-blue-600 text-xs">Imponible (Bruto)</p>
+          <p className="font-bold text-blue-900">{fmt(calc.remuneracion_imponible)}</p>
+        </div>
+        <div>
+          <p className="text-blue-600 text-xs">Líquido verificado</p>
+          <p className={`font-bold ${calc.liquido_verificado === liq ? 'text-green-700' : 'text-amber-700'}`}>
+            {fmt(calc.liquido_verificado)}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm border-t border-blue-200 pt-2">
+        <div>
+          <p className="text-blue-600 text-xs">Desc. AFP</p>
+          <p className="text-red-700 font-medium">-{fmt(calc.descuento_afp)}</p>
+        </div>
+        <div>
+          <p className="text-blue-600 text-xs">Desc. Salud</p>
+          <p className="text-red-700 font-medium">-{fmt(calc.descuento_salud)}</p>
+        </div>
+        <div>
+          <p className="text-blue-600 text-xs">Desc. Cesantía</p>
+          <p className="text-red-700 font-medium">-{fmt(calc.descuento_cesantia)}</p>
+        </div>
+        <div>
+          <p className="text-blue-600 text-xs">Costo empresa total</p>
+          <p className="font-bold text-blue-900">{fmt(calc.costo_empresa_total)}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function Trabajadores() {
@@ -82,11 +156,9 @@ export default function Trabajadores() {
       email: t.email || '',
       direccion: t.direccion || '',
       cargo: t.cargo || '',
-      sueldo_bruto: t.sueldo_bruto || 0,
+      sueldo_liquido: t.sueldo_liquido || 0,
       afp: t.afp || '',
-      costo_afp: t.costo_afp || 0,
       sistema_salud: t.sistema_salud || '',
-      costo_salud: t.costo_salud || 0,
       banco: t.banco || '',
       tipo_cuenta: t.tipo_cuenta || '',
       numero_cuenta: t.numero_cuenta || '',
@@ -105,9 +177,7 @@ export default function Trabajadores() {
     e.preventDefault()
     const payload = {
       ...form,
-      sueldo_bruto: Number(form.sueldo_bruto),
-      costo_afp: Number(form.costo_afp),
-      costo_salud: Number(form.costo_salud),
+      sueldo_liquido: Number(form.sueldo_liquido),
       movilizacion: Number(form.movilizacion),
       colacion: Number(form.colacion),
       viaticos: Number(form.viaticos),
@@ -146,8 +216,8 @@ export default function Trabajadores() {
   )
 
   const activos = trabajadores.filter(t => t.activo)
-  const totalMensual = useMemo(() => activos.reduce((s, t) => s + (t.sueldo_bruto || 0), 0), [activos])
-  const totalAnual   = totalMensual * 12
+  const totalLiquido = useMemo(() => activos.reduce((s, t) => s + (t.sueldo_liquido || 0), 0), [activos])
+  const totalBruto   = useMemo(() => activos.reduce((s, t) => s + (t.sueldo_bruto || 0), 0), [activos])
   const totalCostoMes = useMemo(() => activos.reduce((s, t) =>
     s + (t.sueldo_bruto || 0) + (t.costo_afp || 0) + (t.costo_salud || 0), 0), [activos])
 
@@ -160,7 +230,8 @@ export default function Trabajadores() {
     )},
     { key: 'rut', label: 'RUT', render: (v) => v || '—' },
     { key: 'cargo', label: 'Cargo', render: (v) => v || '—' },
-    { key: 'sueldo_bruto', label: 'Sueldo Bruto', align: 'right', render: (v) => fmt(v) },
+    { key: 'sueldo_liquido', label: 'Líquido', align: 'right', render: (v) => fmt(v) },
+    { key: 'sueldo_bruto', label: 'Bruto', align: 'right', render: (v) => v ? fmt(v) : '—' },
     { key: 'afp', label: 'AFP', render: (v, row) => row.afp ? `${row.afp} (${fmt(row.costo_afp)})` : '—' },
     { key: 'sistema_salud', label: 'Salud', render: (v, row) => row.sistema_salud ? `${row.sistema_salud} (${fmt(row.costo_salud)})` : '—' },
     { key: 'fecha_ingreso', label: 'Antigüedad', render: (v) => {
@@ -175,7 +246,6 @@ export default function Trabajadores() {
       if (meses > 0) return `${meses} mes${meses > 1 ? 'es' : ''}`
       return 'Reciente'
     }},
-    { key: 'banco', label: 'Banco', render: (v) => v || '—' },
     { key: 'actions', label: '', render: (_, row) => (
       <div className="flex gap-1">
         <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Pencil size={14} /></button>
@@ -201,8 +271,8 @@ export default function Trabajadores() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatsCard icon={Users}       label="Trabajadores activos" value={activos.length}    color="blue" />
         <StatsCard icon={DollarSign}  label="Costo total mensual"  value={fmt(totalCostoMes)} sub="Bruto + AFP + Salud" color="green" />
-        <StatsCard icon={Calendar}    label="Sueldo bruto / mes"   value={fmt(totalMensual)}  sub={`${activos.length} contratos activos`} color="purple" />
-        <StatsCard icon={CalendarDays} label="Sueldo bruto / año"  value={fmt(totalAnual)}    sub="Proyección 12 meses" color="amber" />
+        <StatsCard icon={Calendar}    label="Líquido total / mes"  value={fmt(totalLiquido)}  sub={`${activos.length} contratos activos`} color="purple" />
+        <StatsCard icon={CalendarDays} label="Bruto total / mes"   value={fmt(totalBruto)}    sub="Calculado automáticamente" color="amber" />
       </div>
 
       <div className="flex items-center gap-3">
@@ -250,51 +320,34 @@ export default function Trabajadores() {
 
           <hr className="border-gray-200" />
           <p className="text-sm font-semibold text-gray-600">Remuneración</p>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sueldo bruto</label>
-              <input type="number" value={form.sueldo_bruto} onChange={e => setForm(f => ({ ...f, sueldo_bruto: e.target.value }))} className="input-field" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sueldo líquido pactado *</label>
+              <input type="number" value={form.sueldo_liquido} onChange={e => setForm(f => ({ ...f, sueldo_liquido: e.target.value }))} className="input-field" min={0} />
+              <p className="text-xs text-green-600 mt-0.5">Lo que recibe el trabajador</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">AFP</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">AFP *</label>
               <select value={form.afp} onChange={e => setForm(f => ({ ...f, afp: e.target.value }))} className="input-field">
                 <option value="">Seleccionar...</option>
                 {AFPS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Costo AFP</label>
-              <input type="number" value={form.costo_afp} onChange={e => setForm(f => ({ ...f, costo_afp: e.target.value }))} className="input-field" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sistema de salud *</label>
+              <select value={form.sistema_salud} onChange={e => setForm(f => ({ ...f, sistema_salud: e.target.value, monto_cotizacion_salud: e.target.value === 'FONASA' ? '' : f.monto_cotizacion_salud }))} className="input-field">
+                <option value="">Seleccionar...</option>
+                <option value="FONASA">Fonasa (7%)</option>
+                <option value="ISAPRE">Isapre</option>
+              </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sistema de salud</label>
-              <input value={form.sistema_salud} onChange={e => setForm(f => ({ ...f, sistema_salud: e.target.value }))} className="input-field" placeholder="Fonasa / Isapre" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Costo plan salud</label>
-              <input type="number" value={form.costo_salud} onChange={e => setForm(f => ({ ...f, costo_salud: e.target.value }))} className="input-field" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha ingreso</label>
-              <input type="date" value={form.fecha_ingreso} onChange={e => setForm(f => ({ ...f, fecha_ingreso: e.target.value }))} className="input-field" />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Movilización</label>
-              <input type="number" value={form.movilizacion} onChange={e => setForm(f => ({ ...f, movilizacion: e.target.value }))} className="input-field" />
-              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Colación</label>
-              <input type="number" value={form.colacion} onChange={e => setForm(f => ({ ...f, colacion: e.target.value }))} className="input-field" />
-              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Viáticos</label>
-              <input type="number" value={form.viaticos} onChange={e => setForm(f => ({ ...f, viaticos: e.target.value }))} className="input-field" />
-              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
-            </div>
+            {form.sistema_salud === 'ISAPRE' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Plan Isapre (UF)</label>
+                <input value={form.monto_cotizacion_salud} onChange={e => setForm(f => ({ ...f, monto_cotizacion_salud: e.target.value }))} className="input-field" placeholder="2.714" />
+                <p className="text-xs text-gray-400 mt-0.5">Monto mensual del plan en UF</p>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Tipo contrato</label>
               <select value={form.tipo_contrato} onChange={e => setForm(f => ({ ...f, tipo_contrato: e.target.value }))} className="input-field">
@@ -304,11 +357,30 @@ export default function Trabajadores() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Monto cotización salud</label>
-              <input value={form.monto_cotizacion_salud} onChange={e => setForm(f => ({ ...f, monto_cotizacion_salud: e.target.value }))} className="input-field" placeholder="7% o UF 2.714" />
-              <p className="text-xs text-gray-400 mt-0.5">Fonasa: 7% · Isapre: UF X.XX</p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha ingreso</label>
+              <input type="date" value={form.fecha_ingreso} onChange={e => setForm(f => ({ ...f, fecha_ingreso: e.target.value }))} className="input-field" />
             </div>
           </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Movilización</label>
+              <input type="number" value={form.movilizacion} onChange={e => setForm(f => ({ ...f, movilizacion: e.target.value }))} className="input-field" min={0} />
+              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Colación</label>
+              <input type="number" value={form.colacion} onChange={e => setForm(f => ({ ...f, colacion: e.target.value }))} className="input-field" min={0} />
+              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Viáticos</label>
+              <input type="number" value={form.viaticos} onChange={e => setForm(f => ({ ...f, viaticos: e.target.value }))} className="input-field" min={0} />
+              <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
+            </div>
+          </div>
+
+          <CalcPreview form={form} />
 
           <hr className="border-gray-200" />
           <p className="text-sm font-semibold text-gray-600">Datos bancarios</p>

@@ -22,6 +22,7 @@ const GRUPOS_PERMISOS = [
       { slug: 'productos', label: 'Productos Extra' },
       { slug: 'comunas', label: 'Comunas / Tarifas' },
       { slug: 'trabajadores', label: 'Trabajadores' },
+      { slug: 'colaboradores', label: 'Colaboradores' },
     ],
   },
   {
