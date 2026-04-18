@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X, Download, Loader2, FileText, CheckCircle, Clock, AlertCircle } from 'lucide-react'
-import api from '../../api'
+import api from '../api'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
