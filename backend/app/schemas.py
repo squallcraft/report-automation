@@ -77,6 +77,7 @@ class SellerBase(BaseModel):
     dir_fiscal: Optional[str] = None   # Dirección fiscal del receptor — máx 70 caracteres
     cmna_fiscal: Optional[str] = None  # Comuna fiscal del receptor — máx 20 caracteres
     correo_dte: Optional[str] = None   # Correo para notificación DTE — máx 80 caracteres
+    telefono_whatsapp: Optional[str] = None
     activo: bool = True
     email: Optional[str] = None        # Acceso al portal del seller
 
