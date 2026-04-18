@@ -1,6 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import api from '../../api'
-import PageHeader from '../../components/PageHeader'
 import { PenLine, CheckCircle, RotateCcw, Save } from 'lucide-react'
 
 function SignaturePad({ onChange }) {
@@ -133,12 +132,25 @@ export default function TrabajadorFirma() {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-lg mx-auto">
-      <PageHeader
-        title="Mi Firma"
-        subtitle="Tu firma digital se usará en tus liquidaciones de sueldo"
-        icon={PenLine}
-      />
+    <div className="max-w-lg mx-auto px-4 py-5 space-y-4">
+
+      {/* Hero */}
+      <div className="rounded-2xl text-white p-5 relative overflow-hidden"
+           style={{ background: 'linear-gradient(135deg, #b45309 0%, #f59e0b 100%)' }}>
+        <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
+        <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-white/5 rounded-full" />
+
+        <div className="relative flex items-center justify-between">
+          <div>
+            <p className="text-amber-100 text-xs font-medium uppercase tracking-wider">Mi firma</p>
+            <h1 className="text-lg font-bold leading-tight mt-0.5">Firma digital</h1>
+            <p className="text-amber-100 text-xs mt-0.5">Se usa en tus liquidaciones de sueldo</p>
+          </div>
+          <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+            <PenLine size={18} className="text-white" />
+          </div>
+        </div>
+      </div>
 
       {firmaActual && !ok && (
         <div className="mb-5 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">

@@ -303,6 +303,43 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
     } finally { setCargando(false) }
   }
 
+  // Detecta si las fechas de la cartola caen mayoritariamente fuera del mes seleccionado
+  const inconsistenciaFecha = useMemo(() => {
+    if (!items.length) return null
+    const conteo = new Map()      // "YYYY-M" -> n
+    let totalConFecha = 0
+    for (const it of items) {
+      if (!it.fecha) continue
+      // Acepta DD/MM/YYYY o YYYY-MM-DD
+      let m, y
+      const f = String(it.fecha).trim()
+      const slash = f.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+      const iso   = f.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+      if (slash) { m = parseInt(slash[2], 10); y = parseInt(slash[3], 10); if (y < 100) y += 2000 }
+      else if (iso) { y = parseInt(iso[1], 10); m = parseInt(iso[2], 10) }
+      else continue
+      totalConFecha++
+      const key = `${y}-${m}`
+      conteo.set(key, (conteo.get(key) || 0) + 1)
+    }
+    if (!totalConFecha) return null
+    const [keyMayoritaria, nMayor] = [...conteo.entries()].sort((a, b) => b[1] - a[1])[0]
+    const [yMay, mMay] = keyMayoritaria.split('-').map(Number)
+    const matchSel = (mMay === mes && yMay === anio)
+    if (matchSel) return null
+    // Fechas casi siempre se pagan al inicio del mes siguiente al de la nómina
+    let mesSugerido = mMay - 1
+    let anioSugerido = yMay
+    if (mesSugerido <= 0) { mesSugerido = 12; anioSugerido -= 1 }
+    return {
+      mesPagos:      mMay,
+      anioPagos:     yMay,
+      mesSugerido,
+      anioSugerido,
+      proporcion:    nMayor / totalConFecha,
+    }
+  }, [items, mes, anio])
+
   const toggleItem = (idx) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, incluir: !it.incluir } : it))
 
   const cambiarTrabajador = (idx, tid) => {
@@ -341,7 +378,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
             <h2 className="text-lg font-bold text-gray-900">Cargar Cartola — Nómina Trabajadores</h2>
             <p className="text-sm text-gray-500">
               Nómina de <span className="font-semibold">{MESES[mes]} {anio}</span>
-              <span className="ml-2 text-gray-400">· La fecha del pago se tomará de la cartola</span>
+              <span className="ml-2 text-gray-400">· Recuerda: los sueldos de un mes se pagan al inicio del mes siguiente</span>
             </p>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -363,6 +400,25 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
         {preview && (
           <>
             <div className="flex-1 overflow-auto px-6 py-2">
+              {inconsistenciaFecha && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+                  <AlertCircle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-amber-900 flex-1">
+                    <p className="font-semibold">¿Estás seguro del período de la nómina?</p>
+                    <p className="text-amber-800 mt-1 leading-snug">
+                      Los pagos de la cartola fueron transferidos en{' '}
+                      <strong>{MESES[inconsistenciaFecha.mesPagos]} {inconsistenciaFecha.anioPagos}</strong>,
+                      pero estás cargando la nómina como{' '}
+                      <strong>{MESES[mes]} {anio}</strong>.
+                      <br />
+                      En Chile los sueldos de un mes se transfieren al inicio del mes siguiente, por lo que
+                      probablemente esta nómina corresponde a <strong>{MESES[inconsistenciaFecha.mesSugerido]} {inconsistenciaFecha.anioSugerido}</strong>.
+                      Si es así, cancela y vuelve a abrir el modal con ese mes seleccionado.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="mb-2 flex items-center gap-4 text-xs text-gray-500">
                 <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} /> Match confiable (≥55%)</span>
                 <span className="inline-flex items-center gap-1 text-amber-600"><AlertCircle size={12} /> Match incierto</span>
