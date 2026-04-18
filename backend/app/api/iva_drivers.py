@@ -626,3 +626,54 @@ def reabrir_pago_iva(
           metadata={"driver_id": pago_iva.driver_id})
     db.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# POST /recalcular — backfill: genera PagoIVADriver para facturas aprobadas
+# ---------------------------------------------------------------------------
+
+@router.post("/recalcular")
+def recalcular_todos(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin_or_administracion),
+):
+    """
+    Escanea todas las FacturaDriver APROBADAS del mes/año indicado y crea/actualiza
+    los PagoIVADriver correspondientes. Idempotente: no toca los ya PAGADOS.
+    Útil para retroalimentar datos históricos o forzar recálculo.
+    """
+    # Obtener todos los drivers distintos con facturas aprobadas en el período
+    rows = db.query(FacturaDriver.driver_id).filter(
+        FacturaDriver.mes == mes,
+        FacturaDriver.anio == anio,
+        FacturaDriver.estado == EstadoFacturaDriverEnum.APROBADA.value,
+    ).distinct().all()
+
+    driver_ids = [r[0] for r in rows]
+    creados = 0
+    ya_existentes = 0
+
+    for driver_id in driver_ids:
+        existente = db.query(PagoIVADriver).filter_by(
+            driver_id=driver_id, mes_origen=mes, anio_origen=anio,
+        ).first()
+        if existente and existente.estado == EstadoPagoIVAEnum.PAGADO.value:
+            ya_existentes += 1
+            continue
+        resultado = recalcular_pago_iva(db, driver_id, mes, anio)
+        if resultado:
+            creados += 1
+
+    audit(db, "recalcular_iva_drivers", usuario=current_user, request=request,
+          metadata={"mes": mes, "anio": anio, "procesados": len(driver_ids),
+                    "creados": creados, "ya_existentes": ya_existentes})
+    db.commit()
+    return {
+        "ok": True,
+        "procesados": len(driver_ids),
+        "creados_o_actualizados": creados,
+        "ya_pagados_omitidos": ya_existentes,
+    }

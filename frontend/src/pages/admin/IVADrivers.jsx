@@ -367,6 +367,7 @@ export default function IVADrivers() {
   const [items, setItems] = useState([])
   const [resumen, setResumen] = useState(null)
   const [cargando, setCargando] = useState(false)
+  const [recalculando, setRecalculando] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState('')
 
   const [modalTEF, setModalTEF] = useState(false)
@@ -389,7 +390,31 @@ export default function IVADrivers() {
     }
   }, [mes, anio, filtroEstado])
 
-  useEffect(() => { cargar() }, [cargar])
+  const recalcular = async () => {
+    setRecalculando(true)
+    try {
+      const res = await api.post(`/iva-drivers/recalcular?mes=${mes}&anio=${anio}`)
+      const { procesados, creados_o_actualizados } = res.data
+      if (procesados === 0) {
+        toast('No hay facturas aprobadas en este período', { icon: 'ℹ️' })
+      } else {
+        toast.success(`${creados_o_actualizados} registro(s) generado(s) de ${procesados} driver(s)`)
+        await cargar()
+      }
+    } catch {
+      toast.error('Error al recalcular')
+    } finally {
+      setRecalculando(false)
+    }
+  }
+
+  // Al cambiar período, recalcular automáticamente para traer datos existentes
+  useEffect(() => {
+    const run = async () => {
+      await cargar()
+    }
+    run()
+  }, [cargar])
 
   const pendientes = items.filter(it => it.estado !== 'PAGADO')
   const totalPendienteVisible = pendientes.reduce((a, it) => a + (it.monto_iva || 0), 0)
@@ -437,6 +462,14 @@ export default function IVADrivers() {
           Actualizar
         </button>
         <div className="flex-1" />
+        <button
+          onClick={recalcular}
+          disabled={recalculando || cargando}
+          className="flex items-center gap-2 px-4 py-2 text-sm border border-amber-300 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50"
+        >
+          <RefreshCw size={14} className={recalculando ? 'animate-spin' : ''} />
+          {recalculando ? 'Calculando...' : 'Calcular IVA del Período'}
+        </button>
         <button
           onClick={() => setModalCartola(true)}
           className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
