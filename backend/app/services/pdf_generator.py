@@ -883,13 +883,19 @@ def _fmt_date(d) -> str:
         return str(d)
 
 
-def generar_pdf_liquidacion(liquidacion, trabajador) -> bytes:
+def generar_pdf_liquidacion(
+    liquidacion,
+    trabajador,
+    descuentos_adicionales: Optional[list] = None,
+) -> bytes:
     """
     Genera la liquidación de sueldo mensual oficial (formato chileno).
 
     Args:
-        liquidacion: ORM LiquidacionMensual
-        trabajador: ORM Trabajador
+        liquidacion: ORM LiquidacionMensual (o dataclass-like con los mismos campos)
+        trabajador:  ORM Trabajador
+        descuentos_adicionales: lista de dicts con {concepto, monto} para préstamos y ajustes
+                                negativos. Ej: [{"concepto": "Cuota Préstamo", "monto": 100000}]
     Returns:
         bytes del PDF generado
     """
@@ -898,94 +904,102 @@ def generar_pdf_liquidacion(liquidacion, trabajador) -> bytes:
         buffer,
         pagesize=letter,
         leftMargin=40, rightMargin=40,
-        topMargin=40, bottomMargin=40,
+        topMargin=36, bottomMargin=36,
     )
 
     story = []
 
-    # ── Encabezado empresa + datos trabajador ─────────────────────────────────
-    logo_cell = ""
+    # ── Estilos base ─────────────────────────────────────────────────────────
+    st_th      = ParagraphStyle("th",   fontName=FONT_BOLD, fontSize=9,  textColor=WHITE)
+    st_td      = ParagraphStyle("td",   fontName=FONT,      fontSize=9,  textColor=BLUE_DARK)
+    st_td_r    = ParagraphStyle("tdr",  fontName=FONT,      fontSize=9,  textColor=BLUE_DARK, alignment=TA_RIGHT)
+    st_tot_l   = ParagraphStyle("ttl",  fontName=FONT_BOLD, fontSize=9,  textColor=BLUE_DARK)
+    st_tot_v   = ParagraphStyle("ttv",  fontName=FONT_BOLD, fontSize=9,  textColor=BLUE_DARK, alignment=TA_RIGHT)
+    st_th_g    = ParagraphStyle("thg",  fontName=FONT_BOLD, fontSize=8,  textColor=WHITE)
+    st_td_g    = ParagraphStyle("tdg",  fontName=FONT,      fontSize=8,  textColor=GRAY_TEXT)
+    st_td_gr   = ParagraphStyle("tdgr", fontName=FONT,      fontSize=8,  textColor=GRAY_TEXT, alignment=TA_RIGHT)
+    st_label   = ParagraphStyle("lbl",  fontName=FONT_BOLD, fontSize=7.5, textColor=GRAY_TEXT)
+    st_value   = ParagraphStyle("val",  fontName=FONT,      fontSize=9,  textColor=BLUE_DARK)
+    st_foot    = ParagraphStyle("foot", fontName=FONT,      fontSize=7,  textColor=GRAY_TEXT)
+
+    # ── Encabezado empresa ────────────────────────────────────────────────────
+    mes_anio_str = _fmt_mes_anio(liquidacion.mes, liquidacion.anio)
+
+    # Logo (aspect ratio 1024:237 ≈ 4.32:1)
     if os.path.exists(LOGO_PATH):
-        logo_cell = RLImage(LOGO_PATH, width=90, height=30)
+        logo_cell = RLImage(LOGO_PATH, width=140, height=32)
+    else:
+        logo_cell = Paragraph("<b>E-COURIER</b>",
+            ParagraphStyle("logo_fb", fontName=FONT_BOLD, fontSize=14, textColor=BLUE_DARK))
 
     empresa_block = [
-        Paragraph("E-Courier SPA", ParagraphStyle("emp_h", fontName=FONT_BOLD, fontSize=12, textColor=BLUE_DARK)),
-        Paragraph("RUT: 77.XXX.XXX-X", ParagraphStyle("emp_s", fontName=FONT, fontSize=8, textColor=GRAY_TEXT)),
-        Paragraph("Av. Ejemplo 123, Santiago", ParagraphStyle("emp_s2", fontName=FONT, fontSize=8, textColor=GRAY_TEXT)),
+        Paragraph("E-Courier SPA", ParagraphStyle("emp_h", fontName=FONT_BOLD, fontSize=11, textColor=BLUE_DARK)),
+        Paragraph("RUT: 77.XXX.XXX-X  |  Santiago, Chile",
+                  ParagraphStyle("emp_s", fontName=FONT, fontSize=8, textColor=GRAY_TEXT)),
     ]
 
-    mes_anio_str = _fmt_mes_anio(liquidacion.mes, liquidacion.anio)
     titulo_block = [
-        Paragraph("LIQUIDACIÓN DE SUELDO", ParagraphStyle("lt", fontName=FONT_BOLD, fontSize=13, textColor=WHITE, alignment=TA_CENTER)),
-        Paragraph(mes_anio_str.upper(), ParagraphStyle("lm", fontName=FONT_BOLD, fontSize=10, textColor=YELLOW_BG, alignment=TA_CENTER)),
+        Paragraph("LIQUIDACIÓN DE SUELDO",
+                  ParagraphStyle("lt", fontName=FONT_BOLD, fontSize=12, textColor=WHITE, alignment=TA_CENTER)),
+        Paragraph(mes_anio_str.upper(),
+                  ParagraphStyle("lm", fontName=FONT_BOLD, fontSize=10, textColor=YELLOW_BG, alignment=TA_CENTER)),
     ]
 
-    header_table = Table(
-        [[logo_cell, empresa_block, titulo_block]],
-        colWidths=[100, 220, 215],
-    )
+    header_table = Table([[logo_cell, empresa_block, titulo_block]], colWidths=[150, 195, 190])
     header_table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("BACKGROUND", (2, 0), (2, 0), BLUE_DARK),
-        ("ROUNDEDCORNERS", [4, 4, 4, 4]),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("LEFTPADDING", (2, 0), (2, 0), 10),
-        ("RIGHTPADDING", (2, 0), (2, 0), 10),
+        ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND",  (2, 0), (2,  0),  BLUE_DARK),
+        ("TOPPADDING",  (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING",(0,0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (1, 0),   4),
+        ("LEFTPADDING", (2, 0), (2, 0),   10),
+        ("RIGHTPADDING",(2, 0), (2, 0),   10),
+        ("BOX",         (2, 0), (2, 0),   1, BLUE_MID),
     ]))
     story.append(header_table)
     story.append(Spacer(1, 10))
 
     # ── Datos del trabajador ──────────────────────────────────────────────────
-    st_label = ParagraphStyle("lbl", fontName=FONT_BOLD, fontSize=8, textColor=GRAY_TEXT)
-    st_value = ParagraphStyle("val", fontName=FONT, fontSize=9, textColor=BLUE_DARK)
-
     def _cell(label, value):
         return [Paragraph(label, st_label), Paragraph(str(value) if value else "—", st_value)]
 
-    cargo = trabajador.cargo or "—"
+    cargo         = trabajador.cargo or "—"
     tipo_contrato = (trabajador.tipo_contrato or "—").replace("_", " ").title()
-    afp = trabajador.afp or "—"
-    salud = trabajador.sistema_salud or "FONASA"
+    afp           = trabajador.afp or "—"
+    salud         = trabajador.sistema_salud or "FONASA"
     fecha_ingreso = _fmt_date(trabajador.fecha_ingreso)
-    rut = _fmt_rut(trabajador.rut)
-
-    worker_data = [
-        [_cell("NOMBRE", trabajador.nombre), _cell("RUT", rut)],
-        [_cell("CARGO", cargo), _cell("TIPO CONTRATO", tipo_contrato)],
-        [_cell("AFP", afp), _cell("SISTEMA DE SALUD", salud)],
-        [_cell("FECHA INGRESO", fecha_ingreso), _cell("PERÍODO LIQUIDACIÓN", mes_anio_str)],
-    ]
+    rut           = _fmt_rut(trabajador.rut)
 
     flat_rows = []
-    for row in worker_data:
-        flat_rows.append([row[0][0], row[0][1], row[1][0], row[1][1]])
+    for l1, v1, l2, v2 in [
+        ("NOMBRE",             trabajador.nombre,  "RUT",               rut),
+        ("CARGO",              cargo,              "TIPO CONTRATO",     tipo_contrato),
+        ("AFP",                afp,                "SISTEMA DE SALUD",  salud),
+        ("FECHA INGRESO",      fecha_ingreso,      "PERÍODO",           mes_anio_str),
+    ]:
+        flat_rows.append([Paragraph(l1, st_label), Paragraph(str(v1) if v1 else "—", st_value),
+                          Paragraph(l2, st_label), Paragraph(str(v2) if v2 else "—", st_value)])
 
-    t_worker = Table(flat_rows, colWidths=[90, 140, 90, 145])
+    t_worker = Table(flat_rows, colWidths=[78, 160, 78, 219])
     t_worker.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d6e8")),
-        ("BACKGROUND", (0, 0), (-1, -1), BLUE_LIGHT),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("BOX",         (0, 0), (-1, -1), 0.5, colors.HexColor("#c7d6e8")),
+        ("BACKGROUND",  (0, 0), (-1, -1), BLUE_LIGHT),
+        ("TOPPADDING",  (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING",(0,0), (-1, -1), 3),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("LINEABOVE", (0, 0), (-1, 0), 0.5, colors.HexColor("#c7d6e8")),
-        ("LINEBELOW", (0, -1), (-1, -1), 0.5, colors.HexColor("#c7d6e8")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#d0dff0")),
+        ("INNERGRID",   (0, 0), (-1, -1), 0.3, colors.HexColor("#d0dff0")),
     ]))
     story.append(t_worker)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     # ── Haberes ───────────────────────────────────────────────────────────────
-    st_th = ParagraphStyle("th", fontName=FONT_BOLD, fontSize=9, textColor=WHITE)
-    st_td = ParagraphStyle("td", fontName=FONT, fontSize=9, textColor=BLUE_DARK)
-    st_td_r = ParagraphStyle("tdr", fontName=FONT, fontSize=9, textColor=BLUE_DARK, alignment=TA_RIGHT)
-    st_total_lbl = ParagraphStyle("ttl", fontName=FONT_BOLD, fontSize=9, textColor=BLUE_DARK)
-    st_total_val = ParagraphStyle("ttv", fontName=FONT_BOLD, fontSize=9, textColor=BLUE_DARK, alignment=TA_RIGHT)
+    no_imponibles = (liquidacion.movilizacion or 0) + (liquidacion.colacion or 0) + (liquidacion.viaticos or 0)
+    total_bruto_display = (liquidacion.remuneracion_imponible or 0) + no_imponibles
 
     haberes_rows = [
         [Paragraph("HABERES", st_th), Paragraph("MONTO", st_th)],
-        [Paragraph("Sueldo Base", st_td), Paragraph(_fmt(liquidacion.sueldo_base), st_td_r)],
-        [Paragraph("Gratificación Legal (Art. 50 CT)", st_td), Paragraph(_fmt(liquidacion.gratificacion), st_td_r)],
+        [Paragraph("Sueldo Base", st_td), Paragraph(_fmt(liquidacion.sueldo_base or 0), st_td_r)],
+        [Paragraph("Gratificación Legal (Art. 50 CT)", st_td), Paragraph(_fmt(liquidacion.gratificacion or 0), st_td_r)],
     ]
     if liquidacion.movilizacion:
         haberes_rows.append([Paragraph("Movilización (no imponible)", st_td), Paragraph(_fmt(liquidacion.movilizacion), st_td_r)])
@@ -993,132 +1007,196 @@ def generar_pdf_liquidacion(liquidacion, trabajador) -> bytes:
         haberes_rows.append([Paragraph("Colación (no imponible)", st_td), Paragraph(_fmt(liquidacion.colacion), st_td_r)])
     if liquidacion.viaticos:
         haberes_rows.append([Paragraph("Viáticos (no imponible)", st_td), Paragraph(_fmt(liquidacion.viaticos), st_td_r)])
-    total_bruto_display = liquidacion.remuneracion_imponible + liquidacion.movilizacion + liquidacion.colacion + liquidacion.viaticos
-    haberes_rows.append([Paragraph("TOTAL HABERES", st_total_lbl), Paragraph(_fmt(total_bruto_display), st_total_val)])
+    haberes_rows.append([Paragraph("TOTAL HABERES", st_tot_l), Paragraph(_fmt(total_bruto_display), st_tot_v)])
 
     t_hab = Table(haberes_rows, colWidths=[380, 155])
-    t_hab_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), BLUE_MID),
-        ("BACKGROUND", (0, -1), (-1, -1), BLUE_LIGHT),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c7d6e8")),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("FONTNAME", (0, -1), (-1, -1), FONT_BOLD),
-        ("LINEABOVE", (0, -1), (-1, -1), 1.0, BLUE_MID),
+    hab_style = [
+        ("BACKGROUND",    (0, 0), (-1,  0),  BLUE_MID),
+        ("BACKGROUND",    (0,-1), (-1, -1),  BLUE_LIGHT),
+        ("GRID",          (0, 0), (-1, -1),  0.4, colors.HexColor("#c7d6e8")),
+        ("TOPPADDING",    (0, 0), (-1, -1),  4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1),  4),
+        ("LEFTPADDING",   (0, 0), (-1, -1),  8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
+        ("FONTNAME",      (0,-1), (-1, -1),  FONT_BOLD),
+        ("LINEABOVE",     (0,-1), (-1, -1),  1.0, BLUE_MID),
     ]
     for i in range(1, len(haberes_rows) - 1):
         if i % 2 == 0:
-            t_hab_style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
-    t_hab.setStyle(TableStyle(t_hab_style))
+            hab_style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
+    t_hab.setStyle(TableStyle(hab_style))
     story.append(t_hab)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 5))
 
-    # ── Descuentos ────────────────────────────────────────────────────────────
+    # ── Descuentos legales ────────────────────────────────────────────────────
     tasa_afp_str = ""
     if trabajador.afp:
         from app.services.remuneraciones import TASAS_AFP, AFP_DEFAULT_TASA
         tasa_val = TASAS_AFP.get(trabajador.afp, AFP_DEFAULT_TASA)
         tasa_afp_str = f" ({tasa_val*100:.2f}%)"
 
-    descuentos_rows = [
-        [Paragraph("DESCUENTOS", st_th), Paragraph("MONTO", st_th)],
-        [Paragraph(f"AFP {trabajador.afp or ''}{tasa_afp_str}", st_td), Paragraph(_fmt(liquidacion.descuento_afp), st_td_r)],
-        [Paragraph("Salud Legal 7%", st_td), Paragraph(_fmt(liquidacion.descuento_salud_legal), st_td_r)],
+    desc_rows = [
+        [Paragraph("DESCUENTOS LEGALES", st_th), Paragraph("MONTO", st_th)],
+        [Paragraph(f"AFP {trabajador.afp or ''}{tasa_afp_str}", st_td), Paragraph(_fmt(liquidacion.descuento_afp or 0), st_td_r)],
+        [Paragraph("Salud Legal 7%", st_td), Paragraph(_fmt(liquidacion.descuento_salud_legal or 0), st_td_r)],
     ]
     if liquidacion.adicional_isapre:
-        descuentos_rows.append([Paragraph(f"Adicional Isapre ({trabajador.sistema_salud or ''})", st_td), Paragraph(_fmt(liquidacion.adicional_isapre), st_td_r)])
+        desc_rows.append([
+            Paragraph(f"Adicional Isapre ({trabajador.sistema_salud or ''})", st_td),
+            Paragraph(_fmt(liquidacion.adicional_isapre), st_td_r),
+        ])
     if liquidacion.descuento_cesantia:
-        descuentos_rows.append([Paragraph("Seguro de Cesantía (0,6%)", st_td), Paragraph(_fmt(liquidacion.descuento_cesantia), st_td_r)])
+        desc_rows.append([Paragraph("Seguro de Cesantía (0,6%)", st_td), Paragraph(_fmt(liquidacion.descuento_cesantia), st_td_r)])
     else:
-        descuentos_rows.append([Paragraph("Seguro de Cesantía (Plazo Fijo: 0%)", st_td), Paragraph(_fmt(0), st_td_r)])
+        desc_rows.append([Paragraph("Seguro de Cesantía (Plazo Fijo: 0%)", st_td), Paragraph(_fmt(0), st_td_r)])
     if liquidacion.iusc:
-        descuentos_rows.append([Paragraph("Imp. Único 2ª Categoría (IUSC)", st_td), Paragraph(_fmt(liquidacion.iusc), st_td_r)])
-    descuentos_rows.append([Paragraph("TOTAL DESCUENTOS", st_total_lbl), Paragraph(_fmt(liquidacion.total_descuentos), st_total_val)])
+        desc_rows.append([Paragraph("Imp. Único 2ª Categoría (IUSC)", st_td), Paragraph(_fmt(liquidacion.iusc), st_td_r)])
+    desc_rows.append([Paragraph("TOTAL DESCUENTOS LEGALES", st_tot_l), Paragraph(_fmt(liquidacion.total_descuentos or 0), st_tot_v)])
 
-    t_desc = Table(descuentos_rows, colWidths=[380, 155])
-    t_desc_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#c0392b")),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#fde8e8")),
-        ("TEXTCOLOR", (0, -1), (-1, -1), colors.HexColor("#c0392b")),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#f0c0c0")),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("FONTNAME", (0, -1), (-1, -1), FONT_BOLD),
-        ("LINEABOVE", (0, -1), (-1, -1), 1.0, colors.HexColor("#c0392b")),
+    t_desc = Table(desc_rows, colWidths=[380, 155])
+    desc_style = [
+        ("BACKGROUND",    (0, 0), (-1,  0),  colors.HexColor("#c0392b")),
+        ("BACKGROUND",    (0,-1), (-1, -1),  colors.HexColor("#fde8e8")),
+        ("TEXTCOLOR",     (0,-1), (-1, -1),  colors.HexColor("#c0392b")),
+        ("GRID",          (0, 0), (-1, -1),  0.4, colors.HexColor("#f0c0c0")),
+        ("TOPPADDING",    (0, 0), (-1, -1),  4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1),  4),
+        ("LEFTPADDING",   (0, 0), (-1, -1),  8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
+        ("FONTNAME",      (0,-1), (-1, -1),  FONT_BOLD),
+        ("LINEABOVE",     (0,-1), (-1, -1),  1.0, colors.HexColor("#c0392b")),
     ]
-    for i in range(1, len(descuentos_rows) - 1):
+    for i in range(1, len(desc_rows) - 1):
         if i % 2 == 0:
-            t_desc_style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
-    t_desc.setStyle(TableStyle(t_desc_style))
+            desc_style.append(("BACKGROUND", (0, i), (-1, i), ROW_ALT))
+    t_desc.setStyle(TableStyle(desc_style))
     story.append(t_desc)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 5))
 
     # ── Aportes empleador (informativo) ───────────────────────────────────────
-    st_th_g = ParagraphStyle("thg", fontName=FONT_BOLD, fontSize=9, textColor=WHITE)
-    st_td_g = ParagraphStyle("tdg", fontName=FONT, fontSize=8, textColor=GRAY_TEXT)
-    st_td_gr = ParagraphStyle("tdgr", fontName=FONT, fontSize=8, textColor=GRAY_TEXT, alignment=TA_RIGHT)
-
     aportes_rows = [
-        [Paragraph("APORTES EMPLEADOR (informativos, no afectan líquido)", st_th_g), Paragraph("MONTO", st_th_g)],
-        [Paragraph("SIS — Seguro Invalidez y Sobrevivencia (1,54%)", st_td_g), Paragraph(_fmt(liquidacion.costo_sis), st_td_gr)],
-        [Paragraph("AFC — Cesantía Empleador (2,4% / 3,0% plazo fijo)", st_td_g), Paragraph(_fmt(liquidacion.costo_cesantia_empleador), st_td_gr)],
-        [Paragraph("Mutual — Accidentes del Trabajo (0,93%)", st_td_g), Paragraph(_fmt(liquidacion.costo_mutual), st_td_gr)],
-        [Paragraph("COSTO TOTAL EMPRESA (bruto + aportes)", st_total_lbl), Paragraph(_fmt(liquidacion.costo_empresa_total), st_total_val)],
+        [Paragraph("APORTES EMPLEADOR (informativos — no afectan el líquido del trabajador)", st_th_g), Paragraph("MONTO", st_th_g)],
+        [Paragraph("SIS — Seguro de Invalidez y Sobrevivencia (1,54%)", st_td_g), Paragraph(_fmt(liquidacion.costo_sis or 0), st_td_gr)],
+        [Paragraph("AFC — Cesantía Empleador (2,4% indef. / 3,0% plazo fijo)", st_td_g), Paragraph(_fmt(liquidacion.costo_cesantia_empleador or 0), st_td_gr)],
+        [Paragraph("Mutual — Seguro Accidentes del Trabajo (0,93%)", st_td_g), Paragraph(_fmt(liquidacion.costo_mutual or 0), st_td_gr)],
+        [Paragraph("COSTO TOTAL EMPRESA", st_tot_l), Paragraph(_fmt(liquidacion.costo_empresa_total or 0), st_tot_v)],
     ]
-
     t_aportes = Table(aportes_rows, colWidths=[380, 155])
     t_aportes.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#5a6a7a")),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f0f0f0")),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("FONTNAME", (0, -1), (-1, -1), FONT_BOLD),
-        ("LINEABOVE", (0, -1), (-1, -1), 1.0, colors.HexColor("#777777")),
+        ("BACKGROUND",    (0, 0), (-1,  0),  colors.HexColor("#4a5568")),
+        ("BACKGROUND",    (0,-1), (-1, -1),  colors.HexColor("#f0f0f0")),
+        ("GRID",          (0, 0), (-1, -1),  0.4, colors.HexColor("#cccccc")),
+        ("TOPPADDING",    (0, 0), (-1, -1),  3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1),  3),
+        ("LEFTPADDING",   (0, 0), (-1, -1),  8),
+        ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
+        ("FONTNAME",      (0,-1), (-1, -1),  FONT_BOLD),
+        ("LINEABOVE",     (0,-1), (-1, -1),  1.0, colors.HexColor("#777777")),
     ]))
     story.append(t_aportes)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
-    # ── Monto líquido a pagar ─────────────────────────────────────────────────
-    st_liq_lbl = ParagraphStyle("llbl", fontName=FONT_BOLD, fontSize=14, textColor=WHITE, alignment=TA_LEFT)
-    st_liq_val = ParagraphStyle("lval", fontName=FONT_BOLD, fontSize=16, textColor=YELLOW_BG, alignment=TA_RIGHT)
+    # ── Subtotal: líquido legal ───────────────────────────────────────────────
+    sueldo_liquido = liquidacion.sueldo_liquido or 0
+    total_desc_adicionales = sum(d.get("monto", 0) for d in (descuentos_adicionales or []))
+    liquido_a_depositar = max(0, sueldo_liquido - total_desc_adicionales)
+
+    st_sub_lbl = ParagraphStyle("slbl", fontName=FONT,      fontSize=9,  textColor=GRAY_TEXT, alignment=TA_LEFT)
+    st_sub_val = ParagraphStyle("sval", fontName=FONT_BOLD, fontSize=10, textColor=BLUE_DARK, alignment=TA_RIGHT)
+
+    if descuentos_adicionales:
+        # Mostrar líquido legal (subtotal antes de descuentos adicionales)
+        sub_row = Table(
+            [[Paragraph("LÍQUIDO LEGAL (sueldo – descuentos previsionales)", st_sub_lbl),
+              Paragraph(_fmt(sueldo_liquido), st_sub_val)]],
+            colWidths=[380, 155],
+        )
+        sub_row.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#e8f0fb")),
+            ("TOPPADDING",    (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+            ("BOX",           (0, 0), (-1, -1), 0.5, BLUE_MID),
+        ]))
+        story.append(sub_row)
+        story.append(Spacer(1, 5))
+
+        # ── Descuentos adicionales (préstamos y ajustes) ──────────────────────
+        st_th_a  = ParagraphStyle("tha",  fontName=FONT_BOLD, fontSize=9, textColor=WHITE)
+        st_td_a  = ParagraphStyle("tda",  fontName=FONT,      fontSize=9, textColor=colors.HexColor("#7c3aed"))
+        st_td_ar = ParagraphStyle("tdar", fontName=FONT,      fontSize=9, textColor=colors.HexColor("#7c3aed"), alignment=TA_RIGHT)
+        st_tot_a = ParagraphStyle("ttla", fontName=FONT_BOLD, fontSize=9, textColor=colors.HexColor("#7c3aed"))
+        st_tot_av= ParagraphStyle("ttva", fontName=FONT_BOLD, fontSize=9, textColor=colors.HexColor("#7c3aed"), alignment=TA_RIGHT)
+
+        add_rows = [
+            [Paragraph("DESCUENTOS ADICIONALES (préstamos y ajustes)", st_th_a), Paragraph("MONTO", st_th_a)],
+        ]
+        for d in descuentos_adicionales:
+            add_rows.append([
+                Paragraph(d.get("concepto", "Descuento"), st_td_a),
+                Paragraph(_fmt(d.get("monto", 0)), st_td_ar),
+            ])
+        add_rows.append([
+            Paragraph("TOTAL DESCUENTOS ADICIONALES", st_tot_a),
+            Paragraph(_fmt(total_desc_adicionales), st_tot_av),
+        ])
+
+        t_add = Table(add_rows, colWidths=[380, 155])
+        add_style = [
+            ("BACKGROUND",    (0, 0), (-1,  0),  colors.HexColor("#7c3aed")),
+            ("BACKGROUND",    (0,-1), (-1, -1),  colors.HexColor("#f3eeff")),
+            ("TEXTCOLOR",     (0,-1), (-1, -1),  colors.HexColor("#7c3aed")),
+            ("GRID",          (0, 0), (-1, -1),  0.4, colors.HexColor("#d4b5ff")),
+            ("TOPPADDING",    (0, 0), (-1, -1),  4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1),  4),
+            ("LEFTPADDING",   (0, 0), (-1, -1),  8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
+            ("FONTNAME",      (0,-1), (-1, -1),  FONT_BOLD),
+            ("LINEABOVE",     (0,-1), (-1, -1),  1.0, colors.HexColor("#7c3aed")),
+        ]
+        for i in range(1, len(add_rows) - 1):
+            if i % 2 == 0:
+                add_style.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#faf5ff")))
+        t_add.setStyle(TableStyle(add_style))
+        story.append(t_add)
+        story.append(Spacer(1, 8))
+
+    # ── Monto final a depositar ───────────────────────────────────────────────
+    st_liq_lbl = ParagraphStyle("llbl", fontName=FONT_BOLD, fontSize=13, textColor=WHITE, alignment=TA_LEFT)
+    st_liq_val = ParagraphStyle("lval", fontName=FONT_BOLD, fontSize=15, textColor=YELLOW_BG, alignment=TA_RIGHT)
+
+    label_depositar = "LÍQUIDO A DEPOSITAR" if descuentos_adicionales else "LÍQUIDO A PAGAR"
+    monto_final = liquido_a_depositar if descuentos_adicionales else sueldo_liquido
 
     liquido_row = Table(
-        [[Paragraph("LÍQUIDO A PAGAR", st_liq_lbl), Paragraph(_fmt(liquidacion.sueldo_liquido), st_liq_val)]],
+        [[Paragraph(label_depositar, st_liq_lbl), Paragraph(_fmt(monto_final), st_liq_val)]],
         colWidths=[380, 155],
     )
     liquido_row.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), BLUE_DARK),
-        ("TOPPADDING", (0, 0), (-1, -1), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("ROUNDEDCORNERS", [4, 4, 4, 4]),
-        ("BOX", (0, 0), (-1, -1), 1, BLUE_MID),
+        ("BACKGROUND",    (0, 0), (-1, -1), BLUE_DARK),
+        ("TOPPADDING",    (0, 0), (-1, -1), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+        ("BOX",           (0, 0), (-1, -1), 1,   BLUE_MID),
     ]))
     story.append(liquido_row)
     story.append(Spacer(1, 8))
 
     # ── Parámetros legales utilizados ─────────────────────────────────────────
-    uf_str = f"${float(liquidacion.uf_usada):,.2f}".replace(",", ".") if liquidacion.uf_usada else "—"
-    utm_str = _fmt(liquidacion.utm_usado) if liquidacion.utm_usado else "—"
-    imm_str = _fmt(liquidacion.imm_usado) if liquidacion.imm_usado else "—"
-    fuente_str = "mindicador.cl" if liquidacion.parametros_id else "fallback"
+    uf_str    = f"${float(liquidacion.uf_usada):,.2f}".replace(",", ".") if getattr(liquidacion, "uf_usada",  None) else "—"
+    utm_str   = _fmt(liquidacion.utm_usado)  if getattr(liquidacion, "utm_usado",  None) else "—"
+    imm_str   = _fmt(liquidacion.imm_usado)  if getattr(liquidacion, "imm_usado",  None) else "—"
+    fuente_str= "mindicador.cl" if getattr(liquidacion, "parametros_id", None) else "fallback"
 
-    st_foot = ParagraphStyle("foot", fontName=FONT, fontSize=7, textColor=GRAY_TEXT)
     story.append(Paragraph(
         f"Parámetros legales {mes_anio_str}: UF {uf_str} · UTM {utm_str} · IMM {imm_str} · Fuente: {fuente_str}",
         st_foot,
     ))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 3))
     story.append(Paragraph(
-        "Documento generado automáticamente por el sistema de remuneraciones E-Courier SPA. "
+        f"Documento generado automáticamente por el sistema de remuneraciones E-Courier SPA. "
         f"Generado el {date.today().strftime('%d/%m/%Y')}.",
         st_foot,
     ))

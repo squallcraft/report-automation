@@ -40,6 +40,7 @@ from app.auth import (
 from app.models import (
     LiquidacionMensual, Trabajador, ParametrosMensuales,
     PagoMesTrabajador, PagoTrabajador, Driver,
+    AjusteLiquidacion, CuotaPrestamo, Prestamo, EstadoPrestamoEnum,
 )
 from app.services.parametros import obtener_parametros
 from app.services.remuneraciones import calcular_desde_liquido
@@ -109,10 +110,56 @@ def _liq_to_dict(liq: LiquidacionMensual, nombre: str = "") -> dict:
 
 def _generar_pdf_para_liquidacion(liq: LiquidacionMensual, db: Session) -> bytes:
     from app.services.pdf_generator import generar_pdf_liquidacion
+    from app.models import AjusteLiquidacion, CuotaPrestamo, Prestamo, EstadoPrestamoEnum
     trabajador = db.get(Trabajador, liq.trabajador_id)
     if not trabajador:
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
-    return generar_pdf_liquidacion(liq, trabajador)
+
+    # Recopilar descuentos adicionales (préstamos + ajustes negativos) para el período
+    descuentos_adicionales = []
+
+    # Cuotas de préstamos activos del mes
+    cuotas = (
+        db.query(CuotaPrestamo)
+        .join(Prestamo)
+        .filter(
+            Prestamo.trabajador_id == trabajador.id,
+            Prestamo.estado == EstadoPrestamoEnum.ACTIVO.value,
+            CuotaPrestamo.mes == liq.mes,
+            CuotaPrestamo.anio == liq.anio,
+            CuotaPrestamo.pagado == False,
+        )
+        .all()
+    )
+    for c in cuotas:
+        motivo = c.prestamo.motivo if c.prestamo else "Préstamo"
+        descuentos_adicionales.append({
+            "concepto": f"Cuota Préstamo — {motivo}",
+            "monto": c.monto,
+        })
+
+    # Ajustes negativos del mes
+    ajustes_neg = (
+        db.query(AjusteLiquidacion)
+        .filter(
+            AjusteLiquidacion.tipo == "TRABAJADOR",
+            AjusteLiquidacion.entidad_id == trabajador.id,
+            AjusteLiquidacion.mes == liq.mes,
+            AjusteLiquidacion.anio == liq.anio,
+            AjusteLiquidacion.monto < 0,
+        )
+        .all()
+    )
+    for a in ajustes_neg:
+        descuentos_adicionales.append({
+            "concepto": f"Ajuste — {a.motivo or 'descuento'}",
+            "monto": abs(a.monto),
+        })
+
+    return generar_pdf_liquidacion(
+        liq, trabajador,
+        descuentos_adicionales=descuentos_adicionales or None,
+    )
 
 
 # ── Admin — Generación de liquidaciones ──────────────────────────────────────
