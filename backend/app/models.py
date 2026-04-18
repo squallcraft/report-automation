@@ -44,6 +44,7 @@ class RolEnum(str, enum.Enum):
     DRIVER = "DRIVER"
     PICKUP = "PICKUP"
     COLABORADOR = "COLABORADOR"
+    TRABAJADOR = "TRABAJADOR"
 
 
 class Seller(Base):
@@ -844,10 +845,13 @@ class Trabajador(Base):
     tipo_contrato = Column(String, nullable=True)
     monto_cotizacion_salud = Column(String, nullable=True)
 
+    password_hash = Column(String, nullable=True)
+
     pagos = relationship("PagoTrabajador", back_populates="trabajador")
     pagos_mes = relationship("PagoMesTrabajador", back_populates="trabajador")
     prestamos = relationship("Prestamo", back_populates="trabajador", foreign_keys="Prestamo.trabajador_id")
     vacaciones = relationship("VacacionTrabajador", back_populates="trabajador")
+    liquidaciones = relationship("LiquidacionMensual", back_populates="trabajador")
 
 
 class PagoTrabajador(Base):
@@ -920,6 +924,56 @@ class ParametrosMensuales(Base):
     imm = Column(Integer, nullable=False)             # Ingreso Mínimo Mensual
     fuente = Column(String, nullable=True)            # 'mindicador.cl' o 'manual'
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class LiquidacionMensual(Base):
+    """Liquidación de sueldo mensual — fuente única de verdad previsional."""
+    __tablename__ = "liquidaciones_mensuales"
+    __table_args__ = (
+        UniqueConstraint("trabajador_id", "mes", "anio", name="uq_liquidacion_mensual"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    parametros_id = Column(Integer, ForeignKey("parametros_mensuales.id"), nullable=True)
+
+    # Snapshot congelado al momento de generación
+    sueldo_base = Column(Integer, nullable=False, default=0)
+    gratificacion = Column(Integer, nullable=False, default=0)
+    movilizacion = Column(Integer, nullable=False, default=0)
+    colacion = Column(Integer, nullable=False, default=0)
+    viaticos = Column(Integer, nullable=False, default=0)
+    remuneracion_imponible = Column(Integer, nullable=False, default=0)
+    descuento_afp = Column(Integer, nullable=False, default=0)
+    descuento_salud_legal = Column(Integer, nullable=False, default=0)
+    adicional_isapre = Column(Integer, nullable=False, default=0)
+    descuento_cesantia = Column(Integer, nullable=False, default=0)
+    iusc = Column(Integer, nullable=False, default=0)
+    total_descuentos = Column(Integer, nullable=False, default=0)
+    sueldo_liquido = Column(Integer, nullable=False, default=0)
+
+    # Aportes empleador (informativos)
+    costo_sis = Column(Integer, nullable=False, default=0)
+    costo_cesantia_empleador = Column(Integer, nullable=False, default=0)
+    costo_mutual = Column(Integer, nullable=False, default=0)
+    costo_empresa_total = Column(Integer, nullable=False, default=0)
+
+    # Parámetros congelados usados en el cálculo
+    uf_usada = Column(Numeric(12, 4), nullable=True)
+    utm_usado = Column(Integer, nullable=True)
+    imm_usado = Column(Integer, nullable=True)
+
+    # Estado de ciclo de vida
+    estado = Column(String, nullable=False, default="BORRADOR")  # BORRADOR / EMITIDA / PAGADA
+    pago_mes_id = Column(Integer, ForeignKey("pagos_mes_trabajadores.id"), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    trabajador = relationship("Trabajador", back_populates="liquidaciones")
+    parametros = relationship("ParametrosMensuales")
 
 
 # ── Préstamos ──

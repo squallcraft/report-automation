@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -239,6 +239,16 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
       { to: '/colaborador', icon: LayoutDashboard, label: 'Mi Portal' },
       { to: '/colaborador/boletas', icon: Receipt, label: 'Mis Boletas' },
       { to: '/colaborador/perfil', icon: User, label: 'Mi Perfil' },
+    ]
+    isFlat = true
+  }
+
+  if (user?.rol === 'TRABAJADOR') {
+    menu = [
+      { to: '/trabajador', icon: LayoutDashboard, label: 'Mi Portal' },
+      { to: '/trabajador/liquidaciones', icon: FileText, label: 'Mis Liquidaciones' },
+      { to: '/trabajador/pagos', icon: DollarSign, label: 'Mis Pagos' },
+      { to: '/trabajador/imposiciones', icon: ShieldCheck, label: 'Imposiciones' },
     ]
     isFlat = true
   }

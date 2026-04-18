@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import AdminUser, Seller, Driver, Pickup, Colaborador, RolEnum
+from app.models import AdminUser, Seller, Driver, Pickup, Colaborador, Trabajador, RolEnum
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -145,6 +145,13 @@ def get_current_user(
         if not colab.activo:
             raise HTTPException(status_code=401, detail="Cuenta desactivada")
         return {"rol": RolEnum.COLABORADOR, "id": colab.id, "nombre": colab.nombre, "permisos": []}
+    elif rol == RolEnum.TRABAJADOR:
+        trabajador = db.query(Trabajador).filter(Trabajador.id == uid).first()
+        if not trabajador:
+            raise HTTPException(status_code=401, detail="Trabajador no encontrado")
+        if not trabajador.activo:
+            raise HTTPException(status_code=401, detail="Cuenta desactivada")
+        return {"rol": RolEnum.TRABAJADOR, "id": trabajador.id, "nombre": trabajador.nombre, "permisos": []}
 
     raise HTTPException(status_code=401, detail="Rol no reconocido")
 
@@ -203,6 +210,12 @@ def require_pickup(current_user: dict = Depends(get_current_user)) -> dict:
 def require_colaborador(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["rol"] != RolEnum.COLABORADOR:
         raise HTTPException(status_code=403, detail="Acceso solo para colaboradores")
+    return current_user
+
+
+def require_trabajador_portal(current_user: dict = Depends(get_current_user)) -> dict:
+    if current_user["rol"] != RolEnum.TRABAJADOR:
+        raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
     return current_user
 
 

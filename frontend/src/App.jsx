@@ -73,6 +73,11 @@ import ColaboradorDashboard from './pages/colaborador/ColaboradorDashboard'
 import ColaboradorBoletas from './pages/colaborador/ColaboradorBoletas'
 import ColaboradorPerfil from './pages/colaborador/ColaboradorPerfil'
 
+import TrabajadorDashboard from './pages/trabajador/TrabajadorDashboard'
+import TrabajadorLiquidaciones from './pages/trabajador/TrabajadorLiquidaciones'
+import TrabajadorPagos from './pages/trabajador/TrabajadorPagos'
+import TrabajadorImposiciones from './pages/trabajador/TrabajadorImposiciones'
+
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
   if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
@@ -99,7 +104,16 @@ function getDefaultRoute(rol) {
   if (rol === 'DRIVER') return '/driver'
   if (rol === 'PICKUP') return '/pickup'
   if (rol === 'COLABORADOR') return '/colaborador'
+  if (rol === 'TRABAJADOR') return '/trabajador'
   return '/login'
+}
+
+function TrabajadorRoute({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="flex items-center justify-center h-screen text-gray-400">Cargando...</div>
+  if (!user) return <Navigate to="/login" replace />
+  if (user.rol !== 'TRABAJADOR') return <Navigate to="/login" replace />
+  return children
 }
 
 export default function App() {
@@ -181,6 +195,13 @@ export default function App() {
         <Route index element={<ColaboradorDashboard />} />
         <Route path="boletas" element={<ColaboradorBoletas />} />
         <Route path="perfil" element={<ColaboradorPerfil />} />
+      </Route>
+
+      <Route path="/trabajador" element={<TrabajadorRoute><Layout /></TrabajadorRoute>}>
+        <Route index element={<TrabajadorDashboard />} />
+        <Route path="liquidaciones" element={<TrabajadorLiquidaciones />} />
+        <Route path="pagos" element={<TrabajadorPagos />} />
+        <Route path="imposiciones" element={<TrabajadorImposiciones />} />
       </Route>
 
       <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>

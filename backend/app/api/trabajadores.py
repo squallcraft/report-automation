@@ -512,3 +512,27 @@ def situacion_laboral(
             "total_finiquito_estimado": total_finiquito,
         },
     }
+
+
+class SetPasswordRequest(BaseModel):
+    password: str
+
+
+@router.put("/{trabajador_id}/password", dependencies=[Depends(require_admin)])
+def set_trabajador_password(
+    trabajador_id: int,
+    body: SetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """Establece o actualiza la contraseña de acceso al portal para un trabajador."""
+    t = db.query(Trabajador).filter(Trabajador.id == trabajador_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    if not t.email:
+        raise HTTPException(status_code=400, detail="El trabajador no tiene email registrado. Agrégalo primero.")
+    if len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres.")
+    from app.auth import hash_password
+    t.password_hash = hash_password(body.password)
+    db.commit()
+    return {"ok": True, "mensaje": f"Contraseña establecida para {t.nombre}"}

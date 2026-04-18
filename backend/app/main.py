@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -99,6 +99,7 @@ with engine.connect() as conn:
             ("descuento_cesantia", "INTEGER NOT NULL DEFAULT 0"),
             ("iusc", "INTEGER NOT NULL DEFAULT 0"),
             ("adicional_isapre", "INTEGER NOT NULL DEFAULT 0"),
+            ("password_hash", "TEXT"),
         ]:
             if col_name not in trab_cols:
                 safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")
@@ -116,6 +117,43 @@ with engine.connect() as conn:
                 fuente TEXT,
                 updated_at TIMESTAMP DEFAULT now(),
                 UNIQUE (anio, mes)
+            )
+        """)
+
+    # ── Tabla liquidaciones_mensuales ────────────────────────────────────────
+    if "liquidaciones_mensuales" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE liquidaciones_mensuales (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                mes INTEGER NOT NULL,
+                anio INTEGER NOT NULL,
+                parametros_id INTEGER REFERENCES parametros_mensuales(id),
+                sueldo_base INTEGER NOT NULL DEFAULT 0,
+                gratificacion INTEGER NOT NULL DEFAULT 0,
+                movilizacion INTEGER NOT NULL DEFAULT 0,
+                colacion INTEGER NOT NULL DEFAULT 0,
+                viaticos INTEGER NOT NULL DEFAULT 0,
+                remuneracion_imponible INTEGER NOT NULL DEFAULT 0,
+                descuento_afp INTEGER NOT NULL DEFAULT 0,
+                descuento_salud_legal INTEGER NOT NULL DEFAULT 0,
+                adicional_isapre INTEGER NOT NULL DEFAULT 0,
+                descuento_cesantia INTEGER NOT NULL DEFAULT 0,
+                iusc INTEGER NOT NULL DEFAULT 0,
+                total_descuentos INTEGER NOT NULL DEFAULT 0,
+                sueldo_liquido INTEGER NOT NULL DEFAULT 0,
+                costo_sis INTEGER NOT NULL DEFAULT 0,
+                costo_cesantia_empleador INTEGER NOT NULL DEFAULT 0,
+                costo_mutual INTEGER NOT NULL DEFAULT 0,
+                costo_empresa_total INTEGER NOT NULL DEFAULT 0,
+                uf_usada NUMERIC(12,4),
+                utm_usado INTEGER,
+                imm_usado INTEGER,
+                estado TEXT NOT NULL DEFAULT 'BORRADOR',
+                pago_mes_id INTEGER REFERENCES pagos_mes_trabajadores(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT uq_liquidacion_mensual UNIQUE (trabajador_id, mes, anio)
             )
         """)
     if "retiros" in insp.get_table_names() and engine.dialect.name == "postgresql":
@@ -585,6 +623,7 @@ app.include_router(whatsapp.router, prefix="/api")
 app.include_router(leads.router, prefix="/api")
 app.include_router(colaboradores.router, prefix="/api")
 app.include_router(parametros_remuneracion.router, prefix="/api")
+app.include_router(remuneraciones.router, prefix="/api")
 
 
 @app.on_event("startup")

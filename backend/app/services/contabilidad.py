@@ -56,6 +56,7 @@ CUENTA_MARKETING = "5.7"
 CUENTA_IMPUESTOS = "5.8"
 CUENTA_OTROS_GASTOS = "5.9"
 CUENTA_INTERESES = "5.10"
+CUENTA_REMUNERACIONES_POR_PAGAR = "2.5"  # Pasivo: retenciones previsionales y aportes empleador
 
 # Mapeo CategoriaFinanciera.nombre → código cuenta contable
 _CAT_TO_CUENTA = {
@@ -111,14 +112,14 @@ def crear_asiento(
     descripcion: str,
     ref_tipo: str,
     ref_id: int,
-    lineas: List[Tuple[int, int, int]],
+    lineas: List[Tuple],
     creado_por: str = "sistema",
     es_backfill: bool = False,
 ) -> Optional[AsientoContable]:
     """
     Crea un asiento contable con N líneas.
 
-    lineas: lista de (cuenta_id, debe, haber)
+    lineas: lista de (cuenta_id, debe, haber) o (cuenta_id, debe, haber, glosa)
     Valida: sum(debe) == sum(haber), no duplicados, montos > 0.
     Retorna None si el asiento ya existe (idempotente).
     """
@@ -152,15 +153,31 @@ def crear_asiento(
     db.add(asiento)
     db.flush()
 
-    for cuenta_id, debe, haber in lineas:
+    for linea in lineas:
+        cuenta_id, debe, haber = linea[0], linea[1], linea[2]
+        glosa = linea[3] if len(linea) > 3 else None
         db.add(LineaAsiento(
             asiento_id=asiento.id,
             cuenta_id=cuenta_id,
             debe=debe,
             haber=haber,
+            glosa=glosa,
         ))
 
     return asiento
+
+
+def eliminar_asiento_de_ref(db: Session, ref_tipo: str, ref_id: int) -> bool:
+    """Elimina el asiento contable asociado a una referencia. Retorna True si eliminó algo."""
+    asiento = db.query(AsientoContable).filter(
+        AsientoContable.ref_tipo == ref_tipo,
+        AsientoContable.ref_id == ref_id,
+    ).first()
+    if asiento:
+        db.delete(asiento)
+        db.flush()
+        return True
+    return False
 
 
 # ── Asientos desde operaciones ──
@@ -243,9 +260,19 @@ def asiento_pago_trabajador(db: Session, pago_mes, es_backfill=False):
     if not monto or monto <= 0:
         return None
     fecha = pago_mes.fecha_pago or date.today()
-    from app.models import Trabajador
+    from app.models import Trabajador, LiquidacionMensual
     trabajador = db.get(Trabajador, pago_mes.trabajador_id)
     nombre = trabajador.nombre if trabajador else f"Trabajador {pago_mes.trabajador_id}"
+
+    # Si existe una liquidación, usar el asiento enriquecido
+    liq = db.query(LiquidacionMensual).filter_by(
+        trabajador_id=pago_mes.trabajador_id,
+        mes=pago_mes.mes,
+        anio=pago_mes.anio,
+    ).first()
+    if liq:
+        return asiento_pago_trabajador_enriquecido(db, pago_mes, liq, es_backfill=es_backfill)
+
     return crear_asiento(db, fecha,
         f"Pago nómina {pago_mes.mes}/{pago_mes.anio} — {nombre}",
         "PagoMesTrabajador", pago_mes.id,
@@ -253,6 +280,63 @@ def asiento_pago_trabajador(db: Session, pago_mes, es_backfill=False):
             (_cuenta_id(db, CUENTA_REMUNERACIONES), monto, 0),
             (_cuenta_id(db, CUENTA_BANCO), 0, monto),
         ],
+        es_backfill=es_backfill,
+    )
+
+
+def asiento_pago_trabajador_enriquecido(db: Session, pago_mes, liquidacion, es_backfill=False):
+    """
+    Asiento completo de remuneraciones con desglose previsional (partida doble).
+
+    Estructura:
+      Debe 1: 5.3 Remuneraciones = remuneracion_imponible + no_imponibles
+      Debe 2: 5.3 Remuneraciones = aportes patronales (SIS + AFC + Mutual)
+      Haber 1: 1.1 Banco = sueldo_liquido (monto efectivo al trabajador)
+      Haber 2: 2.5 Retenciones = total_descuentos + aportes_patronales
+    """
+    from app.models import Trabajador
+    trabajador = db.get(Trabajador, pago_mes.trabajador_id)
+    nombre = trabajador.nombre if trabajador else f"Trabajador {pago_mes.trabajador_id}"
+    fecha = pago_mes.fecha_pago or date.today()
+
+    no_imponibles = (liquidacion.movilizacion or 0) + (liquidacion.colacion or 0) + (liquidacion.viaticos or 0)
+    aportes = (liquidacion.costo_sis or 0) + (liquidacion.costo_cesantia_empleador or 0) + (liquidacion.costo_mutual or 0)
+
+    debe_bruto = liquidacion.remuneracion_imponible + no_imponibles
+    debe_aportes = aportes
+    haber_liquido = liquidacion.sueldo_liquido
+    haber_retenciones = (liquidacion.total_descuentos or 0) + aportes
+
+    # Verificar balance
+    total_debe = debe_bruto + debe_aportes
+    total_haber = haber_liquido + haber_retenciones
+    if total_debe != total_haber:
+        # Ajuste de redondeo: cuadrar en la retención
+        haber_retenciones += total_debe - total_haber
+
+    lineas = [
+        (
+            _cuenta_id(db, CUENTA_REMUNERACIONES), debe_bruto, 0,
+            f"Rem. bruta {pago_mes.mes}/{pago_mes.anio} — {nombre}",
+        ),
+        (
+            _cuenta_id(db, CUENTA_REMUNERACIONES), debe_aportes, 0,
+            f"Aportes empleador (SIS+AFC+Mutual) {pago_mes.mes}/{pago_mes.anio} — {nombre}",
+        ),
+        (
+            _cuenta_id(db, CUENTA_BANCO), 0, haber_liquido,
+            f"Pago líquido a {nombre}",
+        ),
+        (
+            _cuenta_id(db, CUENTA_REMUNERACIONES_POR_PAGAR), 0, haber_retenciones,
+            f"Retenciones previsionales y aportes {pago_mes.mes}/{pago_mes.anio}",
+        ),
+    ]
+
+    return crear_asiento(db, fecha,
+        f"Nómina {pago_mes.mes}/{pago_mes.anio} — {nombre}",
+        "PagoMesTrabajador", pago_mes.id,
+        lineas,
         es_backfill=es_backfill,
     )
 

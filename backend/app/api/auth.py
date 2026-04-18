@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup, Colaborador
+from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup, Colaborador, Trabajador
 from app.schemas import LoginRequest, TokenResponse
 from app.auth import verify_password, create_access_token, hash_password
 from app.config import get_settings
@@ -196,6 +196,17 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             rol=RolEnum.COLABORADOR,
             nombre=colab.nombre,
             entidad_id=colab.id,
+        )
+
+    trabajador = db.query(Trabajador).filter(Trabajador.email == data.username, Trabajador.activo == True).first()
+    if trabajador and trabajador.password_hash and verify_password(data.password, trabajador.password_hash):
+        token = create_access_token({"sub": str(trabajador.id), "rol": RolEnum.TRABAJADOR})
+        _audit(db, "LOGIN_SUCCESS", trabajador.email, ip)
+        return TokenResponse(
+            access_token=token,
+            rol=RolEnum.TRABAJADOR,
+            nombre=trabajador.nombre,
+            entidad_id=trabajador.id,
         )
 
     _audit(db, "LOGIN_FAIL", data.username, ip)

@@ -3,7 +3,7 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   Users, Download, Upload, FileText, X, Check, AlertCircle,
-  DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle,
+  DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle, Zap, Archive,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
@@ -550,6 +550,47 @@ export default function PagosTrabajadores() {
   const [filterText, setFilterText] = useState('')
   const [filterEstado, setFilterEstado] = useState('')
   const [sortMonto, setSortMonto] = useState(null)
+  const [liqGenerando, setLiqGenerando] = useState(false)
+  const [liqResultado, setLiqResultado] = useState(null)
+  const [liqModalOpen, setLiqModalOpen] = useState(false)
+  const [liqDescargando, setLiqDescargando] = useState(false)
+
+  const handleGenerarLiquidaciones = async () => {
+    setLiqGenerando(true)
+    setLiqResultado(null)
+    try {
+      const { data: res } = await api.post('/remuneraciones/liquidaciones/generar-mes', null, {
+        params: { mes, anio },
+      })
+      setLiqResultado(res)
+      toast.success(`${res.generadas} liquidación(es) generada(s)`)
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error generando liquidaciones')
+    } finally {
+      setLiqGenerando(false)
+    }
+  }
+
+  const handleDescargarLote = async () => {
+    setLiqDescargando(true)
+    try {
+      const res = await api.post('/remuneraciones/liquidaciones/lote-pdf', null, {
+        params: { mes, anio },
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }))
+      const a = document.createElement('a')
+      a.href = url
+      const mesNombre = MESES[mes] || mes
+      a.download = `liquidaciones_${mesNombre}_${anio}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('No hay liquidaciones generadas para ese período')
+    } finally {
+      setLiqDescargando(false)
+    }
+  }
 
   const cargar = async () => {
     setCargando(true)
@@ -625,6 +666,13 @@ export default function PagosTrabajadores() {
             </button>
             <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
               <Upload size={14} /> Cargar Cartola
+            </button>
+            <button
+              onClick={() => { setLiqModalOpen(true); setLiqResultado(null) }}
+              className="btn btn-primary flex items-center gap-2 text-sm"
+              title="Generar liquidaciones de sueldo para el período seleccionado"
+            >
+              <Zap size={14} /> Generar Liquidaciones
             </button>
           </div>
         }
@@ -744,6 +792,95 @@ export default function PagosTrabajadores() {
 
       {modalCartola && (
         <ModalCartola mes={mes} anio={anio} onClose={() => setModalCartola(false)} onConfirmado={cargar} />
+      )}
+
+      {/* Modal Generar Liquidaciones */}
+      {liqModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-base font-bold text-gray-900">Generar Liquidaciones — {MESES[mes]} {anio}</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Genera el snapshot de sueldo para todos los trabajadores activos</p>
+              </div>
+              <button onClick={() => setLiqModalOpen(false)} className="p-1 rounded hover:bg-gray-100">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {!liqResultado ? (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                    <p className="font-medium mb-1">¿Qué hace este proceso?</p>
+                    <ul className="list-disc list-inside space-y-1 text-xs text-blue-700">
+                      <li>Ejecuta el motor de cálculo para cada trabajador activo con sueldo registrado</li>
+                      <li>Usa la UF/UTM/IMM del período <strong>{MESES[mes]} {anio}</strong></li>
+                      <li>Crea un snapshot congelado (liquidación) por cada trabajador</li>
+                      <li>Es idempotente: si ya existe en BORRADOR, la actualiza</li>
+                      <li>No modifica liquidaciones PAGADAS</li>
+                    </ul>
+                  </div>
+                  <div className="flex gap-3 justify-end">
+                    <button onClick={() => setLiqModalOpen(false)} className="btn btn-secondary text-sm">Cancelar</button>
+                    <button
+                      onClick={handleGenerarLiquidaciones}
+                      disabled={liqGenerando}
+                      className="btn btn-primary flex items-center gap-2 text-sm"
+                    >
+                      {liqGenerando ? <><RotateCcw size={14} className="animate-spin" /> Generando...</> : <><Zap size={14} /> Generar ahora</>}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="bg-emerald-50 rounded-lg p-3">
+                        <p className="text-2xl font-bold text-emerald-700">{liqResultado.generadas}</p>
+                        <p className="text-xs text-emerald-600">Generadas</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-2xl font-bold text-gray-600">{liqResultado.omitidas}</p>
+                        <p className="text-xs text-gray-500">Omitidas</p>
+                      </div>
+                      <div className={`rounded-lg p-3 ${liqResultado.errores > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                        <p className={`text-2xl font-bold ${liqResultado.errores > 0 ? 'text-red-600' : 'text-gray-400'}`}>{liqResultado.errores}</p>
+                        <p className="text-xs text-gray-500">Errores</p>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
+                      <p className="font-medium text-gray-700 mb-1">Parámetros usados</p>
+                      <p>UF: ${parseFloat(liqResultado.parametros_usados?.uf || 0).toLocaleString('es-CL')} · UTM: ${(liqResultado.parametros_usados?.utm || 0).toLocaleString('es-CL')} · IMM: ${(liqResultado.parametros_usados?.imm || 0).toLocaleString('es-CL')}</p>
+                      <p className="text-xs mt-0.5 text-gray-400">Fuente: {liqResultado.parametros_usados?.fuente}</p>
+                    </div>
+
+                    {liqResultado.detalle_omitidas?.length > 0 && (
+                      <div className="text-xs text-gray-500">
+                        <p className="font-medium mb-1">Omitidos:</p>
+                        {liqResultado.detalle_omitidas.map((o, i) => (
+                          <p key={i}>{o.nombre} — {o.motivo}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-2">
+                    <button
+                      onClick={handleDescargarLote}
+                      disabled={liqDescargando || liqResultado.generadas === 0}
+                      className="btn btn-secondary flex items-center gap-2 text-sm"
+                    >
+                      {liqDescargando ? <><RotateCcw size={14} className="animate-spin" /> Descargando...</> : <><Archive size={14} /> Descargar ZIP</>}
+                    </button>
+                    <button onClick={() => setLiqModalOpen(false)} className="btn btn-primary text-sm">Cerrar</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

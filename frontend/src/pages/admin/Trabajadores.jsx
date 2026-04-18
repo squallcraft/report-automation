@@ -3,7 +3,7 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator, KeyRound } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
@@ -233,6 +233,28 @@ export default function Trabajadores() {
     }
   }
 
+  const [pwdModal, setPwdModal] = useState(null) // { id, nombre }
+  const [pwdValue, setPwdValue] = useState('')
+  const [pwdLoading, setPwdLoading] = useState(false)
+
+  const handleSetPassword = async () => {
+    if (!pwdValue || pwdValue.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres')
+      return
+    }
+    setPwdLoading(true)
+    try {
+      await api.put(`/trabajadores/${pwdModal.id}/password`, { password: pwdValue })
+      toast.success(`Contraseña establecida para ${pwdModal.nombre}`)
+      setPwdModal(null)
+      setPwdValue('')
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al establecer contraseña')
+    } finally {
+      setPwdLoading(false)
+    }
+  }
+
   const filtered = trabajadores.filter(t =>
     t.nombre.toLowerCase().includes(filterText.toLowerCase()) ||
     (t.cargo || '').toLowerCase().includes(filterText.toLowerCase()) ||
@@ -272,8 +294,13 @@ export default function Trabajadores() {
     }},
     { key: 'actions', label: '', render: (_, row) => (
       <div className="flex gap-1">
-        <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-blue-100 text-blue-600"><Pencil size={14} /></button>
-        {row.activo && <button onClick={() => handleDelete(row)} className="p-1 rounded hover:bg-red-100 text-red-600"><Trash2 size={14} /></button>}
+        <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-blue-100 text-blue-600" title="Editar"><Pencil size={14} /></button>
+        <button
+          onClick={() => { setPwdModal({ id: row.id, nombre: row.nombre }); setPwdValue('') }}
+          className="p-1 rounded hover:bg-amber-100 text-amber-600"
+          title="Establecer contraseña portal"
+        ><KeyRound size={14} /></button>
+        {row.activo && <button onClick={() => handleDelete(row)} className="p-1 rounded hover:bg-red-100 text-red-600" title="Desactivar"><Trash2 size={14} /></button>}
       </div>
     )},
   ]
@@ -441,6 +468,43 @@ export default function Trabajadores() {
             <button type="submit" className="btn-primary">{editId ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal contraseña portal */}
+      <Modal
+        isOpen={!!pwdModal}
+        onClose={() => setPwdModal(null)}
+        title={`Contraseña portal — ${pwdModal?.nombre}`}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Establece una contraseña para que <strong>{pwdModal?.nombre}</strong> pueda
+            acceder al portal de trabajadores con su email.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+            <input
+              type="password"
+              value={pwdValue}
+              onChange={e => setPwdValue(e.target.value)}
+              className="input-field"
+              placeholder="Mínimo 6 caracteres"
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleSetPassword()}
+            />
+          </div>
+          <div className="flex gap-3 justify-end pt-1">
+            <button type="button" onClick={() => setPwdModal(null)} className="btn-secondary">Cancelar</button>
+            <button
+              type="button"
+              onClick={handleSetPassword}
+              disabled={pwdLoading}
+              className="btn-primary"
+            >
+              {pwdLoading ? 'Guardando...' : 'Establecer contraseña'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   )
