@@ -1201,6 +1201,7 @@ def listar_facturas_drivers(
             "nota_admin": f.nota_admin,
             "revisado_por": f.revisado_por,
             "revisado_en": f.revisado_en.isoformat() if f.revisado_en else None,
+            "tipo_documento": f.tipo_documento,
             "created_at": f.created_at.isoformat() if f.created_at else None,
         })
     return result
@@ -1210,6 +1211,7 @@ def listar_facturas_drivers(
 def revisar_factura_driver(
     factura_id: int,
     estado: str = Query(...),
+    tipo_documento: Optional[str] = Query(None),
     nota_admin: Optional[str] = Query(None),
     request: Request = None,
     db: Session = Depends(get_db),
@@ -1223,6 +1225,11 @@ def revisar_factura_driver(
 
     estado_anterior = factura.estado
     factura.estado = estado
+    if tipo_documento is not None:
+        from app.models import TipoDocumentoDriverEnum
+        if tipo_documento not in (TipoDocumentoDriverEnum.FACTURA.value, TipoDocumentoDriverEnum.BOLETA.value):
+            raise HTTPException(status_code=400, detail="tipo_documento inválido")
+        factura.tipo_documento = tipo_documento
     if nota_admin is not None:
         factura.nota_admin = nota_admin
     factura.revisado_por = current_user.get("nombre", current_user.get("username", "admin"))

@@ -393,8 +393,13 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE boletas_colaboradores ADD COLUMN concepto TEXT")
         safe_exec("ALTER TABLE boletas_colaboradores DROP CONSTRAINT IF EXISTS uq_boleta_colaborador_periodo")
 
-    # ── Migración: IVA Drivers ──
-    if "pagos_iva_drivers" not in insp.get_table_names():
+    # ── Migración: tipo_documento en facturas_drivers ──
+    if "facturas_drivers" in insp.get_table_names():
+        fd_cols = [c["name"] for c in insp.get_columns("facturas_drivers")]
+        if "tipo_documento" not in fd_cols:
+            safe_exec("ALTER TABLE facturas_drivers ADD COLUMN tipo_documento TEXT NOT NULL DEFAULT 'FACTURA'")
+
+    # ── Migración: IVA Drivers ──    if "pagos_iva_drivers" not in insp.get_table_names():
         safe_exec("""
             CREATE TABLE pagos_iva_drivers (
                 id SERIAL PRIMARY KEY,

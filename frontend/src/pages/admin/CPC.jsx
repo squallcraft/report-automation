@@ -459,6 +459,7 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
   const [loading, setLoading] = useState(true)
   const [notaAdmin, setNotaAdmin] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [tipoDocumento, setTipoDocumento] = useState('FACTURA')
 
   useEffect(() => {
     api.get('/cpc/facturas-drivers', { params: { mes, anio } })
@@ -466,6 +467,7 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
         const f = data.find(x => x.id === facturaId)
         setFactura(f || null)
         setNotaAdmin(f?.nota_admin || '')
+        setTipoDocumento(f?.tipo_documento || 'FACTURA')
       })
       .catch(() => setFactura(null))
       .finally(() => setLoading(false))
@@ -489,7 +491,7 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
     setGuardando(true)
     try {
       await api.put(`/cpc/facturas-drivers/${facturaId}/revisar`, null, {
-        params: { estado, nota_admin: notaAdmin || undefined },
+        params: { estado, nota_admin: notaAdmin || undefined, tipo_documento: tipoDocumento },
       })
       toast.success(estado === 'APROBADA' ? 'Factura aprobada' : 'Factura rechazada')
       onRevisada()
@@ -542,6 +544,33 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
               {factura.estado !== 'APROBADA' && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Tipo de documento
+                  </label>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 'FACTURA', label: 'Factura (con IVA)' },
+                      { value: 'BOLETA',  label: 'Boleta de honorarios' },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setTipoDocumento(value)}
+                        className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-lg border transition-colors ${
+                          tipoDocumento === value
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {factura.estado !== 'APROBADA' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
                     Nota de rechazo (opcional)
                   </label>
                   <input
@@ -559,9 +588,10 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
                   <CheckCircle size={16} className="text-emerald-600 shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-emerald-800">Factura aprobada</p>
-                    {factura.revisado_por && (
-                      <p className="text-xs text-emerald-600">por {factura.revisado_por}</p>
-                    )}
+                    <p className="text-xs text-emerald-600">
+                      Tipo: {factura.tipo_documento === 'BOLETA' ? 'Boleta de honorarios' : 'Factura (con IVA)'}
+                      {factura.revisado_por && ` · por ${factura.revisado_por}`}
+                    </p>
                   </div>
                 </div>
               )}

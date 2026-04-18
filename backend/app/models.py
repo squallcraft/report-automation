@@ -710,6 +710,11 @@ class EstadoFacturaDriverEnum(str, enum.Enum):
     RECHAZADA = "RECHAZADA"
 
 
+class TipoDocumentoDriverEnum(str, enum.Enum):
+    FACTURA = "FACTURA"          # Factura afecta a IVA — empresa devuelve el IVA
+    BOLETA  = "BOLETA"           # Boleta de honorarios — sin IVA a devolver
+
+
 class FacturaDriver(Base):
     """Factura semanal subida por un driver para un período específico."""
     __tablename__ = "facturas_drivers"
@@ -725,6 +730,7 @@ class FacturaDriver(Base):
     archivo_nombre = Column(String, nullable=True)
     archivo_path = Column(String, nullable=True)
     estado = Column(String, nullable=False, default=EstadoFacturaDriverEnum.CARGADA.value)
+    tipo_documento = Column(String, nullable=False, default=TipoDocumentoDriverEnum.FACTURA.value)
     nota_driver = Column(Text, nullable=True)
     nota_admin = Column(Text, nullable=True)
     revisado_por = Column(String, nullable=True)

@@ -88,6 +88,7 @@ def tabla_iva_drivers(
             FacturaDriver.mes == mes,
             FacturaDriver.anio == anio,
             FacturaDriver.estado == EstadoFacturaDriverEnum.APROBADA.value,
+            FacturaDriver.tipo_documento == "FACTURA",
         ).all()
 
         result.append({
@@ -650,6 +651,7 @@ def recalcular_todos(
         FacturaDriver.mes == mes,
         FacturaDriver.anio == anio,
         FacturaDriver.estado == EstadoFacturaDriverEnum.APROBADA.value,
+        FacturaDriver.tipo_documento == "FACTURA",
     ).distinct().all()
 
     driver_ids = [r[0] for r in rows]

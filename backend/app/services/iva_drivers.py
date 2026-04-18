@@ -121,6 +121,7 @@ def recalcular_pago_iva(db: Session, driver_id: int, mes: int, anio: int) -> Opt
         FacturaDriver.mes == mes,
         FacturaDriver.anio == anio,
         FacturaDriver.estado == EstadoFacturaDriverEnum.APROBADA.value,
+        FacturaDriver.tipo_documento == "FACTURA",
     ).all()
 
     existente = db.query(PagoIVADriver).filter_by(
@@ -167,6 +168,7 @@ def cerrar_pago_iva(
         FacturaDriver.mes == pago_iva.mes_origen,
         FacturaDriver.anio == pago_iva.anio_origen,
         FacturaDriver.estado == EstadoFacturaDriverEnum.APROBADA.value,
+        FacturaDriver.tipo_documento == "FACTURA",
     ).all()
 
     pago_iva.base_iva_snapshot = base
