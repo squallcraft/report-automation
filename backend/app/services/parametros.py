@@ -51,6 +51,52 @@ def _fetch_uf_utm() -> dict[str, float | int] | None:
         return None
 
 
+def _fetch_uf_utm_historico(anio: int, mes: int) -> dict[str, float | int] | None:
+    """
+    Consulta mindicador.cl para obtener UF/UTM de un mes/año específico.
+    Usa los endpoints históricos: /api/uf/{YYYY} y /api/utm/{YYYY}.
+    Retorna None si la API no responde o no tiene datos para ese período.
+    """
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            r_uf  = client.get(f"{MINDICADOR_BASE}/uf/{anio}")
+            r_utm = client.get(f"{MINDICADOR_BASE}/utm/{anio}")
+            r_uf.raise_for_status()
+            r_utm.raise_for_status()
+
+            # mindicador devuelve lista de {fecha, valor} en serie
+            uf_series  = r_uf.json().get("serie", [])
+            utm_series = r_utm.json().get("serie", [])
+
+            # Tomar el valor del mes solicitado (o el más cercano anterior)
+            target_mes = f"{anio}-{mes:02d}"
+            uf_val = None
+            for entry in uf_series:
+                # fecha viene como "YYYY-MM-DDTHH:MM:SS.000Z"
+                if entry.get("fecha", "").startswith(target_mes):
+                    uf_val = float(entry["valor"])
+                    break
+            # Si no hay entrada exacta para ese mes, tomar el primero disponible del año
+            if uf_val is None and uf_series:
+                uf_val = float(uf_series[0]["valor"])
+
+            utm_val = None
+            for entry in utm_series:
+                if entry.get("fecha", "").startswith(target_mes):
+                    utm_val = int(entry["valor"])
+                    break
+            if utm_val is None and utm_series:
+                utm_val = int(utm_series[0]["valor"])
+
+            if uf_val and utm_val:
+                logger.info("UF/UTM histórico %d-%02d obtenido: UF %.2f UTM %d", anio, mes, uf_val, utm_val)
+                return {"uf": uf_val, "utm": utm_val}
+            return None
+    except Exception as exc:
+        logger.warning("mindicador.cl histórico no disponible para %d-%02d: %s", anio, mes, exc)
+        return None
+
+
 def _imm_para_anio(anio: int) -> int:
     """
     IMM histórico por año. Solo cambia por ley (normalmente en enero).
@@ -68,9 +114,10 @@ def obtener_parametros(db: Session, anio: int, mes: int) -> dict:
     """
     Retorna los parámetros para el año/mes dado.
     Orden de prioridad:
-      1. DB (caché)
-      2. API mindicador.cl (si es el mes actual)
-      3. Fallback hardcoded
+      1. DB (caché) — si ya fue consultado antes, usar ese valor inmediatamente
+      2. API mindicador.cl — para el mes actual usa el endpoint general;
+         para meses históricos usa el endpoint /api/{indicador}/{año}
+      3. Fallback hardcoded (último recurso)
     """
     registro = db.query(ParametrosMensuales).filter_by(anio=anio, mes=mes).first()
     if registro:
@@ -82,17 +129,23 @@ def obtener_parametros(db: Session, anio: int, mes: int) -> dict:
             "updated_at": registro.updated_at.isoformat() if registro.updated_at else None,
         }
 
-    # Solo intentar API para el mes/año actual o futuro
+    imm = _imm_para_anio(anio)
     hoy = date.today()
+
     if (anio, mes) >= (hoy.year, hoy.month):
+        # Mes actual o futuro → endpoint general (valor vigente)
         datos = _fetch_uf_utm()
         if datos:
-            imm = _imm_para_anio(anio)
             return _upsert_y_retornar(db, anio, mes, datos["uf"], datos["utm"], imm, "mindicador.cl")
+    else:
+        # Mes histórico → endpoint histórico de mindicador.cl
+        datos = _fetch_uf_utm_historico(anio, mes)
+        if datos:
+            return _upsert_y_retornar(db, anio, mes, datos["uf"], datos["utm"], imm, "mindicador.cl/historico")
 
     # Sin datos históricos en DB ni API → fallback
     logger.warning("Sin datos para %d-%02d, usando fallback hardcoded", anio, mes)
-    return {**FALLBACK, "imm": _imm_para_anio(anio), "fuente": "fallback"}
+    return {**FALLBACK, "imm": imm, "fuente": "fallback"}
 
 
 def actualizar_mes_actual(db: Session) -> dict:
