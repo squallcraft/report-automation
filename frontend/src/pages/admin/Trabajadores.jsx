@@ -472,7 +472,7 @@ export default function Trabajadores() {
 
       {/* Modal contraseña portal */}
       <Modal
-        isOpen={!!pwdModal}
+        open={!!pwdModal}
         onClose={() => setPwdModal(null)}
         title={`Contraseña portal — ${pwdModal?.nombre}`}
       >
