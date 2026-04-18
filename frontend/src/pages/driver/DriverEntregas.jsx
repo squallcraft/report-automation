@@ -1,16 +1,85 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
-import DataTable from '../../components/DataTable'
-import PeriodSelector from '../../components/PeriodSelector'
-import PageHeader from '../../components/PageHeader'
 import toast from 'react-hot-toast'
-import { Download, FileSpreadsheet, Package } from 'lucide-react'
+import {
+  Package, Download, FileSpreadsheet, Calendar, MapPin, ChevronDown, ChevronUp,
+} from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
-// Drivers solo ven datos desde semana 4 de febrero 2026
+const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const DRIVER_MIN_PERIOD = { semana: 4, mes: 2, anio: 2026 }
+
+const EMPRESA_CFG = {
+  ECOURIER: 'bg-blue-50 text-blue-700',
+  OVIEDO:   'bg-indigo-50 text-indigo-700',
+}
+
+function EnvioCard({ envio, esJefe, expanded, onToggle }) {
+  const total = (envio.costo_driver || 0) + (envio.extra_producto_driver || 0)
+              + (envio.extra_comuna_driver || 0) + (envio.pago_extra_manual || 0)
+  const tieneExtras = (envio.extra_producto_driver || 0) > 0
+                   || (envio.extra_comuna_driver || 0) > 0
+                   || (envio.pago_extra_manual || 0) > 0
+  const fechaTxt = envio.fecha_entrega
+    ? new Date(envio.fecha_entrega).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+    : '—'
+  const empresaCls = EMPRESA_CFG[envio.empresa] || 'bg-amber-50 text-amber-700'
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <button onClick={onToggle} className="w-full text-left p-4 flex items-start gap-3 hover:bg-gray-50">
+        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <Package size={18} className="text-blue-600" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-800 truncate">{envio.seller_nombre || 'Sin seller'}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-0.5"><Calendar size={10}/> {fechaTxt}</span>
+                {envio.empresa && (
+                  <span className={`uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded ${empresaCls}`}>
+                    {envio.empresa}
+                  </span>
+                )}
+                {esJefe && envio.driver_nombre && (
+                  <span className="text-gray-500">· {envio.driver_nombre}</span>
+                )}
+              </p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-sm font-bold text-emerald-600 leading-none">{fmt(total)}</p>
+              {tieneExtras && (
+                <p className="text-[10px] text-gray-400 mt-0.5">+ extras</p>
+              )}
+            </div>
+          </div>
+        </div>
+        {tieneExtras && (
+          expanded ? <ChevronUp size={14} className="text-gray-300 flex-shrink-0 mt-1"/> : <ChevronDown size={14} className="text-gray-300 flex-shrink-0 mt-1"/>
+        )}
+      </button>
+
+      {expanded && tieneExtras && (
+        <div className="border-t border-gray-50 bg-gray-50/40 px-4 py-3 space-y-1">
+          {[
+            ['Base',           envio.costo_driver],
+            ['Extra producto', envio.extra_producto_driver],
+            ['Extra comuna',   envio.extra_comuna_driver],
+            ['Extra manual',   envio.pago_extra_manual],
+          ].filter(([,v]) => v > 0).map(([label, value]) => (
+            <div key={label} className="flex justify-between text-xs">
+              <span className="text-gray-500">{label}</span>
+              <span className="text-gray-700 font-medium">{fmt(value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function DriverEntregas() {
   const { user } = useAuth()
@@ -27,6 +96,7 @@ export default function DriverEntregas() {
   })
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [downloadingXls, setDownloadingXls] = useState(false)
+  const [expandedId, setExpandedId] = useState(null)
 
   useEffect(() => {
     api.get('/drivers/mi-flota/info')
@@ -50,10 +120,19 @@ export default function DriverEntregas() {
       ? envios.filter((e) => e.driver_id === user?.entidad_id)
       : envios.filter((e) => e.driver_id === parseInt(filterDriver, 10))
 
+  const totalPeriodo = filtered.reduce(
+    (acc, e) => acc + (e.costo_driver || 0) + (e.extra_producto_driver || 0)
+                    + (e.extra_comuna_driver || 0) + (e.pago_extra_manual || 0),
+    0,
+  )
+
   const descargarExcel = async () => {
     setDownloadingXls(true)
     try {
-      const res = await api.get('/portal/driver/excel', { params: { semana: period.semana, mes: period.mes, anio: period.anio }, responseType: 'blob' })
+      const res = await api.get('/portal/driver/excel', {
+        params: { semana: period.semana, mes: period.mes, anio: period.anio },
+        responseType: 'blob',
+      })
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
       const a = document.createElement('a')
       a.href = url
@@ -87,85 +166,112 @@ export default function DriverEntregas() {
     }
   }
 
-  const columns = [
-    { key: 'fecha_entrega', label: 'Fecha', render: (v) => v ? new Date(v).toLocaleDateString('es-CL') : '—' },
-    ...(esJefe ? [{ key: 'driver_nombre', label: 'Conductor' }] : []),
-    { key: 'seller_nombre', label: 'Seller' },
-    { key: 'empresa', label: 'Empresa', render: (v) => (
-      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${v === 'ECOURIER' ? 'bg-blue-100 text-blue-700' : v === 'OVIEDO' ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>{v || '—'}</span>
-    )},
-    { key: 'costo_driver', label: 'Base', align: 'right', render: (v) => fmt(v) },
-    { key: 'extra_producto_driver', label: 'Ext. Prod.', align: 'right', render: (v) => v > 0 ? fmt(v) : '—' },
-    { key: 'extra_comuna_driver', label: 'Ext. Com.', align: 'right', render: (v) => v > 0 ? fmt(v) : '—' },
-    { key: 'pago_extra_manual', label: 'Ext. Manual', align: 'right', render: (v) => v > 0 ? fmt(v) : '—' },
-    { key: 'total', label: 'Total', align: 'right', render: (_, row) => (
-      <span className="font-semibold">{fmt(row.costo_driver + row.extra_producto_driver + row.extra_comuna_driver + (row.pago_extra_manual || 0))}</span>
-    )},
-  ]
-
   return (
-    <div>
-      <PageHeader
-        title={esJefe ? 'Entregas de la Flota' : 'Mis Entregas'}
-        subtitle="Detalle de entregas y pagos por período"
-        icon={Package}
-        accent="blue"
-        actions={
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <button onClick={descargarPDF} disabled={downloadingPdf}
-              className="btn-secondary flex items-center gap-2">
-              <Download size={16} />
-              {downloadingPdf ? 'Descargando...' : 'PDF'}
-            </button>
-            <button onClick={descargarExcel} disabled={downloadingXls}
-              className="btn-secondary flex items-center gap-2">
-              <FileSpreadsheet size={16} />
-              {downloadingXls ? 'Descargando...' : 'Excel'}
-            </button>
-          </div>
-        }
-      >
-        <p className="text-xs text-amber-300/90 mt-2 mb-0">Solo se muestra información desde la semana 4 de febrero 2026.</p>
-      </PageHeader>
+    <div className="max-w-lg mx-auto px-4 py-5 space-y-4">
 
-      <div className="card mb-6">
-        <div className="flex flex-wrap items-end gap-4">
-          <PeriodSelector {...period} onChange={setPeriod} />
-          {esJefe && (
+      {/* Hero */}
+      <div className="rounded-2xl text-white p-5 relative overflow-hidden"
+           style={{ background: 'linear-gradient(135deg, #003c72 0%, #1d4ed8 100%)' }}>
+        <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
+        <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-white/5 rounded-full" />
+
+        <div className="relative">
+          <div className="flex items-start justify-between mb-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Conductor</label>
-              <select
-                className="input-field text-sm"
-                value={filterDriver}
-                onChange={(e) => setFilterDriver(e.target.value)}
-              >
-                <option value="todos">Toda la flota</option>
-                <option value="mis">Mis entregas</option>
-                {flota.subordinados.map((s) => (
-                  <option key={s.id} value={s.id}>{s.nombre}</option>
-                ))}
-              </select>
+              <p className="text-blue-200 text-xs font-medium uppercase tracking-wider">
+                {esJefe ? 'Entregas flota' : 'Mis entregas'}
+              </p>
+              <h1 className="text-lg font-bold leading-tight mt-0.5">
+                Semana {period.semana} · {MESES_FULL[period.mes - 1]}
+              </h1>
+              <p className="text-blue-200 text-xs mt-0.5">{period.anio}</p>
             </div>
-          )}
+            <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+              <Package size={18} className="text-white" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white/10 rounded-xl p-3">
+              <p className="text-blue-200 text-[10px] uppercase tracking-wide leading-none mb-1">Entregas</p>
+              <p className="text-white font-bold text-base leading-tight">{filtered.length}</p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-3">
+              <p className="text-blue-200 text-[10px] uppercase tracking-wide leading-none mb-1">Total período</p>
+              <p className="text-white font-bold text-base leading-tight">{fmt(totalPeriodo)}</p>
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Selector + descargas */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-2">
+        <div className="flex gap-2">
+          <select value={period.semana}
+            onChange={(e) => setPeriod({ ...period, semana: Number(e.target.value) })}
+            className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+            {[1, 2, 3, 4, 5].map((s) => <option key={s} value={s}>Semana {s}</option>)}
+          </select>
+          <select value={period.mes}
+            onChange={(e) => setPeriod({ ...period, mes: Number(e.target.value) })}
+            className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+            {MESES_FULL.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+          <select value={period.anio}
+            onChange={(e) => setPeriod({ ...period, anio: Number(e.target.value) })}
+            className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+            {[now.getFullYear(), now.getFullYear() - 1].map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+
+        {esJefe && (
+          <select value={filterDriver}
+            onChange={(e) => setFilterDriver(e.target.value)}
+            className="w-full text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+            <option value="todos">Toda la flota</option>
+            <option value="mis">Solo mis entregas</option>
+            {flota.subordinados.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          </select>
+        )}
+
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button onClick={descargarPDF} disabled={downloadingPdf}
+            className="flex items-center justify-center gap-2 text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 rounded-xl px-3 py-2.5 transition-colors">
+            <Download size={13} /> {downloadingPdf ? 'Descargando…' : 'PDF Liquidación'}
+          </button>
+          <button onClick={descargarExcel} disabled={downloadingXls}
+            className="flex items-center justify-center gap-2 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 rounded-xl px-3 py-2.5 transition-colors">
+            <FileSpreadsheet size={13} /> {downloadingXls ? 'Descargando…' : 'Excel'}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 leading-snug">
+        Solo se muestra información desde la <strong>semana 4 de febrero 2026</strong>.
+      </p>
+
+      {/* Lista de envíos */}
       {loading ? (
-        <div className="text-center py-12 text-gray-400">Cargando...</div>
+        <div className="flex items-center justify-center h-32">
+          <div className="w-7 h-7 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+          <Package size={32} className="text-gray-200 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">No hay entregas para este período.</p>
+        </div>
       ) : (
-        <>
-          <DataTable columns={columns} data={filtered} emptyMessage="No hay entregas para este período" sortable />
-          {filtered.length > 0 && (
-            <div className="mt-4 card bg-emerald-50 border-emerald-200">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-emerald-900">Total del Período</span>
-                <span className="text-xl font-bold text-emerald-900">
-                  {fmt(filtered.reduce((acc, e) => acc + e.costo_driver + e.extra_producto_driver + e.extra_comuna_driver + (e.pago_extra_manual || 0), 0))}
-                </span>
-              </div>
-            </div>
-          )}
-        </>
+        <div className="space-y-2">
+          {filtered.map((e) => (
+            <EnvioCard
+              key={e.id}
+              envio={e}
+              esJefe={esJefe}
+              expanded={expandedId === e.id}
+              onToggle={() => setExpandedId(expandedId === e.id ? null : e.id)}
+            />
+          ))}
+        </div>
       )}
     </div>
   )

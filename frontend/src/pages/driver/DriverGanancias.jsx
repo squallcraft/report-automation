@@ -1,45 +1,139 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
-import PageHeader from '../../components/PageHeader'
-import { TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle, Users, ExternalLink, Wallet } from 'lucide-react'
+import {
+  TrendingUp, DollarSign, Clock, CheckCircle, AlertCircle,
+  Users, ExternalLink, Wallet, Calendar, ChevronDown, ChevronUp,
+  Banknote, AlertTriangle,
+} from 'lucide-react'
 
 const fmt = (n) => `$${(n || 0).toLocaleString('es-CL')}`
 const now = new Date()
 
-const MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-]
+const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 
-const ESTADO_CONFIG = {
-  PAGADO:     { label: 'Pagado',     icon: CheckCircle,  cls: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-  INCOMPLETO: { label: 'Incompleto', icon: AlertCircle,  cls: 'text-amber-700 bg-amber-50 border-amber-200' },
-  PENDIENTE:  { label: 'Pendiente',  icon: Clock,        cls: 'text-gray-600 bg-gray-50 border-gray-200' },
+const ESTADO_CFG = {
+  PAGADO:     { label: 'Pagado',     icon: CheckCircle,  cls: 'text-emerald-700 bg-emerald-50' },
+  INCOMPLETO: { label: 'Incompleto', icon: AlertCircle,  cls: 'text-amber-700 bg-amber-50' },
+  PENDIENTE:  { label: 'Pendiente',  icon: Clock,        cls: 'text-gray-600 bg-gray-100' },
 }
 
-function EstadoBadge({ estado }) {
-  const cfg = ESTADO_CONFIG[estado] || ESTADO_CONFIG.PENDIENTE
+function EstadoChip({ estado }) {
+  const cfg = ESTADO_CFG[estado] || ESTADO_CFG.PENDIENTE
   const Icon = cfg.icon
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.cls}`}>
-      <Icon size={11} />
-      {cfg.label}
+    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
+      <Icon size={10} /> {cfg.label}
     </span>
   )
 }
 
-function ProgressBar({ pagado, liquidado }) {
-  const pct = liquidado > 0 ? Math.min(100, Math.round((pagado / liquidado) * 100)) : 0
+function ProgressBar({ pct }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-amber-400' : 'bg-gray-300'}`}
-          style={{ width: `${pct}%` }}
-        />
+    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-amber-400' : 'bg-gray-300'}`}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  )
+}
+
+function SemanaCard({ sem, filas, esJefe, mes, anio, navigate, expanded, onToggle }) {
+  const liqTotal    = filas.reduce((s, f) => s + (f.liquidado || 0), 0)
+  const pagTotal    = filas.reduce((s, f) => s + (f.pagado || 0), 0)
+  const pct         = liqTotal > 0 ? Math.min(100, Math.round((pagTotal / liqTotal) * 100)) : 0
+  const filaPropia  = filas.find((f) => f.es_propio)
+  const estadoMain  = filaPropia?.estado || filas[0]?.estado
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <button onClick={onToggle} className="w-full p-4 text-left hover:bg-gray-50">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-sm font-bold text-gray-800">Semana {sem}</p>
+              <EstadoChip estado={estadoMain} />
+            </div>
+            <p className="text-[11px] text-gray-400">
+              Liquidado <span className="text-gray-700 font-medium">{fmt(liqTotal)}</span>
+              <span className="mx-1">·</span>
+              Pagado <span className="text-emerald-700 font-medium">{fmt(pagTotal)}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {filaPropia && (
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/driver/liquidacion?semana=${sem}&mes=${mes}&anio=${anio}`) }}
+                className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                title="Ver liquidación"
+              >
+                <ExternalLink size={14} />
+              </button>
+            )}
+            {esJefe && (expanded ? <ChevronUp size={14} className="text-gray-300"/> : <ChevronDown size={14} className="text-gray-300"/>)}
+          </div>
+        </div>
+        <div className="mt-3">
+          <ProgressBar pct={pct} />
+        </div>
+      </button>
+
+      {expanded && esJefe && filas.length > 1 && (
+        <div className="border-t border-gray-50 bg-gray-50/40 px-4 py-3 space-y-2">
+          {filas.map((f) => (
+            <div key={f.driver_id} className="flex items-center justify-between text-xs">
+              <div className="min-w-0 flex-1">
+                <p className={`truncate ${f.es_propio ? 'text-gray-700 font-medium' : 'text-blue-700'}`}>
+                  {!f.es_propio && <Users size={10} className="inline mr-1 text-blue-400"/>}
+                  {f.es_propio ? `${f.driver_nombre} (yo)` : f.driver_nombre}
+                </p>
+                <p className="text-gray-400 mt-0.5">Liq {fmt(f.liquidado)}</p>
+              </div>
+              <p className="text-emerald-700 font-semibold">{f.pagado > 0 ? fmt(f.pagado) : '—'}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PagoCard({ pago }) {
+  const fechaTxt = pago.fecha_pago
+    ? new Date(pago.fecha_pago + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—'
+  const fuenteCls = pago.fuente === 'cartola'
+    ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+    : 'bg-gray-100 text-gray-600 border-gray-200'
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+          <Banknote size={18} className="text-emerald-600" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <p className="text-base font-bold text-emerald-600 leading-none">{fmt(pago.monto)}</p>
+            <span className={`text-[10px] uppercase font-semibold tracking-wide px-2 py-0.5 rounded-full border ${fuenteCls}`}>
+              {pago.fuente === 'cartola' ? 'Planilla' : 'Manual'}
+            </span>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1.5">
+            Sem {pago.semana} · {fechaTxt}
+            {pago.driver_nombre && !pago.es_propio && (
+              <span className="text-blue-700"> · {pago.driver_nombre}</span>
+            )}
+          </p>
+          {pago.descripcion && (
+            <p className="text-[11px] text-gray-400 truncate mt-0.5" title={pago.descripcion}>
+              {pago.descripcion}
+            </p>
+          )}
+        </div>
       </div>
-      <span className="text-xs text-gray-500 w-8 text-right">{pct}%</span>
     </div>
   )
 }
@@ -50,6 +144,7 @@ export default function DriverGanancias() {
   const [anio, setAnio] = useState(now.getFullYear())
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [expandedSem, setExpandedSem] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -59,269 +154,118 @@ export default function DriverGanancias() {
       .finally(() => setLoading(false))
   }, [mes, anio])
 
-  const anios = [now.getFullYear(), now.getFullYear() - 1]
-
-  // Agrupar semanas por semana (para jefe: filas por conductor bajo cada semana)
   const semanaGroups = {}
   if (data?.semanas) {
-    data.semanas.forEach((s) => {
+    for (const s of data.semanas) {
       if (!semanaGroups[s.semana]) semanaGroups[s.semana] = []
       semanaGroups[s.semana].push(s)
-    })
+    }
   }
-
   const semanasOrdenadas = Object.keys(semanaGroups).map(Number).sort((a, b) => a - b)
 
-  return (
-    <div>
-      <PageHeader
-        title="Mis Ganancias"
-        subtitle="Detalle de pagos por período"
-        icon={Wallet}
-        accent="green"
-      />
+  const totalLiq = data?.resumen?.total_liquidado || 0
+  const totalPag = data?.resumen?.total_pagado    || 0
+  const pendiente= data?.resumen?.pendiente       || 0
 
-      {/* Selector de período */}
-      <div className="card mb-6">
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Mes</label>
-            <select
-              className="input-field text-sm"
-              value={mes}
-              onChange={(e) => setMes(Number(e.target.value))}
-            >
-              {MESES.map((label, i) => (
-                <option key={i + 1} value={i + 1}>{label}</option>
-              ))}
-            </select>
+  return (
+    <div className="max-w-lg mx-auto px-4 py-5 space-y-4">
+
+      {/* Hero */}
+      <div className="rounded-2xl text-white p-5 relative overflow-hidden"
+           style={{ background: 'linear-gradient(135deg, #047857 0%, #10b981 100%)' }}>
+        <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full" />
+        <div className="absolute -bottom-4 -left-4 w-20 h-20 bg-white/5 rounded-full" />
+
+        <div className="relative">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <p className="text-emerald-100 text-xs font-medium uppercase tracking-wider">Mis ganancias</p>
+              <h1 className="text-lg font-bold leading-tight mt-0.5">{MESES_FULL[mes - 1]} {anio}</h1>
+              <p className="text-emerald-100 text-xs mt-0.5">Detalle de pagos por período</p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+              <Wallet size={18} className="text-white" />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Año</label>
-            <select
-              className="input-field text-sm"
-              value={anio}
-              onChange={(e) => setAnio(Number(e.target.value))}
-            >
-              {anios.map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white/10 rounded-xl p-2.5">
+              <p className="text-emerald-100 text-[10px] uppercase tracking-wide leading-none mb-1">Liquidado</p>
+              <p className="text-white font-bold text-sm leading-tight">{fmt(totalLiq)}</p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2.5">
+              <p className="text-emerald-100 text-[10px] uppercase tracking-wide leading-none mb-1">Pagado</p>
+              <p className="text-white font-bold text-sm leading-tight">{fmt(totalPag)}</p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2.5">
+              <p className="text-emerald-100 text-[10px] uppercase tracking-wide leading-none mb-1">Pendiente</p>
+              <p className="text-white font-bold text-sm leading-tight">{fmt(pendiente)}</p>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Selector */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+        <div className="flex gap-2">
+          <select value={mes} onChange={(e) => setMes(Number(e.target.value))}
+            className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+            {MESES_FULL.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+          </select>
+          <select value={anio} onChange={(e) => setAnio(Number(e.target.value))}
+            className="w-24 text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+            {[now.getFullYear(), now.getFullYear() - 1].map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+
       {loading ? (
-        <div className="text-center py-16 text-gray-400">Cargando...</div>
+        <div className="flex items-center justify-center h-32">
+          <div className="w-7 h-7 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+        </div>
       ) : !data || !data.semanas || data.semanas.length === 0 ? (
-        <div className="card text-center py-16 text-gray-400">
-          No hay datos para {MESES[mes - 1]} {anio}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
+          <Wallet size={32} className="text-gray-200 mx-auto mb-2" />
+          <p className="text-sm text-gray-400">No hay datos para {MESES_FULL[mes - 1]} {anio}</p>
         </div>
       ) : (
         <>
-          {/* Tarjetas resumen */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="card flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-blue-50">
-                <TrendingUp size={20} className="text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Liquidado</p>
-                <p className="text-xl font-bold text-gray-900">{fmt(data.resumen.total_liquidado)}</p>
-              </div>
+          {/* Desglose semanal */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 px-1 pt-1">
+              <Calendar size={13} className="text-emerald-600" />
+              <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Desglose semanal</h2>
             </div>
-            <div className="card flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-emerald-50">
-                <DollarSign size={20} className="text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Pagado</p>
-                <p className="text-xl font-bold text-emerald-700">{fmt(data.resumen.total_pagado)}</p>
-              </div>
-            </div>
-            <div className="card flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-amber-50">
-                <Clock size={20} className="text-amber-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Pendiente</p>
-                <p className="text-xl font-bold text-amber-700">{fmt(data.resumen.pendiente)}</p>
-              </div>
+            <div className="space-y-2 pt-1">
+              {semanasOrdenadas.map((sem) => (
+                <SemanaCard
+                  key={sem}
+                  sem={sem}
+                  filas={semanaGroups[sem]}
+                  esJefe={data.es_jefe}
+                  mes={mes}
+                  anio={anio}
+                  navigate={navigate}
+                  expanded={expandedSem === sem}
+                  onToggle={() => setExpandedSem(expandedSem === sem ? null : sem)}
+                />
+              ))}
             </div>
           </div>
 
-          {/* Tabla semanal */}
-          <div className="card mb-6 p-0 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-700">
-                Desglose semanal — {MESES[mes - 1]} {anio}
-              </h2>
+          {/* Pagos */}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 px-1 pt-3">
+              <Banknote size={13} className="text-emerald-600" />
+              <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Pagos recibidos</h2>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Semana</th>
-                    {data.es_jefe && (
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Conductor</th>
-                    )}
-                    <th className="text-right px-4 py-3 font-medium text-gray-600">Liquidado</th>
-                    <th className="text-right px-4 py-3 font-medium text-gray-600">Pagado</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Progreso</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Estado</th>
-                    <th className="text-center px-4 py-3 font-medium text-gray-600"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {semanasOrdenadas.map((sem) => {
-                    const filas = semanaGroups[sem]
-                    return filas.map((fila, idx) => (
-                      <tr
-                        key={`${sem}-${fila.driver_id}`}
-                        className={`border-b border-gray-100 hover:bg-gray-50 ${!fila.es_propio ? 'bg-blue-50/30' : ''}`}
-                      >
-                        {/* Celda semana solo en primera fila del grupo */}
-                        {idx === 0 ? (
-                          <td
-                            className="px-4 py-3 font-semibold text-gray-800"
-                            rowSpan={filas.length}
-                          >
-                            Sem {sem}
-                          </td>
-                        ) : null}
-
-                        {data.es_jefe && (
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5">
-                              {!fila.es_propio && (
-                                <Users size={12} className="text-blue-500 flex-shrink-0" />
-                              )}
-                              <span className={`text-xs ${fila.es_propio ? 'font-medium text-gray-700' : 'text-blue-700'}`}>
-                                {fila.es_propio ? `${fila.driver_nombre} (yo)` : fila.driver_nombre}
-                              </span>
-                            </div>
-                          </td>
-                        )}
-
-                        <td className="px-4 py-3 text-right font-medium text-gray-800">
-                          {fmt(fila.liquidado)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold text-emerald-700">
-                          {fila.pagado > 0 ? fmt(fila.pagado) : <span className="text-gray-400">—</span>}
-                        </td>
-                        <td className="px-4 py-3 min-w-[100px]">
-                          <ProgressBar pagado={fila.pagado} liquidado={fila.liquidado} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <EstadoBadge estado={fila.estado} />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {fila.es_propio && (
-                            <button
-                              onClick={() => navigate(`/driver/liquidacion?semana=${sem}&mes=${mes}&anio=${anio}`)}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"
-                              title="Ver liquidación"
-                            >
-                              <ExternalLink size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Historial de pagos recibidos */}
-          <div className="card p-0 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-semibold text-gray-700">
-                Registro de pagos recibidos
-              </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Transferencias individuales registradas por el administrador
-              </p>
-            </div>
-
             {data.pagos.length === 0 ? (
-              <div className="px-5 py-10 text-center text-sm text-gray-400">
-                No hay pagos registrados para este período
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
+                <p className="text-sm text-gray-400">No hay pagos registrados para este período</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Fecha</th>
-                      {data.es_jefe && (
-                        <th className="text-left px-4 py-3 font-medium text-gray-600">Conductor</th>
-                      )}
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Semana</th>
-                      <th className="text-right px-4 py-3 font-medium text-gray-600">Monto</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Origen</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Descripción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.pagos.map((pago) => (
-                      <tr
-                        key={pago.id}
-                        className={`border-b border-gray-100 hover:bg-gray-50 ${!pago.es_propio ? 'bg-blue-50/30' : ''}`}
-                      >
-                        <td className="px-4 py-3 text-gray-700">
-                          {pago.fecha_pago
-                            ? new Date(pago.fecha_pago + 'T12:00:00').toLocaleDateString('es-CL', {
-                                day: '2-digit', month: 'short', year: 'numeric',
-                              })
-                            : <span className="text-gray-400">—</span>
-                          }
-                        </td>
-                        {data.es_jefe && (
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5">
-                              {!pago.es_propio && <Users size={12} className="text-blue-500" />}
-                              <span className={`text-xs ${pago.es_propio ? 'font-medium text-gray-700' : 'text-blue-700'}`}>
-                                {pago.es_propio ? `${pago.driver_nombre} (yo)` : pago.driver_nombre}
-                              </span>
-                            </div>
-                          </td>
-                        )}
-                        <td className="px-4 py-3 text-gray-600">Sem {pago.semana}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-emerald-700">
-                          {fmt(pago.monto)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                            pago.fuente === 'cartola'
-                              ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                              : 'bg-gray-100 text-gray-600 border border-gray-200'
-                          }`}>
-                            {pago.fuente === 'cartola' ? 'Planilla TEF' : 'Manual'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs max-w-[200px] truncate">
-                          {pago.descripcion || <span className="text-gray-300">—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 border-t-2 border-gray-200">
-                      <td
-                        className="px-4 py-3 font-semibold text-gray-700"
-                        colSpan={data.es_jefe ? 3 : 2}
-                      >
-                        Total pagado
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-emerald-700">
-                        {fmt(data.pagos.reduce((acc, p) => acc + p.monto, 0))}
-                      </td>
-                      <td colSpan={2} />
-                    </tr>
-                  </tfoot>
-                </table>
+              <div className="space-y-2 pt-1">
+                {data.pagos.map((p) => <PagoCard key={p.id} pago={p} />)}
               </div>
             )}
           </div>
