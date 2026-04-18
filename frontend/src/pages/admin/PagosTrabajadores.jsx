@@ -3,9 +3,10 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   Users, Download, Upload, FileText, X, Check, AlertCircle,
-  DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle, Zap, Archive,
+  DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle, Zap, Archive, Eye,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import LiquidacionViewer from '../../components/LiquidacionViewer'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -438,7 +439,7 @@ function ModalCartola({ mes, anio, onClose, onConfirmado }) {
 // ─────────────────────────────────────────────────────────────────
 // Fila de trabajador
 // ─────────────────────────────────────────────────────────────────
-function TrabajadorRow({ t, mes, anio, onPagoManual, onReload }) {
+function TrabajadorRow({ t, mes, anio, onPagoManual, onReload, onVerLiquidacion }) {
   const [revirtiendo, setRevirtiendo] = useState(false)
   const isPagado = t.estado === 'PAGADO'
   const isParcial = t.estado === 'PARCIAL'
@@ -525,12 +526,23 @@ function TrabajadorRow({ t, mes, anio, onPagoManual, onReload }) {
       </td>
       {/* Revertir */}
       <td className="py-2 px-3">
-        {(isPagado || isParcial) && (
-          <button onClick={revertir} disabled={revirtiendo} title="Revertir todos los pagos"
-            className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-            <RotateCcw size={13} />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {t.liquidacion_id && (
+            <button
+              onClick={() => onVerLiquidacion(t.liquidacion_id)}
+              title="Ver liquidación"
+              className="p-1 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+            >
+              <Eye size={13} />
+            </button>
+          )}
+          {(isPagado || isParcial) && (
+            <button onClick={revertir} disabled={revirtiendo} title="Revertir todos los pagos"
+              className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+              <RotateCcw size={13} />
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   )
@@ -554,6 +566,7 @@ export default function PagosTrabajadores() {
   const [liqResultado, setLiqResultado] = useState(null)
   const [liqModalOpen, setLiqModalOpen] = useState(false)
   const [liqDescargando, setLiqDescargando] = useState(false)
+  const [viewerLiqId, setViewerLiqId] = useState(null)
 
   const handleGenerarLiquidaciones = async () => {
     setLiqGenerando(true)
@@ -751,7 +764,7 @@ export default function PagosTrabajadores() {
               </thead>
               <tbody>
                 {trabajadores.map(t => (
-                  <TrabajadorRow key={t.id} t={t} mes={mes} anio={anio} onPagoManual={setModalPago} onReload={cargar} />
+                  <TrabajadorRow key={t.id} t={t} mes={mes} anio={anio} onPagoManual={setModalPago} onReload={cargar} onVerLiquidacion={setViewerLiqId} />
                 ))}
               </tbody>
               <tfoot>
@@ -792,6 +805,10 @@ export default function PagosTrabajadores() {
 
       {modalCartola && (
         <ModalCartola mes={mes} anio={anio} onClose={() => setModalCartola(false)} onConfirmado={cargar} />
+      )}
+
+      {viewerLiqId && (
+        <LiquidacionViewer liquidacionId={viewerLiqId} onClose={() => setViewerLiqId(null)} />
       )}
 
       {/* Modal Generar Liquidaciones */}

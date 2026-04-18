@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -101,7 +101,7 @@ with engine.connect() as conn:
             ("adicional_isapre", "INTEGER NOT NULL DEFAULT 0"),
             ("password_hash", "TEXT"),
             ("firma_base64",  "TEXT"),
-
+        ]:
             if col_name not in trab_cols:
                 safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")
 
@@ -393,6 +393,43 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE boletas_colaboradores ADD COLUMN concepto TEXT")
         safe_exec("ALTER TABLE boletas_colaboradores DROP CONSTRAINT IF EXISTS uq_boleta_colaborador_periodo")
 
+    # ── Migración: IVA Drivers ──
+    if "pagos_iva_drivers" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE pagos_iva_drivers (
+                id SERIAL PRIMARY KEY,
+                driver_id INTEGER NOT NULL REFERENCES drivers(id),
+                mes_origen INTEGER NOT NULL,
+                anio_origen INTEGER NOT NULL,
+                estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+                base_iva_snapshot INTEGER,
+                monto_iva_snapshot INTEGER,
+                facturas_incluidas JSONB,
+                fecha_pago DATE,
+                nota TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT uq_pago_iva_driver UNIQUE (driver_id, mes_origen, anio_origen)
+            )
+        """)
+    if "pagos_cartola_iva" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE pagos_cartola_iva (
+                id SERIAL PRIMARY KEY,
+                pago_iva_driver_id INTEGER NOT NULL REFERENCES pagos_iva_drivers(id),
+                driver_id INTEGER NOT NULL REFERENCES drivers(id),
+                mes INTEGER NOT NULL,
+                anio INTEGER NOT NULL,
+                monto INTEGER NOT NULL,
+                fecha_pago TEXT,
+                descripcion TEXT,
+                fuente TEXT NOT NULL DEFAULT 'cartola',
+                fingerprint TEXT UNIQUE,
+                carga_id INTEGER REFERENCES cartola_cargas(id),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
 # ── Seed categorías financieras ──
 from app.database import SessionLocal
 from app.models import CategoriaFinanciera
@@ -625,6 +662,7 @@ app.include_router(leads.router, prefix="/api")
 app.include_router(colaboradores.router, prefix="/api")
 app.include_router(parametros_remuneracion.router, prefix="/api")
 app.include_router(remuneraciones.router, prefix="/api")
+app.include_router(iva_drivers.router, prefix="/api")
 
 
 @app.on_event("startup")

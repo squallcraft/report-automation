@@ -15,6 +15,7 @@ from app.models import (
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
     MovimientoFinanciero, CategoriaFinanciera,
     Driver, Colaborador, BoletaColaborador,
+    PagoIVADriver, PagoCartolaIVA,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ CUENTA_IMPUESTOS = "5.8"
 CUENTA_OTROS_GASTOS = "5.9"
 CUENTA_INTERESES = "5.10"
 CUENTA_REMUNERACIONES_POR_PAGAR = "2.5"  # Pasivo: retenciones previsionales y aportes empleador
+CUENTA_IVA_CREDITO_FISCAL = "1.3"        # Activo: IVA soportado en facturas de proveedores (drivers)
 
 # Mapeo CategoriaFinanciera.nombre → código cuenta contable
 _CAT_TO_CUENTA = {
@@ -367,6 +369,39 @@ def asiento_movimiento_financiero(db: Session, mov: MovimientoFinanciero, es_bac
         f"{cat.tipo}: {mov.nombre}",
         "MovimientoFinanciero", mov.id,
         lineas,
+        es_backfill=es_backfill,
+    )
+
+
+def asiento_pago_iva_driver(db: Session, pago_cartola_iva: PagoCartolaIVA, es_backfill=False):
+    """
+    Pago de IVA a driver → Debe: IVA Crédito Fiscal (1.3) / Haber: Banco (1.1)
+
+    El IVA pagado al driver es un crédito fiscal para la empresa:
+    al recibir su factura, nace el crédito; al transferirle el IVA, se cancela
+    contra la cuenta bancaria.
+    """
+    if not pago_cartola_iva.monto or pago_cartola_iva.monto <= 0:
+        return None
+    fecha = (
+        _parse_fecha(pago_cartola_iva.fecha_pago)
+        if pago_cartola_iva.fecha_pago
+        else date.today()
+    )
+    driver = db.get(Driver, pago_cartola_iva.driver_id)
+    nombre = driver.nombre if driver else f"Driver {pago_cartola_iva.driver_id}"
+    pago_iva = db.get(PagoIVADriver, pago_cartola_iva.pago_iva_driver_id)
+    periodo = f"{pago_iva.mes_origen}/{pago_iva.anio_origen}" if pago_iva else "?"
+    return crear_asiento(
+        db, fecha,
+        f"IVA driver {periodo} — {nombre}",
+        "PagoCartolaIVA", pago_cartola_iva.id,
+        [
+            (_cuenta_id(db, CUENTA_IVA_CREDITO_FISCAL), pago_cartola_iva.monto, 0,
+             f"IVA crédito fiscal factura {nombre} {periodo}"),
+            (_cuenta_id(db, CUENTA_BANCO), 0, pago_cartola_iva.monto,
+             f"Pago IVA a {nombre}"),
+        ],
         es_backfill=es_backfill,
     )
 

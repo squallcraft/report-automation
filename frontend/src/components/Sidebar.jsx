@@ -37,6 +37,7 @@ const adminMenu = [
       { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
       { to: '/admin/facturacion', icon: Receipt, label: 'CPS Sellers', permiso: 'facturacion' },
       { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
+      { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA Conductores', permiso: 'cpc' },
       { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
       { to: '/admin/ajustes', icon: CircleDollarSign, label: 'Ajustes / Préstamos', permiso: 'ajustes' },
       { to: '/admin/pagos-trabajadores', icon: Briefcase, label: 'Pagos Nómina', permiso: 'pagos-trabajadores' },

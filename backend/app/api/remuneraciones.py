@@ -293,9 +293,79 @@ def listar_liquidaciones(
     return [_liq_to_dict(liq, trabajadores_map.get(liq.trabajador_id, "")) for liq in liqs]
 
 
-@router.get("/liquidaciones/{liquidacion_id}/pdf")
-def descargar_pdf_liquidacion(
+@router.get("/liquidaciones/{liquidacion_id}")
+def detalle_liquidacion(
     liquidacion_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin_or_administracion),
+):
+    """Devuelve el detalle completo de una liquidación: datos del trabajador + descuentos adicionales."""
+    from app.models import AjusteLiquidacion, CuotaPrestamo, Prestamo, EstadoPrestamoEnum
+    liq = db.get(LiquidacionMensual, liquidacion_id)
+    if not liq:
+        raise HTTPException(status_code=404, detail="Liquidación no encontrada")
+    t = db.get(Trabajador, liq.trabajador_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+
+    cuotas = (
+        db.query(CuotaPrestamo)
+        .join(Prestamo)
+        .filter(
+            Prestamo.trabajador_id == t.id,
+            Prestamo.estado == EstadoPrestamoEnum.ACTIVO.value,
+            CuotaPrestamo.mes == liq.mes,
+            CuotaPrestamo.anio == liq.anio,
+            CuotaPrestamo.pagado == False,
+        )
+        .all()
+    )
+    ajustes_neg = (
+        db.query(AjusteLiquidacion)
+        .filter(
+            AjusteLiquidacion.tipo == "TRABAJADOR",
+            AjusteLiquidacion.entidad_id == t.id,
+            AjusteLiquidacion.mes == liq.mes,
+            AjusteLiquidacion.anio == liq.anio,
+            AjusteLiquidacion.monto < 0,
+        )
+        .all()
+    )
+
+    descuentos_adicionales = [
+        {"concepto": f"Cuota Préstamo — {c.prestamo.motivo or 'Préstamo'}", "monto": c.monto}
+        for c in cuotas
+    ] + [
+        {"concepto": f"Ajuste — {a.motivo or 'descuento'}", "monto": abs(a.monto)}
+        for a in ajustes_neg
+    ]
+
+    total_adicionales = sum(d["monto"] for d in descuentos_adicionales)
+    liquido_a_depositar = max(0, (liq.sueldo_liquido or 0) - total_adicionales)
+
+    base = _liq_to_dict(liq, t.nombre)
+    base.update({
+        "trabajador": {
+            "nombre": t.nombre,
+            "rut": t.rut,
+            "cargo": t.cargo,
+            "tipo_contrato": t.tipo_contrato,
+            "afp": t.afp,
+            "sistema_salud": t.sistema_salud,
+            "fecha_ingreso": t.fecha_ingreso.isoformat() if t.fecha_ingreso else None,
+            "banco": t.banco,
+            "tipo_cuenta": t.tipo_cuenta,
+            "numero_cuenta": t.numero_cuenta,
+        },
+        "descuentos_adicionales": descuentos_adicionales,
+        "total_descuentos_adicionales": total_adicionales,
+        "liquido_a_depositar": liquido_a_depositar,
+    })
+    return base
+
+
+@router.get("/liquidaciones/{liquidacion_id}/pdf")
+def descargar_pdf_liquidacion(    liquidacion_id: int,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin_or_administracion),
 ):

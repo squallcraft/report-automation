@@ -29,6 +29,7 @@ from app.models import (
     Prestamo, CuotaPrestamo, AjusteLiquidacion,
     CartolaCarga, EstadoPrestamoEnum,
     MovimientoFinanciero, CategoriaFinanciera,
+    LiquidacionMensual,
 )
 from app.services.audit import registrar as audit
 from app.services.contabilidad import asiento_pago_trabajador
@@ -302,6 +303,11 @@ def listar_pagos_mes(
         ).all()
     }
 
+    liqs_map = {
+        liq.trabajador_id: liq.id
+        for liq in db.query(LiquidacionMensual).filter_by(mes=mes, anio=anio).all()
+    }
+
     resultado = []
     for t in trabajadores:
         pago = pagos_map.get(t.id)
@@ -342,6 +348,7 @@ def listar_pagos_mes(
             "estado": pago.estado if pago else "PENDIENTE",
             "fecha_pago": str(pago.fecha_pago) if pago and pago.fecha_pago else None,
             "nota": pago.nota if pago else None,
+            "liquidacion_id": liqs_map.get(t.id),
         })
 
     return {"mes": mes, "anio": anio, "items": resultado}

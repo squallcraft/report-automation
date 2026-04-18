@@ -1029,6 +1029,61 @@ class CuotaPrestamo(Base):
     prestamo = relationship("Prestamo", back_populates="cuotas")
 
 
+# ── IVA Drivers ──
+
+
+class EstadoPagoIVAEnum(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    PAGADO = "PAGADO"
+    PARCIAL = "PARCIAL"
+
+
+class PagoIVADriver(Base):
+    """Deuda de IVA por driver por mes de facturación. 1 registro por driver/mes."""
+    __tablename__ = "pagos_iva_drivers"
+    __table_args__ = (
+        UniqueConstraint("driver_id", "mes_origen", "anio_origen", name="uq_pago_iva_driver"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=False)
+    mes_origen = Column(Integer, nullable=False)
+    anio_origen = Column(Integer, nullable=False)
+    estado = Column(String, nullable=False, default=EstadoPagoIVAEnum.PENDIENTE.value)
+    # Snapshots congelados al momento del pago (trazabilidad F29)
+    base_iva_snapshot = Column(Integer, nullable=True)
+    monto_iva_snapshot = Column(Integer, nullable=True)
+    facturas_incluidas = Column(JSON, nullable=True)   # [factura_id, ...]
+    fecha_pago = Column(Date, nullable=True)
+    nota = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    driver = relationship("Driver")
+    pagos_cartola = relationship("PagoCartolaIVA", back_populates="pago_iva")
+
+
+class PagoCartolaIVA(Base):
+    """Transferencias reales de IVA a drivers. Separado de PagoCartola para no inflar CPC semanal."""
+    __tablename__ = "pagos_cartola_iva"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pago_iva_driver_id = Column(Integer, ForeignKey("pagos_iva_drivers.id"), nullable=False)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=False)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    monto = Column(Integer, nullable=False)
+    fecha_pago = Column(String, nullable=True)
+    descripcion = Column(String, nullable=True)
+    fuente = Column(String, nullable=False, default="cartola")   # cartola | manual
+    fingerprint = Column(String, nullable=True, unique=True)
+    carga_id = Column(Integer, ForeignKey("cartola_cargas.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    pago_iva = relationship("PagoIVADriver", back_populates="pagos_cartola")
+    driver = relationship("Driver")
+
+
 # ── Colaboradores ──
 
 

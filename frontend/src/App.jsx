@@ -61,6 +61,7 @@ import LeadsInbox from './pages/admin/LeadsInbox'
 import LeadsPipeline from './pages/admin/LeadsPipeline'
 import LeadsKB from './pages/admin/LeadsKB'
 import Colaboradores from './pages/admin/Colaboradores'
+import IVADrivers from './pages/admin/IVADrivers'
 import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
 import PickupEnvios from './pages/pickup/PickupEnvios'
@@ -168,6 +169,7 @@ export default function App() {
         <Route path="leads/pipeline" element={<LeadsPipeline />} />
         <Route path="leads/kb" element={<LeadsKB />} />
         <Route path="colaboradores" element={<Colaboradores />} />
+        <Route path="iva-drivers" element={<IVADrivers />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>

@@ -37,6 +37,7 @@ from app.models import (
     CartolaCarga, TipoEntidadEnum, EstadoPagoEnum,
     FacturaDriver, EstadoFacturaDriverEnum,
 )
+from app.services.iva_drivers import recalcular_pago_iva
 
 UPLOADS_DIR_DRIVERS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
@@ -1226,6 +1227,9 @@ def revisar_factura_driver(
         factura.nota_admin = nota_admin
     factura.revisado_por = current_user.get("nombre", current_user.get("username", "admin"))
     factura.revisado_en = datetime.utcnow()
+
+    # Trigger automático: recalcular PagoIVADriver cuando cambia el estado de la factura
+    recalcular_pago_iva(db, factura.driver_id, factura.mes, factura.anio)
 
     audit(db, "revisar_factura_driver", usuario=current_user, request=request,
           entidad="factura_driver", entidad_id=factura_id,
