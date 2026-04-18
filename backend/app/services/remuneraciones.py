@@ -131,13 +131,13 @@ def _calcular_iusc(base_tributable: int, utm: int = UTM) -> int:
     return max(0, round(base_tributable * 0.40 - 30.820 * utm))
 
 
-def _descomponer_en_base_grat(imponible: int) -> tuple[int, int]:
+def _descomponer_en_base_grat(imponible: int, tope_grat_mes: int = TOPE_GRATIFICACION_MENSUAL) -> tuple[int, int]:
     """Descompone el imponible en (sueldo_base, gratificación) según Art. 50 CT."""
     base_tentativo = round(imponible / 1.25)
     grat_tentativa = round(base_tentativo * 0.25)
-    if grat_tentativa <= TOPE_GRATIFICACION_MENSUAL:
+    if grat_tentativa <= tope_grat_mes:
         return base_tentativo, grat_tentativa
-    return imponible - TOPE_GRATIFICACION_MENSUAL, TOPE_GRATIFICACION_MENSUAL
+    return imponible - tope_grat_mes, tope_grat_mes
 
 
 # ── CAPA A: forward bruto → líquido ──────────────────────────────────────────
@@ -151,6 +151,8 @@ def bruto_a_liquido(
     colacion: int = 0,
     viaticos: int = 0,
     utm: int = UTM,
+    valor_uf: float = VALOR_UF,
+    imm: int = IMM,
 ) -> ResultadoCalculo:
     """
     CAPA A — Función forward determinista.
@@ -159,28 +161,30 @@ def bruto_a_liquido(
     topes AFP/salud (90 UF) y cesantía (135,2 UF), IUSC por tramos,
     y separa el adicional Isapre del descuento 7% legal.
     """
+    tope_afp      = round(TOPE_IMPONIBLE_AFP_UF * valor_uf)
+    tope_cesantia = round(TOPE_IMPONIBLE_CESANTIA_UF * valor_uf)
+    tope_grat_mes = round(4.75 * imm / 12)
+
     tasa_afp = _tasa_afp(afp)
     es_plazo_fijo = (tipo_contrato or "").upper() == "PLAZO_FIJO"
     no_imponibles = movilizacion + colacion + viaticos
 
     # ── AFP ──────────────────────────────────────────────────────────────────
-    base_afp = min(remuneracion_imponible, TOPE_IMPONIBLE_AFP)
+    base_afp = min(remuneracion_imponible, tope_afp)
     descuento_afp = round(base_afp * tasa_afp)
 
     # ── Salud ─────────────────────────────────────────────────────────────────
-    base_salud = min(remuneracion_imponible, TOPE_IMPONIBLE_AFP)
+    base_salud = min(remuneracion_imponible, tope_afp)
     descuento_salud_legal = round(base_salud * TASA_SALUD_FONASA)  # 7%
     adicional_isapre = 0
     if sistema_salud and sistema_salud.upper() != "FONASA":
         uf_plan = _parse_uf_isapre(monto_cotizacion_salud)
         if uf_plan > 0:
-            plan_pesos = round(uf_plan * VALOR_UF)
-            # Si el plan supera el 7% legal, la diferencia es el adicional
-            # Si el 7% legal supera el plan, el trabajador no paga adicional
+            plan_pesos = round(uf_plan * valor_uf)
             adicional_isapre = max(0, plan_pesos - descuento_salud_legal)
 
     # ── Cesantía ─────────────────────────────────────────────────────────────
-    base_cesantia = min(remuneracion_imponible, TOPE_IMPONIBLE_CESANTIA)
+    base_cesantia = min(remuneracion_imponible, tope_cesantia)
     descuento_cesantia = round(base_cesantia * (0.0 if es_plazo_fijo else TASA_CESANTIA_TRABAJADOR))
 
     # ── IUSC (Impuesto Único Segunda Categoría) ───────────────────────────────
@@ -202,7 +206,7 @@ def bruto_a_liquido(
     costo_empresa_total = remuneracion_imponible + no_imponibles + costo_sis + costo_ces_emp + costo_mutual
 
     # ── Descomponer en base + gratificación ───────────────────────────────────
-    sueldo_base, gratificacion = _descomponer_en_base_grat(remuneracion_imponible)
+    sueldo_base, gratificacion = _descomponer_en_base_grat(remuneracion_imponible, tope_grat_mes)
 
     return ResultadoCalculo(
         sueldo_liquido=liquido_verificado,
@@ -238,6 +242,8 @@ def calcular_desde_liquido(
     colacion: int = 0,
     viaticos: int = 0,
     utm: int = UTM,
+    valor_uf: float = VALOR_UF,
+    imm: int = IMM,
     tolerancia: int = 1,
 ) -> ResultadoCalculo:
     """
@@ -258,6 +264,8 @@ def calcular_desde_liquido(
         colacion=colacion,
         viaticos=viaticos,
         utm=utm,
+        valor_uf=valor_uf,
+        imm=imm,
     )
 
     # Límite inferior: el imponible nunca puede ser menor que el líquido
@@ -291,14 +299,21 @@ def calcular_desde_liquido(
     return best or bruto_a_liquido(sueldo_liquido, **kwargs)
 
 
-def aplicar_calculo_a_trabajador(trabajador) -> None:
+def aplicar_calculo_a_trabajador(trabajador, parametros: dict | None = None) -> None:
     """
     Recalcula todos los campos derivados de un ORM Trabajador in-place.
     No hace nada si sueldo_liquido es 0 o no hay AFP asignada.
+
+    parametros: dict con {'uf': float, 'utm': int, 'imm': int} del mes.
+    Si no se provee, usa las constantes hardcoded.
     """
     liq = getattr(trabajador, "sueldo_liquido", 0) or 0
     if liq <= 0:
         return
+
+    uf_val  = float((parametros or {}).get("uf",  VALOR_UF))
+    utm_val = int((parametros or {}).get("utm", UTM))
+    imm_val = int((parametros or {}).get("imm", IMM))
 
     r = calcular_desde_liquido(
         sueldo_liquido=liq,
@@ -309,6 +324,9 @@ def aplicar_calculo_a_trabajador(trabajador) -> None:
         movilizacion=trabajador.movilizacion or 0,
         colacion=trabajador.colacion or 0,
         viaticos=trabajador.viaticos or 0,
+        utm=utm_val,
+        valor_uf=uf_val,
+        imm=imm_val,
     )
     trabajador.sueldo_base        = r.sueldo_base
     trabajador.gratificacion      = r.gratificacion

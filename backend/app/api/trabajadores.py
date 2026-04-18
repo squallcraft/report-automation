@@ -17,20 +17,28 @@ from app.models import Trabajador, PagoTrabajador, Prestamo, VacacionTrabajador
 from app.schemas import TrabajadorCreate, TrabajadorUpdate, TrabajadorOut, VacacionCreate, VacacionOut
 from app.services.audit import registrar as audit
 from app.services.remuneraciones import aplicar_calculo_a_trabajador, calcular_desde_liquido, TASAS_AFP, IMM, VALOR_UF, TOPE_GRATIFICACION_MENSUAL
+from app.services.parametros import obtener_parametros, actualizar_mes_actual
 
 router = APIRouter(prefix="/trabajadores", tags=["trabajadores"])
 
 
 @router.get("/constantes-remuneracion")
-def constantes_remuneracion():
-    """Constantes y tasas vigentes para cálculo de remuneraciones."""
+def constantes_remuneracion(db: Session = Depends(get_db)):
+    """Constantes y tasas vigentes para cálculo de remuneraciones (valores del mes actual)."""
+    from datetime import date
+    hoy = date.today()
+    params = obtener_parametros(db, hoy.year, hoy.month)
+    tope_grat = round(4.75 * params["imm"] / 12)
     return {
         "tasas_afp": {k: round(v * 100, 2) for k, v in TASAS_AFP.items()},
         "tasa_salud_fonasa": 7.0,
         "tasa_cesantia_trabajador": 0.6,
-        "imm": IMM,
-        "valor_uf": VALOR_UF,
-        "tope_gratificacion_mensual": TOPE_GRATIFICACION_MENSUAL,
+        "imm": params["imm"],
+        "valor_uf": params["uf"],
+        "utm": params["utm"],
+        "tope_gratificacion_mensual": tope_grat,
+        "fuente": params.get("fuente"),
+        "updated_at": params.get("updated_at"),
     }
 
 
@@ -44,8 +52,12 @@ def simular_calculo(
     movilizacion: int = Query(0),
     colacion: int = Query(0),
     viaticos: int = Query(0),
+    db: Session = Depends(get_db),
 ):
-    """Simula el cálculo sin crear ni modificar un trabajador."""
+    """Simula el cálculo sin crear ni modificar un trabajador. Usa UF/UTM del mes actual."""
+    from datetime import date
+    hoy = date.today()
+    params = obtener_parametros(db, hoy.year, hoy.month)
     r = calcular_desde_liquido(
         sueldo_liquido=sueldo_liquido,
         afp=afp,
@@ -55,6 +67,9 @@ def simular_calculo(
         movilizacion=movilizacion,
         colacion=colacion,
         viaticos=viaticos,
+        utm=params["utm"],
+        valor_uf=float(params["uf"]),
+        imm=params["imm"],
     )
     return {
         "sueldo_liquido": r.sueldo_liquido,
@@ -69,6 +84,10 @@ def simular_calculo(
         "total_descuentos": r.total_descuentos,
         "liquido_verificado": r.liquido_verificado,
         "costo_empresa_total": r.costo_empresa_total,
+        "uf_usada": float(params["uf"]),
+        "utm_usada": params["utm"],
+        "imm_usado": params["imm"],
+        "fuente": params.get("fuente"),
     }
 
 
@@ -108,8 +127,11 @@ def crear_trabajador(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("trabajadores:editar")),
 ):
-    t = Trabajador(**data.model_dump(exclude={"sueldo_bruto", "costo_afp", "costo_salud", "sueldo_base", "gratificacion", "descuento_cesantia"}))
-    aplicar_calculo_a_trabajador(t)
+    from datetime import date
+    hoy = date.today()
+    params = obtener_parametros(db, hoy.year, hoy.month)
+    t = Trabajador(**data.model_dump(exclude={"sueldo_bruto", "costo_afp", "costo_salud", "sueldo_base", "gratificacion", "descuento_cesantia", "iusc", "adicional_isapre"}))
+    aplicar_calculo_a_trabajador(t, params)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -134,7 +156,10 @@ def actualizar_trabajador(
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(t, field, value)
-    aplicar_calculo_a_trabajador(t)
+    from datetime import date as _date
+    hoy = _date.today()
+    params = obtener_parametros(db, hoy.year, hoy.month)
+    aplicar_calculo_a_trabajador(t, params)
     audit(db, "actualizar_trabajador", usuario=current_user, request=request,
           entidad="trabajador", entidad_id=t.id, cambios=update_data)
     db.commit()

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -102,6 +102,22 @@ with engine.connect() as conn:
         ]:
             if col_name not in trab_cols:
                 safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")
+
+    # ── Tabla parametros_mensuales ───────────────────────────────────────────
+    if "parametros_mensuales" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE parametros_mensuales (
+                id SERIAL PRIMARY KEY,
+                anio INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                uf NUMERIC(12,4) NOT NULL,
+                utm INTEGER NOT NULL,
+                imm INTEGER NOT NULL,
+                fuente TEXT,
+                updated_at TIMESTAMP DEFAULT now(),
+                UNIQUE (anio, mes)
+            )
+        """)
     if "retiros" in insp.get_table_names() and engine.dialect.name == "postgresql":
         retiro_cols = {c["name"]: c for c in insp.get_columns("retiros")}
         if retiro_cols.get("seller_id", {}).get("nullable") is False:
@@ -568,6 +584,23 @@ app.include_router(snapshots.router, prefix="/api")
 app.include_router(whatsapp.router, prefix="/api")
 app.include_router(leads.router, prefix="/api")
 app.include_router(colaboradores.router, prefix="/api")
+app.include_router(parametros_remuneracion.router, prefix="/api")
+
+
+@app.on_event("startup")
+async def _startup_parametros():
+    """Actualiza UF/UTM del mes actual al arrancar. Falla silenciosamente."""
+    try:
+        from app.database import SessionLocal
+        from app.services.parametros import actualizar_mes_actual
+        db = SessionLocal()
+        try:
+            actualizar_mes_actual(db)
+        finally:
+            db.close()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Startup parametros failed (non-fatal): %s", exc)
 
 
 @app.get("/")

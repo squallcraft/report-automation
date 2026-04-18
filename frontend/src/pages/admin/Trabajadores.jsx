@@ -81,8 +81,17 @@ function CalcPreview({ form }) {
 
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
-      <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
-        <Calculator size={16} /> Cálculo automático
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
+          <Calculator size={16} /> Cálculo automático
+        </div>
+        {calc.uf_usada && (
+          <div className="flex items-center gap-3 text-xs text-blue-600">
+            <span>UF {calc.uf_usada?.toLocaleString('es-CL', { minimumFractionDigits: 2 })}</span>
+            <span>UTM {calc.utm_usada?.toLocaleString('es-CL')}</span>
+            {calc.fuente && <span className="text-blue-400">· {calc.fuente}</span>}
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div>

@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Boolean, Text, Date, DateTime,
-    Enum, ForeignKey, JSON, UniqueConstraint, Index, func,
+    Enum, ForeignKey, JSON, UniqueConstraint, Index, func, Numeric,
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -906,6 +906,20 @@ class VacacionTrabajador(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     trabajador = relationship("Trabajador", back_populates="vacaciones")
+
+
+class ParametrosMensuales(Base):
+    """Valores oficiales UF / UTM / IMM por mes, con caché en DB."""
+    __tablename__ = "parametros_mensuales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    anio = Column(Integer, nullable=False)
+    mes = Column(Integer, nullable=False)            # 1-12
+    uf = Column(Numeric(12, 4), nullable=False)      # valor UF del período
+    utm = Column(Integer, nullable=False)             # UTM del mes
+    imm = Column(Integer, nullable=False)             # Ingreso Mínimo Mensual
+    fuente = Column(String, nullable=True)            # 'mindicador.cl' o 'manual'
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 # ── Préstamos ──
