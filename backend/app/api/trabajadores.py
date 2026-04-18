@@ -536,3 +536,22 @@ def set_trabajador_password(
     t.password_hash = hash_password(body.password)
     db.commit()
     return {"ok": True, "mensaje": f"Contraseña establecida para {t.nombre}"}
+
+
+class FirmaRequest(BaseModel):
+    firma_base64: str  # data URL: "data:image/png;base64,..."
+
+
+@router.put("/{trabajador_id}/firma", dependencies=[Depends(require_admin)])
+def set_trabajador_firma(
+    trabajador_id: int,
+    body: FirmaRequest,
+    db: Session = Depends(get_db),
+):
+    """(Admin) Guarda o actualiza la firma digital del trabajador."""
+    t = db.query(Trabajador).filter(Trabajador.id == trabajador_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    t.firma_base64 = body.firma_base64
+    db.commit()
+    return {"ok": True, "mensaje": f"Firma guardada para {t.nombre}"}

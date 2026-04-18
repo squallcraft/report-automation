@@ -100,7 +100,8 @@ with engine.connect() as conn:
             ("iusc", "INTEGER NOT NULL DEFAULT 0"),
             ("adicional_isapre", "INTEGER NOT NULL DEFAULT 0"),
             ("password_hash", "TEXT"),
-        ]:
+            ("firma_base64",  "TEXT"),
+
             if col_name not in trab_cols:
                 safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")
 

@@ -77,6 +77,7 @@ import TrabajadorDashboard from './pages/trabajador/TrabajadorDashboard'
 import TrabajadorLiquidaciones from './pages/trabajador/TrabajadorLiquidaciones'
 import TrabajadorPagos from './pages/trabajador/TrabajadorPagos'
 import TrabajadorImposiciones from './pages/trabajador/TrabajadorImposiciones'
+import TrabajadorFirma from './pages/trabajador/TrabajadorFirma'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -202,6 +203,7 @@ export default function App() {
         <Route path="liquidaciones" element={<TrabajadorLiquidaciones />} />
         <Route path="pagos" element={<TrabajadorPagos />} />
         <Route path="imposiciones" element={<TrabajadorImposiciones />} />
+        <Route path="firma" element={<TrabajadorFirma />} />
       </Route>
 
       <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>

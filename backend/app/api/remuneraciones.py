@@ -28,6 +28,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -431,8 +432,25 @@ def portal_perfil(
         "numero_cuenta": t.numero_cuenta,
         "fecha_ingreso": t.fecha_ingreso.isoformat() if t.fecha_ingreso else None,
         "sueldo_liquido": t.sueldo_liquido,
+        "tiene_firma": bool(t.firma_base64),
     }
 
+
+class FirmaWorkerRequest(BaseModel):
+    firma_base64: str
+
+
+@router.put("/portal/firma")
+def portal_guardar_firma(
+    body: FirmaWorkerRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_trabajador),
+):
+    """El trabajador guarda su firma digital desde el portal."""
+    t = _get_trabajador_portal(current_user, db)
+    t.firma_base64 = body.firma_base64
+    db.commit()
+    return {"ok": True, "mensaje": "Firma guardada correctamente"}
 
 @router.get("/portal/liquidaciones")
 def portal_liquidaciones(

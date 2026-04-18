@@ -846,6 +846,7 @@ class Trabajador(Base):
     monto_cotizacion_salud = Column(String, nullable=True)
 
     password_hash = Column(String, nullable=True)
+    firma_base64  = Column(Text,   nullable=True)
 
     pagos = relationship("PagoTrabajador", back_populates="trabajador")
     pagos_mes = relationship("PagoMesTrabajador", back_populates="trabajador")

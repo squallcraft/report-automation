@@ -923,7 +923,7 @@ def generar_pdf_liquidacion(
 
     # Globals
     C_WHITE    = colors.white
-    C_DARK_NAV = colors.HexColor("#0f172a")   # barra final líquido
+    C_DARK_NAV = colors.HexColor("#003c72")   # header y barra final (= fondo del logo)
     C_YELLOW   = colors.HexColor("#fbbf24")   # monto final
     C_GRAY_TXT = colors.HexColor("#64748b")   # texto secundario/labels
     C_BORDER   = colors.HexColor("#cbd5e1")   # bordes generales
@@ -1170,6 +1170,61 @@ def generar_pdf_liquidacion(
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(fin)
+    story.append(Spacer(1, 14))
+
+    # ── Firmas ────────────────────────────────────────────────────────────────
+    FIRMA_REP_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "assets", "firma_representante.png"
+    )
+    FIRMA_W, FIRMA_H = 110, 46   # tamaño de render de la firma en el PDF
+
+    def _firma_cell(label_nombre, label_rut, firma_src, w=FIRMA_W, h=FIRMA_H):
+        """Devuelve una lista de elementos [img_o_blank, nombre, rut] para una celda de firma."""
+        st_firm_lbl = _st("flbl", FONT_BOLD, 7.5, C_GRAY_TXT, TA_CENTER)
+        st_firm_rut = _st("frut", FONT,      7,   C_GRAY_TXT, TA_CENTER)
+        elems = []
+        if firma_src and os.path.exists(firma_src):
+            elems.append(RLImage(firma_src, width=w, height=h))
+        elif firma_src and firma_src.startswith("data:image"):
+            # base64 data URL → bytes → BytesIO
+            import base64
+            header, b64data = firma_src.split(",", 1)
+            img_bytes = base64.b64decode(b64data)
+            elems.append(RLImage(io.BytesIO(img_bytes), width=w, height=h))
+        else:
+            # espacio en blanco del mismo tamaño
+            from reportlab.platypus import Spacer as _Sp
+            elems.append(_Sp(w, h))
+        elems.append(Paragraph(label_nombre, st_firm_lbl))
+        elems.append(Paragraph(label_rut,    st_firm_rut))
+        return elems
+
+    firma_rep   = _firma_cell(
+        "Adriana Colina Aguilar — Representante Legal",
+        "RUT 25.936.753-0",
+        FIRMA_REP_PATH,
+    )
+    firma_trab  = _firma_cell(
+        f"{trabajador.nombre}",
+        f"RUT {_fmt_rut(trabajador.rut)}",
+        getattr(trabajador, "firma_base64", None),
+    )
+
+    # Línea separadora bajo cada firma
+    st_sep = _st("sep", FONT, 7, C_GRAY_TXT, TA_CENTER)
+
+    firma_table = Table(
+        [[firma_rep, firma_trab]],
+        colWidths=[C1 // 2 + C2 // 2, C1 // 2 + C2 // 2],
+    )
+    firma_table.setStyle(TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "BOTTOM"),
+        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING",   (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+        ("LINEBELOW",    (0, 0), (-1, -1), 0.8, C_BORDER),
+    ]))
+    story.append(firma_table)
     story.append(Spacer(1, 10))
 
     # ── Parámetros legales ────────────────────────────────────────────────────
