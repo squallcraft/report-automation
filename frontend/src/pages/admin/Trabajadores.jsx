@@ -76,6 +76,9 @@ function CalcPreview({ form }) {
 
   if (!calc) return null
 
+  const tieneIUSC = (calc.iusc || 0) > 0
+  const tieneAdicionalIsapre = (calc.adicional_isapre || 0) > 0
+
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
       <div className="flex items-center gap-2 text-sm font-semibold text-blue-800">
@@ -96,24 +99,36 @@ function CalcPreview({ form }) {
         </div>
         <div>
           <p className="text-blue-600 text-xs">Líquido verificado</p>
-          <p className={`font-bold ${calc.liquido_verificado === liq ? 'text-green-700' : 'text-amber-700'}`}>
+          <p className={`font-bold ${Math.abs((calc.liquido_verificado || 0) - liq) <= 1 ? 'text-green-700' : 'text-amber-700'}`}>
             {fmt(calc.liquido_verificado)}
           </p>
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm border-t border-blue-200 pt-2">
+      <div className={`grid gap-3 text-sm border-t border-blue-200 pt-2 ${tieneIUSC ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
         <div>
           <p className="text-blue-600 text-xs">Desc. AFP</p>
           <p className="text-red-700 font-medium">-{fmt(calc.descuento_afp)}</p>
         </div>
         <div>
-          <p className="text-blue-600 text-xs">Desc. Salud</p>
+          <p className="text-blue-600 text-xs">{tieneAdicionalIsapre ? 'Salud 7% legal' : 'Desc. Salud'}</p>
           <p className="text-red-700 font-medium">-{fmt(calc.descuento_salud)}</p>
         </div>
+        {tieneAdicionalIsapre && (
+          <div>
+            <p className="text-blue-600 text-xs">Adicional Isapre</p>
+            <p className="text-red-700 font-medium">-{fmt(calc.adicional_isapre)}</p>
+          </div>
+        )}
         <div>
           <p className="text-blue-600 text-xs">Desc. Cesantía</p>
           <p className="text-red-700 font-medium">-{fmt(calc.descuento_cesantia)}</p>
         </div>
+        {tieneIUSC && (
+          <div>
+            <p className="text-amber-600 text-xs font-semibold">Impuesto (IUSC)</p>
+            <p className="text-amber-700 font-bold">-{fmt(calc.iusc)}</p>
+          </div>
+        )}
         <div>
           <p className="text-blue-600 text-xs">Costo empresa total</p>
           <p className="font-bold text-blue-900">{fmt(calc.costo_empresa_total)}</p>

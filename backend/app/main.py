@@ -97,6 +97,8 @@ with engine.connect() as conn:
             ("sueldo_base", "INTEGER NOT NULL DEFAULT 0"),
             ("gratificacion", "INTEGER NOT NULL DEFAULT 0"),
             ("descuento_cesantia", "INTEGER NOT NULL DEFAULT 0"),
+            ("iusc", "INTEGER NOT NULL DEFAULT 0"),
+            ("adicional_isapre", "INTEGER NOT NULL DEFAULT 0"),
         ]:
             if col_name not in trab_cols:
                 safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")

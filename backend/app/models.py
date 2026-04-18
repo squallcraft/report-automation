@@ -828,6 +828,8 @@ class Trabajador(Base):
     sistema_salud = Column(String, nullable=True)  # FONASA / nombre Isapre
     costo_salud = Column(Integer, nullable=False, default=0)
     descuento_cesantia = Column(Integer, nullable=False, default=0)
+    iusc = Column(Integer, nullable=False, default=0)
+    adicional_isapre = Column(Integer, nullable=False, default=0)
     banco = Column(String, nullable=True)
     tipo_cuenta = Column(String, nullable=True)
     numero_cuenta = Column(String, nullable=True)

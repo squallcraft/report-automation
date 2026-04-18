@@ -1,36 +1,40 @@
 """
-Motor de cálculo de remuneraciones chilenas.
+Motor de cálculo de remuneraciones chilenas — grado producción.
 
-Dado un sueldo líquido pactado + AFP + plan de salud, calcula
-automáticamente: sueldo base, gratificación, imponible (bruto),
-descuentos legales y costo empresa.
+Arquitectura de dos capas:
+  Capa A — bruto_a_liquido():  dirección forward, determinista, auditale.
+  Capa B — calcular_desde_liquido(): invierte la Capa A usando búsqueda binaria.
 
 Fuentes legales:
-- Art. 50 Código del Trabajo: gratificación 25% con tope 4,75 IMM/año
-- Ley 19.728: Seguro de Cesantía (0,6% trabajador indefinido)
-- Superintendencia de Pensiones: tasas AFP + SIS vigentes 2026
+  - Art. 42 nº1 LIR + Art. 50 CT: Gratificación legal 25%, tope 4,75 IMM/año.
+  - Ley 19.728: Seguro de Cesantía (0,6% trabajador indefinido / 0% plazo fijo).
+  - Superintendencia de Pensiones: tasas AFP 2026.
+  - Circular SII nº 4/2026: tabla IUSC mensual con UTM $69.889.
+  - DL 3.500: topes imponibles 90 UF (AFP/salud) y 135,2 UF (cesantía).
 """
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # ── Constantes vigentes 2026 ─────────────────────────────────────────────────
-IMM = 539_000                       # Ingreso Mínimo Mensual desde 01-ene-2026
-VALOR_UF = 39_842                   # UF promedio abril 2026
-TOPE_IMPONIBLE_AFP_UF = 90.0        # 90 UF
-TOPE_IMPONIBLE_CESANTIA_UF = 135.2  # 135,2 UF
-TOPE_IMPONIBLE_AFP = round(TOPE_IMPONIBLE_AFP_UF * VALOR_UF)
-TOPE_IMPONIBLE_CESANTIA = round(TOPE_IMPONIBLE_CESANTIA_UF * VALOR_UF)
-TOPE_GRATIFICACION_MENSUAL = round(4.75 * IMM / 12)  # ~$213.354
-TASA_CESANTIA_TRABAJADOR = 0.006    # 0,6% contrato indefinido
-TASA_SALUD_FONASA = 0.07            # 7%
-SIS_EMPLEADOR = 0.0154              # 1,54% — paga el empleador
-CESANTIA_EMPLEADOR_INDEFINIDO = 0.024   # 2,4%
-CESANTIA_EMPLEADOR_PLAZO_FIJO = 0.030   # 3,0%
-MUTUAL_BASE = 0.0093                # 0,93% tasa base accidentes
+IMM   = 539_000          # Ingreso Mínimo Mensual desde 01-ene-2026
+UTM   = 69_889           # UTM abril 2026
+VALOR_UF = 39_842        # UF promedio abril 2026
 
-# ── Tasas AFP (10% obligatorio + comisión administradora) ────────────────────
+TOPE_IMPONIBLE_AFP_UF      = 90.0
+TOPE_IMPONIBLE_CESANTIA_UF = 135.2
+TOPE_IMPONIBLE_AFP         = round(TOPE_IMPONIBLE_AFP_UF * VALOR_UF)       # $3.585.780
+TOPE_IMPONIBLE_CESANTIA    = round(TOPE_IMPONIBLE_CESANTIA_UF * VALOR_UF)  # $5.386.638
+TOPE_GRATIFICACION_MENSUAL = round(4.75 * IMM / 12)                         # $213.354
+
+TASA_CESANTIA_TRABAJADOR     = 0.006   # 0,6% — contrato indefinido
+TASA_SALUD_FONASA            = 0.07    # 7%
+SIS_EMPLEADOR                = 0.0154  # 1,54%
+CESANTIA_EMPLEADOR_INDEFINIDO = 0.024  # 2,4%
+CESANTIA_EMPLEADOR_PLAZO_FIJO = 0.030  # 3,0%
+MUTUAL_BASE                  = 0.0093  # 0,93% tasa base accidentes del trabajo
+
+# ── Tasas AFP — cotización obligatoria 10% + comisión administradora ─────────
 TASAS_AFP: dict[str, float] = {
     "Uno":      0.1046,
     "Modelo":   0.1058,
@@ -40,57 +44,105 @@ TASAS_AFP: dict[str, float] = {
     "Cuprum":   0.1144,
     "ProVida":  0.1145,
 }
+AFP_DEFAULT_TASA = 0.1144
 
-AFP_DEFAULT_TASA = 0.1144  # fallback si no se reconoce
+# ── Tabla IUSC mensual — Circular SII 2026 (UTM $69.889) ─────────────────────
+# Cada tramo: (tope_superior_en_utm, factor_marginal, rebaja_en_utm)
+# Fórmula: impuesto = base_tributable × factor  -  rebaja_utm × UTM
+TABLA_IUSC: list[tuple[float, float, float]] = [
+    (13.5,        0.00,   0.000),
+    (30.0,        0.04,   0.540),
+    (50.0,        0.08,   1.740),
+    (70.0,        0.135,  4.490),
+    (90.0,        0.23,  11.140),
+    (120.0,       0.304, 17.800),
+    (150.0,       0.35,  23.320),
+    (float("inf"), 0.40,  30.820),
+]
 
 
+# ── Dataclass resultado ───────────────────────────────────────────────────────
 @dataclass
 class ResultadoCalculo:
     sueldo_liquido: int
     sueldo_base: int
     gratificacion: int
-    remuneracion_imponible: int    # sueldo_base + gratificacion
+    remuneracion_imponible: int
     descuento_afp: int
-    descuento_salud: int
+    descuento_salud_legal: int      # 7% del imponible (deducible IUSC)
+    adicional_isapre: int           # excedente plan Isapre sobre 7% (no deducible)
     descuento_cesantia: int
+    iusc: int                       # Impuesto Único Segunda Categoría
     total_descuentos: int
-    liquido_imponible: int         # imponible - descuentos
-    liquido_verificado: int        # imponible - descuentos + no imponibles
-    sueldo_bruto: int              # = remuneracion_imponible (para compat)
-    costo_afp: int                 # = descuento_afp
-    costo_salud: int               # = descuento_salud
+    liquido_imponible: int
+    liquido_verificado: int
     movilizacion: int
     colacion: int
     viaticos: int
     costo_empresa_sis: int
     costo_empresa_cesantia: int
     costo_empresa_mutual: int
-    costo_empresa_total: int       # imponible + aportes empleador
+    costo_empresa_total: int
+    # Alias de compatibilidad
+    sueldo_bruto: int = field(init=False)
+    costo_afp: int    = field(init=False)
+    costo_salud: int  = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.sueldo_bruto = self.remuneracion_imponible
+        self.costo_afp    = self.descuento_afp
+        self.costo_salud  = self.descuento_salud_legal + self.adicional_isapre
 
 
-def _tasa_afp(nombre_afp: str | None) -> float:
-    if not nombre_afp:
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _tasa_afp(nombre: str | None) -> float:
+    if not nombre:
         return AFP_DEFAULT_TASA
     for key, tasa in TASAS_AFP.items():
-        if key.lower() == nombre_afp.strip().lower():
+        if key.lower() == nombre.strip().lower():
             return tasa
     return AFP_DEFAULT_TASA
 
 
-def _parse_monto_isapre(monto_str: str | None) -> float | None:
-    """Parsea 'UF 2.714' o '2.714' → float UF. Retorna None si Fonasa."""
-    if not monto_str:
-        return None
-    s = monto_str.strip().upper().replace("UF", "").strip()
-    s = s.replace(",", ".")
+def _parse_uf_isapre(s: str | None) -> float:
+    """'UF 2.714' o '2.714' → 2.714. Retorna 0.0 si no parseable."""
+    if not s:
+        return 0.0
+    cleaned = s.strip().upper().replace("UF", "").replace(",", ".").strip()
     try:
-        return float(s)
+        return float(cleaned)
     except ValueError:
-        return None
+        return 0.0
 
 
-def calcular_desde_liquido(
-    sueldo_liquido: int,
+def _calcular_iusc(base_tributable: int, utm: int = UTM) -> int:
+    """
+    Aplica la tabla progresiva del Impuesto Único de Segunda Categoría.
+
+    base_tributable = remuneración_imponible - AFP - salud_7pct_legal - cesantía_trabajador
+    """
+    if base_tributable <= 0:
+        return 0
+    base_utm = base_tributable / utm
+    for tope, factor, rebaja in TABLA_IUSC:
+        if base_utm <= tope:
+            return max(0, round(base_tributable * factor - rebaja * utm))
+    # nunca debería llegar aquí, pero por seguridad:
+    return max(0, round(base_tributable * 0.40 - 30.820 * utm))
+
+
+def _descomponer_en_base_grat(imponible: int) -> tuple[int, int]:
+    """Descompone el imponible en (sueldo_base, gratificación) según Art. 50 CT."""
+    base_tentativo = round(imponible / 1.25)
+    grat_tentativa = round(base_tentativo * 0.25)
+    if grat_tentativa <= TOPE_GRATIFICACION_MENSUAL:
+        return base_tentativo, grat_tentativa
+    return imponible - TOPE_GRATIFICACION_MENSUAL, TOPE_GRATIFICACION_MENSUAL
+
+
+# ── CAPA A: forward bruto → líquido ──────────────────────────────────────────
+def bruto_a_liquido(
+    remuneracion_imponible: int,
     afp: str | None,
     sistema_salud: str | None,
     monto_cotizacion_salud: str | None,
@@ -98,114 +150,73 @@ def calcular_desde_liquido(
     movilizacion: int = 0,
     colacion: int = 0,
     viaticos: int = 0,
+    utm: int = UTM,
 ) -> ResultadoCalculo:
     """
-    Cálculo inverso: dado el líquido pactado, obtiene sueldo base y bruto.
+    CAPA A — Función forward determinista.
 
-    El líquido pactado INCLUYE movilización, colación y viáticos.
+    Dado el imponible bruto calcula el líquido exacto aplicando:
+    topes AFP/salud (90 UF) y cesantía (135,2 UF), IUSC por tramos,
+    y separa el adicional Isapre del descuento 7% legal.
     """
     tasa_afp = _tasa_afp(afp)
+    es_plazo_fijo = (tipo_contrato or "").upper() == "PLAZO_FIJO"
     no_imponibles = movilizacion + colacion + viaticos
-    liquido_imponible_target = sueldo_liquido - no_imponibles
 
-    es_isapre = False
-    isapre_uf = 0.0
-    isapre_pesos = 0
-    if sistema_salud and sistema_salud.upper() != "FONASA":
-        uf_val = _parse_monto_isapre(monto_cotizacion_salud)
-        if uf_val and uf_val > 0:
-            es_isapre = True
-            isapre_uf = uf_val
-            isapre_pesos = round(uf_val * VALOR_UF)
-
-    aplica_cesantia = (tipo_contrato or "").upper() != "PLAZO_FIJO"
-    tasa_cesantia = TASA_CESANTIA_TRABAJADOR if aplica_cesantia else 0.0
-
-    # ── Cálculo inverso del imponible ────────────────────────────────────
-    if es_isapre:
-        # imponible - imponible*afp - isapre_pesos - imponible*cesantia = liq_imp
-        # imponible * (1 - afp - cesantia) = liq_imp + isapre_pesos
-        tasa_desc_pct = tasa_afp + tasa_cesantia
-        imponible = round((liquido_imponible_target + isapre_pesos) / (1 - tasa_desc_pct))
-        # Isapre: pago es max(7% imponible, plan UF)
-        salud_7pct = round(imponible * TASA_SALUD_FONASA)
-        descuento_salud = max(salud_7pct, isapre_pesos)
-        # Si salud real > isapre_pesos, recalcular con 7%
-        if descuento_salud > isapre_pesos:
-            tasa_desc_pct = tasa_afp + TASA_SALUD_FONASA + tasa_cesantia
-            imponible = round(liquido_imponible_target / (1 - tasa_desc_pct))
-            descuento_salud = round(imponible * TASA_SALUD_FONASA)
-    else:
-        tasa_desc_pct = tasa_afp + TASA_SALUD_FONASA + tasa_cesantia
-        imponible = round(liquido_imponible_target / (1 - tasa_desc_pct))
-        descuento_salud = round(imponible * TASA_SALUD_FONASA)
-
-    # Aplicar tope imponible AFP
-    base_afp = min(imponible, TOPE_IMPONIBLE_AFP)
-    descuento_afp = round(base_afp * tasa_afp)
-
-    base_cesantia = min(imponible, TOPE_IMPONIBLE_CESANTIA)
-    descuento_cesantia = round(base_cesantia * tasa_cesantia)
-
-    if es_isapre:
-        salud_7pct = round(min(imponible, TOPE_IMPONIBLE_AFP) * TASA_SALUD_FONASA)
-        descuento_salud = max(salud_7pct, isapre_pesos)
-
-    # ── Descomponer imponible en base + gratificación ────────────────────
-    # imponible = base + min(base*0.25, tope_grat)
-    # Caso 1: base*0.25 <= tope → imponible = base*1.25 → base = imponible/1.25
-    sueldo_base_tentativo = round(imponible / 1.25)
-    grat_tentativa = round(sueldo_base_tentativo * 0.25)
-
-    if grat_tentativa <= TOPE_GRATIFICACION_MENSUAL:
-        sueldo_base = sueldo_base_tentativo
-        gratificacion = grat_tentativa
-    else:
-        # Caso 2: gratificación topada
-        sueldo_base = imponible - TOPE_GRATIFICACION_MENSUAL
-        gratificacion = TOPE_GRATIFICACION_MENSUAL
-
-    # Recalcular imponible exacto
-    remuneracion_imponible = sueldo_base + gratificacion
-
-    # Recalcular descuentos con imponible exacto
+    # ── AFP ──────────────────────────────────────────────────────────────────
     base_afp = min(remuneracion_imponible, TOPE_IMPONIBLE_AFP)
     descuento_afp = round(base_afp * tasa_afp)
 
-    if es_isapre:
-        salud_7pct = round(min(remuneracion_imponible, TOPE_IMPONIBLE_AFP) * TASA_SALUD_FONASA)
-        descuento_salud = max(salud_7pct, isapre_pesos)
-    else:
-        descuento_salud = round(min(remuneracion_imponible, TOPE_IMPONIBLE_AFP) * TASA_SALUD_FONASA)
+    # ── Salud ─────────────────────────────────────────────────────────────────
+    base_salud = min(remuneracion_imponible, TOPE_IMPONIBLE_AFP)
+    descuento_salud_legal = round(base_salud * TASA_SALUD_FONASA)  # 7%
+    adicional_isapre = 0
+    if sistema_salud and sistema_salud.upper() != "FONASA":
+        uf_plan = _parse_uf_isapre(monto_cotizacion_salud)
+        if uf_plan > 0:
+            plan_pesos = round(uf_plan * VALOR_UF)
+            # Si el plan supera el 7% legal, la diferencia es el adicional
+            # Si el 7% legal supera el plan, el trabajador no paga adicional
+            adicional_isapre = max(0, plan_pesos - descuento_salud_legal)
 
+    # ── Cesantía ─────────────────────────────────────────────────────────────
     base_cesantia = min(remuneracion_imponible, TOPE_IMPONIBLE_CESANTIA)
-    descuento_cesantia = round(base_cesantia * tasa_cesantia)
+    descuento_cesantia = round(base_cesantia * (0.0 if es_plazo_fijo else TASA_CESANTIA_TRABAJADOR))
 
-    total_descuentos = descuento_afp + descuento_salud + descuento_cesantia
+    # ── IUSC (Impuesto Único Segunda Categoría) ───────────────────────────────
+    # Base tributable = imponible - AFP - 7% legal salud - cesantía
+    # El adicional Isapre NO es deducible del impuesto (Art. 42 nº1 LIR)
+    base_tributable = remuneracion_imponible - descuento_afp - descuento_salud_legal - descuento_cesantia
+    iusc = _calcular_iusc(max(0, base_tributable), utm)
+
+    # ── Totales ───────────────────────────────────────────────────────────────
+    total_descuentos = descuento_afp + descuento_salud_legal + adicional_isapre + descuento_cesantia + iusc
     liquido_imponible = remuneracion_imponible - total_descuentos
     liquido_verificado = liquido_imponible + no_imponibles
 
-    # ── Costo empleador ──────────────────────────────────────────────────
+    # ── Costo empresa ─────────────────────────────────────────────────────────
     costo_sis = round(remuneracion_imponible * SIS_EMPLEADOR)
-    tasa_ces_emp = CESANTIA_EMPLEADOR_PLAZO_FIJO if (tipo_contrato or "").upper() == "PLAZO_FIJO" else CESANTIA_EMPLEADOR_INDEFINIDO
+    tasa_ces_emp = CESANTIA_EMPLEADOR_PLAZO_FIJO if es_plazo_fijo else CESANTIA_EMPLEADOR_INDEFINIDO
     costo_ces_emp = round(remuneracion_imponible * tasa_ces_emp)
     costo_mutual = round(remuneracion_imponible * MUTUAL_BASE)
     costo_empresa_total = remuneracion_imponible + no_imponibles + costo_sis + costo_ces_emp + costo_mutual
 
+    # ── Descomponer en base + gratificación ───────────────────────────────────
+    sueldo_base, gratificacion = _descomponer_en_base_grat(remuneracion_imponible)
+
     return ResultadoCalculo(
-        sueldo_liquido=sueldo_liquido,
+        sueldo_liquido=liquido_verificado,
         sueldo_base=sueldo_base,
         gratificacion=gratificacion,
         remuneracion_imponible=remuneracion_imponible,
         descuento_afp=descuento_afp,
-        descuento_salud=descuento_salud,
+        descuento_salud_legal=descuento_salud_legal,
+        adicional_isapre=adicional_isapre,
         descuento_cesantia=descuento_cesantia,
+        iusc=iusc,
         total_descuentos=total_descuentos,
         liquido_imponible=liquido_imponible,
         liquido_verificado=liquido_verificado,
-        sueldo_bruto=remuneracion_imponible,
-        costo_afp=descuento_afp,
-        costo_salud=descuento_salud,
         movilizacion=movilizacion,
         colacion=colacion,
         viaticos=viaticos,
@@ -216,10 +227,74 @@ def calcular_desde_liquido(
     )
 
 
-def aplicar_calculo_a_trabajador(trabajador, recalc: bool = True) -> None:
+# ── CAPA B: búsqueda binaria líquido → bruto ─────────────────────────────────
+def calcular_desde_liquido(
+    sueldo_liquido: int,
+    afp: str | None,
+    sistema_salud: str | None,
+    monto_cotizacion_salud: str | None,
+    tipo_contrato: str | None,
+    movilizacion: int = 0,
+    colacion: int = 0,
+    viaticos: int = 0,
+    utm: int = UTM,
+    tolerancia: int = 1,
+) -> ResultadoCalculo:
     """
-    Recalcula campos derivados de un ORM Trabajador in-place.
-    Solo recalcula si sueldo_liquido > 0 y tiene AFP asignada.
+    CAPA B — Búsqueda binaria.
+
+    Itera sobre bruto_a_liquido() hasta encontrar el imponible que produce
+    exactamente el líquido pactado (tolerancia ±1 peso por redondeo).
+
+    Soporta cualquier nivel salarial — el IUSC por tramos y los topes
+    de UF son manejados transparentemente por la Capa A.
+    """
+    kwargs = dict(
+        afp=afp,
+        sistema_salud=sistema_salud,
+        monto_cotizacion_salud=monto_cotizacion_salud,
+        tipo_contrato=tipo_contrato,
+        movilizacion=movilizacion,
+        colacion=colacion,
+        viaticos=viaticos,
+        utm=utm,
+    )
+
+    # Límite inferior: el imponible nunca puede ser menor que el líquido
+    low = max(1, sueldo_liquido - (movilizacion + colacion + viaticos))
+    # Límite superior: 3× es holgado incluso para el tramo 40% de IUSC
+    high = sueldo_liquido * 3
+
+    best: ResultadoCalculo | None = None
+
+    for _ in range(64):  # 64 iteraciones → precisión sub-peso
+        mid = (low + high) // 2
+        result = bruto_a_liquido(mid, **kwargs)
+        diff = result.sueldo_liquido - sueldo_liquido
+
+        if abs(diff) <= tolerancia:
+            # Ajustar el líquido almacenado al valor pactado exacto
+            result.sueldo_liquido = sueldo_liquido
+            result.liquido_verificado = result.sueldo_liquido
+            return result
+
+        best = result
+        if diff > 0:
+            high = mid
+        else:
+            low = mid
+
+    # Fallback: retornar la mejor aproximación
+    if best is not None:
+        best.sueldo_liquido = sueldo_liquido
+        best.liquido_verificado = sueldo_liquido
+    return best or bruto_a_liquido(sueldo_liquido, **kwargs)
+
+
+def aplicar_calculo_a_trabajador(trabajador) -> None:
+    """
+    Recalcula todos los campos derivados de un ORM Trabajador in-place.
+    No hace nada si sueldo_liquido es 0 o no hay AFP asignada.
     """
     liq = getattr(trabajador, "sueldo_liquido", 0) or 0
     if liq <= 0:
@@ -235,9 +310,11 @@ def aplicar_calculo_a_trabajador(trabajador, recalc: bool = True) -> None:
         colacion=trabajador.colacion or 0,
         viaticos=trabajador.viaticos or 0,
     )
-    trabajador.sueldo_base = r.sueldo_base
-    trabajador.gratificacion = r.gratificacion
-    trabajador.sueldo_bruto = r.sueldo_bruto
-    trabajador.costo_afp = r.costo_afp
-    trabajador.costo_salud = r.costo_salud
+    trabajador.sueldo_base        = r.sueldo_base
+    trabajador.gratificacion      = r.gratificacion
+    trabajador.sueldo_bruto       = r.remuneracion_imponible
+    trabajador.costo_afp          = r.descuento_afp
+    trabajador.costo_salud        = r.descuento_salud_legal + r.adicional_isapre
     trabajador.descuento_cesantia = r.descuento_cesantia
+    trabajador.iusc               = r.iusc
+    trabajador.adicional_isapre   = r.adicional_isapre

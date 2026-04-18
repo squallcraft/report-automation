@@ -672,6 +672,8 @@ class TrabajadorBase(BaseModel):
     sistema_salud: Optional[str] = None
     costo_salud: int = 0
     descuento_cesantia: int = 0
+    iusc: int = 0
+    adicional_isapre: int = 0
     banco: Optional[str] = None
     tipo_cuenta: Optional[str] = None
     numero_cuenta: Optional[str] = None
