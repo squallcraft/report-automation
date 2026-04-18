@@ -2,16 +2,18 @@
 Endpoints para gestión de parámetros legales mensuales (UF / UTM / IMM).
 """
 from datetime import date
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_admin_or_administracion
+from app.auth import require_admin_or_administracion, require_permission
 from app.models import ParametrosMensuales
 from app.services.parametros import actualizar_mes_actual, obtener_parametros
+from app.services.pdf_generator import generar_pdf_manual_calculo_remuneraciones
 
 router = APIRouter(prefix="/parametros-remuneracion", tags=["parametros"])
 
@@ -40,6 +42,32 @@ def obtener_mes_actual(db: Session = Depends(get_db)):
     """Retorna los parámetros del mes en curso."""
     hoy = date.today()
     return obtener_parametros(db, hoy.year, hoy.month)
+
+
+@router.get("/manual-calculo-remuneraciones.pdf")
+def descargar_manual_calculo_pdf(
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("trabajadores:ver")),
+):
+    """
+    Descarga el manual técnico del motor de remuneraciones en PDF
+    (UF/UTM/IMM del mes actual según parametros_mensuales).
+    """
+    hoy = date.today()
+    p = obtener_parametros(db, hoy.year, hoy.month)
+    pdf_bytes = generar_pdf_manual_calculo_remuneraciones(
+        uf=float(p["uf"]),
+        utm=int(p["utm"]),
+        imm=int(p["imm"]),
+        fecha_referencia=hoy.strftime("%d-%m-%Y"),
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="manual_calculo_remuneraciones_chile.pdf"',
+        },
+    )
 
 
 @router.get("/{anio}/{mes}")

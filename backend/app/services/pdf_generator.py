@@ -6,6 +6,7 @@ gráfico mensual de envíos, footer motivacional.
 import io
 import os
 from datetime import datetime, date
+from typing import Optional
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -571,4 +572,291 @@ def generar_pdf_driver(
     elements.append(_company_footer())
 
     doc.build(elements)
+    return buffer.getvalue()
+
+
+def _xml_esc(s: str) -> str:
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def generar_pdf_manual_calculo_remuneraciones(
+    *,
+    uf: Optional[float] = None,
+    utm: Optional[int] = None,
+    imm: Optional[int] = None,
+    fecha_referencia: Optional[str] = None,
+) -> bytes:
+    """
+    PDF técnico del motor de remuneraciones (Chile) para auditoría / contraste
+    con otros sistemas. Contenido alineado con app.services.remuneraciones.
+    """
+    from app.services.remuneraciones import (
+        TASAS_AFP,
+        TABLA_IUSC,
+        TOPE_IMPONIBLE_AFP_UF,
+        TOPE_IMPONIBLE_CESANTIA_UF,
+        VALOR_UF as _UF_DEF,
+        UTM as _UTM_DEF,
+        IMM as _IMM_DEF,
+        SIS_EMPLEADOR,
+        CESANTIA_EMPLEADOR_INDEFINIDO,
+        CESANTIA_EMPLEADOR_PLAZO_FIJO,
+        MUTUAL_BASE,
+    )
+
+    uf_v = float(uf if uf is not None else _UF_DEF)
+    utm_v = int(utm if utm is not None else _UTM_DEF)
+    imm_v = int(imm if imm is not None else _IMM_DEF)
+    tope_afp_pesos = round(TOPE_IMPONIBLE_AFP_UF * uf_v)
+    tope_ces_pesos = round(TOPE_IMPONIBLE_CESANTIA_UF * uf_v)
+    tope_grat = round(4.75 * imm_v / 12)
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=48,
+        leftMargin=48,
+        topMargin=48,
+        bottomMargin=48,
+        title="Manual cálculo remuneraciones Chile",
+    )
+    story: list = []
+
+    st_title = ParagraphStyle(
+        "mt_manual", fontName=FONT_BOLD, fontSize=15, alignment=TA_CENTER,
+        textColor=BLUE_DARK, spaceAfter=6,
+    )
+    st_sub = ParagraphStyle(
+        "ms_manual", fontName=FONT, fontSize=9, alignment=TA_CENTER,
+        textColor=GRAY_TEXT, spaceAfter=14,
+    )
+    st_h2 = ParagraphStyle(
+        "mh2_manual", fontName=FONT_BOLD, fontSize=11, textColor=BLUE_MID,
+        spaceBefore=12, spaceAfter=6,
+    )
+    st_body = ParagraphStyle(
+        "mb_manual", fontName=FONT, fontSize=8.5, leading=11, alignment=TA_LEFT,
+    )
+
+    story.append(Paragraph(_xml_esc("Manual de cálculo — Remuneraciones Chile"), st_title))
+    story.append(Paragraph(
+        _xml_esc(
+            "E-Courier · Motor Capa A (forward) + Capa B (búsqueda binaria) · "
+            "Para contraste con otros sistemas"
+        ),
+        st_sub,
+    ))
+    ref = fecha_referencia or datetime.now().strftime("%d-%m-%Y %H:%M")
+    story.append(Paragraph(
+        _xml_esc(
+            f"Valores de referencia en este documento: UF ${uf_v:,.2f} · UTM ${utm_v:,} · "
+            f"IMM ${imm_v:,} · Generado {ref}"
+        ).replace(",", "."),
+        st_body,
+    ))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("1. Parámetros de entrada (admin)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            "• sueldo_liquido: monto que recibe el trabajador en cuenta.<br/>"
+            "• afp: nombre de la AFP.<br/>"
+            "• sistema_salud: FONASA o ISAPRE.<br/>"
+            "• monto_cotizacion_salud: solo Isapre, plan en UF (ej. 2,714).<br/>"
+            "• tipo_contrato: INDEFINIDO o PLAZO_FIJO.<br/>"
+            "• movilizacion, colacion, viaticos: asignaciones no imponibles."
+        ),
+        st_body,
+    ))
+
+    story.append(Paragraph("2. Parámetros legales dinámicos", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            "UF y UTM: obtenidos de mindicador.cl (BCCh / SII), cacheados en tabla "
+            "parametros_mensuales. IMM: tabla interna por año (cambia por ley, típicamente enero)."
+        ),
+        st_body,
+    ))
+
+    story.append(Paragraph("3. Tasas AFP (obligatoria 10% + comisión)", st_h2))
+    afp_rows = [["AFP", "Tasa total"]]
+    for nombre, tasa in sorted(TASAS_AFP.items(), key=lambda x: x[0]):
+        afp_rows.append([nombre, f"{tasa * 100:.2f}%"])
+    t_afp = Table(afp_rows, colWidths=[140, 80])
+    t_afp.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLUE_DARK),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t_afp)
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("4. Topes imponibles (DL 3.500)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            f"Tope AFP y salud: {TOPE_IMPONIBLE_AFP_UF} UF = ${tope_afp_pesos:,} (con UF de referencia).<br/>"
+            f"Tope cesantía trabajador: {TOPE_IMPONIBLE_CESANTIA_UF} UF = ${tope_ces_pesos:,}."
+        ).replace(",", "."),
+        st_body,
+    ))
+
+    story.append(Paragraph("5. Gratificación legal (Art. 50 CT)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            f"tope_grat_mensual = 4,75 × IMM / 12 = ${tope_grat:,} (con IMM de referencia).<br/>"
+            "Si imponible/1,25 da gratificación ≤ tope: base = round(imponible/1,25), "
+            "grat = round(base×0,25).<br/>"
+            "Si gratificación supera el tope: grat = tope, base = imponible − tope."
+        ).replace(",", "."),
+        st_body,
+    ))
+
+    story.append(Paragraph("6. Capa A — Forward (bruto imponible → líquido)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            "base_AFP = min(imponible, 90 UF × valor_UF) → desc_AFP = round(base_AFP × tasa_AFP).<br/>"
+            "base_salud = min(imponible, 90 UF × valor_UF) → desc_salud_7% = round(base_salud × 7%).<br/>"
+            "Isapre: plan_pesos = UF_plan × valor_UF → adicional_isapre = max(0, plan_pesos − desc_salud_7%).<br/>"
+            "Cesantía: indefinido → min(imponible, 135,2 UF×UF) × 0,6%; plazo fijo → $0.<br/>"
+            "base_tributable_IUSC = imponible − desc_AFP − desc_salud_7% − desc_cesantía "
+            "(el adicional Isapre NO reduce la base tributable).<br/>"
+            "total_descuentos = AFP + salud_7% + adicional_isapre + cesantía + IUSC.<br/>"
+            "liquido_imponible = imponible − total_descuentos; líquido final = liquido_imponible + no imponibles."
+        ),
+        st_body,
+    ))
+
+    story.append(Paragraph("7. IUSC — Tabla progresiva (Circular SII)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            "Fórmula por tramo: impuesto = max(0, round(base_tributable × factor − rebaja_utm × UTM)).<br/>"
+            "base_utm = base_tributable / UTM; se elige el primer tramo donde base_utm ≤ tope_superior."
+        ),
+        st_body,
+    ))
+    iusc_header = ["Rango UTM (aprox.)", "Tope sup.", "Factor", "Rebaja (UTM)"]
+    iusc_data = [iusc_header]
+    prev_lo = 0.0
+    for tope, factor, rebaja in TABLA_IUSC:
+        if tope == float("inf"):
+            rango = f">{prev_lo:.1f} UTM"
+            tope_s = "∞"
+        else:
+            rango = f"{prev_lo:.1f} – {tope:.1f} UTM"
+            tope_s = f"≤ {tope:.1f}"
+            prev_lo = tope
+        if factor == 0:
+            fac_s = "Exento"
+        else:
+            fac_s = f"{factor * 100:.1f}%"
+        iusc_data.append([rango, tope_s, fac_s, f"{rebaja:.3f}"])
+    t_iusc = Table(iusc_data, colWidths=[118, 62, 52, 62])
+    t_iusc.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLUE_DARK),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
+        ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    story.append(t_iusc)
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph("8. Capa B — Inverso (líquido pactado → imponible)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            "Búsqueda binaria (hasta 64 iteraciones, tolerancia ±$1): "
+            "low = líquido − no_imponibles; high = líquido × 3; "
+            "en cada paso mid = (low+high)//2; se compara bruto_a_liquido(mid) con el objetivo."
+        ),
+        st_body,
+    ))
+
+    story.append(Paragraph("9. Costo empresa (aportes empleador)", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            f"SIS = imponible × {SIS_EMPLEADOR * 100:.2f}%. "
+            f"Cesantía empleador: indefinido × {CESANTIA_EMPLEADOR_INDEFINIDO * 100:.1f}%, "
+            f"plazo fijo × {CESANTIA_EMPLEADOR_PLAZO_FIJO * 100:.1f}%. "
+            f"Mutual (tasa base) = imponible × {MUTUAL_BASE * 100:.2f}%.<br/>"
+            "costo_empresa_total = imponible + no_imponibles + SIS + cesantía_empleador + mutual."
+        ),
+        st_body,
+    ))
+
+    story.append(Paragraph("10. Notas para contraste", st_h2))
+    story.append(Paragraph(
+        _xml_esc(
+            "• Redondeo: montos en pesos chilenos enteros (round).<br/>"
+            "• Si el otro sistema usa otra UF del día o UTM distinta del mes, habrá diferencias menores.<br/>"
+            "• Tasa mutual puede variar según administradora (0,93% es tasa base referencial).<br/>"
+            "• Endpoint de simulación: POST /api/trabajadores/simular-calculo"
+        ),
+        st_body,
+    ))
+
+    from app.services.remuneraciones import calcular_desde_liquido
+
+    r700 = calcular_desde_liquido(
+        700_000, "Capital", "FONASA", None, "INDEFINIDO", 0, 0, 0,
+        utm=utm_v, valor_uf=uf_v, imm=imm_v,
+    )
+    r3m = calcular_desde_liquido(
+        3_000_000, "Capital", "FONASA", None, "INDEFINIDO", 0, 0, 0,
+        utm=utm_v, valor_uf=uf_v, imm=imm_v,
+    )
+
+    story.append(Paragraph("11. Ejemplos numéricos (AFP Capital, Fonasa, indefinido, sin no imponibles)", st_h2))
+    ex_rows = [
+        ["Concepto", "Líquido $700.000", "Líquido $3.000.000"],
+        [
+            "Imponible (bruto)",
+            f"${r700.remuneracion_imponible:,}".replace(",", "."),
+            f"${r3m.remuneracion_imponible:,}".replace(",", "."),
+        ],
+        ["AFP", f"${r700.descuento_afp:,}".replace(",", "."), f"${r3m.descuento_afp:,}".replace(",", ".")],
+        ["Salud 7%", f"${r700.descuento_salud_legal:,}".replace(",", "."), f"${r3m.descuento_salud_legal:,}".replace(",", ".")],
+        ["Cesantía 0,6%", f"${r700.descuento_cesantia:,}".replace(",", "."), f"${r3m.descuento_cesantia:,}".replace(",", ".")],
+        ["IUSC", f"${r700.iusc:,}".replace(",", "."), f"${r3m.iusc:,}".replace(",", ".")],
+        [
+            "Líquido verificado",
+            f"${r700.liquido_verificado:,}".replace(",", "."),
+            f"${r3m.liquido_verificado:,}".replace(",", "."),
+        ],
+    ]
+    t_ex = Table(ex_rows, colWidths=[150, 125, 125])
+    t_ex.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BLUE_DARK),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t_ex)
+
+    story.append(Spacer(1, 14))
+    story.append(Paragraph(
+        _xml_esc(
+            "E-Courier SPA — Documento generado automáticamente desde el código del motor "
+            "de remuneraciones."
+        ),
+        ParagraphStyle(
+            "mf_manual", fontName=FONT, fontSize=7, textColor=GRAY_TEXT, alignment=TA_CENTER,
+        ),
+    ))
+
+    doc.build(story)
     return buffer.getvalue()
