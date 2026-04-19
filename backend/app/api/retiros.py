@@ -223,6 +223,7 @@ def _enrich_retiro(r, db) -> dict:
     data["driver_nombre"] = driver.nombre if driver else r.driver_nombre_raw or "—"
     data["pickup_nombre"] = pickup.nombre if pickup else None
     data["sucursal_nombre"] = sucursal.nombre if sucursal else None
+    data["driver_contratado"] = bool(getattr(driver, 'contratado', False)) if driver else False
     return data
 
 
@@ -529,11 +530,17 @@ def confirmar_retiros(
             tarifa_driver_efectiva = pickup.tarifa_driver if pickup else 0
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
                 tarifa_driver_efectiva = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver_efectiva, seen_dias)
+            # Conductor contratado: el retiro es parte de su jornada; no genera pago extra
+            costo_empresa_val = 0
+            if driver_obj and getattr(driver_obj, 'contratado', False):
+                costo_empresa_val = tarifa_driver_efectiva
+                tarifa_driver_efectiva = 0
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=mes_ret, anio=anio_ret,
                 seller_id=None, driver_id=item.driver_id, pickup_id=item.pickup_id,
                 tarifa_seller=0,
                 tarifa_driver=tarifa_driver_efectiva,
+                costo_empresa=costo_empresa_val,
                 seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
                 homologado=item.driver_id is not None,
                 ingesta_id=ingesta_id,
@@ -546,6 +553,10 @@ def confirmar_retiros(
             tarifa_driver_efectiva = suc.tarifa_retiro_driver if suc else 0
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
                 tarifa_driver_efectiva = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver_efectiva, seen_dias)
+            costo_empresa_val = 0
+            if driver_obj and getattr(driver_obj, 'contratado', False):
+                costo_empresa_val = tarifa_driver_efectiva
+                tarifa_driver_efectiva = 0
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=mes_ret, anio=anio_ret,
                 seller_id=suc.seller_id if suc else item.seller_id,
@@ -553,6 +564,7 @@ def confirmar_retiros(
                 sucursal_id=item.sucursal_id,
                 tarifa_seller=suc.tarifa_retiro if suc else 0,
                 tarifa_driver=tarifa_driver_efectiva,
+                costo_empresa=costo_empresa_val,
                 seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
                 homologado=item.driver_id is not None,
                 ingesta_id=ingesta_id,
@@ -566,10 +578,15 @@ def confirmar_retiros(
             tarifa_driver = (seller.tarifa_retiro_driver or 0) if seller else 0
             if driver_obj and driver_obj.tarifa_retiro_fija and driver_obj.tarifa_retiro_fija > 0:
                 tarifa_driver = _tarifa_driver_para_retiro(db, driver_obj, fecha, tarifa_driver, seen_dias)
+            costo_empresa_val = 0
+            if driver_obj and getattr(driver_obj, 'contratado', False):
+                costo_empresa_val = tarifa_driver
+                tarifa_driver = 0
             retiro = Retiro(
                 fecha=fecha, semana=semana, mes=mes_ret, anio=anio_ret,
                 seller_id=item.seller_id, driver_id=item.driver_id,
                 tarifa_seller=tarifa_seller, tarifa_driver=tarifa_driver,
+                costo_empresa=costo_empresa_val,
                 seller_nombre_raw=item.seller_raw, driver_nombre_raw=item.conductor_raw,
                 homologado=item.driver_id is not None and item.seller_id is not None,
                 ingesta_id=ingesta_id,
@@ -667,6 +684,10 @@ def crear_retiro(data: RetiroCreate, request: Request, db: Session = Depends(get
     )
     if driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
         campos["tarifa_driver"] = _tarifa_driver_para_retiro(db, driver, data.fecha, campos.get("tarifa_driver", 0))
+    # Conductor contratado: retiro es parte de jornada ordinaria
+    if getattr(driver, 'contratado', False):
+        campos["costo_empresa"] = campos.get("tarifa_driver", 0)
+        campos["tarifa_driver"] = 0
     retiro = Retiro(**campos)
     db.add(retiro)
     invalidar_snapshots(db, campos["semana"], campos["mes"], campos["anio"])

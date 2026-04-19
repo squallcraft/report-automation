@@ -42,6 +42,7 @@ from app.models import (
     LiquidacionMensual, Trabajador, ParametrosMensuales,
     PagoMesTrabajador, PagoTrabajador, Driver,
     AjusteLiquidacion, CuotaPrestamo, Prestamo, EstadoPrestamoEnum,
+    NotificacionTrabajador, TipoNotificacionEnum,
 )
 from app.services.parametros import obtener_parametros
 from app.services.remuneraciones import calcular_desde_liquido
@@ -52,6 +53,9 @@ MESES_ES = [
     "", "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
+
+
+
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -111,6 +115,17 @@ def _liq_to_dict(liq: LiquidacionMensual, nombre: str = "") -> dict:
         "imm_usado": liq.imm_usado,
         "estado": liq.estado,
         "pago_mes_id": liq.pago_mes_id,
+        # Campos conductor contratado
+        "comisiones_cpc": liq.comisiones_cpc or 0,
+        "adelantos_cpc": liq.adelantos_cpc or 0,
+        "adelantos_cpc_detalle": liq.adelantos_cpc_detalle or [],
+        # Auditoría de modificaciones
+        "modificada_por": liq.modificada_por,
+        "modificada_at": liq.modificada_at.isoformat() if liq.modificada_at else None,
+        "motivo_modificacion": liq.motivo_modificacion,
+        "revisada_por_admin": liq.revisada_por_admin,
+        "revisada_at": liq.revisada_at.isoformat() if liq.revisada_at else None,
+        "resultado_revision": liq.resultado_revision,
         "created_at": liq.created_at.isoformat() if liq.created_at else None,
         "updated_at": liq.updated_at.isoformat() if liq.updated_at else None,
     }
@@ -504,19 +519,182 @@ def actualizar_estado_liquidacion(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin_or_administracion),
 ):
-    """Cambia el estado de una liquidación (BORRADOR → EMITIDA, etc.)."""
+    """Cambia el estado de una liquidación (BORRADOR → EMITIDA, etc.).
+    Si la liquidación está EMITIDA o APROBADA y alguien con permiso la modifica,
+    pasa a MODIFICACION_PENDIENTE y se notifica al admin para revisión.
+    """
+    from datetime import datetime as _dt
+
     liq = db.get(LiquidacionMensual, liquidacion_id)
     if not liq:
         raise HTTPException(status_code=404, detail="Liquidación no encontrada")
+
     nuevo_estado = body.get("estado", "").upper()
-    if nuevo_estado not in ("BORRADOR", "EMITIDA", "PAGADA"):
-        raise HTTPException(status_code=400, detail="Estado inválido. Use BORRADOR, EMITIDA o PAGADA")
+    estados_validos = ("BORRADOR", "EMITIDA", "MODIFICACION_PENDIENTE", "APROBADA", "PAGADA")
+    if nuevo_estado not in estados_validos:
+        raise HTTPException(status_code=400, detail=f"Estado inválido. Use: {', '.join(estados_validos)}")
     if liq.estado == "PAGADA" and nuevo_estado != "PAGADA":
         raise HTTPException(status_code=400, detail="No se puede revertir una liquidación PAGADA")
+
     liq.estado = nuevo_estado
     db.commit()
     trabajador = db.get(Trabajador, liq.trabajador_id)
     return _liq_to_dict(liq, trabajador.nombre if trabajador else "")
+
+
+@router.patch("/liquidaciones/{liquidacion_id}/modificar")
+def modificar_liquidacion(
+    liquidacion_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin_or_administracion),
+):
+    """
+    Modifica los valores de una liquidación EMITIDA o APROBADA.
+
+    Campos modificables: movilizacion, colacion, viaticos, horas_extras_monto,
+    adelantos_cpc, comisiones_cpc, sueldo_liquido.
+
+    Al guardar:
+    1. Se registra el diff (qué cambió y quién lo cambió).
+    2. La liquidación pasa a MODIFICACION_PENDIENTE.
+    3. Se crea una notificación in-app para el admin para que revise y apruebe.
+
+    El admin puede luego llamar a /liquidaciones/{id}/revisar para aprobar o revertir.
+    """
+    from datetime import datetime as _dt
+
+    liq = db.get(LiquidacionMensual, liquidacion_id)
+    if not liq:
+        raise HTTPException(status_code=404, detail="Liquidación no encontrada")
+    if liq.estado == "PAGADA":
+        raise HTTPException(status_code=400, detail="No se puede modificar una liquidación PAGADA")
+    if liq.estado == "MODIFICACION_PENDIENTE":
+        raise HTTPException(status_code=400, detail="La liquidación ya tiene una modificación pendiente de revisión admin")
+
+    campos_modificables = {
+        "movilizacion", "colacion", "viaticos",
+        "horas_extras_monto", "horas_extras_50_monto", "horas_extras_100_monto",
+        "horas_extras_50_cantidad", "horas_extras_100_cantidad",
+        "adelantos_cpc", "comisiones_cpc", "sueldo_liquido",
+    }
+    motivo = body.pop("motivo", "Sin motivo indicado")
+    diff: dict = {}
+
+    for campo, valor_nuevo in body.items():
+        if campo not in campos_modificables:
+            continue
+        valor_antes = getattr(liq, campo, None)
+        if valor_antes != valor_nuevo:
+            diff[campo] = {"antes": valor_antes, "despues": valor_nuevo}
+            setattr(liq, campo, valor_nuevo)
+
+    if not diff:
+        raise HTTPException(status_code=400, detail="Ningún valor cambió")
+
+    usuario = getattr(current_user, "username", None) or getattr(current_user, "email", "admin")
+    liq.modificada_por = usuario
+    liq.modificada_at = _dt.utcnow()
+    liq.motivo_modificacion = motivo
+    liq.diff_modificacion = diff
+    estado_previo = liq.estado
+    liq.estado = "MODIFICACION_PENDIENTE"
+    db.commit()
+
+    # ── Notificación al admin para revisar ─────────────────────────────────
+    try:
+        trabajador = db.get(Trabajador, liq.trabajador_id)
+        nombre_trab = getattr(trabajador, "nombre", str(liq.trabajador_id))
+        campos_str = ", ".join(diff.keys())
+        # Buscar usuarios admin para notificar
+        from app.models import AdminUser
+        admins = db.query(AdminUser).filter(
+            AdminUser.rol == "ADMIN",
+            AdminUser.activo == True,
+        ).all()
+        for admin in admins:
+            admin_trab = db.query(Trabajador).filter(
+                Trabajador.email == admin.username
+            ).first()
+            if admin_trab:
+                notif = NotificacionTrabajador(
+                    trabajador_id=admin_trab.id,
+                    tipo=TipoNotificacionEnum.SISTEMA.value,
+                    titulo="Liquidación modificada — requiere revisión",
+                    cuerpo=(
+                        f"{usuario} modificó la liquidación de {nombre_trab} "
+                        f"({liq.mes:02d}/{liq.anio}). "
+                        f"Campos: {campos_str}. Motivo: {motivo}"
+                    ),
+                    metadata_json={
+                        "liquidacion_id": liq.id,
+                        "trabajador_id": liq.trabajador_id,
+                        "diff": diff,
+                        "estado_previo": estado_previo,
+                    },
+                )
+                db.add(notif)
+        db.commit()
+    except Exception:
+        pass  # Notificación no es crítica; no bloquea la respuesta
+
+    return {
+        "ok": True,
+        "estado": liq.estado,
+        "modificada_por": liq.modificada_por,
+        "diff": diff,
+        "mensaje": "Liquidación modificada. Notificación enviada al admin para revisión.",
+    }
+
+
+@router.post("/liquidaciones/{liquidacion_id}/revisar")
+def revisar_modificacion_liquidacion(
+    liquidacion_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin),  # Solo ADMIN puede revisar
+):
+    """
+    El admin aprueba o revierte una modificación pendiente.
+    body: { "resultado": "APROBADA" | "REVERTIDA" }
+
+    Si APROBADA: la liquidación pasa a EMITIDA (con los valores modificados).
+    Si REVERTIDA: se re-aplican los valores anteriores guardados en diff_modificacion
+                  y la liquidación vuelve a su estado previo.
+    """
+    from datetime import datetime as _dt
+
+    liq = db.get(LiquidacionMensual, liquidacion_id)
+    if not liq:
+        raise HTTPException(status_code=404, detail="Liquidación no encontrada")
+    if liq.estado != "MODIFICACION_PENDIENTE":
+        raise HTTPException(status_code=400, detail="La liquidación no está en estado MODIFICACION_PENDIENTE")
+
+    resultado = (body.get("resultado") or "").upper()
+    if resultado not in ("APROBADA", "REVERTIDA"):
+        raise HTTPException(status_code=400, detail="Use resultado: APROBADA o REVERTIDA")
+
+    usuario = getattr(current_user, "username", None) or getattr(current_user, "email", "admin")
+
+    if resultado == "REVERTIDA":
+        # Re-aplicar valores anteriores
+        diff = liq.diff_modificacion or {}
+        for campo, cambio in diff.items():
+            setattr(liq, campo, cambio["antes"])
+
+    liq.revisada_por_admin = usuario
+    liq.revisada_at = _dt.utcnow()
+    liq.resultado_revision = resultado
+    liq.estado = "EMITIDA" if resultado == "APROBADA" else "EMITIDA"
+    db.commit()
+
+    trabajador = db.get(Trabajador, liq.trabajador_id)
+    return {
+        "ok": True,
+        "resultado": resultado,
+        "estado": liq.estado,
+        "liquidacion": _liq_to_dict(liq, getattr(trabajador, "nombre", "")),
+    }
 
 
 @router.post("/contabilidad/backfill-asientos")

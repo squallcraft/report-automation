@@ -369,7 +369,8 @@ export default function Retiros() {
   const resumen = useMemo(() => ({
     cantidad: retiros.length,
     ingreso: retiros.reduce((acc, r) => acc + (r.tarifa_seller || 0), 0),
-    costo: retiros.reduce((acc, r) => acc + (r.tarifa_driver || 0), 0),
+    // Para independientes: tarifa_driver; para contratados: costo_empresa (absorbido)
+    costo: retiros.reduce((acc, r) => acc + (r.driver_contratado ? (r.costo_empresa || 0) : (r.tarifa_driver || 0)), 0),
     drivers: new Set(retiros.map(r => r.driver_id).filter(Boolean)).size,
   }), [retiros])
 
@@ -536,7 +537,22 @@ export default function Retiros() {
     { key: 'seller_nombre', label: 'Seller/Pickup' },
     { key: 'driver_nombre', label: 'Driver' },
     { key: 'tarifa_seller', label: 'Cobro Seller', align: 'right', render: (v) => fmt(v) },
-    { key: 'tarifa_driver', label: 'Pago Driver', align: 'right', render: (v) => fmt(v) },
+    {
+      key: 'tarifa_driver',
+      label: 'Pago / Costo empresa',
+      align: 'right',
+      render: (v, row) => {
+        if (row.driver_contratado) {
+          return (
+            <span className="inline-flex flex-col items-end gap-0.5">
+              <span className="text-[10px] text-orange-500 font-medium leading-none">Absorbido empresa</span>
+              <span className="font-semibold text-orange-600">{fmt(row.costo_empresa || 0)}</span>
+            </span>
+          )
+        }
+        return fmt(v)
+      },
+    },
     { key: 'homologado', label: 'Estado', align: 'center', render: (v, row) => (
       esRetiroCerrado(row) ? (
         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500">

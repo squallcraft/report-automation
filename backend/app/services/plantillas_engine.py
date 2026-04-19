@@ -66,9 +66,20 @@ VARIABLES_DISPONIBLES: list[dict] = [
     {"key": "empresa.rut", "label": "RUT empresa", "grupo": "Empresa"},
     {"key": "empresa.direccion", "label": "Dirección empresa", "grupo": "Empresa"},
     {"key": "empresa.giro", "label": "Giro / actividad", "grupo": "Empresa"},
+    {"key": "empresa.correo", "label": "Correo empresa", "grupo": "Empresa"},
+    {"key": "empresa.telefono", "label": "Teléfono empresa", "grupo": "Empresa"},
+    {"key": "empresa.dia_pago", "label": "Día de pago del mes", "grupo": "Empresa"},
+    {"key": "empresa.canal_portal_url", "label": "URL portal consultas", "grupo": "Empresa"},
     # Representante legal
     {"key": "rep_legal.nombre", "label": "Nombre representante legal", "grupo": "Rep. legal"},
     {"key": "rep_legal.rut", "label": "RUT representante legal", "grupo": "Rep. legal"},
+    {"key": "rep_legal.ci", "label": "Cédula de identidad representante", "grupo": "Rep. legal"},
+    {"key": "rep_legal.cargo", "label": "Cargo representante legal", "grupo": "Rep. legal"},
+    # Jornada calculada (conductor)
+    {"key": "jornada.hora_entrada", "label": "Hora de entrada (calculada por zona)", "grupo": "Jornada"},
+    {"key": "jornada.hora_salida", "label": "Hora de salida (calculada)", "grupo": "Jornada"},
+    {"key": "jornada.minutos_colacion", "label": "Minutos de colación", "grupo": "Jornada"},
+    {"key": "jornada.horas_semana", "label": "Horas semanales", "grupo": "Jornada"},
     # Fecha
     {"key": "fecha.hoy", "label": "Fecha hoy (DD/MM/YYYY)", "grupo": "Fecha"},
     {"key": "fecha.hoy_largo", "label": "Fecha hoy en palabras", "grupo": "Fecha"},
@@ -128,6 +139,7 @@ def construir_contexto(
             "trabajador.telefono": getattr(trabajador, "telefono", "") or "",
             "trabajador.whatsapp": getattr(trabajador, "whatsapp", "") or "",
             "trabajador.fecha_nacimiento": _fmt_fecha(getattr(trabajador, "fecha_nacimiento", None)),
+            "trabajador.fecha_ingreso": _fmt_fecha(getattr(trabajador, "fecha_ingreso", None)),
             "trabajador.nacionalidad": getattr(trabajador, "nacionalidad", "") or "",
             "trabajador.estado_civil": getattr(trabajador, "estado_civil", "") or "",
             "trabajador.afp": trabajador.afp or "",
@@ -162,8 +174,46 @@ def construir_contexto(
             "empresa.rut": cfg.empresa_rut or "",
             "empresa.direccion": cfg.empresa_direccion or "",
             "empresa.giro": getattr(cfg, "empresa_giro", "") or "",
+            "empresa.correo": getattr(cfg, "empresa_correo", "") or "",
+            "empresa.telefono": getattr(cfg, "empresa_telefono", "") or "",
+            "empresa.dia_pago": str(getattr(cfg, "dia_pago_mes", 5)),
+            "empresa.canal_portal_url": getattr(cfg, "canal_portal_url", "") or "",
+            "empresa.plazo_fijo_meses": str(getattr(cfg, "plazo_fijo_conductor_meses", 3)),
             "rep_legal.nombre": cfg.rep_legal_nombre or "",
             "rep_legal.rut": cfg.rep_legal_rut or "",
+            "rep_legal.ci": getattr(cfg, "rep_legal_ci", "") or "",
+            "rep_legal.cargo": getattr(cfg, "rep_legal_cargo", "") or "",
+        })
+
+    # Variables de jornada calculadas (conductor contratado con jornada promediada)
+    # Se calculan a partir de los datos del contrato si existen
+    if contrato is not None:
+        zona = getattr(trabajador, "zona", "") or "" if trabajador else ""
+        horas_semana = contrato.jornada_semanal_horas or 40
+        horas_dia = horas_semana / 5  # distribución 5x2
+        mins_colacion = int(getattr(contrato, "minutos_colacion", 45) or 45)
+
+        # Hora de entrada según zona (para conductores)
+        if "valpara" in zona.lower() or "valparaiso" in zona.lower() or "valparaíso" in zona.lower():
+            entrada_h, entrada_m = 10, 0
+        elif any(z in zona.lower() for z in ["santiago", "metropolitana", "rm"]):
+            entrada_h, entrada_m = 12, 0
+        else:
+            entrada_h, entrada_m = 8, 0
+
+        # Hora de salida = entrada + horas de trabajo + colación
+        total_mins = int(horas_dia * 60) + mins_colacion
+        salida_h = entrada_h + total_mins // 60
+        salida_m = entrada_m + total_mins % 60
+        if salida_m >= 60:
+            salida_h += 1
+            salida_m -= 60
+
+        ctx.update({
+            "jornada.hora_entrada": f"{entrada_h:02d}:{entrada_m:02d}",
+            "jornada.hora_salida": f"{salida_h:02d}:{salida_m:02d}",
+            "jornada.minutos_colacion": str(mins_colacion),
+            "jornada.horas_semana": str(horas_semana),
         })
 
     return ctx

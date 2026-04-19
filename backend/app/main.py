@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -284,11 +284,22 @@ with engine.connect() as conn:
         ON CONFLICT (id) DO NOTHING
     """)
 
-    # configuracion_legal: agregar empresa_giro si no existe
+    # configuracion_legal: agregar columnas nuevas si no existen
     if "configuracion_legal" in insp.get_table_names():
         cl_cols = [c["name"] for c in insp.get_columns("configuracion_legal")]
-        if "empresa_giro" not in cl_cols:
-            safe_exec("ALTER TABLE configuracion_legal ADD COLUMN empresa_giro TEXT")
+        nuevas_cl = {
+            "empresa_giro": "TEXT",
+            "rep_legal_ci": "TEXT",
+            "rep_legal_cargo": "TEXT",
+            "empresa_correo": "TEXT",
+            "empresa_telefono": "TEXT",
+            "dia_pago_mes": "INTEGER DEFAULT 5",
+            "canal_portal_url": "TEXT",
+            "plazo_fijo_conductor_meses": "INTEGER DEFAULT 3",
+        }
+        for col, tipo in nuevas_cl.items():
+            if col not in cl_cols:
+                safe_exec(f"ALTER TABLE configuracion_legal ADD COLUMN {col} {tipo}")
 
     # ── Tabla plantillas_contrato (Camino B: contratos digitales) ────────────
     if "plantillas_contrato" not in insp.get_table_names():
@@ -461,7 +472,88 @@ with engine.connect() as conn:
         """)
         safe_exec("CREATE INDEX IF NOT EXISTS ix_jornada_fecha ON jornadas_trabajador (fecha)")
 
-    # ── Migración: liquidaciones_mensuales: agregar campos de horas extras ───
+    # ── Flota de vehículos, combustible y TAG ────────────────────────────────
+    if "vehiculos_empresa" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE vehiculos_empresa (
+                patente     VARCHAR(12) PRIMARY KEY,
+                marca       TEXT,
+                modelo      TEXT,
+                anio        INTEGER,
+                tipo        TEXT NOT NULL DEFAULT 'furgon',
+                color       TEXT,
+                activo      BOOLEAN NOT NULL DEFAULT TRUE,
+                notas       TEXT,
+                created_at  TIMESTAMP DEFAULT NOW(),
+                updated_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
+    if "uso_vehiculo_excepciones" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE uso_vehiculo_excepciones (
+                id          SERIAL PRIMARY KEY,
+                driver_id   INTEGER NOT NULL REFERENCES drivers(id),
+                patente     VARCHAR(12) NOT NULL REFERENCES vehiculos_empresa(patente),
+                fecha       DATE NOT NULL,
+                motivo      TEXT,
+                creado_por  TEXT,
+                created_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_uso_vehiculo_driver_fecha ON uso_vehiculo_excepciones (driver_id, fecha)")
+
+    if "combustible_registros" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE combustible_registros (
+                id                  SERIAL PRIMARY KEY,
+                patente             VARCHAR(12) NOT NULL REFERENCES vehiculos_empresa(patente),
+                fecha               DATE NOT NULL,
+                semana              INTEGER NOT NULL,
+                mes                 INTEGER NOT NULL,
+                anio                INTEGER NOT NULL,
+                litros              NUMERIC(8,2),
+                monto_total         INTEGER NOT NULL,
+                proveedor           TEXT,
+                driver_id_resuelto  INTEGER REFERENCES drivers(id),
+                notas               TEXT,
+                creado_por          TEXT,
+                created_at          TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_combustible_patente_fecha ON combustible_registros (patente, fecha)")
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_combustible_semana ON combustible_registros (semana, mes, anio)")
+
+    if "registros_tag" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE registros_tag (
+                id                      SERIAL PRIMARY KEY,
+                patente                 VARCHAR(12) NOT NULL REFERENCES vehiculos_empresa(patente),
+                fecha_inicio_periodo    DATE NOT NULL,
+                fecha_fin_periodo       DATE NOT NULL,
+                monto_total             INTEGER NOT NULL,
+                numero_transacciones    INTEGER,
+                proveedor               TEXT,
+                archivo_origen          TEXT,
+                detalle_json            JSON,
+                notas                   TEXT,
+                creado_por              TEXT,
+                created_at              TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_tag_patente_periodo ON registros_tag (patente, fecha_inicio_periodo)")
+
+    # Driver: agregar vehiculo_patente si no existe
+    if "drivers" in insp.get_table_names():
+        drv_cols = [c["name"] for c in insp.get_columns("drivers")]
+        if "vehiculo_patente" not in drv_cols:
+            safe_exec("ALTER TABLE drivers ADD COLUMN vehiculo_patente VARCHAR(12)")
+
+    # Retiro: agregar costo_empresa si no existe
+    if "retiros" in insp.get_table_names():
+        ret_cols = [c["name"] for c in insp.get_columns("retiros")]
+        if "costo_empresa" not in ret_cols:
+            safe_exec("ALTER TABLE retiros ADD COLUMN costo_empresa INTEGER NOT NULL DEFAULT 0")
     if "liquidaciones_mensuales" in insp.get_table_names():
         liq_cols = [c["name"] for c in insp.get_columns("liquidaciones_mensuales")]
         for col_name, col_def in [
@@ -472,6 +564,18 @@ with engine.connect() as conn:
             ("horas_extras_monto", "INTEGER NOT NULL DEFAULT 0"),
             ("valor_hora_usado", "INTEGER NOT NULL DEFAULT 0"),
             ("jornada_semanal_usada", "INTEGER NOT NULL DEFAULT 44"),
+            # Conductor contratado — CPC
+            ("adelantos_cpc", "INTEGER NOT NULL DEFAULT 0"),
+            ("adelantos_cpc_detalle", "JSON"),
+            ("comisiones_cpc", "INTEGER NOT NULL DEFAULT 0"),
+            # Auditoría de modificaciones
+            ("modificada_por", "TEXT"),
+            ("modificada_at", "TIMESTAMP"),
+            ("motivo_modificacion", "TEXT"),
+            ("diff_modificacion", "JSON"),
+            ("revisada_por_admin", "TEXT"),
+            ("revisada_at", "TIMESTAMP"),
+            ("resultado_revision", "TEXT"),
         ]:
             if col_name not in liq_cols:
                 safe_exec(f"ALTER TABLE liquidaciones_mensuales ADD COLUMN {col_name} {col_def}")
@@ -1086,6 +1190,247 @@ def _seed_email_plantillas():
 _seed_email_plantillas()
 
 
+# ── Seed: plantillas de contrato conductor (idempotente) ─────────────────────
+
+_CONTRATO_CONDUCTOR_CONTENIDO = """# CONTRATO INDIVIDUAL DE TRABAJO
+
+En {{empresa.ciudad_comuna}}, a {{fecha.hoy_largo}}, entre **{{empresa.razon_social}}**, RUT **{{empresa.rut}}**, con domicilio en **{{empresa.direccion}}**, representada legalmente por don/doña **{{rep_legal.nombre}}**, RUT **{{rep_legal.rut}}**, cédula de identidad N° **{{rep_legal.ci}}**, en calidad de **{{rep_legal.cargo}}** (en adelante el **«Empleador»**); y don/doña **{{trabajador.nombre}}**, de nacionalidad **{{trabajador.nacionalidad}}**, estado civil **{{trabajador.estado_civil}}**, RUT **{{trabajador.rut}}**, con domicilio en **{{trabajador.direccion}}** (en adelante el **«Trabajador»**), se ha celebrado el siguiente contrato individual de trabajo:
+
+---
+
+## PRIMERO: CARGO Y FUNCIONES
+
+El Trabajador se desempeñará como **CONDUCTOR DE REPARTO Y DISTRIBUCIÓN**. Sus funciones comprenden la conducción de vehículos motorizados de propiedad o a disposición del Empleador, la recepción, custodia y entrega de encomiendas y paquetes en los domicilios y puntos indicados por la aplicación tecnológica dispuesta por el Empleador, el registro fotográfico de entregas en la misma plataforma, la comunicación oportuna de incidencias y el cumplimiento de las normas de tránsito, de los protocolos internos y de las instrucciones que le imparta el jefe directo. La plataforma tecnológica y la aplicación móvil son herramientas de trabajo y trazabilidad operacional, equivalentes a cualquier otro instrumento o vehículo de la empresa; el Empleador conserva plena potestad de dirección y control sobre la prestación de servicios.
+
+---
+
+## SEGUNDO: LUGAR DE TRABAJO
+
+El Trabajador prestará sus servicios en las zonas de reparto asignadas por el Empleador, las que podrán variar según necesidades operacionales. El lugar de inicio y término de la jornada será el centro de distribución del Empleador o el punto que este designe. El uso de las herramientas tecnológicas durante la jornada puede realizarse en cualquier lugar donde exista cobertura de red.
+
+---
+
+## TERCERO: JORNADA DE TRABAJO
+
+La jornada ordinaria es de **{{jornada.horas_semana}} horas semanales**, distribuidas de lunes a sábado. Las partes acuerdan que dicha jornada podrá promediarse en ciclos de hasta cuatro (4) semanas calendario, conforme al artículo 22 bis del Código del Trabajo, de modo que en ningún caso el promedio semanal dentro del ciclo supere las {{jornada.horas_semana}} horas.
+
+El horario habitual será de **{{jornada.hora_entrada}} a {{jornada.hora_salida}} horas**, con **{{jornada.minutos_colacion}} minutos** de descanso de colación en los términos del artículo 34 del Código del Trabajo, tiempo que no será imputable a la jornada. Las rutas dinámicas que excedan el horario regular dentro del ciclo mensual se compensarán con días o fracciones de menor duración, sin generar automáticamente derecho a horas extraordinarias, siempre que el promedio del ciclo no supere el límite legal.
+
+Las horas extraordinarias que deban pagarse se liquidarán con el recargo legal del 50 % sobre el valor de la hora ordinaria, calculado sobre el sueldo base vigente.
+
+---
+
+## CUARTO: REMUNERACIÓN
+
+El Trabajador percibirá mensualmente las siguientes remuneraciones y asignaciones:
+
+| Concepto | Monto mensual | Naturaleza |
+|---|---|---|
+| Sueldo base | {{contrato.sueldo_base}} | Imponible y tributable |
+| Comisión variable | $500 por paquete entregado y confirmado en sistema | Imponible y tributable |
+| Gratificación legal | 25 % de lo devengado imponible, con tope de 4,75 IMM anual (Art. 50 CT) | Imponible y tributable |
+| Asignación de colación | {{contrato.colacion}} | No imponible, no tributable |
+| Asignación de movilización | {{contrato.movilizacion}} | No imponible, no tributable |
+
+El monto de la comisión variable se determinará según los registros del sistema de gestión del Empleador al cierre del período mensual. Dicho registro constituye la fuente oficial y fidedigna del conteo de paquetes entregados.
+
+Las remuneraciones se pagarán dentro de los primeros **{{empresa.dia_pago}} días** de cada mes mediante transferencia bancaria a la cuenta indicada por el Trabajador.
+
+---
+
+## QUINTO: VEHÍCULO
+
+El Empleador asignará al Trabajador el vehículo necesario para el desempeño de sus funciones. El vehículo asignado podrá variar según disponibilidad operacional y necesidades de la empresa, lo que el Trabajador acepta expresamente. La asignación no confiere derecho de dominio ni uso personal fuera de la jornada laboral.
+
+---
+
+## SEXTO: OBLIGACIONES DEL TRABAJADOR
+
+El Trabajador se obliga a: (a) Mantener su licencia de conducir al día y en la clase que corresponda al vehículo asignado; (b) Informar de inmediato cualquier accidente, daño o falla mecánica; (c) Abstenerse de usar el vehículo en actividades ajenas a sus funciones; (d) Respetar íntegramente el Reglamento Interno de Orden, Higiene y Seguridad y los procedimientos operacionales; (e) Usar correctamente el uniforme y los equipos de protección personal que el Empleador facilite; (f) No ceder, transferir ni compartir el acceso a la aplicación tecnológica con terceros.
+
+---
+
+## SÉPTIMO: CANAL OFICIAL DE COMUNICACIONES Y RECLAMOS
+
+Toda comunicación relacionada con la relación laboral, objeciones, reclamos o consultas deberá canalizarse mediante el **portal del trabajador** disponible en **{{empresa.canal_portal_url}}**, sección «Consultas». El Empleador dispondrá de un plazo máximo de **cinco (5) días hábiles** para dar respuesta, salvo que una norma legal exija un plazo distinto, en cuyo caso prevalecerá este último.
+
+---
+
+## OCTAVO: CONFIDENCIALIDAD
+
+El Trabajador se obliga a mantener reserva de toda información comercial, operacional y tecnológica del Empleador de la que tome conocimiento con motivo de sus funciones, incluso con posterioridad al término del contrato.
+
+---
+
+## NOVENO: PREVENCIÓN DE RIESGOS
+
+El Trabajador deberá observar estrictamente las normas de seguridad vial y las instrucciones del Organismo Administrador de la Ley N° 16.744 y del Comité Paritario de Higiene y Seguridad, si los hubiere. Queda absolutamente prohibido conducir bajo la influencia del alcohol u otras sustancias que alteren las capacidades físicas o psíquicas.
+
+---
+
+## DÉCIMO: VIGENCIA
+
+El presente contrato es **a plazo fijo** y comenzará a regir el día **{{trabajador.fecha_ingreso}}**, con vencimiento a los **{{empresa.plazo_fijo_meses}} meses** de su inicio. Si al vencimiento del plazo el Trabajador continuare prestando servicios con conocimiento del Empleador, el contrato se entenderá prorrogado por igual período; transcurrida dicha prórroga sin nuevación expresa, se convertirá en contrato de **duración indefinida** de pleno derecho.
+
+---
+
+## UNDÉCIMO: TÉRMINO DEL CONTRATO
+
+El contrato podrá terminar por cualquiera de las causales establecidas en los artículos 159, 160 y 161 del Código del Trabajo, con las formalidades que la ley establece.
+
+---
+
+## DUODÉCIMO: NORMA SUPLETORIA
+
+En todo lo no previsto en el presente instrumento, se estará a lo dispuesto en el Código del Trabajo y demás normas laborales vigentes.
+
+---
+
+## DÉCIMOTERCERO: EJEMPLARES
+
+El presente contrato se firma en **dos ejemplares** del mismo tenor y fecha, quedando uno en poder de cada parte. El Trabajador declara haber recibido su ejemplar en la fecha de suscripción.
+
+---
+
+**{{empresa.razon_social}}**
+RUT {{empresa.rut}}
+Representado/a por: {{rep_legal.nombre}}, RUT {{rep_legal.rut}}
+
+___________________________
+Firma Empleador
+
+**{{trabajador.nombre}}**
+RUT {{trabajador.rut}}
+
+___________________________
+Firma Trabajador
+"""
+
+_ANEXO_MULTAS_CONTENIDO = """# ANEXO DE CONTRATO — ACEPTACIÓN VOLUNTARIA DE RESPONSABILIDAD POR MULTAS DE TRÁNSITO
+
+En {{empresa.ciudad_comuna}}, a {{fecha.hoy_largo}}, entre **{{empresa.razon_social}}**, RUT **{{empresa.rut}}**, representada por **{{rep_legal.nombre}}**, RUT **{{rep_legal.rut}}** (en adelante el **«Empleador»**), y don/doña **{{trabajador.nombre}}**, RUT **{{trabajador.rut}}** (en adelante el **«Trabajador»**), ambas partes del contrato individual de trabajo suscrito con fecha **{{trabajador.fecha_ingreso}}**, acuerdan el siguiente anexo:
+
+---
+
+## PRIMERO: OBJETO
+
+El presente instrumento regula, de forma **voluntaria y libre**, la responsabilidad del Trabajador respecto de las multas de tránsito que se originen durante el ejercicio de sus funciones como conductor de reparto.
+
+---
+
+## SEGUNDO: ACEPTACIÓN VOLUNTARIA
+
+El Trabajador declara libre y voluntariamente que **acepta ser responsable** del pago de las multas de tránsito que sean cursadas por infracciones cometidas mientras conduce vehículos del Empleador en el ejercicio de sus funciones, cuando dichas infracciones sean atribuibles a su conducta o negligencia.
+
+---
+
+## TERCERO: MODALIDAD DE PAGO
+
+Ante la emisión de una multa de tránsito que cumpla con los requisitos de la cláusula segunda, el Empleador notificará al Trabajador con la copia del comprobante correspondiente. Las partes acuerdan que el monto de la multa podrá, a **opción del Trabajador**:
+
+a) Ser pagado directamente por el Trabajador a la autoridad competente dentro del plazo legal; o  
+b) Ser descontado de la remuneración mensual en la liquidación de sueldo del mes siguiente, o en cuotas no superiores a **tres (3) períodos mensuales**, respetando en todo caso el límite del 15 % de la remuneración mensual, conforme al artículo 58 inciso 2° del Código del Trabajo.
+
+---
+
+## CUARTO: PROCEDIMIENTO DE IMPUGNACIÓN
+
+Si el Trabajador estimare que la multa no le es imputable, podrá presentar sus descargos por escrito al área de Recursos Humanos en un plazo de **cinco (5) días hábiles** desde la notificación. El Empleador evaluará los antecedentes y resolverá dentro de los **diez (10) días hábiles** siguientes.
+
+---
+
+## QUINTO: EXCLUSIONES
+
+No serán de responsabilidad del Trabajador las multas originadas por: (a) desperfectos mecánicos del vehículo que el Trabajador hubiere comunicado oportunamente; (b) instrucciones expresas del Empleador que contravengan la normativa de tránsito; o (c) circunstancias de fuerza mayor debidamente acreditadas.
+
+---
+
+## SEXTO: CARÁCTER VOLUNTARIO
+
+El Trabajador declara expresamente que la suscripción del presente anexo es **voluntaria**, que no ha mediado coacción ni presión de ningún tipo, que ha contado con tiempo suficiente para leer y comprender su contenido y que, de estimarlo conveniente, ha podido consultar con un asesor legal o sindical antes de suscribirlo.
+
+---
+
+Firman en conformidad las partes:
+
+**{{empresa.razon_social}}**
+
+___________________________
+Firma Empleador
+
+**{{trabajador.nombre}}**  
+RUT {{trabajador.rut}}
+
+___________________________
+Firma Trabajador
+"""
+
+
+def _seed_plantillas_contrato():
+    from app.database import SessionLocal
+    from app.models import PlantillaContrato
+
+    db = SessionLocal()
+    try:
+        plantillas = [
+            {
+                "slug": "conductor_reparto_plazo_fijo",
+                "nombre": "Conductor de Reparto — Plazo Fijo (3 meses)",
+                "descripcion": (
+                    "Contrato a plazo fijo de 3 meses para conductores de reparto. "
+                    "Incluye jornada promediada 4 semanas (Art. 22 bis), comisión $500/paquete, "
+                    "asignaciones no imponibles (colación + movilización). "
+                    "La hora de entrada se ajusta automáticamente según la zona del trabajador."
+                ),
+                "tipo_contrato": "PLAZO_FIJO",
+                "aplica_a_cargos": ["conductor", "conductor_reparto"],
+                "aplica_a_jornadas": [40],
+                "contenido": _CONTRATO_CONDUCTOR_CONTENIDO,
+            },
+            {
+                "slug": "anexo_multas_transito",
+                "nombre": "Anexo — Responsabilidad Multas de Tránsito (Voluntario)",
+                "descripcion": (
+                    "Anexo de contrato en que el conductor acepta voluntariamente responsabilidad "
+                    "por multas de tránsito imputables a su conducta, con opción de pago directo "
+                    "o descuento en nómina (máx. 15 % remuneración, tope 3 cuotas)."
+                ),
+                "tipo_contrato": "ANEXO",
+                "aplica_a_cargos": ["conductor", "conductor_reparto"],
+                "aplica_a_jornadas": None,
+                "contenido": _ANEXO_MULTAS_CONTENIDO,
+            },
+        ]
+
+        for p in plantillas:
+            existe = db.query(PlantillaContrato).filter(
+                PlantillaContrato.slug == p["slug"],
+                PlantillaContrato.activa == True,
+            ).first()
+            if not existe:
+                db.add(PlantillaContrato(
+                    slug=p["slug"],
+                    nombre=p["nombre"],
+                    descripcion=p["descripcion"],
+                    tipo_contrato=p["tipo_contrato"],
+                    aplica_a_cargos=p["aplica_a_cargos"],
+                    aplica_a_jornadas=p["aplica_a_jornadas"],
+                    contenido=p["contenido"],
+                    version=1,
+                    activa=True,
+                    creada_por="seed_sistema",
+                ))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[seed_plantillas_contrato] Error: {exc}")
+    finally:
+        db.close()
+
+
+_seed_plantillas_contrato()
+
+
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",
     description="API para gestión de cobros a sellers y pagos a drivers",
@@ -1146,6 +1491,8 @@ app.include_router(notificaciones_trabajador.router, prefix="/api")
 app.include_router(vacaciones.router, prefix="/api")
 app.include_router(asistencia.router, prefix="/api")
 app.include_router(email_campaigns.router, prefix="/api")
+app.include_router(flota.router, prefix="/api")
+app.include_router(rentabilidad.router, prefix="/api")
 
 
 @app.on_event("startup")

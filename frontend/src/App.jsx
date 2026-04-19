@@ -87,6 +87,8 @@ import TrabajadorVacaciones from './pages/trabajador/TrabajadorVacaciones'
 import PlantillasContrato from './pages/admin/PlantillasContrato'
 import Vacaciones from './pages/admin/Vacaciones'
 import Asistencia from './pages/admin/Asistencia'
+import Flota from './pages/admin/Flota'
+import Rentabilidad from './pages/admin/Rentabilidad'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -160,6 +162,8 @@ export default function App() {
         <Route path="plantillas-contrato" element={<PlantillasContrato />} />
         <Route path="vacaciones" element={<Vacaciones />} />
         <Route path="asistencia" element={<Asistencia />} />
+        <Route path="flota" element={<Flota />} />
+        <Route path="rentabilidad" element={<Rentabilidad />} />
         <Route path="asistente" element={<Asistente />} />
         <Route path="pickups" element={<Pickups />} />
         <Route path="cpp" element={<CPP />} />

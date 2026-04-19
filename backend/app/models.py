@@ -147,8 +147,10 @@ class Driver(Base):
     contrato_trabajo_fecha = Column(DateTime, nullable=True)
     contrato_trabajo_ip = Column(String, nullable=True)
     contrato_trabajo_firma = Column(Text, nullable=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    # Vehículo asignado por defecto (FK a flota). Se cambia solo cuando hay reasignación.
+    vehiculo_patente = Column(String(12), nullable=True)        # patente del vehículo habitual
+    created_at      = Column(DateTime, server_default=func.now())
+    updated_at      = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     jefe_flota = relationship("Driver", remote_side=[id], back_populates="subordinados")
     subordinados = relationship("Driver", back_populates="jefe_flota")
@@ -297,6 +299,10 @@ class Retiro(Base):
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=True)
     tarifa_seller = Column(Integer, nullable=False, default=0)
     tarifa_driver = Column(Integer, nullable=False, default=0)
+    # Para conductores contratados: el retiro es parte de su jornada ordinaria;
+    # tarifa_driver se fija a 0 (no genera pago extra) y aquí se guarda el valor
+    # equivalente que la empresa absorbe (= tarifa_retiro_fija calculada al momento).
+    costo_empresa   = Column(Integer, nullable=False, default=0)
     seller_nombre_raw = Column(String, nullable=True)
     driver_nombre_raw = Column(String, nullable=True)
     homologado = Column(Boolean, default=True)
@@ -1060,8 +1066,28 @@ class LiquidacionMensual(Base):
     imm_usado = Column(Integer, nullable=True)
 
     # Estado de ciclo de vida
-    estado = Column(String, nullable=False, default="BORRADOR")  # BORRADOR / EMITIDA / PAGADA
+    estado = Column(String, nullable=False, default="BORRADOR")  # BORRADOR / EMITIDA / MODIFICACION_PENDIENTE / APROBADA / PAGADA
     pago_mes_id = Column(Integer, ForeignKey("pagos_mes_trabajadores.id"), nullable=True)
+
+    # ── Adelantos automáticos desde CPC (conductor contratado) ───────────────
+    # Suma de los PagoSemanaDriver PAGADOS del mes para drivers con contratado=True.
+    # Se importa automáticamente al generar la liquidación y se recalcula al emitir.
+    # Aparece como "Adelanto de remuneración ya pagado" en la liquidación impresa.
+    adelantos_cpc = Column(Integer, nullable=False, default=0)
+    adelantos_cpc_detalle = Column(JSON, nullable=True)          # [{semana, monto, fecha_pago}]
+
+    # Comisiones importadas desde CPC (remuneración variable imponible)
+    # Para conductor contratado: equivale al total de entregas × $500 del mes.
+    comisiones_cpc = Column(Integer, nullable=False, default=0)
+
+    # ── Auditoría de modificaciones post-emisión ────────────────────────────
+    modificada_por = Column(String, nullable=True)               # username del modificador
+    modificada_at = Column(DateTime, nullable=True)
+    motivo_modificacion = Column(Text, nullable=True)
+    diff_modificacion = Column(JSON, nullable=True)              # {campo: {antes, despues}}
+    revisada_por_admin = Column(String, nullable=True)
+    revisada_at = Column(DateTime, nullable=True)
+    resultado_revision = Column(String, nullable=True)           # APROBADA / REVERTIDA
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -1766,10 +1792,19 @@ class ConfiguracionLegal(Base):
     jornada_legal_proxima_desde = Column(Date, nullable=True)
     rep_legal_nombre = Column(String, nullable=True)
     rep_legal_rut = Column(String, nullable=True)
+    rep_legal_ci = Column(String, nullable=True)                  # cédula de identidad (para contratos)
+    rep_legal_cargo = Column(String, nullable=True)               # ej. "Gerente General"
     empresa_razon_social = Column(String, nullable=True)
     empresa_rut = Column(String, nullable=True)
     empresa_direccion = Column(String, nullable=True)
+    empresa_correo = Column(String, nullable=True)                # correo oficial de la empresa
     empresa_giro = Column(String, nullable=True)                  # giro / actividad económica para contratos
+    empresa_telefono = Column(String, nullable=True)
+    # Parámetros de remuneración y pago
+    dia_pago_mes = Column(Integer, nullable=False, default=5)     # día del mes en que se pagan remuneraciones
+    canal_portal_url = Column(String, nullable=True)              # URL del portal de consultas (para contratos)
+    # Plazo fijo por defecto para nuevos contratos de conductores (meses)
+    plazo_fijo_conductor_meses = Column(Integer, nullable=False, default=3)
     actualizado_por = Column(String, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -1863,6 +1898,126 @@ class NotificacionTrabajador(Base):
 # porque nuestro código no tiene resolución DT. Por eso TODO el flujo pasa por
 # ZKBioTime, que es el sistema oficial de control de asistencia.
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Flota de vehículos, combustible y TAG
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TipoVehiculoEnum(str, enum.Enum):
+    FURGON      = "furgon"
+    CAMIONETA   = "camioneta"
+    MOTO        = "moto"
+    AUTO        = "auto"
+    CAMION      = "camion"
+    OTRO        = "otro"
+
+
+class VehiculoEmpresa(Base):
+    """
+    Registro de la flota de vehículos propios de la empresa.
+    La patente es el identificador único y se usa como clave en combustible y TAG.
+    """
+    __tablename__ = "vehiculos_empresa"
+
+    patente         = Column(String(12), primary_key=True)
+    marca           = Column(String, nullable=True)
+    modelo          = Column(String, nullable=True)
+    anio            = Column(Integer, nullable=True)
+    tipo            = Column(String, nullable=False, default=TipoVehiculoEnum.FURGON.value)
+    color           = Column(String, nullable=True)
+    activo          = Column(Boolean, default=True, nullable=False)
+    notas           = Column(Text, nullable=True)
+    created_at      = Column(DateTime, server_default=func.now())
+    updated_at      = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Relationships inversos (se declaran desde el lado FK)
+    combustibles    = relationship("CombustibleRegistro", back_populates="vehiculo")
+    tags            = relationship("RegistroTag", back_populates="vehiculo")
+    excepciones     = relationship("UsoVehiculoExcepcion", back_populates="vehiculo")
+
+
+class UsoVehiculoExcepcion(Base):
+    """
+    Registra días puntuales en que un conductor usó un vehículo distinto al asignado
+    por defecto en su perfil. Solo se crea cuando hay una excepción — el caso normal
+    es la asignación Driver.vehiculo_patente.
+    """
+    __tablename__ = "uso_vehiculo_excepciones"
+    __table_args__ = (
+        Index("ix_uso_vehiculo_driver_fecha", "driver_id", "fecha"),
+    )
+
+    id              = Column(Integer, primary_key=True, index=True)
+    driver_id       = Column(Integer, ForeignKey("drivers.id"), nullable=False)
+    patente         = Column(String(12), ForeignKey("vehiculos_empresa.patente"), nullable=False)
+    fecha           = Column(Date, nullable=False)
+    motivo          = Column(String, nullable=True)
+    creado_por      = Column(String, nullable=True)
+    created_at      = Column(DateTime, server_default=func.now())
+
+    driver          = relationship("Driver")
+    vehiculo        = relationship("VehiculoEmpresa", back_populates="excepciones")
+
+
+class CombustibleRegistro(Base):
+    """
+    Registro de abastecimiento de combustible por vehículo.
+    El conductor responsable se resuelve automáticamente desde la asignación del vehículo
+    en esa fecha (Driver.vehiculo_patente o UsoVehiculoExcepcion si existe).
+    """
+    __tablename__ = "combustible_registros"
+    __table_args__ = (
+        Index("ix_combustible_patente_fecha", "patente", "fecha"),
+        Index("ix_combustible_semana", "semana", "mes", "anio"),
+    )
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    patente             = Column(String(12), ForeignKey("vehiculos_empresa.patente"), nullable=False)
+    fecha               = Column(Date, nullable=False)
+    semana              = Column(Integer, nullable=False)
+    mes                 = Column(Integer, nullable=False)
+    anio                = Column(Integer, nullable=False)
+    litros              = Column(Numeric(8, 2), nullable=True)
+    monto_total         = Column(Integer, nullable=False)
+    proveedor           = Column(String, nullable=True)          # Copec, Shell, Petrobras…
+    # Conductor resuelto al momento del ingreso (driver_id según asignación de esa fecha)
+    driver_id_resuelto  = Column(Integer, ForeignKey("drivers.id"), nullable=True)
+    notas               = Column(String, nullable=True)
+    creado_por          = Column(String, nullable=True)
+    created_at          = Column(DateTime, server_default=func.now())
+
+    vehiculo            = relationship("VehiculoEmpresa", back_populates="combustibles")
+    driver              = relationship("Driver", foreign_keys=[driver_id_resuelto])
+
+
+class RegistroTag(Base):
+    """
+    Costos de TAG / autopistas informados por las empresas concesionarias.
+    Se ingresan por patente y período (el período que informa la autopista, que puede
+    ser semanal, quincenal o mensual según el proveedor).
+    Los costos se atribuyen a conductores prorrateando por días de uso de esa patente
+    durante el período, usando la asignación por defecto y las excepciones registradas.
+    """
+    __tablename__ = "registros_tag"
+    __table_args__ = (
+        Index("ix_tag_patente_periodo", "patente", "fecha_inicio_periodo"),
+    )
+
+    id                      = Column(Integer, primary_key=True, index=True)
+    patente                 = Column(String(12), ForeignKey("vehiculos_empresa.patente"), nullable=False)
+    fecha_inicio_periodo    = Column(Date, nullable=False)
+    fecha_fin_periodo       = Column(Date, nullable=False)
+    monto_total             = Column(Integer, nullable=False)
+    numero_transacciones    = Column(Integer, nullable=True)
+    proveedor               = Column(String, nullable=True)     # Autopista Central, VNE, etc.
+    archivo_origen          = Column(String, nullable=True)     # nombre del archivo importado
+    detalle_json            = Column(JSON, nullable=True)       # detalle transacción a transacción
+    notas                   = Column(String, nullable=True)
+    creado_por              = Column(String, nullable=True)
+    created_at              = Column(DateTime, server_default=func.now())
+
+    vehiculo                = relationship("VehiculoEmpresa", back_populates="tags")
 
 
 class ConfiguracionAsistencia(Base):

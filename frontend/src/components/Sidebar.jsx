@@ -30,6 +30,8 @@ const adminMenu = [
       { to: '/admin/cpc', icon: CreditCard, label: 'CPC', permiso: 'cpc' },
       { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA conductores', permiso: 'cpc' },
       { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos conductores' },
+      { to: '/admin/flota', icon: Truck, label: 'Flota', permiso: 'drivers' },
+      { to: '/admin/rentabilidad', icon: TrendingUp, label: 'Rentabilidad', permiso: 'drivers' },
     ],
   },
 
