@@ -110,6 +110,7 @@ class SellerUpdate(BaseModel):
     activo: Optional[bool] = None
     email: Optional[str] = None
     password: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class SucursalBase(BaseModel):

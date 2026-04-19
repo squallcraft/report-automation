@@ -451,6 +451,11 @@ def actualizar_seller(
     update_data = data.model_dump(exclude_unset=True, exclude={"password"})
     if update_data.get("email") == "":
         update_data["email"] = None
+    # Si vienen tags manuales, preservar los auto: que ya tenía el seller
+    if "tags" in update_data:
+        auto_tags = [t for t in (seller.tags or []) if t.startswith("auto:")]
+        manual_tags = [t.strip().lower() for t in (update_data["tags"] or []) if t.strip() and not t.startswith("auto:")]
+        update_data["tags"] = auto_tags + manual_tags
     for key, value in update_data.items():
         setattr(seller, key, value)
     if data.password:
