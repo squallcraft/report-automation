@@ -22,12 +22,19 @@ class Settings(BaseSettings):
     HAULMER_EMISOR_DIR: str = "MONEDA 1137 56"
     HAULMER_EMISOR_CMNA: str = "SANTIAGO"
     HAULMER_EMISOR_ACTECO: int = 532000
-    # Reset de contraseña
+    # Reset de contraseña (SMTP genérico)
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASS: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
+    # Amazon SES — campañas de email masivo
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_SES_REGION: str = "us-east-1"
+    SES_FROM_EMAIL: str = ""        # ej: "contacto@ecourier.cl"
+    SES_FROM_NAME: str = "ECourier" # nombre que aparece en el remitente
+    BACKEND_URL: str = "https://api.ecourier.cl"  # para tracking pixel
     # TrackingTech (escaneos pickup)
     TRACKINGTECH_API_URL: str = "https://api-app.trackingtech.cl/api"
     TRACKINGTECH_EMAIL: str = ""

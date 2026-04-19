@@ -2025,3 +2025,55 @@ class JornadaTrabajador(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     trabajador = relationship("Trabajador")
+
+
+# ── Email Marketing (Amazon SES) ──────────────────────────────────────────────
+
+class EmailPlantilla(Base):
+    """Plantillas HTML para campañas de email masivo."""
+    __tablename__ = "email_plantillas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(100), nullable=False)
+    asunto = Column(String(200), nullable=False)
+    cuerpo_html = Column(Text, nullable=False)
+    cuerpo_texto = Column(Text, nullable=True)
+    variables = Column(JSON, default=list)
+    activo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailEnvio(Base):
+    """Registro de una campaña de email masivo."""
+    __tablename__ = "email_envios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre_campana = Column(String(200), nullable=True)
+    plantilla_id = Column(Integer, ForeignKey("email_plantillas.id"), nullable=False)
+    segmento = Column(String(50), nullable=False)
+    seller_ids = Column(JSON, default=list)
+    variables_valores = Column(JSON, default=dict)
+    estado = Column(String(20), default="pendiente")  # pendiente | enviando | completado | error
+    total = Column(Integer, default=0)
+    enviados = Column(Integer, default=0)
+    errores = Column(Integer, default=0)
+    abiertos = Column(Integer, default=0)
+    rebotados = Column(Integer, default=0)
+    fecha_inicio = Column(DateTime, nullable=True)
+    fecha_fin = Column(DateTime, nullable=True)
+
+
+class EmailMensaje(Base):
+    """Registro individual de cada correo enviado en una campaña."""
+    __tablename__ = "email_mensajes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    envio_id = Column(Integer, ForeignKey("email_envios.id"), nullable=False, index=True)
+    seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True, index=True)
+    email = Column(String(200), nullable=False)
+    ses_message_id = Column(String(200), nullable=True, index=True)
+    estado = Column(String(20), default="pendiente")  # pendiente | enviado | abierto | rebotado | queja | error
+    abierto = Column(Boolean, default=False)
+    rebotado = Column(Boolean, default=False)
+    error = Column(Text, nullable=True)
+    enviado_at = Column(DateTime, default=datetime.utcnow)

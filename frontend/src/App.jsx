@@ -55,6 +55,7 @@ import SellerPerfil from './pages/admin/SellerPerfil'
 import ReportesSellers from './pages/admin/ReportesSellers'
 import Bandeja from './pages/admin/Bandeja'
 import WhatsApp from './pages/admin/WhatsApp'
+import EmailCampanas from './pages/admin/EmailCampanas'
 import Pickups from './pages/admin/Pickups'
 import CPP from './pages/admin/CPP'
 import LeadsInbox from './pages/admin/LeadsInbox'
@@ -174,6 +175,7 @@ export default function App() {
         <Route path="reportes-sellers" element={<ReportesSellers />} />
         <Route path="bandeja" element={<Bandeja />} />
         <Route path="whatsapp" element={<WhatsApp />} />
+        <Route path="email-campanas" element={<EmailCampanas />} />
         <Route path="sellers/:sellerId/perfil" element={<SellerPerfil />} />
         <Route path="sellers/grupo/:grupoName/perfil" element={<SellerPerfil />} />
         <Route path="leads" element={<LeadsInbox />} />
