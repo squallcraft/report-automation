@@ -121,11 +121,27 @@ def _calcular_monto_neto(
 ) -> dict:
     """
     Calcula el monto neto a pagar a un trabajador para el mes/año dado.
+
+    Fuente de "monto_bruto" (lo que conceptualmente es el LÍQUIDO LEGAL,
+    es decir, lo que la empresa debe al trabajador antes de descuentos
+    administrativos como préstamos y ajustes):
+      1) Si existe LiquidacionMensual del mes → usa su `sueldo_liquido`
+         (ya incluye HE, AFP, salud, IUSC, IMM, jornada vigente, etc.).
+      2) Si no, fallback al campo manual `trabajadores.sueldo_bruto`.
+
     cuotas_ids_incluir: si se pasa, solo descuenta esas cuotas (None = todas las activas del mes).
     Devuelve dict con monto_bruto, descuento_cuotas, descuento_ajustes, bonificaciones, monto_neto,
-    y cuotas_detalle (lista de dicts con id/monto/motivo/prestamo_id).
+    cuotas_detalle y liquidacion_id (si aplica).
     """
-    monto_bruto = trabajador.sueldo_bruto or 0
+    liq = (
+        db.query(LiquidacionMensual)
+        .filter_by(trabajador_id=trabajador.id, mes=mes, anio=anio)
+        .first()
+    )
+    if liq is not None:
+        monto_bruto = liq.sueldo_liquido or 0
+    else:
+        monto_bruto = trabajador.sueldo_bruto or 0
 
     cuotas_query = db.query(CuotaPrestamo).join(Prestamo).filter(
         Prestamo.trabajador_id == trabajador.id,
@@ -183,6 +199,8 @@ def _calcular_monto_neto(
         "descuento_ajustes": descuento_ajustes,
         "monto_neto": monto_neto,
         "cuotas_detalle": cuotas_detalle,
+        "liquidacion_id": liq.id if liq is not None else None,
+        "fuente_calculo": "liquidacion" if liq is not None else "sueldo_bruto_manual",
     }
 
 
