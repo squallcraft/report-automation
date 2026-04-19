@@ -250,11 +250,12 @@ with engine.connect() as conn:
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
-        safe_exec("""
-            INSERT INTO configuracion_legal (id, jornada_legal_vigente, rep_legal_nombre, rep_legal_rut, empresa_razon_social)
-            VALUES (1, 44, 'Adriana Colina Aguilar', '25.936.753-0', 'E-Courier')
-            ON CONFLICT (id) DO NOTHING
-        """)
+    # Seed singleton (idempotente; corre aunque la tabla la haya creado SQLAlchemy)
+    safe_exec("""
+        INSERT INTO configuracion_legal (id, jornada_legal_vigente, rep_legal_nombre, rep_legal_rut, empresa_razon_social)
+        VALUES (1, 44, 'Adriana Colina Aguilar', '25.936.753-0', 'E-Courier')
+        ON CONFLICT (id) DO NOTHING
+    """)
 
     # ── Migración: liquidaciones_mensuales: agregar campos de horas extras ───
     if "liquidaciones_mensuales" in insp.get_table_names():
