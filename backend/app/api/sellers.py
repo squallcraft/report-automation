@@ -19,6 +19,22 @@ from app.services.audit import diff_campos
 router = APIRouter(prefix="/sellers", tags=["Sellers"])
 
 
+@router.get("/tags")
+def listar_tags_disponibles(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Devuelve todos los tags únicos usados en sellers activos, con conteo."""
+    sellers_list = db.query(Seller).filter(Seller.activo == True, Seller.tipo_cierre.is_(None)).all()
+    conteo: dict = {}
+    for s in sellers_list:
+        for tag in (s.tags or []):
+            t = (tag or "").strip().lower()
+            if t:
+                conteo[t] = conteo.get(t, 0) + 1
+    return [{"tag": t, "count": c} for t, c in sorted(conteo.items())]
+
+
 @router.get("", response_model=List[SellerOut])
 def listar_sellers(
     activo: Optional[bool] = None,
@@ -702,24 +718,7 @@ def reabrir_seller(
 
 
 
-
 # ── Tags ──────────────────────────────────────────────────────────────────────
-
-@router.get("/tags")
-def listar_tags_disponibles(
-    db: Session = Depends(get_db),
-    _=Depends(require_admin_or_administracion),
-):
-    """Devuelve todos los tags únicos usados en sellers activos, con conteo."""
-    sellers = db.query(Seller).filter(Seller.activo == True, Seller.tipo_cierre.is_(None)).all()
-    conteo: dict = {}
-    for s in sellers:
-        for tag in (s.tags or []):
-            t = (tag or "").strip().lower()
-            if t:
-                conteo[t] = conteo.get(t, 0) + 1
-    return [{"tag": t, "count": c} for t, c in sorted(conteo.items())]
-
 
 class TagsBody(_PB):
     tags: List[str]
