@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User, PenLine, FileSignature, Bell, Calendar, Clock,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User, PenLine, FileSignature, Bell, Calendar, Clock, Mail,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -27,7 +27,7 @@ const adminMenu = [
   {
     group: 'Conductores', icon: Truck, children: [
       { to: '/admin/drivers', icon: Truck, label: 'Perfiles', permiso: 'drivers' },
-      { to: '/admin/cpc', icon: CreditCard, label: 'Cuentas por pagar', permiso: 'cpc' },
+      { to: '/admin/cpc', icon: CreditCard, label: 'CPC', permiso: 'cpc' },
       { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA conductores', permiso: 'cpc' },
       { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos conductores' },
     ],
@@ -37,7 +37,7 @@ const adminMenu = [
   {
     group: 'Sellers', icon: Store, children: [
       { to: '/admin/sellers', icon: Users, label: 'Perfiles', permiso: 'sellers' },
-      { to: '/admin/facturacion', icon: Receipt, label: 'Cuentas por pagar', permiso: 'facturacion' },
+      { to: '/admin/facturacion', icon: Receipt, label: 'CPS', permiso: 'facturacion' },
       { to: '/admin/reportes-sellers', icon: BarChart3, label: 'Reportes' },
       { to: '/admin/retencion', icon: TrendingUp, label: 'Retención comercial' },
     ],
@@ -47,7 +47,7 @@ const adminMenu = [
   {
     group: 'Pickups', icon: MapPin, children: [
       { to: '/admin/pickups', icon: Store, label: 'Puntos pickup', permiso: 'pickups' },
-      { to: '/admin/cpp', icon: CreditCard, label: 'Cuentas por pagar', permiso: 'cpp' },
+      { to: '/admin/cpp', icon: CreditCard, label: 'CPP', permiso: 'cpp' },
     ],
   },
 
@@ -85,6 +85,7 @@ const adminMenu = [
   {
     group: 'Comunicaciones', icon: MessageSquare, children: [
       { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },
+      { to: '/admin/email-campanas', icon: Mail, label: 'Email Campaigns' },
       { to: '/admin/consultas', icon: ClipboardList, label: 'Consultas', permiso: 'consultas' },
       { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de tareas' },
     ],
