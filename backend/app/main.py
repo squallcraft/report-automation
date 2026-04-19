@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -101,9 +101,24 @@ with engine.connect() as conn:
             ("adicional_isapre", "INTEGER NOT NULL DEFAULT 0"),
             ("password_hash", "TEXT"),
             ("firma_base64",  "TEXT"),
+            # Datos personales para contratos digitales (Camino B)
+            ("telefono", "TEXT"),
+            ("whatsapp", "TEXT"),
+            ("fecha_nacimiento", "DATE"),
+            ("nacionalidad", "TEXT"),
+            ("estado_civil", "TEXT"),
+            # Feriado progresivo (Art. 68 CT): años acreditados con empleadores anteriores
+            ("anios_servicio_previos", "INTEGER NOT NULL DEFAULT 0"),
+            # Control horario digital (ZKBioTime)
+            ("zkbio_employee_id", "TEXT"),
+            ("zkbio_employee_codigo", "TEXT"),
+            ("hora_entrada_esperada", "TEXT"),
+            ("hora_salida_esperada", "TEXT"),
+            ("minutos_colacion", "INTEGER NOT NULL DEFAULT 60"),
         ]:
             if col_name not in trab_cols:
                 safe_exec(f"ALTER TABLE trabajadores ADD COLUMN {col_name} {col_def}")
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_trabajadores_zkbio ON trabajadores (zkbio_employee_id)")
 
     # ── Tabla parametros_mensuales ───────────────────────────────────────────
     if "parametros_mensuales" not in insp.get_table_names():
@@ -207,6 +222,18 @@ with engine.connect() as conn:
             )
         """)
         safe_exec("CREATE INDEX IF NOT EXISTS ix_anexos_contrato_trab ON anexos_contrato (trabajador_id)")
+    # Camino B: nuevos campos en anexos_contrato
+    if "anexos_contrato" in insp.get_table_names():
+        anexo_cols = [c["name"] for c in insp.get_columns("anexos_contrato")]
+        for col_name, col_def in [
+            ("plantilla_id", "INTEGER"),
+            ("plantilla_version", "INTEGER"),
+            ("contenido_renderizado", "TEXT"),
+            ("aprobado_por", "TEXT"),
+            ("aprobado_at", "TIMESTAMP"),
+        ]:
+            if col_name not in anexo_cols:
+                safe_exec(f"ALTER TABLE anexos_contrato ADD COLUMN {col_name} {col_def}")
 
     # ── Tabla horas_extras_trabajadores ──────────────────────────────────────
     if "horas_extras_trabajadores" not in insp.get_table_names():
@@ -256,6 +283,183 @@ with engine.connect() as conn:
         VALUES (1, 44, 'Adriana Colina Aguilar', '25.936.753-0', 'E-Courier')
         ON CONFLICT (id) DO NOTHING
     """)
+
+    # configuracion_legal: agregar empresa_giro si no existe
+    if "configuracion_legal" in insp.get_table_names():
+        cl_cols = [c["name"] for c in insp.get_columns("configuracion_legal")]
+        if "empresa_giro" not in cl_cols:
+            safe_exec("ALTER TABLE configuracion_legal ADD COLUMN empresa_giro TEXT")
+
+    # ── Tabla plantillas_contrato (Camino B: contratos digitales) ────────────
+    if "plantillas_contrato" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE plantillas_contrato (
+                id SERIAL PRIMARY KEY,
+                slug TEXT NOT NULL,
+                nombre TEXT NOT NULL,
+                descripcion TEXT,
+                tipo_contrato TEXT,
+                aplica_a_cargos JSON,
+                aplica_a_jornadas JSON,
+                contenido TEXT NOT NULL DEFAULT '',
+                clausulas_extra JSON,
+                version INTEGER NOT NULL DEFAULT 1,
+                activa BOOLEAN NOT NULL DEFAULT TRUE,
+                creada_por TEXT,
+                creada_desde_anexo_id INTEGER REFERENCES anexos_contrato(id),
+                notas_version TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_plantilla_slug_version ON plantillas_contrato (slug, version)")
+
+    # ── Tabla notificaciones_trabajador ──────────────────────────────────────
+    if "notificaciones_trabajador" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE notificaciones_trabajador (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                tipo TEXT NOT NULL DEFAULT 'GENERICA',
+                titulo TEXT NOT NULL,
+                mensaje TEXT NOT NULL,
+                url_accion TEXT,
+                leida BOOLEAN NOT NULL DEFAULT FALSE,
+                leida_at TIMESTAMP,
+                enviada_whatsapp BOOLEAN NOT NULL DEFAULT FALSE,
+                whatsapp_status TEXT,
+                metadata_json JSON,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_notif_trab_leida ON notificaciones_trabajador (trabajador_id, leida)")
+
+    # ── Migración: vacaciones_trabajadores: nuevos campos del flujo formal ───
+    if "vacaciones_trabajadores" in insp.get_table_names():
+        vac_cols = [c["name"] for c in insp.get_columns("vacaciones_trabajadores")]
+        for col_name, col_def in [
+            ("dias_corridos", "INTEGER"),
+            ("es_retroactiva", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("dias_derecho_snapshot", "NUMERIC(6,2)"),
+            ("dias_progresivo_snapshot", "INTEGER"),
+            ("saldo_previo_snapshot", "NUMERIC(6,2)"),
+            ("solicitada_at", "TIMESTAMP"),
+            ("firma_solicitud", "TEXT"),
+            ("firma_solicitud_ip", "TEXT"),
+            ("aprobada_at", "TIMESTAMP"),
+            ("aprobada_por", "TEXT"),
+            ("firma_aprobacion", "TEXT"),
+            ("rechazada_at", "TIMESTAMP"),
+            ("rechazada_por", "TEXT"),
+            ("motivo_rechazo", "TEXT"),
+            ("firma_retroactiva", "TEXT"),
+            ("firma_retroactiva_at", "TIMESTAMP"),
+            ("firma_retroactiva_ip", "TEXT"),
+            ("firma_retroactiva_solicitada_at", "TIMESTAMP"),
+            ("pdf_comprobante", "TEXT"),
+            ("creado_por", "TEXT"),
+            ("updated_at", "TIMESTAMP DEFAULT NOW()"),
+        ]:
+            if col_name not in vac_cols:
+                safe_exec(f"ALTER TABLE vacaciones_trabajadores ADD COLUMN {col_name} {col_def}")
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_vac_trabajador_estado ON vacaciones_trabajadores (trabajador_id, estado)")
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_vac_fecha_inicio ON vacaciones_trabajadores (fecha_inicio)")
+
+    # ── Control horario digital (ZKBioTime) ──────────────────────────────────
+    if "configuracion_asistencia" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE configuracion_asistencia (
+                id INTEGER PRIMARY KEY,
+                activo BOOLEAN NOT NULL DEFAULT FALSE,
+                zkbio_base_url TEXT,
+                zkbio_api_token TEXT,
+                zkbio_username TEXT,
+                zkbio_password TEXT,
+                zkbio_token_expira_at TIMESTAMP,
+                zkbio_version TEXT,
+                tolerancia_atraso_min INTEGER NOT NULL DEFAULT 5,
+                tolerancia_salida_anticipada_min INTEGER NOT NULL DEFAULT 5,
+                minutos_minimos_he INTEGER NOT NULL DEFAULT 15,
+                redondeo_marcas_min INTEGER NOT NULL DEFAULT 1,
+                requiere_aprobacion_he BOOLEAN NOT NULL DEFAULT TRUE,
+                he_dia_recargo_50_max_diario INTEGER NOT NULL DEFAULT 2,
+                consolidar_he_a_liquidacion BOOLEAN NOT NULL DEFAULT TRUE,
+                ultima_sync_at TIMESTAMP,
+                ultima_sync_hasta TIMESTAMP,
+                ultima_sync_marcas_nuevas INTEGER,
+                ultima_sync_error TEXT,
+                actualizado_por TEXT,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+    # Seed singleton (idempotente)
+    safe_exec("""
+        INSERT INTO configuracion_asistencia (id, activo)
+        VALUES (1, FALSE)
+        ON CONFLICT (id) DO NOTHING
+    """)
+
+    if "marcas_asistencia" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE marcas_asistencia (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER REFERENCES trabajadores(id),
+                zkbio_employee_id TEXT NOT NULL,
+                zkbio_employee_codigo TEXT,
+                zkbio_transaction_id TEXT NOT NULL,
+                dispositivo_sn TEXT,
+                dispositivo_alias TEXT,
+                terminal_id TEXT,
+                timestamp TIMESTAMP NOT NULL,
+                fecha DATE NOT NULL,
+                tipo TEXT NOT NULL DEFAULT 'DESCONOCIDO',
+                punch_state_raw TEXT,
+                verify_type TEXT,
+                work_code TEXT,
+                area TEXT,
+                foto_base64 TEXT,
+                descartada BOOLEAN NOT NULL DEFAULT FALSE,
+                motivo_descarte TEXT,
+                sincronizada_at TIMESTAMP DEFAULT NOW(),
+                payload_raw JSONB,
+                CONSTRAINT uq_marca_zk_tx UNIQUE (zkbio_transaction_id, dispositivo_sn)
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_marca_trab_fecha ON marcas_asistencia (trabajador_id, fecha)")
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_marca_timestamp ON marcas_asistencia (timestamp)")
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_marca_zkbio_emp ON marcas_asistencia (zkbio_employee_id)")
+
+    if "jornadas_trabajador" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE jornadas_trabajador (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                fecha DATE NOT NULL,
+                primera_entrada TIMESTAMP,
+                salida_colacion TIMESTAMP,
+                entrada_colacion TIMESTAMP,
+                ultima_salida TIMESTAMP,
+                cantidad_marcas INTEGER NOT NULL DEFAULT 0,
+                minutos_trabajados INTEGER NOT NULL DEFAULT 0,
+                minutos_colacion INTEGER NOT NULL DEFAULT 0,
+                minutos_atraso INTEGER NOT NULL DEFAULT 0,
+                minutos_salida_anticipada INTEGER NOT NULL DEFAULT 0,
+                minutos_he_estimadas INTEGER NOT NULL DEFAULT 0,
+                hora_entrada_esperada TEXT,
+                hora_salida_esperada TEXT,
+                jornada_diaria_min_esperada INTEGER NOT NULL DEFAULT 480,
+                estado TEXT NOT NULL DEFAULT 'NORMAL',
+                observaciones TEXT,
+                he_aprobadas_min INTEGER NOT NULL DEFAULT 0,
+                he_aprobadas_por TEXT,
+                he_aprobadas_at TIMESTAMP,
+                he_consolidada_id INTEGER REFERENCES horas_extras_trabajadores(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT uq_jornada_trab_fecha UNIQUE (trabajador_id, fecha)
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_jornada_fecha ON jornadas_trabajador (fecha)")
 
     # ── Migración: liquidaciones_mensuales: agregar campos de horas extras ───
     if "liquidaciones_mensuales" in insp.get_table_names():
@@ -785,6 +989,10 @@ app.include_router(remuneraciones.router, prefix="/api")
 app.include_router(iva_drivers.router, prefix="/api")
 app.include_router(contratos.router, prefix="/api")
 app.include_router(horas_extras.router, prefix="/api")
+app.include_router(plantillas_contrato.router, prefix="/api")
+app.include_router(notificaciones_trabajador.router, prefix="/api")
+app.include_router(vacaciones.router, prefix="/api")
+app.include_router(asistencia.router, prefix="/api")
 
 
 @app.on_event("startup")

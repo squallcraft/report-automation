@@ -26,6 +26,14 @@ SECCIONES: list[str] = [
     "consultas", "logs", "asistente",
     "trabajadores", "prestamos", "pagos-trabajadores",
     "colaboradores",
+    # ── RRHH granular (cada uno con :ver y :editar) ─────────────────────────
+    # editar implica también aprobar/emitir/firmar acciones del módulo
+    "rrhh-contratos",       # generar contratos digitales, plantillas, emitir/aprobar
+    "rrhh-vacaciones",      # registrar, aprobar, calendario
+    "rrhh-licencias",       # cargar licencias, aprobar, recibir notificaciones
+    "rrhh-documentacion",   # documentos del trabajador, vigencias
+    "rrhh-plantillas",      # editor de plantillas de contrato
+    "rrhh-alertas",         # recibe alertas de vencimientos, firmas pendientes
 ]
 
 _SECCIONES_SET = set(SECCIONES)

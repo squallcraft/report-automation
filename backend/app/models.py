@@ -854,6 +854,30 @@ class Trabajador(Base):
     password_hash = Column(String, nullable=True)
     firma_base64  = Column(Text,   nullable=True)
 
+    # ── Datos personales ampliados (necesarios para contrato digital) ──────
+    telefono = Column(String, nullable=True)
+    whatsapp = Column(String, nullable=True)              # E.164 sin '+': 56912345678
+    fecha_nacimiento = Column(Date, nullable=True)
+    nacionalidad = Column(String, nullable=True)
+    estado_civil = Column(String, nullable=True)          # SOLTERO/CASADO/CONVIVIENTE_CIVIL/VIUDO/DIVORCIADO
+
+    # Años de servicio acreditados con empleadores anteriores (para feriado progresivo Art. 68 CT).
+    # Tope legal: 10 años (después de 10 años trabajados se gana 1 día extra cada 3 años nuevos
+    # con el empleador actual). Se acreditan con certificados.
+    anios_servicio_previos = Column(Integer, nullable=False, default=0)
+
+    # ── Control horario digital (integración ZKBioTime) ──
+    # ID interno del trabajador en el software ZKBioTime (NO en el reloj físico).
+    # Se vincula manualmente desde admin para que las marcas que llegan vía API
+    # se asocien al trabajador correcto. Si está vacío, se ignoran sus marcas.
+    zkbio_employee_id = Column(String, nullable=True, index=True)
+    zkbio_employee_codigo = Column(String, nullable=True)  # "personnel code" en ZKBioTime
+    # Horario esperado (para detectar atrasos / salidas anticipadas / HE).
+    # Si es NULL, se usa la jornada del contrato vigente y horarios por defecto.
+    hora_entrada_esperada = Column(String, nullable=True)  # "HH:MM"
+    hora_salida_esperada = Column(String, nullable=True)   # "HH:MM"
+    minutos_colacion = Column(Integer, nullable=False, default=60)
+
     pagos = relationship("PagoTrabajador", back_populates="trabajador")
     pagos_mes = relationship("PagoMesTrabajador", back_populates="trabajador")
     prestamos = relationship("Prestamo", back_populates="trabajador", foreign_keys="Prestamo.trabajador_id")
@@ -904,17 +928,71 @@ class PagoMesTrabajador(Base):
     trabajador = relationship("Trabajador", back_populates="pagos_mes")
 
 
+class EstadoVacacionEnum(str, enum.Enum):
+    """
+    Estados del flujo de vacaciones:
+      SOLICITADA  → trabajador la pidió (firma_solicitud presente). RRHH debe aprobar/rechazar.
+      APROBADA    → RRHH aprobó. Genera comprobante PDF firmado por ambos.
+      RECHAZADA   → RRHH rechazó (con motivo). No descuenta saldo.
+      TOMADA      → fecha_fin < hoy. Sirve para auditoría histórica.
+      REGISTRO_HISTORICO → admin cargó vacación pasada (pre-sistema). Pendiente de firma del trabajador.
+    """
+    SOLICITADA = "SOLICITADA"
+    APROBADA = "APROBADA"
+    RECHAZADA = "RECHAZADA"
+    TOMADA = "TOMADA"
+    REGISTRO_HISTORICO = "REGISTRO_HISTORICO"
+
+
 class VacacionTrabajador(Base):
     __tablename__ = "vacaciones_trabajadores"
+    __table_args__ = (
+        Index("ix_vac_trabajador_estado", "trabajador_id", "estado"),
+        Index("ix_vac_fecha_inicio", "fecha_inicio"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False)
     fecha_inicio = Column(Date, nullable=False)
     fecha_fin = Column(Date, nullable=False)
     dias_habiles = Column(Integer, nullable=False)
-    estado = Column(String, nullable=False, default="APROBADA")
+    dias_corridos = Column(Integer, nullable=True)        # informativo
+    estado = Column(String, nullable=False, default=EstadoVacacionEnum.APROBADA.value)
     nota = Column(Text, nullable=True)
+
+    # Tipo de carga
+    es_retroactiva = Column(Boolean, nullable=False, default=False)  # cargada por admin de un período pasado
+
+    # Snapshot del cálculo al momento de aprobar (auditoría)
+    dias_derecho_snapshot = Column(Numeric(6, 2), nullable=True)     # incluye progresivo
+    dias_progresivo_snapshot = Column(Integer, nullable=True)
+    saldo_previo_snapshot = Column(Numeric(6, 2), nullable=True)     # disponible antes de tomar esta
+
+    # ── Flujo de solicitud ────────────────────────────────────────────────────
+    solicitada_at = Column(DateTime, nullable=True)
+    firma_solicitud = Column(Text, nullable=True)         # base64 del trabajador al solicitar
+    firma_solicitud_ip = Column(String, nullable=True)
+
+    # ── Aprobación / rechazo ──────────────────────────────────────────────────
+    aprobada_at = Column(DateTime, nullable=True)
+    aprobada_por = Column(String, nullable=True)          # nombre del admin con rrhh-vacaciones:editar
+    firma_aprobacion = Column(Text, nullable=True)        # base64 del aprobador
+    rechazada_at = Column(DateTime, nullable=True)
+    rechazada_por = Column(String, nullable=True)
+    motivo_rechazo = Column(Text, nullable=True)
+
+    # ── Firma retroactiva (registro histórico) ────────────────────────────────
+    firma_retroactiva = Column(Text, nullable=True)       # base64 del trabajador conformando que tomó las vacaciones
+    firma_retroactiva_at = Column(DateTime, nullable=True)
+    firma_retroactiva_ip = Column(String, nullable=True)
+    firma_retroactiva_solicitada_at = Column(DateTime, nullable=True)
+
+    # ── Comprobante PDF (generado al aprobar / al firmar retroactiva) ────────
+    pdf_comprobante = Column(Text, nullable=True)         # base64 del PDF
+
+    creado_por = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     trabajador = relationship("Trabajador", back_populates="vacaciones")
 
@@ -1626,6 +1704,13 @@ class AnexoContrato(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Camino B (contrato digital generado): trazabilidad de la plantilla usada
+    plantilla_id = Column(Integer, ForeignKey("plantillas_contrato.id"), nullable=True)
+    plantilla_version = Column(Integer, nullable=True)
+    contenido_renderizado = Column(Text, nullable=True)              # markdown final
+    aprobado_por = Column(String, nullable=True)
+    aprobado_at = Column(DateTime, nullable=True)
+
     version = relationship("ContratoTrabajadorVersion", back_populates="anexos")
     trabajador = relationship("Trabajador")
 
@@ -1684,5 +1769,259 @@ class ConfiguracionLegal(Base):
     empresa_razon_social = Column(String, nullable=True)
     empresa_rut = Column(String, nullable=True)
     empresa_direccion = Column(String, nullable=True)
+    empresa_giro = Column(String, nullable=True)                  # giro / actividad económica para contratos
     actualizado_por = Column(String, nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Plantillas de contrato (Camino B: contratos digitales)
+# ─────────────────────────────────────────────────────────────────────────────
+class PlantillaContrato(Base):
+    """
+    Plantilla de contrato individual de trabajo. El motor renderiza el contenido
+    inyectando datos del trabajador, contrato y configuración legal a través de
+    placeholders {{trabajador.nombre}}, {{contrato.sueldo_liquido}}, etc.
+
+    Se versiona: cada cambio publica una nueva versión y la anterior queda como
+    histórico. Solo una versión `activa` por slug se ofrece para nuevos contratos.
+    """
+    __tablename__ = "plantillas_contrato"
+    __table_args__ = (
+        Index("ix_plantilla_slug_version", "slug", "version"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(String, nullable=False, index=True)             # ej. indefinido_administrativo
+    nombre = Column(String, nullable=False)                       # ej. "Indefinido — Administrativo"
+    descripcion = Column(Text, nullable=True)
+    tipo_contrato = Column(String, nullable=True)                 # INDEFINIDO/PLAZO_FIJO/OBRA_FAENA/PART_TIME
+    aplica_a_cargos = Column(JSON, nullable=True)                 # ["administrativo", "operador"]
+    aplica_a_jornadas = Column(JSON, nullable=True)               # [44, 40, 30, 25]
+
+    contenido = Column(Text, nullable=False, default="")          # markdown con {{placeholders}}
+    clausulas_extra = Column(JSON, nullable=True)                 # bloques opcionales activables al emitir
+
+    version = Column(Integer, nullable=False, default=1)
+    activa = Column(Boolean, nullable=False, default=True)
+    creada_por = Column(String, nullable=True)
+    creada_desde_anexo_id = Column(Integer, ForeignKey("anexos_contrato.id"), nullable=True)
+    notas_version = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notificaciones para trabajadores (portal interno)
+# ─────────────────────────────────────────────────────────────────────────────
+class TipoNotificacionEnum(str, enum.Enum):
+    ANEXO_PARA_FIRMA = "ANEXO_PARA_FIRMA"
+    ANEXO_INFORMATIVO = "ANEXO_INFORMATIVO"
+    LIQUIDACION_DISPONIBLE = "LIQUIDACION_DISPONIBLE"
+    PAGO_REALIZADO = "PAGO_REALIZADO"
+    VACACIONES_APROBADAS = "VACACIONES_APROBADAS"
+    VACACIONES_RECHAZADAS = "VACACIONES_RECHAZADAS"
+    LICENCIA_REGISTRADA = "LICENCIA_REGISTRADA"
+    DOCUMENTO_POR_VENCER = "DOCUMENTO_POR_VENCER"
+    GENERICA = "GENERICA"
+
+
+class NotificacionTrabajador(Base):
+    """
+    Notificación dirigida a un trabajador (visible en su portal).
+    Si el trabajador tiene `whatsapp`, se envía además vía WhatsApp Business.
+    """
+    __tablename__ = "notificaciones_trabajador"
+    __table_args__ = (
+        Index("ix_notif_trab_leida", "trabajador_id", "leida"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    tipo = Column(String, nullable=False, default=TipoNotificacionEnum.GENERICA.value)
+    titulo = Column(String, nullable=False)
+    mensaje = Column(Text, nullable=False)
+    url_accion = Column(String, nullable=True)                    # ej. /portal/anexos/123
+    leida = Column(Boolean, nullable=False, default=False)
+    leida_at = Column(DateTime, nullable=True)
+    enviada_whatsapp = Column(Boolean, nullable=False, default=False)
+    whatsapp_status = Column(String, nullable=True)               # ok / failed:<motivo>
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    trabajador = relationship("Trabajador")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Control horario digital — integración con ZKBioTime (NUNCA al reloj físico)
+# ─────────────────────────────────────────────────────────────────────────────
+# Arquitectura legal en Chile (Dirección del Trabajo):
+#   Reloj físico (ZKTeco SpeedFace-V5L)
+#       └── Push protocol ──> ZKBioTime (software CERTIFICADO por la DT)
+#                                 └── REST API ──> nuestro FastAPI
+# Conectarse directo al reloj invalida la prueba ante la Inspección del Trabajo
+# porque nuestro código no tiene resolución DT. Por eso TODO el flujo pasa por
+# ZKBioTime, que es el sistema oficial de control de asistencia.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ConfiguracionAsistencia(Base):
+    """
+    Singleton (id=1) con la configuración del módulo de control horario.
+    Hasta que `activo=True` y se hayan poblado las credenciales, el módulo
+    queda en stand-by (UI lo muestra como "no configurado").
+    """
+    __tablename__ = "configuracion_asistencia"
+
+    id = Column(Integer, primary_key=True, default=1)
+    activo = Column(Boolean, nullable=False, default=False)            # feature flag global
+
+    # Conexión a ZKBioTime (REST API)
+    zkbio_base_url = Column(String, nullable=True)                     # https://bio.miempresa.cl
+    zkbio_api_token = Column(Text, nullable=True)                      # JWT/access token persistido
+    zkbio_username = Column(String, nullable=True)
+    zkbio_password = Column(Text, nullable=True)                       # opcional: para refrescar token
+    zkbio_token_expira_at = Column(DateTime, nullable=True)
+    zkbio_version = Column(String, nullable=True)                      # ej. "ZKBioTime 8.0"
+
+    # Tolerancias (minutos)
+    tolerancia_atraso_min = Column(Integer, nullable=False, default=5)         # antes no es atraso
+    tolerancia_salida_anticipada_min = Column(Integer, nullable=False, default=5)
+    minutos_minimos_he = Column(Integer, nullable=False, default=15)           # mínimo para contar HE
+    redondeo_marcas_min = Column(Integer, nullable=False, default=1)           # snap-to nearest
+
+    # Política de horas extras
+    requiere_aprobacion_he = Column(Boolean, nullable=False, default=True)     # si False, autoasume
+    he_dia_recargo_50_max_diario = Column(Integer, nullable=False, default=2)  # tope legal Art. 31 CT
+    consolidar_he_a_liquidacion = Column(Boolean, nullable=False, default=True)
+
+    # Última sincronización
+    ultima_sync_at = Column(DateTime, nullable=True)
+    ultima_sync_hasta = Column(DateTime, nullable=True)                # fecha máxima ya importada
+    ultima_sync_marcas_nuevas = Column(Integer, nullable=True)
+    ultima_sync_error = Column(Text, nullable=True)
+
+    actualizado_por = Column(String, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TipoMarcaEnum(str, enum.Enum):
+    """Mapeo de los punch_state de ZKBioTime."""
+    ENTRADA = "ENTRADA"               # 0 / Check-In
+    SALIDA = "SALIDA"                 # 1 / Check-Out
+    SALIDA_COLACION = "SALIDA_COLACION"   # 2 / Break-Out
+    ENTRADA_COLACION = "ENTRADA_COLACION" # 3 / Break-In
+    SALIDA_HE = "SALIDA_HE"           # 4 / Overtime-Out
+    ENTRADA_HE = "ENTRADA_HE"         # 5 / Overtime-In
+    DESCONOCIDO = "DESCONOCIDO"
+
+
+class MarcaAsistencia(Base):
+    """
+    Registro CRUDO de cada transacción importada desde ZKBioTime.
+    Es la fuente de verdad inalterable: jamás se edita, solo se anula
+    (se marca `descartada=True` con motivo) y se recalculan las jornadas.
+
+    Idempotencia: la combinación (zkbio_transaction_id, dispositivo_sn) es UNIQUE.
+    Si una marca llega de un trabajador sin vincular, queda con
+    `trabajador_id=NULL` para que admin la vincule luego.
+    """
+    __tablename__ = "marcas_asistencia"
+    __table_args__ = (
+        UniqueConstraint("zkbio_transaction_id", "dispositivo_sn", name="uq_marca_zk_tx"),
+        Index("ix_marca_trab_fecha", "trabajador_id", "fecha"),
+        Index("ix_marca_timestamp", "timestamp"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Vínculo (puede ser NULL si llegó una marca de un emp_id no vinculado)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=True, index=True)
+    zkbio_employee_id = Column(String, nullable=False, index=True)
+    zkbio_employee_codigo = Column(String, nullable=True)
+
+    # Identificadores ZKBioTime (idempotencia)
+    zkbio_transaction_id = Column(String, nullable=False)
+    dispositivo_sn = Column(String, nullable=True)
+    dispositivo_alias = Column(String, nullable=True)
+    terminal_id = Column(String, nullable=True)
+
+    # Datos de la marca
+    timestamp = Column(DateTime, nullable=False, index=True)           # fecha+hora local del reloj
+    fecha = Column(Date, nullable=False)                               # derivada para queries rápidas
+    tipo = Column(String, nullable=False, default=TipoMarcaEnum.DESCONOCIDO.value)
+    punch_state_raw = Column(String, nullable=True)                    # valor crudo de ZKBio
+    verify_type = Column(String, nullable=True)                        # rostro / huella / tarjeta
+    work_code = Column(String, nullable=True)                          # opcional, política propia
+    area = Column(String, nullable=True)
+    foto_base64 = Column(Text, nullable=True)                          # si ZKBio devuelve imagen
+
+    # Estado interno
+    descartada = Column(Boolean, nullable=False, default=False)
+    motivo_descarte = Column(Text, nullable=True)
+    sincronizada_at = Column(DateTime, server_default=func.now())
+    payload_raw = Column(JSON, nullable=True)                          # respaldo defensivo
+
+    trabajador = relationship("Trabajador")
+
+
+class EstadoJornadaEnum(str, enum.Enum):
+    NORMAL = "NORMAL"                 # entrada y salida correctas
+    ATRASO = "ATRASO"
+    SALIDA_ANTICIPADA = "SALIDA_ANTICIPADA"
+    INCOMPLETA = "INCOMPLETA"         # falta entrada o salida
+    AUSENTE = "AUSENTE"               # día laborable sin marcas
+    LICENCIA = "LICENCIA"             # licencia médica
+    VACACIONES = "VACACIONES"
+    FERIADO_LEGAL = "FERIADO_LEGAL"   # festivo
+    HORAS_EXTRAS = "HORAS_EXTRAS"     # trabajó más allá del horario
+    REVISAR = "REVISAR"               # marcas inconsistentes
+
+
+class JornadaTrabajador(Base):
+    """
+    Resumen calculado por trabajador y día. Se reconstruye desde MarcaAsistencia
+    cada vez que llegan marcas nuevas o se anula una. UNIQUE por (trabajador, fecha).
+    """
+    __tablename__ = "jornadas_trabajador"
+    __table_args__ = (
+        UniqueConstraint("trabajador_id", "fecha", name="uq_jornada_trab_fecha"),
+        Index("ix_jornada_fecha", "fecha"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    fecha = Column(Date, nullable=False)
+
+    # Marcas (timestamps)
+    primera_entrada = Column(DateTime, nullable=True)
+    salida_colacion = Column(DateTime, nullable=True)
+    entrada_colacion = Column(DateTime, nullable=True)
+    ultima_salida = Column(DateTime, nullable=True)
+    cantidad_marcas = Column(Integer, nullable=False, default=0)
+
+    # Cálculos (minutos)
+    minutos_trabajados = Column(Integer, nullable=False, default=0)
+    minutos_colacion = Column(Integer, nullable=False, default=0)
+    minutos_atraso = Column(Integer, nullable=False, default=0)
+    minutos_salida_anticipada = Column(Integer, nullable=False, default=0)
+    minutos_he_estimadas = Column(Integer, nullable=False, default=0)         # antes de aprobación
+
+    # Horario esperado (snapshot)
+    hora_entrada_esperada = Column(String, nullable=True)
+    hora_salida_esperada = Column(String, nullable=True)
+    jornada_diaria_min_esperada = Column(Integer, nullable=False, default=480)  # 8h default
+
+    estado = Column(String, nullable=False, default=EstadoJornadaEnum.NORMAL.value)
+    observaciones = Column(Text, nullable=True)
+
+    # Aprobación de horas extras (gobernanza)
+    he_aprobadas_min = Column(Integer, nullable=False, default=0)
+    he_aprobadas_por = Column(String, nullable=True)
+    he_aprobadas_at = Column(DateTime, nullable=True)
+    he_consolidada_id = Column(Integer, ForeignKey("horas_extras_trabajadores.id"), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    trabajador = relationship("Trabajador")

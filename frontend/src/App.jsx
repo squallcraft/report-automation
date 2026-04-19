@@ -81,6 +81,11 @@ import TrabajadorPagos from './pages/trabajador/TrabajadorPagos'
 import TrabajadorImposiciones from './pages/trabajador/TrabajadorImposiciones'
 import TrabajadorFirma from './pages/trabajador/TrabajadorFirma'
 import TrabajadorAnexos from './pages/trabajador/TrabajadorAnexos'
+import TrabajadorNotificaciones from './pages/trabajador/TrabajadorNotificaciones'
+import TrabajadorVacaciones from './pages/trabajador/TrabajadorVacaciones'
+import PlantillasContrato from './pages/admin/PlantillasContrato'
+import Vacaciones from './pages/admin/Vacaciones'
+import Asistencia from './pages/admin/Asistencia'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -151,6 +156,9 @@ export default function App() {
         <Route path="cpc" element={<CPC />} />
         <Route path="usuarios" element={<Usuarios />} />
         <Route path="configuracion-legal" element={<ConfiguracionLegal />} />
+        <Route path="plantillas-contrato" element={<PlantillasContrato />} />
+        <Route path="vacaciones" element={<Vacaciones />} />
+        <Route path="asistencia" element={<Asistencia />} />
         <Route path="asistente" element={<Asistente />} />
         <Route path="pickups" element={<Pickups />} />
         <Route path="cpp" element={<CPP />} />
@@ -210,6 +218,10 @@ export default function App() {
         <Route path="imposiciones" element={<TrabajadorImposiciones />} />
         <Route path="firma" element={<TrabajadorFirma />} />
         <Route path="anexos" element={<TrabajadorAnexos />} />
+        <Route path="anexos/:anexoId" element={<TrabajadorAnexos />} />
+        <Route path="notificaciones" element={<TrabajadorNotificaciones />} />
+        <Route path="vacaciones" element={<TrabajadorVacaciones />} />
+        <Route path="vacaciones/:vacId" element={<TrabajadorVacaciones />} />
       </Route>
 
       <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>

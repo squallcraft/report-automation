@@ -483,4 +483,123 @@ def crear_anexo_para_version(
     )
     db.add(anexo)
     db.flush()
+
+    # Notificación al trabajador (in-app + WhatsApp si tiene número configurado).
+    # Best-effort: si falla, no rompe la creación del anexo.
+    try:
+        from app.services.notificaciones import notificar_trabajador
+        from app.models import TipoNotificacionEnum
+        if requiere_firma:
+            tipo_notif = TipoNotificacionEnum.ANEXO_PARA_FIRMA.value
+            mensaje = (
+                f"Tienes un nuevo {titulo} disponible en tu portal. "
+                "Por favor revísalo y fírmalo electrónicamente."
+            )
+        else:
+            tipo_notif = TipoNotificacionEnum.ANEXO_INFORMATIVO.value
+            mensaje = f"Se generó un {titulo} (informativo, no requiere firma)."
+        notificar_trabajador(
+            db,
+            trabajador=trabajador,
+            titulo=titulo,
+            mensaje=mensaje,
+            tipo=tipo_notif,
+            url_accion=f"/portal/anexos/{anexo.id}",
+            commit=False,
+        )
+    except Exception:
+        pass
+
     return anexo
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Camino B: PDF de contrato inicial digital (a partir de plantilla renderizada)
+# ─────────────────────────────────────────────────────────────────────────────
+def generar_pdf_contrato_caminob(
+    rendered_md: str,
+    titulo: str,
+    trabajador: Trabajador,
+    version_nueva: ContratoTrabajadorVersion,
+    rep_legal_nombre: str = "Adriana Colina Aguilar",
+    rep_legal_rut: str = "25.936.753-0",
+    empresa_razon_social: str = "E-Courier SPA",
+    empresa_rut: str = "—",
+    firma_trabajador_src: Optional[str] = None,
+    requiere_firma_trabajador: bool = True,
+) -> bytes:
+    """
+    Genera el PDF de un contrato inicial Camino B usando el contenido
+    markdown ya renderizado de la plantilla. El render se trata como párrafos
+    separados por líneas en blanco; los encabezados que comiencen con `# `,
+    `## `, `### ` se estilizan.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=20 * mm,
+        leftMargin=20 * mm,
+        topMargin=18 * mm,
+        bottomMargin=15 * mm,
+    )
+    story = []
+
+    if os.path.exists(LOGO_PATH):
+        story.append(RLImage(LOGO_PATH, width=140, height=32))
+    story.append(Spacer(1, 8))
+
+    st_h1 = _st("h1cb", FONT_BOLD, 14, C_PRIMARY, TA_CENTER, 3)
+    st_h2 = _st("h2cb", FONT_BOLD, 11, C_PRIMARY, TA_LEFT, 2)
+    st_h3 = _st("h3cb", FONT_BOLD, 10, C_TXT, TA_LEFT, 2)
+    st_p = _st("pcb", FONT, 10, C_TXT, TA_JUSTIFY, 3)
+    st_meta_r = _st("metar", FONT, 8.5, C_MUTED, TA_RIGHT, 2)
+
+    story.append(Paragraph(titulo, st_h1))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"Santiago, {date.today().strftime('%d/%m/%Y')}", st_meta_r))
+    story.append(Spacer(1, 10))
+
+    # Render del markdown como bloques: headings y párrafos
+    bloques = (rendered_md or "").split("\n\n")
+    for bloque in bloques:
+        bloque = bloque.strip()
+        if not bloque:
+            continue
+        if bloque.startswith("### "):
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(bloque[4:].strip(), st_h3))
+        elif bloque.startswith("## "):
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(bloque[3:].strip(), st_h2))
+        elif bloque.startswith("# "):
+            story.append(Spacer(1, 8))
+            story.append(Paragraph(bloque[2:].strip(), st_h1))
+        elif bloque.startswith("<!--"):
+            # Comentarios markdown se ignoran
+            continue
+        else:
+            # Convertir saltos simples a <br/> para Reportlab
+            html_friendly = bloque.replace("\n", "<br/>")
+            story.append(Paragraph(html_friendly, st_p))
+            story.append(Spacer(1, 4))
+
+    # Bloque de firmas
+    story.append(Spacer(1, 18))
+    story.append(_bloque_firmas(
+        rep_legal_nombre, rep_legal_rut,
+        trabajador.nombre, trabajador.rut,
+        firma_trabajador_src=firma_trabajador_src,
+        requiere_firma_trabajador=requiere_firma_trabajador,
+    ))
+
+    story.append(Spacer(1, 10))
+    st_foot = _st("footcb", FONT, 7.5, C_MUTED, TA_CENTER, 1.5)
+    story.append(Paragraph(
+        f"Documento generado automáticamente por el sistema de remuneraciones "
+        f"{empresa_razon_social} (RUT {empresa_rut}) el {date.today().strftime('%d/%m/%Y')}.",
+        st_foot,
+    ))
+
+    doc.build(story)
+    return buffer.getvalue()

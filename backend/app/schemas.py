@@ -683,7 +683,15 @@ class TrabajadorBase(BaseModel):
     colacion: int = 0
     viaticos: int = 0
     tipo_contrato: Optional[str] = None
+    # Datos personales para contratos digitales / notificaciones
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    nacionalidad: Optional[str] = None
+    estado_civil: Optional[str] = None
     monto_cotizacion_salud: Optional[str] = None
+    # Feriado progresivo (Art. 68 CT): años acreditados con empleadores anteriores
+    anios_servicio_previos: int = 0
 
 class TrabajadorCreate(TrabajadorBase):
     pass
@@ -707,6 +715,12 @@ class TrabajadorUpdate(BaseModel):
     viaticos: Optional[int] = None
     tipo_contrato: Optional[str] = None
     monto_cotizacion_salud: Optional[str] = None
+    telefono: Optional[str] = None
+    whatsapp: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    nacionalidad: Optional[str] = None
+    estado_civil: Optional[str] = None
+    anios_servicio_previos: Optional[int] = None
 
 class TrabajadorOut(TrabajadorBase):
     id: int

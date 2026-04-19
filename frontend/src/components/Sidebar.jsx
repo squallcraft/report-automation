@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User, PenLine, FileSignature,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User, PenLine, FileSignature, Bell, Calendar, Clock,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -23,6 +23,7 @@ const adminMenu = [
       { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
       { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
       { to: '/admin/configuracion-legal', icon: Shield, label: 'Configuración Legal' },
+      { to: '/admin/plantillas-contrato', icon: FileSignature, label: 'Plantillas de Contrato' },
     ],
   },
   {
@@ -42,6 +43,13 @@ const adminMenu = [
       { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
       { to: '/admin/ajustes', icon: CircleDollarSign, label: 'Ajustes / Préstamos', permiso: 'ajustes' },
       { to: '/admin/pagos-trabajadores', icon: Briefcase, label: 'Pagos Nómina', permiso: 'pagos-trabajadores' },
+    ],
+  },
+  {
+    group: 'RR.HH.', icon: Users, children: [
+      { to: '/admin/trabajadores', icon: Briefcase, label: 'Trabajadores', permiso: 'trabajadores' },
+      { to: '/admin/vacaciones', icon: Calendar, label: 'Vacaciones', permiso: 'rrhh-vacaciones' },
+      { to: '/admin/asistencia', icon: Clock, label: 'Control horario', permiso: 'asistencia' },
     ],
   },
   {
@@ -189,6 +197,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   const [pickupProfile, setPickupProfile] = useState(null)
   const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true, 'Análisis': true, Comercial: true })
   const [tareasCount, setTareasCount] = useState({ total: 0, criticas: 0 })
+  const [notifTrabCount, setNotifTrabCount] = useState(0)
 
   const toggleGroup = (name) => setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }))
 
@@ -200,6 +209,16 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
       }, 60000)
       return () => clearInterval(iv)
     }
+  }, [user?.rol])
+
+  useEffect(() => {
+    if (user?.rol !== 'TRABAJADOR') return
+    const fetchN = () => api.get('/notificaciones-trabajador/no-leidas')
+      .then(r => setNotifTrabCount(r.data?.count || 0))
+      .catch(() => {})
+    fetchN()
+    const iv = setInterval(fetchN, 60000)
+    return () => clearInterval(iv)
   }, [user?.rol])
 
   useEffect(() => {
@@ -248,9 +267,11 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   if (user?.rol === 'TRABAJADOR') {
     menu = [
       { to: '/trabajador', icon: LayoutDashboard, label: 'Mi Portal' },
+      { to: '/trabajador/notificaciones', icon: Bell, label: 'Notificaciones' },
       { to: '/trabajador/liquidaciones', icon: FileText, label: 'Mis Liquidaciones' },
       { to: '/trabajador/pagos', icon: DollarSign, label: 'Mis Pagos' },
       { to: '/trabajador/imposiciones', icon: ShieldCheck, label: 'Imposiciones' },
+      { to: '/trabajador/vacaciones', icon: Calendar, label: 'Mis Vacaciones' },
       { to: '/trabajador/anexos', icon: FileSignature, label: 'Mis Anexos' },
       { to: '/trabajador/firma', icon: PenLine, label: 'Mi Firma' },
     ]
@@ -321,8 +342,16 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
               {...item}
               collapsed={collapsed}
               end={item.to === '/admin' || item.to === '/seller' || item.to === '/driver' || item.to === '/pickup' || item.to === '/colaborador'}
-              badge={item.to === '/admin/bandeja' ? tareasCount.total : 0}
-              badgeCritical={item.to === '/admin/bandeja' ? tareasCount.criticas > 0 : false}
+              badge={
+                item.to === '/admin/bandeja' ? tareasCount.total :
+                item.to === '/trabajador/notificaciones' ? notifTrabCount :
+                0
+              }
+              badgeCritical={
+                item.to === '/admin/bandeja' ? tareasCount.criticas > 0 :
+                item.to === '/trabajador/notificaciones' ? notifTrabCount > 0 :
+                false
+              }
             />
           )
         )}

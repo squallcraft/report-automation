@@ -42,12 +42,23 @@ const AFPS = ['Capital', 'Cuprum', 'Habitat', 'Modelo', 'PlanVital', 'ProVida', 
 
 const initialForm = {
   nombre: '', rut: '', email: '', direccion: '', cargo: '',
+  telefono: '', whatsapp: '',
+  fecha_nacimiento: '', nacionalidad: '', estado_civil: '',
   sueldo_liquido: 0, afp: '', sistema_salud: '',
   banco: '', tipo_cuenta: '', numero_cuenta: '',
   fecha_ingreso: '', activo: true,
   movilizacion: 0, colacion: 0, viaticos: 0,
   tipo_contrato: '', monto_cotizacion_salud: '',
+  anios_servicio_previos: 0,
 }
+
+const ESTADOS_CIVILES = [
+  { value: 'SOLTERO', label: 'Soltero/a' },
+  { value: 'CASADO', label: 'Casado/a' },
+  { value: 'CONVIVIENTE_CIVIL', label: 'Conviviente civil' },
+  { value: 'DIVORCIADO', label: 'Divorciado/a' },
+  { value: 'VIUDO', label: 'Viudo/a' },
+]
 
 function CalcPreview({ form }) {
   const [calc, setCalc] = useState(null)
@@ -181,6 +192,11 @@ export default function Trabajadores() {
       email: t.email || '',
       direccion: t.direccion || '',
       cargo: t.cargo || '',
+      telefono: t.telefono || '',
+      whatsapp: t.whatsapp || '',
+      fecha_nacimiento: t.fecha_nacimiento || '',
+      nacionalidad: t.nacionalidad || '',
+      estado_civil: t.estado_civil || '',
       sueldo_liquido: t.sueldo_liquido || 0,
       afp: t.afp || '',
       sistema_salud: t.sistema_salud || '',
@@ -194,6 +210,7 @@ export default function Trabajadores() {
       viaticos: t.viaticos || 0,
       tipo_contrato: t.tipo_contrato || '',
       monto_cotizacion_salud: t.monto_cotizacion_salud || '',
+      anios_servicio_previos: t.anios_servicio_previos || 0,
     })
     setShowModal(true)
   }
@@ -206,6 +223,7 @@ export default function Trabajadores() {
       movilizacion: Number(form.movilizacion),
       colacion: Number(form.colacion),
       viaticos: Number(form.viaticos),
+      anios_servicio_previos: Number(form.anios_servicio_previos || 0),
       fecha_ingreso: form.fecha_ingreso || null,
     }
     try {
@@ -374,6 +392,30 @@ export default function Trabajadores() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Dirección de residencia</label>
               <input value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} className="input-field" />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+              <input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} className="input-field" placeholder="+56 9 1234 5678" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp</label>
+              <input value={form.whatsapp} onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))} className="input-field" placeholder="+56 9 1234 5678" />
+              <p className="text-xs text-emerald-600 mt-0.5">Recibirá notificaciones del sistema</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Fecha de nacimiento</label>
+              <input type="date" value={form.fecha_nacimiento} onChange={e => setForm(f => ({ ...f, fecha_nacimiento: e.target.value }))} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nacionalidad</label>
+              <input value={form.nacionalidad} onChange={e => setForm(f => ({ ...f, nacionalidad: e.target.value }))} className="input-field" placeholder="Chilena" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Estado civil</label>
+              <select value={form.estado_civil} onChange={e => setForm(f => ({ ...f, estado_civil: e.target.value }))} className="input-field">
+                <option value="">Seleccionar...</option>
+                {ESTADOS_CIVILES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
           </div>
 
           <hr className="border-gray-200" />
@@ -417,6 +459,16 @@ export default function Trabajadores() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Fecha ingreso</label>
               <input type="date" value={form.fecha_ingreso} onChange={e => setForm(f => ({ ...f, fecha_ingreso: e.target.value }))} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Años servicio previos</label>
+              <input
+                type="number" min={0} max={10}
+                value={form.anios_servicio_previos}
+                onChange={e => setForm(f => ({ ...f, anios_servicio_previos: e.target.value }))}
+                className="input-field"
+              />
+              <p className="text-xs text-gray-400 mt-0.5">Tope 10. Para feriado progresivo (Art. 68 CT)</p>
             </div>
           </div>
 
