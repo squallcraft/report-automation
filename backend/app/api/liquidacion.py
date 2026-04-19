@@ -528,27 +528,19 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                 daily_map[d]["peso_extra"] += getattr(e, field_comuna, 0)
 
     # Retiros solo aplican al desglose de drivers.
-    # Semana cerrada → sum(r.tarifa_driver) almacenado. No se toca nada.
-    # Semana abierta con tarifa_retiro_fija → tarifa_fija por día (1 valor por día).
-    # Semana abierta sin tarifa fija → sum(r.tarifa_driver) por retiro.
+    # Para drivers con tarifa_retiro_fija: una sola tarifa por día (primer retiro, menor ID).
+    # Para el resto: sum(r.tarifa_driver) por retiro.
     if not is_seller and retiros_list:
-        if semana_cerrada:
-            for r in retiros_list:
-                if r.fecha in daily_map:
-                    daily_map[r.fecha]["retiros"] += r.tarifa_driver or 0
-        elif driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0:
-            # Preferir valores snapshot almacenados en retiro.tarifa_driver.
-            # Si existe al menos un retiro con valor, usamos sum por día.
-            by_day = {}
-            for r in retiros_list:
-                if r.fecha:
-                    by_day[r.fecha] = by_day.get(r.fecha, 0) + (r.tarifa_driver or 0)
-            for d in {r.fecha for r in retiros_list if r.fecha}:
-                if d in daily_map:
-                    stored_day = by_day.get(d, 0)
-                    # Si el snapshot existe (> 0) lo usamos; si no (retiro antiguo sin snapshot)
-                    # caemos de vuelta a la tarifa actual del driver.
-                    daily_map[d]["retiros"] = stored_day if stored_day > 0 else driver.tarifa_retiro_fija
+        if driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0:
+            # Tomar solo el primer retiro del día (menor ID) — defensivo contra duplicados.
+            by_day: dict = {}
+            for r in sorted(retiros_list, key=lambda x: x.id):
+                if r.fecha and r.fecha not in by_day:
+                    by_day[r.fecha] = r.tarifa_driver or 0
+            for fecha, tarifa in by_day.items():
+                if fecha in daily_map:
+                    # Si el snapshot existe usarlo; si no (retiro antiguo sin snapshot) usar tarifa actual.
+                    daily_map[fecha]["retiros"] = tarifa if tarifa > 0 else driver.tarifa_retiro_fija
         else:
             for r in retiros_list:
                 if r.fecha in daily_map:

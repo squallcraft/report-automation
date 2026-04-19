@@ -52,31 +52,29 @@ def _calcular_retiro_driver(driver, retiros: list, semana_cerrada: bool = False)
     """
     Pago al driver por retiros en una semana.
 
-    Siempre preferimos el valor snapshot almacenado en retiro.tarifa_driver, que
-    se fija al momento de importar con el valor vigente de tarifa_retiro_fija.
-    Esto evita que cambios futuros a la tarifa afecten semanas ya procesadas.
+    Para drivers con tarifa_retiro_fija: la tarifa es por jornada (día), no por retiro.
+    Solo se cuenta UNA tarifa por día — el primer retiro del día (menor ID) lleva la
+    tarifa; los demás deberían tener tarifa_driver = 0. Esta función es defensiva y
+    deduplica por día aunque los datos tuvieran la tarifa repetida.
 
-    Semana cerrada  → sum(r.tarifa_driver) almacenado. Igual que antes.
-    Semana abierta con tarifa_retiro_fija:
-        - Si los retiros ya tienen valores (> 0 en total) → usar esos snapshots.
-        - Fallback solo para retiros muy antiguos sin snapshot: recalcular con
-          la tarifa actual × días.
-    Semana abierta sin tarifa_retiro_fija → sum(r.tarifa_driver).
+    Para drivers sin tarifa_retiro_fija: se suma directamente r.tarifa_driver.
     """
     if not retiros:
         return 0
-    # Semana cerrada o pagada: usar siempre lo almacenado.
-    if semana_cerrada:
-        return sum(r.tarifa_driver or 0 for r in retiros)
-    # Semana abierta
-    if driver and driver.tarifa_retiro_fija and driver.tarifa_retiro_fija > 0:
-        stored = sum(r.tarifa_driver or 0 for r in retiros)
-        if stored > 0:
-            # Los retiros tienen el snapshot correcto: usarlo sin tocar nada.
-            return stored
-        # Fallback: retiros sin snapshot (importados antes de esta lógica).
-        dias = len({r.fecha for r in retiros if r.fecha})
-        return driver.tarifa_retiro_fija * dias
+
+    if driver and getattr(driver, 'tarifa_retiro_fija', 0) and driver.tarifa_retiro_fija > 0:
+        # Una sola tarifa por día: tomar el primer retiro (menor ID) de cada día.
+        dia_visto: set = set()
+        total = 0
+        for r in sorted(retiros, key=lambda x: x.id):
+            if r.fecha not in dia_visto:
+                dia_visto.add(r.fecha)
+                total += r.tarifa_driver or 0
+        if total > 0:
+            return total
+        # Fallback para retiros muy antiguos sin snapshot: tarifa_retiro_fija × días.
+        return driver.tarifa_retiro_fija * len(dia_visto)
+
     return sum(r.tarifa_driver or 0 for r in retiros)
 
 
