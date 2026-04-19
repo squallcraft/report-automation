@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Mail, Send, Plus, Pencil, Trash2, Eye, RefreshCw,
   CheckCircle, Clock, AlertTriangle, Users, X, Loader2,
-  BarChart2, ChevronRight, FileText,
+  BarChart2, ChevronRight, FileText, Tag,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import SellerPicker from '../../components/SellerPicker'
 import api from '../../api'
 
 const SEGMENTOS = [
@@ -15,6 +16,7 @@ const SEGMENTOS = [
   { value: 'en_riesgo',      label: 'En riesgo / Validar estado' },
   { value: 'en_gestion',     label: 'En gestión / Seguimiento' },
   { value: 'sin_whatsapp',   label: 'Sin WhatsApp (solo contacto por email)' },
+  { value: 'por_tags',       label: 'Por tags / etiquetas' },
   { value: 'manual',         label: 'Selección manual de sellers' },
   { value: 'solo_extras',    label: 'Solo correos extra (sin sellers)' },
 ]
@@ -301,20 +303,24 @@ function TabCampanas({ onVerDetalle }) {
 
 function TabNuevaCampana({ onCreated }) {
   const [templates, setTemplates] = useState([])
-  const [form, setForm] = useState({ nombre_campana: '', plantilla_id: '', segmento: 'todos', variables_valores: '', emails_extra: '' })
-  const [preview, setPreview] = useState(null)  // { total, sellers, extras, emails }
+  const [form, setForm] = useState({
+    nombre_campana: '', plantilla_id: '', segmento: 'todos',
+    variables_valores: '', emails_extra: '',
+    seller_ids: [],
+    tags_filtro: [], tags_modo: 'cualquiera',
+  })
+  const [availableTags, setAvailableTags] = useState([])
+  const [preview, setPreview] = useState(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [sending, setSending] = useState(false)
 
   useEffect(() => {
     api.get('/email-campaigns/templates').then(r => setTemplates(r.data))
+    api.get('/sellers/tags').then(r => setAvailableTags(r.data)).catch(() => {})
   }, [])
 
   function parsearExtras(raw) {
-    return (raw || '')
-      .split(/[\s,;]+/)
-      .map(e => e.trim().toLowerCase())
-      .filter(Boolean)
+    return (raw || '').split(/[\s,;]+/).map(e => e.trim().toLowerCase()).filter(Boolean)
   }
 
   async function cargarPreview() {
@@ -323,7 +329,12 @@ function TabNuevaCampana({ onCreated }) {
     try {
       const extras = parsearExtras(form.emails_extra)
       const { data } = await api.get('/email-campaigns/preview-segmento', {
-        params: { segmento: form.segmento, emails_extra: extras.join(',') },
+        params: {
+          segmento: form.segmento,
+          emails_extra: extras.join(','),
+          tags_filtro: form.tags_filtro.join(','),
+          tags_modo: form.tags_modo,
+        },
       })
       setPreview(data)
     } catch { setPreview(null) }
@@ -334,9 +345,9 @@ function TabNuevaCampana({ onCreated }) {
     e.preventDefault()
     if (!form.plantilla_id) return alert('Selecciona una plantilla')
     const extras = parsearExtras(form.emails_extra)
-    if (form.segmento === 'solo_extras' && extras.length === 0) {
-      return alert('Agrega al menos un correo extra')
-    }
+    if (form.segmento === 'solo_extras' && extras.length === 0) return alert('Agrega al menos un correo extra')
+    if (form.segmento === 'manual' && form.seller_ids.length === 0) return alert('Selecciona al menos un seller')
+    if (form.segmento === 'por_tags' && form.tags_filtro.length === 0) return alert('Selecciona al menos un tag')
     setSending(true)
     try {
       let variables_valores = {}
@@ -349,8 +360,10 @@ function TabNuevaCampana({ onCreated }) {
       await api.post('/email-campaigns/envios', {
         plantilla_id: parseInt(form.plantilla_id),
         segmento: form.segmento,
-        seller_ids: [],
+        seller_ids: form.seller_ids,
         emails_extra: extras,
+        tags_filtro: form.tags_filtro,
+        tags_modo: form.tags_modo,
         variables_valores,
         nombre_campana: form.nombre_campana || undefined,
       })
@@ -393,10 +406,69 @@ function TabNuevaCampana({ onCreated }) {
           <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
           <select
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={form.segmento} onChange={e => { setForm(f => ({ ...f, segmento: e.target.value })); setPreview(null) }}>
+            value={form.segmento} onChange={e => { setForm(f => ({ ...f, segmento: e.target.value, seller_ids: [], tags_filtro: [] })); setPreview(null) }}>
             {SEGMENTOS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </div>
+
+        {/* Selector manual */}
+        {form.segmento === 'manual' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sellers a incluir</label>
+            <SellerPicker
+              selected={form.seller_ids}
+              onChange={ids => setForm(f => ({ ...f, seller_ids: ids }))}
+              requireEmail
+              color="#2563eb"
+            />
+          </div>
+        )}
+
+        {/* Selector por tags */}
+        {form.segmento === 'por_tags' && (
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">Tags a filtrar</label>
+            {availableTags.length === 0
+              ? <p className="text-xs text-gray-400">No hay tags registrados en sellers activos.</p>
+              : (
+                <div className="flex flex-wrap gap-1.5">
+                  {availableTags.map(({ tag, count }) => {
+                    const sel = form.tags_filtro.includes(tag)
+                    return (
+                      <button key={tag} type="button"
+                        onClick={() => {
+                          setForm(f => ({
+                            ...f,
+                            tags_filtro: sel ? f.tags_filtro.filter(t => t !== tag) : [...f.tags_filtro, tag],
+                          }))
+                          setPreview(null)
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors"
+                        style={sel
+                          ? { background: '#2563eb', color: '#fff' }
+                          : { background: '#eff6ff', color: '#2563eb' }}>
+                        <Tag size={10} /> {tag} <span className="opacity-60">({count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            }
+            {form.tags_filtro.length > 1 && (
+              <div className="flex gap-3 text-xs mt-1">
+                <span className="text-gray-500">Modo:</span>
+                {['cualquiera', 'todos'].map(m => (
+                  <label key={m} className="flex items-center gap-1 cursor-pointer">
+                    <input type="radio" name="tags_modo" value={m}
+                      checked={form.tags_modo === m}
+                      onChange={() => setForm(f => ({ ...f, tags_modo: m }))} />
+                    <span>{m === 'cualquiera' ? 'Cualquiera de los tags (OR)' : 'Todos los tags (AND)'}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">

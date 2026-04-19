@@ -940,6 +940,152 @@ def _ampliar_plan_cuentas():
 _ampliar_plan_cuentas()
 
 
+# ── Seed plantillas HTML base para Email Campaigns ───────────────────────────
+from app.models import EmailPlantilla as _EmailPlantilla
+
+_BASE_HTML = """<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{{margin:0;padding:0;background:#f0f0ec;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a}}
+  .wrap{{max-width:600px;margin:24px auto;background:#ffffff;border-radius:4px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1)}}
+  .header{{padding:18px 32px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e5e5}}
+  .logo{{font-size:17px;font-weight:900;letter-spacing:-.5px;color:#0f2044}}
+  .logo span{{display:inline-block;background:#0f2044;color:#f5c842;font-size:12px;font-weight:900;padding:2px 5px;border-radius:3px;margin-right:4px;letter-spacing:0}}
+  .brand{{font-size:15px;font-weight:700;color:#0f2044}}
+  .hero{{background:#0f2044;padding:28px 32px 24px}}
+  .badge{{display:inline-block;background:#1e3a6e;color:#a8c4f0;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 10px;border-radius:20px;margin-bottom:14px}}
+  .hero h1{{margin:0 0 10px;font-size:22px;font-weight:800;color:#f5c842;line-height:1.3}}
+  .hero p{{margin:0;font-size:14px;color:#c8d8f0;line-height:1.6}}
+  .section{{padding:20px 32px;border-bottom:1px solid #e5e5e5}}
+  .section-label{{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#2563eb;margin-bottom:10px}}
+  .section p{{margin:0;font-size:13px;color:#444;line-height:1.7}}
+  .cta-wrap{{padding:24px 32px;text-align:center}}
+  .cta{{display:inline-block;background:#0f2044;color:#ffffff!important;text-decoration:none;font-size:13px;font-weight:700;padding:12px 32px;border-radius:6px;letter-spacing:.3px}}
+  .footer{{padding:16px 32px;text-align:center;border-top:1px solid #e5e5e5}}
+  .footer p{{margin:0;font-size:11px;color:#888;line-height:1.6}}
+  .footer a{{color:#2563eb;text-decoration:none}}
+  .footer .brand-foot{{display:flex;justify-content:space-between;margin-top:12px;font-size:11px;color:#bbb}}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo"><span>E</span>COURIER</div>
+    <div class="brand">Ecourier</div>
+  </div>
+  {content}
+  <div class="footer">
+    <p>Ante cualquier duda escríbenos a <a href="mailto:hablamos@e-courier.cl">hablamos@e-courier.cl</a> — con gusto te ayudamos.</p>
+    <div class="brand-foot">
+      <span>Ecourier</span>
+      <span>Equipo de soporte</span>
+    </div>
+  </div>
+</div>
+</body></html>"""
+
+_PLANTILLAS_SEED = [
+    {
+        "nombre": "Base — Comunicado",
+        "asunto": "{{empresa}}: comunicado importante de Ecourier",
+        "variables": ["nombre", "empresa"],
+        "content": """
+  <div class="hero">
+    <div class="badge">COMUNICADO</div>
+    <h1>Hola {{nombre}} 👋</h1>
+    <p>Tenemos una novedad importante para <strong>{{empresa}}</strong> que queremos compartirte.</p>
+  </div>
+  <div class="section">
+    <div class="section-label">Detalle</div>
+    <p>[Escribe aquí el cuerpo principal del comunicado. Puedes incluir instrucciones, cambios de proceso o cualquier información relevante para el seller.]</p>
+  </div>
+  <div class="section">
+    <div class="section-label">¿Qué debes hacer?</div>
+    <p>[Describe los pasos o acciones que el seller debe tomar, si aplica.]</p>
+  </div>
+  <div class="cta-wrap">
+    <a href="https://facturacion.e-courier.cl" class="cta">Ir a mi cuenta</a>
+  </div>""",
+        "texto": "Hola {{nombre}}, tenemos un comunicado importante para {{empresa}}. Ingresa a https://facturacion.e-courier.cl para más detalles.",
+    },
+    {
+        "nombre": "Base — Anuncio Comercial",
+        "asunto": "{{empresa}}: una novedad que te va a interesar",
+        "variables": ["nombre", "empresa"],
+        "content": """
+  <div class="hero">
+    <div class="badge">NOVEDAD</div>
+    <h1>Tenemos algo nuevo para {{empresa}} 🎉</h1>
+    <p>Hola <strong>{{nombre}}</strong>, queremos contarte sobre una mejora en nuestro servicio.</p>
+  </div>
+  <div class="section">
+    <div class="section-label">¿Qué hay de nuevo?</div>
+    <p>[Describe la novedad, mejora o anuncio comercial aquí. Sé específico y menciona el valor para el seller.]</p>
+  </div>
+  <div class="section">
+    <div class="section-label">Beneficios para ti</div>
+    <p>✅ [Beneficio 1]<br>✅ [Beneficio 2]<br>✅ [Beneficio 3]</p>
+  </div>
+  <div class="cta-wrap">
+    <a href="https://facturacion.e-courier.cl" class="cta">Conocer más</a>
+  </div>""",
+        "texto": "Hola {{nombre}}, tenemos una novedad para {{empresa}}. Visita https://facturacion.e-courier.cl para conocer más.",
+    },
+    {
+        "nombre": "Base — Boletín Mensual",
+        "asunto": "Resumen del mes para {{empresa}} · Ecourier",
+        "variables": ["nombre", "empresa", "mes"],
+        "content": """
+  <div class="hero">
+    <div class="badge">BOLETÍN {{mes}}</div>
+    <h1>Tu resumen del mes, {{nombre}}</h1>
+    <p>Aquí está lo más importante de <strong>{{empresa}}</strong> en Ecourier durante {{mes}}.</p>
+  </div>
+  <div class="section">
+    <div class="section-label">Resumen operacional</div>
+    <p>[Incluye métricas clave del mes: envíos totales, tasa de entrega, retiros, etc.]</p>
+  </div>
+  <div class="section">
+    <div class="section-label">Novedades del mes</div>
+    <p>[Incluye cambios de servicio, nuevas funcionalidades, tarifas u otras novedades relevantes para el período.]</p>
+  </div>
+  <div class="section">
+    <div class="section-label">Próximos pasos</div>
+    <p>[Agenda, fechas importantes, recordatorios o cualquier acción pendiente.]</p>
+  </div>
+  <div class="cta-wrap">
+    <a href="https://facturacion.e-courier.cl" class="cta">Ver mi liquidación</a>
+  </div>""",
+        "texto": "Hola {{nombre}}, aquí está el resumen de {{mes}} para {{empresa}}. Ingresa a https://facturacion.e-courier.cl para ver tu liquidación.",
+    },
+]
+
+
+def _seed_email_plantillas():
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        for p in _PLANTILLAS_SEED:
+            existe = db.query(_EmailPlantilla).filter(_EmailPlantilla.nombre == p["nombre"]).first()
+            if not existe:
+                html = _BASE_HTML.format(content=p["content"])
+                db.add(_EmailPlantilla(
+                    nombre=p["nombre"],
+                    asunto=p["asunto"],
+                    cuerpo_html=html,
+                    cuerpo_texto=p.get("texto", ""),
+                    variables=p.get("variables", []),
+                ))
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+_seed_email_plantillas()
+
+
 app = FastAPI(
     title="ECourier — Sistema de Liquidación Logística",
     description="API para gestión de cobros a sellers y pagos a drivers",

@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   MessageSquare, Send, Plus, Pencil, Trash2, Eye, RefreshCw,
   CheckCircle, Clock, AlertTriangle, Users, ChevronRight,
-  X, Check, Loader2, MessageCircle,
+  X, Check, Loader2, MessageCircle, Tag,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import SellerPicker from '../../components/SellerPicker'
 import api from '../../api'
 
 const C = {
@@ -25,6 +26,7 @@ const SEGMENTOS = [
   { value: 'tier_bueno',        label: 'Tier Bueno (20-99 envíos/día)' },
   { value: 'en_riesgo',         label: 'En riesgo / Validar estado' },
   { value: 'en_gestion',        label: 'En gestión / Seguimiento' },
+  { value: 'por_tags',          label: 'Por tags / etiquetas' },
   { value: 'manual',            label: 'Selección manual de sellers' },
   { value: 'numeros_directos',  label: '📱 Números directos (prueba / equipo)' },
 ]
@@ -190,15 +192,21 @@ function TabPlantillas() {
 // ── Tab: Nuevo Envío ──────────────────────────────────────────────────────────
 
 function TabNuevoEnvio({ onEnviado }) {
-  const [step, setStep] = useState(1) // 1=plantilla, 2=segmento, 3=variables, 4=preview
+  const [step, setStep] = useState(1)
   const [templates, setTemplates] = useState([])
-  const [form, setForm] = useState({ template_id: null, segmento: 'todos', seller_ids: [], variables_valores: {}, nombre_campaña: '' })
+  const [availableTags, setAvailableTags] = useState([])
+  const [form, setForm] = useState({
+    template_id: null, segmento: 'todos', seller_ids: [],
+    tags_filtro: [], tags_modo: 'cualquiera',
+    variables_valores: {}, nombre_campaña: '',
+  })
   const [preview, setPreview] = useState(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [enviando, setEnviando] = useState(false)
 
   useEffect(() => {
     api.get('/whatsapp/templates').then(r => setTemplates(r.data))
+    api.get('/sellers/tags').then(r => setAvailableTags(r.data)).catch(() => {})
   }, [])
 
   const plantillaSeleccionada = templates.find(t => t.id === form.template_id)
@@ -206,7 +214,10 @@ function TabNuevoEnvio({ onEnviado }) {
   const cargarPreview = async () => {
     setLoadingPreview(true)
     try {
-      const r = await api.post('/whatsapp/segmento/preview', form)
+      const r = await api.post('/whatsapp/segmento/preview', {
+        ...form,
+        template_id: form.template_id || 0,
+      })
       setPreview(r.data)
     } finally {
       setLoadingPreview(false)
@@ -227,7 +238,6 @@ function TabNuevoEnvio({ onEnviado }) {
       setEnviando(false)
     }
   }
-
   return (
     <div style={{ maxWidth: 640 }}>
       {/* Stepper */}
@@ -286,7 +296,7 @@ function TabNuevoEnvio({ onEnviado }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {SEGMENTOS.map(seg => (
               <button key={seg.value}
-                onClick={() => setForm(p => ({ ...p, segmento: seg.value }))}
+                onClick={() => setForm(p => ({ ...p, segmento: seg.value, seller_ids: [], tags_filtro: [] }))}
                 style={{
                   background: form.segmento === seg.value ? C.waDim : C.card,
                   border: `1px solid ${form.segmento === seg.value ? C.wa : C.border}`,
@@ -297,12 +307,65 @@ function TabNuevoEnvio({ onEnviado }) {
               </button>
             ))}
           </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 11, color: C.muted, display: 'block', marginBottom: 4 }}>Nombre de la campaña (opcional)</label>
-            <input value={form.nombre_campaña} onChange={e => setForm(p => ({ ...p, nombre_campaña: e.target.value }))}
-              placeholder="Ej: Aviso feriado 18 septiembre"
-              style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, boxSizing: 'border-box' }} />
-          </div>
+
+          {/* Selector manual */}
+          {form.segmento === 'manual' && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>Selecciona los sellers:</p>
+              <SellerPicker
+                selected={form.seller_ids}
+                onChange={ids => setForm(p => ({ ...p, seller_ids: ids }))}
+                requireWa
+                color={C.wa}
+              />
+            </div>
+          )}
+
+          {/* Selector por tags */}
+          {form.segmento === 'por_tags' && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>Selecciona los tags:</p>
+              {availableTags.length === 0
+                ? <p style={{ fontSize: 12, color: C.dimmed }}>No hay tags registrados en sellers activos.</p>
+                : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {availableTags.map(({ tag, count }) => {
+                      const sel = form.tags_filtro.includes(tag)
+                      return (
+                        <button key={tag} type="button"
+                          onClick={() => setForm(p => ({
+                            ...p,
+                            tags_filtro: sel ? p.tags_filtro.filter(t => t !== tag) : [...p.tags_filtro, tag],
+                          }))}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                            cursor: 'pointer', border: 'none',
+                            background: sel ? C.wa : C.waDim,
+                            color: sel ? '#fff' : C.wa,
+                          }}>
+                          # {tag} <span style={{ opacity: .6, fontWeight: 400 }}>({count})</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              }
+              {form.tags_filtro.length > 1 && (
+                <div style={{ display: 'flex', gap: 16, fontSize: 11, color: C.muted }}>
+                  <span>Modo:</span>
+                  {['cualquiera', 'todos'].map(m => (
+                    <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                      <input type="radio" name="tags_modo_wa" value={m}
+                        checked={form.tags_modo === m}
+                        onChange={() => setForm(p => ({ ...p, tags_modo: m }))} />
+                      {m === 'cualquiera' ? 'Cualquiera (OR)' : 'Todos (AND)'}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Campo de números directos */}
           {form.segmento === 'numeros_directos' && (
@@ -322,6 +385,14 @@ function TabNuevoEnvio({ onEnviado }) {
               </p>
             </div>
           )}
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 11, color: C.muted, display: 'block', marginBottom: 4 }}>Nombre de la campaña (opcional)</label>
+            <input value={form.nombre_campaña} onChange={e => setForm(p => ({ ...p, nombre_campaña: e.target.value }))}
+              placeholder="Ej: Aviso feriado 18 septiembre"
+              style={{ width: '100%', background: C.card, border: `1px solid ${C.border}`, color: C.text, borderRadius: 7, padding: '8px 10px', fontSize: 12, boxSizing: 'border-box' }} />
+          </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setStep(1)} style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '10px 16px', fontSize: 13, cursor: 'pointer' }}>← Volver</button>
             <button onClick={() => setStep(3)} style={{ background: C.wa, border: 'none', color: '#fff', borderRadius: 8, padding: '10px 20px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>Siguiente →</button>

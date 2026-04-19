@@ -56,7 +56,9 @@ class EnvioCreate(BaseModel):
     plantilla_id: int
     segmento: str
     seller_ids: List[int] = []
-    emails_extra: List[str] = []  # destinatarios sueltos (no necesariamente sellers)
+    emails_extra: List[str] = []
+    tags_filtro: List[str] = []   # solo para segmento=por_tags
+    tags_modo: str = "cualquiera" # cualquiera (OR) | todos (AND)
     variables_valores: Dict[str, str] = {}
     nombre_campana: Optional[str] = None
 
@@ -82,6 +84,8 @@ def _resolver_segmento_email(
     segmento: str,
     seller_ids_manual: List[int],
     db: Session,
+    tags_filtro: List[str] = None,
+    tags_modo: str = "cualquiera",
 ) -> List[Seller]:
     """Devuelve sellers con email, según el segmento elegido."""
     hoy = date.today()
@@ -94,7 +98,6 @@ def _resolver_segmento_email(
     )
 
     if segmento == "solo_extras":
-        # No se incluyen sellers; sólo correos extra (manejados aparte).
         return []
 
     if segmento == "manual":
@@ -104,6 +107,15 @@ def _resolver_segmento_email(
             Seller.email.isnot(None),
             Seller.email != "",
         ).all()
+
+    if segmento == "por_tags":
+        tags = [t.strip().lower() for t in (tags_filtro or []) if t.strip()]
+        if not tags:
+            return []
+        todos = q.all()
+        if tags_modo == "todos":
+            return [s for s in todos if all(t in (s.tags or []) for t in tags)]
+        return [s for s in todos if any(t in (s.tags or []) for t in tags)]
 
     if segmento == "sin_whatsapp":
         return q.filter(
@@ -152,7 +164,10 @@ def _ejecutar_envio(envio_id: int):
         envio.fecha_inicio = __import__("datetime").datetime.utcnow()
         db.commit()
 
-        sellers = _resolver_segmento_email(envio.segmento, envio.seller_ids or [], db)
+        sellers = _resolver_segmento_email(envio.segmento, envio.seller_ids or [], db,
+            tags_filtro=(envio.variables_valores or {}).get("_tags_filtro", "").split(",") if (envio.variables_valores or {}).get("_tags_filtro") else [],
+            tags_modo=(envio.variables_valores or {}).get("_tags_modo", "cualquiera"),
+        )
         emails_seller = {(s.email or "").strip().lower() for s in sellers}
         extras = [e for e in (envio.emails_extra or []) if e and e.strip().lower() not in emails_seller]
 
@@ -348,7 +363,8 @@ def crear_envio(
     if not plantilla:
         raise HTTPException(404, "Plantilla no encontrada")
 
-    sellers_preview = _resolver_segmento_email(body.segmento, body.seller_ids, db)
+    sellers_preview = _resolver_segmento_email(body.segmento, body.seller_ids, db,
+                                                 tags_filtro=body.tags_filtro, tags_modo=body.tags_modo)
     extras_norm = _normalizar_emails_extra(body.emails_extra)
 
     if not sellers_preview and not extras_norm:
@@ -358,13 +374,18 @@ def crear_envio(
     extras_unicos = [e for e in extras_norm if e not in emails_seller]
     total_estimado = len(sellers_preview) + len(extras_unicos)
 
+    variables_con_meta = dict(body.variables_valores or {})
+    if body.segmento == "por_tags" and body.tags_filtro:
+        variables_con_meta["_tags_filtro"] = ",".join(body.tags_filtro)
+        variables_con_meta["_tags_modo"] = body.tags_modo
+
     envio = EmailEnvio(
         nombre_campana=body.nombre_campana,
         plantilla_id=body.plantilla_id,
         segmento=body.segmento,
         seller_ids=body.seller_ids,
         emails_extra=extras_norm,
-        variables_valores=body.variables_valores,
+        variables_valores=variables_con_meta,
         total=total_estimado,
     )
     db.add(envio)
@@ -411,11 +432,14 @@ def preview_segmento(
     segmento: str = Query(...),
     seller_ids: str = Query(""),
     emails_extra: str = Query(""),
+    tags_filtro: str = Query(""),
+    tags_modo: str = Query("cualquiera"),
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
     ids = [int(x) for x in seller_ids.split(",") if x.strip().isdigit()]
-    sellers = _resolver_segmento_email(segmento, ids, db)
+    tags = [t.strip() for t in tags_filtro.split(",") if t.strip()]
+    sellers = _resolver_segmento_email(segmento, ids, db, tags_filtro=tags, tags_modo=tags_modo)
     extras = _normalizar_emails_extra([e for e in emails_extra.split(",") if e.strip()])
     emails_seller = {(s.email or "").strip().lower() for s in sellers}
     extras_unicos = [e for e in extras if e not in emails_seller]

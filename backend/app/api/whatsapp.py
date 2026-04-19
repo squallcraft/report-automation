@@ -56,10 +56,12 @@ class TemplateCreate(BaseModel):
 
 class EnvioCreate(BaseModel):
     template_id: int
-    segmento: str             # todos | tier_epico | tier_clave | tier_bueno | en_riesgo | manual | numeros_directos
+    segmento: str             # todos | tier_epico | tier_clave | tier_bueno | en_riesgo | manual | numeros_directos | por_tags
     seller_ids: List[int] = [] # solo para segmento=manual
-    numeros_directos: List[str] = []  # solo para segmento=numeros_directos, ej ["+56912345678"]
-    variables_valores: Dict[str, str] = {}  # valores para reemplazar {{1}}, {{2}}, etc.
+    numeros_directos: List[str] = []  # solo para segmento=numeros_directos
+    tags_filtro: List[str] = []      # solo para segmento=por_tags
+    tags_modo: str = "cualquiera"    # cualquiera (OR) | todos (AND)
+    variables_valores: Dict[str, str] = {}
     nombre_campaña: Optional[str] = None
 
 
@@ -111,6 +113,8 @@ def _resolver_segmento(
     segmento: str,
     seller_ids_manual: List[int],
     db: Session,
+    tags_filtro: List[str] = None,
+    tags_modo: str = "cualquiera",
 ) -> List[Seller]:
     """Devuelve la lista de sellers del segmento elegido."""
     hoy = date.today()
@@ -123,7 +127,6 @@ def _resolver_segmento(
         ).all()
 
     if segmento == "numeros_directos":
-        # Retorna lista vacía — los números se manejan directamente en _ejecutar_envio
         return []
 
     q = db.query(Seller).filter(
@@ -134,6 +137,15 @@ def _resolver_segmento(
 
     if segmento == "todos":
         return q.all()
+
+    if segmento == "por_tags":
+        tags = [t.strip().lower() for t in (tags_filtro or []) if t.strip()]
+        if not tags:
+            return []
+        todos_sellers = q.all()
+        if tags_modo == "todos":
+            return [s for s in todos_sellers if all(t in (s.tags or []) for t in tags)]
+        return [s for s in todos_sellers if any(t in (s.tags or []) for t in tags)]
 
     # Filtrar por snapshot del día
     snaps = {
@@ -178,6 +190,8 @@ async def _ejecutar_envio(envio_id: int, db: Session):
             envio.segmento,
             envio.seller_ids or [],
             db2,
+            tags_filtro=(envio.variables_valores or {}).get("_tags_filtro", "").split(",") if (envio.variables_valores or {}).get("_tags_filtro") else [],
+            tags_modo=(envio.variables_valores or {}).get("_tags_modo", "cualquiera"),
         )
 
         # Para números directos, construir lista sintética
@@ -414,15 +428,21 @@ async def crear_envio(
         return {"envio_id": envio.id, "total": len(body.numeros_directos)}
 
     # Preview del segmento (sin enviar)
-    sellers = _resolver_segmento(body.segmento, body.seller_ids, db)
+    sellers = _resolver_segmento(body.segmento, body.seller_ids, db,
+                                  tags_filtro=body.tags_filtro, tags_modo=body.tags_modo)
     if not sellers:
         raise HTTPException(400, "No hay sellers en el segmento seleccionado con número de WhatsApp registrado")
+
+    variables_con_meta = dict(body.variables_valores or {})
+    if body.segmento == "por_tags" and body.tags_filtro:
+        variables_con_meta["_tags_filtro"] = ",".join(body.tags_filtro)
+        variables_con_meta["_tags_modo"] = body.tags_modo
 
     envio = WhatsAppEnvio(
         template_id=body.template_id,
         segmento=body.segmento,
         seller_ids=body.seller_ids,
-        variables_valores=body.variables_valores,
+        variables_valores=variables_con_meta,
         nombre_campaña=body.nombre_campaña or f"Campaña {template.nombre}",
         estado="pendiente",
         total=len(sellers),
@@ -476,7 +496,8 @@ def preview_segmento(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    sellers = _resolver_segmento(body.segmento, body.seller_ids, db)
+    sellers = _resolver_segmento(body.segmento, body.seller_ids, db,
+                                  tags_filtro=body.tags_filtro, tags_modo=body.tags_modo)
     return {
         "total": len(sellers),
         "sellers": [
