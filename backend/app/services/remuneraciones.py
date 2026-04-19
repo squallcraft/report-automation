@@ -340,11 +340,15 @@ def calcular_desde_liquido(
         else:
             low = mid
 
-    # Fallback: retornar la mejor aproximación
+    # Fallback: retornar la mejor aproximación encontrada SIN mentir.
+    # Antes este bloque pegaba `sueldo_liquido = pactado`, lo cual
+    # ocultaba inconsistencias graves (ej. líquido pactado matemáticamente
+    # inalcanzable por el bruto). Ahora respetamos el líquido REAL calculado
+    # y el caller debe detectar la diferencia para alertar al usuario.
     if best is not None:
-        best.sueldo_liquido = sueldo_liquido
-        best.liquido_verificado = sueldo_liquido
-    return best or bruto_a_liquido(sueldo_liquido, **kwargs)
+        # mantener best.sueldo_liquido tal como lo calculó bruto_a_liquido
+        return best
+    return bruto_a_liquido(sueldo_liquido, **kwargs)
 
 
 def aplicar_calculo_a_trabajador(trabajador, parametros: dict | None = None) -> None:
