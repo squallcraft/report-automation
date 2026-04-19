@@ -87,6 +87,13 @@ def _liq_to_dict(liq: LiquidacionMensual, nombre: str = "") -> dict:
         "movilizacion": liq.movilizacion,
         "colacion": liq.colacion,
         "viaticos": liq.viaticos,
+        "horas_extras_50_cantidad": float(liq.horas_extras_50_cantidad or 0),
+        "horas_extras_100_cantidad": float(liq.horas_extras_100_cantidad or 0),
+        "horas_extras_50_monto": liq.horas_extras_50_monto or 0,
+        "horas_extras_100_monto": liq.horas_extras_100_monto or 0,
+        "horas_extras_monto": liq.horas_extras_monto or 0,
+        "valor_hora_usado": liq.valor_hora_usado or 0,
+        "jornada_semanal_usada": liq.jornada_semanal_usada or 44,
         "remuneracion_imponible": liq.remuneracion_imponible,
         "descuento_afp": liq.descuento_afp,
         "descuento_salud_legal": liq.descuento_salud_legal,
@@ -203,16 +210,73 @@ def generar_liquidaciones_mes(
             omitidas.append({"id": t.id, "nombre": t.nombre, "motivo": "ya está PAGADA"})
             continue
 
-        try:
-            r = calcular_desde_liquido(
-                sueldo_liquido=t.sueldo_liquido,
+        # ── Resolver versión contractual vigente al mes ──────────────────
+        from app.services.contratos import (
+            obtener_version_para_mes,
+            calcular_valor_hora,
+            calcular_monto_he,
+        )
+        from app.models import HoraExtraTrabajador
+
+        version = obtener_version_para_mes(db, t.id, mes, anio)
+
+        # Datos efectivos: prioriza versión contractual; cae a Trabajador si no hay
+        if version:
+            sueldo_liquido_efectivo = version.sueldo_liquido or t.sueldo_liquido
+            mov = version.movilizacion or 0
+            col = version.colacion or 0
+            via = version.viaticos or 0
+            jornada = version.jornada_semanal_horas or 44
+            tipo_contrato = version.tipo_contrato or t.tipo_contrato
+            sueldo_base_para_he = version.sueldo_base or 0
+        else:
+            sueldo_liquido_efectivo = t.sueldo_liquido
+            mov = t.movilizacion or 0
+            col = t.colacion or 0
+            via = t.viaticos or 0
+            jornada = 44
+            tipo_contrato = t.tipo_contrato
+            sueldo_base_para_he = t.sueldo_base or 0
+
+        # ── Horas extras del mes ──────────────────────────────────────────
+        he_row = (
+            db.query(HoraExtraTrabajador)
+            .filter_by(trabajador_id=t.id, mes=mes, anio=anio)
+            .first()
+        )
+        he_50_cant = float(he_row.cantidad_50) if he_row else 0.0
+        he_100_cant = float(he_row.cantidad_100) if he_row else 0.0
+
+        # Si no hay sueldo_base aún (no se ha generado ninguna liq), pre-cálculo rápido
+        if sueldo_base_para_he <= 0 and (he_50_cant > 0 or he_100_cant > 0):
+            from app.services.remuneraciones import calcular_desde_liquido as _calc
+            r0 = _calc(
+                sueldo_liquido=sueldo_liquido_efectivo,
                 afp=t.afp,
                 sistema_salud=t.sistema_salud,
                 monto_cotizacion_salud=t.monto_cotizacion_salud,
-                tipo_contrato=t.tipo_contrato,
-                movilizacion=t.movilizacion or 0,
-                colacion=t.colacion or 0,
-                viaticos=t.viaticos or 0,
+                tipo_contrato=tipo_contrato,
+                movilizacion=mov, colacion=col, viaticos=via,
+                utm=int(parametros["utm"]),
+                valor_uf=float(parametros["uf"]),
+                imm=int(parametros["imm"]),
+            )
+            sueldo_base_para_he = r0.sueldo_base
+
+        he_calc = calcular_monto_he(sueldo_base_para_he, jornada, he_50_cant, he_100_cant)
+        he_monto_total = he_calc["monto_total"]
+
+        try:
+            r = calcular_desde_liquido(
+                sueldo_liquido=sueldo_liquido_efectivo,
+                afp=t.afp,
+                sistema_salud=t.sistema_salud,
+                monto_cotizacion_salud=t.monto_cotizacion_salud,
+                tipo_contrato=tipo_contrato,
+                movilizacion=mov,
+                colacion=col,
+                viaticos=via,
+                horas_extras_monto=he_monto_total,
                 utm=int(parametros["utm"]),
                 valor_uf=float(parametros["uf"]),
                 imm=int(parametros["imm"]),
@@ -234,6 +298,13 @@ def generar_liquidaciones_mes(
         liq.movilizacion = r.movilizacion
         liq.colacion = r.colacion
         liq.viaticos = r.viaticos
+        liq.horas_extras_50_cantidad = he_50_cant
+        liq.horas_extras_100_cantidad = he_100_cant
+        liq.horas_extras_50_monto = he_calc["monto_50"]
+        liq.horas_extras_100_monto = he_calc["monto_100"]
+        liq.horas_extras_monto = he_monto_total
+        liq.valor_hora_usado = he_calc["valor_hora"]
+        liq.jornada_semanal_usada = jornada
         liq.remuneracion_imponible = r.remuneracion_imponible
         liq.descuento_afp = r.descuento_afp
         liq.descuento_salud_legal = r.descuento_salud_legal
@@ -250,6 +321,16 @@ def generar_liquidaciones_mes(
         liq.utm_usado = int(parametros["utm"])
         liq.imm_usado = int(parametros["imm"])
         liq.estado = liq.estado if existing else "BORRADOR"
+
+        # Actualizar snapshot del registro HE (auditoría)
+        if he_row:
+            he_row.valor_hora_calculado = he_calc["valor_hora"]
+            he_row.monto_50 = he_calc["monto_50"]
+            he_row.monto_100 = he_calc["monto_100"]
+            he_row.monto_total = he_monto_total
+            he_row.contrato_version_id = version.id if version else None
+            he_row.sueldo_base_snapshot = r.sueldo_base
+            he_row.jornada_snapshot = jornada
 
         generadas.append({"id": t.id, "nombre": t.nombre})
 

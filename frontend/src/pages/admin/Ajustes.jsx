@@ -4,8 +4,9 @@ import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import PeriodSelector from '../../components/PeriodSelector'
 import toast from 'react-hot-toast'
-import { Plus, Trash2, CircleDollarSign, Eye, XCircle, Check, Gift } from 'lucide-react'
+import { Plus, Trash2, CircleDollarSign, Eye, XCircle, Check, Gift, Clock } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import HorasExtras from './HorasExtras'
 
 const fmt = (v) => `$${Number(v || 0).toLocaleString('es-CL')}`
 
@@ -613,6 +614,7 @@ const TABS = [
   { id: 'ajustes', label: 'Ajustes' },
   { id: 'prestamos', label: 'Préstamos' },
   { id: 'bonificaciones', label: 'Bonificaciones' },
+  { id: 'horas-extras', label: 'Horas Extras' },
 ]
 
 export default function Ajustes() {
@@ -647,6 +649,7 @@ export default function Ajustes() {
       {tab === 'ajustes' && <TabAjustes />}
       {tab === 'prestamos' && <TabPrestamos />}
       {tab === 'bonificaciones' && <TabBonificaciones />}
+      {tab === 'horas-extras' && <HorasExtras />}
     </div>
   )
 }

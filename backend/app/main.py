@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -157,6 +157,120 @@ with engine.connect() as conn:
                 CONSTRAINT uq_liquidacion_mensual UNIQUE (trabajador_id, mes, anio)
             )
         """)
+    # ── Tabla contrato_trabajador_versiones (versionado contractual) ─────────
+    if "contrato_trabajador_versiones" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE contrato_trabajador_versiones (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                vigente_desde DATE NOT NULL,
+                vigente_hasta DATE,
+                sueldo_liquido INTEGER NOT NULL DEFAULT 0,
+                sueldo_base INTEGER NOT NULL DEFAULT 0,
+                gratificacion INTEGER NOT NULL DEFAULT 0,
+                movilizacion INTEGER NOT NULL DEFAULT 0,
+                colacion INTEGER NOT NULL DEFAULT 0,
+                viaticos INTEGER NOT NULL DEFAULT 0,
+                jornada_semanal_horas INTEGER NOT NULL DEFAULT 44,
+                tipo_jornada TEXT NOT NULL DEFAULT 'COMPLETA',
+                distribucion_jornada TEXT,
+                cargo TEXT,
+                tipo_contrato TEXT,
+                motivo TEXT NOT NULL DEFAULT 'CONTRATACION',
+                notas TEXT,
+                creado_por TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_contrato_trab_vigencia ON contrato_trabajador_versiones (trabajador_id, vigente_desde)")
+
+    # ── Tabla anexos_contrato ────────────────────────────────────────────────
+    if "anexos_contrato" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE anexos_contrato (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                version_id INTEGER REFERENCES contrato_trabajador_versiones(id),
+                tipo TEXT NOT NULL,
+                titulo TEXT NOT NULL,
+                pdf_generado TEXT,
+                pdf_subido_path TEXT,
+                requiere_firma_trabajador BOOLEAN NOT NULL DEFAULT TRUE,
+                estado TEXT NOT NULL DEFAULT 'BORRADOR',
+                firma_trabajador_snapshot TEXT,
+                firmado_at TIMESTAMP,
+                firmado_ip TEXT,
+                visto_at TIMESTAMP,
+                creado_por TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_anexos_contrato_trab ON anexos_contrato (trabajador_id)")
+
+    # ── Tabla horas_extras_trabajadores ──────────────────────────────────────
+    if "horas_extras_trabajadores" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE horas_extras_trabajadores (
+                id SERIAL PRIMARY KEY,
+                trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+                mes INTEGER NOT NULL,
+                anio INTEGER NOT NULL,
+                cantidad_50 NUMERIC(6,2) NOT NULL DEFAULT 0,
+                cantidad_100 NUMERIC(6,2) NOT NULL DEFAULT 0,
+                valor_hora_calculado INTEGER NOT NULL DEFAULT 0,
+                monto_50 INTEGER NOT NULL DEFAULT 0,
+                monto_100 INTEGER NOT NULL DEFAULT 0,
+                monto_total INTEGER NOT NULL DEFAULT 0,
+                contrato_version_id INTEGER REFERENCES contrato_trabajador_versiones(id),
+                sueldo_base_snapshot INTEGER NOT NULL DEFAULT 0,
+                jornada_snapshot INTEGER NOT NULL DEFAULT 44,
+                nota TEXT,
+                creado_por TEXT,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                CONSTRAINT uq_he_trab_mes UNIQUE (trabajador_id, mes, anio)
+            )
+        """)
+
+    # ── Tabla configuracion_legal (singleton) ────────────────────────────────
+    if "configuracion_legal" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE configuracion_legal (
+                id INTEGER PRIMARY KEY,
+                jornada_legal_vigente INTEGER NOT NULL DEFAULT 44,
+                jornada_legal_proxima INTEGER,
+                jornada_legal_proxima_desde DATE,
+                rep_legal_nombre TEXT,
+                rep_legal_rut TEXT,
+                empresa_razon_social TEXT,
+                empresa_rut TEXT,
+                empresa_direccion TEXT,
+                actualizado_por TEXT,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        safe_exec("""
+            INSERT INTO configuracion_legal (id, jornada_legal_vigente, rep_legal_nombre, rep_legal_rut, empresa_razon_social)
+            VALUES (1, 44, 'Adriana Colina Aguilar', '25.936.753-0', 'E-Courier')
+            ON CONFLICT (id) DO NOTHING
+        """)
+
+    # ── Migración: liquidaciones_mensuales: agregar campos de horas extras ───
+    if "liquidaciones_mensuales" in insp.get_table_names():
+        liq_cols = [c["name"] for c in insp.get_columns("liquidaciones_mensuales")]
+        for col_name, col_def in [
+            ("horas_extras_50_cantidad", "NUMERIC(6,2) NOT NULL DEFAULT 0"),
+            ("horas_extras_100_cantidad", "NUMERIC(6,2) NOT NULL DEFAULT 0"),
+            ("horas_extras_50_monto", "INTEGER NOT NULL DEFAULT 0"),
+            ("horas_extras_100_monto", "INTEGER NOT NULL DEFAULT 0"),
+            ("horas_extras_monto", "INTEGER NOT NULL DEFAULT 0"),
+            ("valor_hora_usado", "INTEGER NOT NULL DEFAULT 0"),
+            ("jornada_semanal_usada", "INTEGER NOT NULL DEFAULT 44"),
+        ]:
+            if col_name not in liq_cols:
+                safe_exec(f"ALTER TABLE liquidaciones_mensuales ADD COLUMN {col_name} {col_def}")
+
     if "retiros" in insp.get_table_names() and engine.dialect.name == "postgresql":
         retiro_cols = {c["name"]: c for c in insp.get_columns("retiros")}
         if retiro_cols.get("seller_id", {}).get("nullable") is False:
@@ -668,6 +782,8 @@ app.include_router(colaboradores.router, prefix="/api")
 app.include_router(parametros_remuneracion.router, prefix="/api")
 app.include_router(remuneraciones.router, prefix="/api")
 app.include_router(iva_drivers.router, prefix="/api")
+app.include_router(contratos.router, prefix="/api")
+app.include_router(horas_extras.router, prefix="/api")
 
 
 @app.on_event("startup")

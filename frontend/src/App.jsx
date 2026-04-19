@@ -62,6 +62,7 @@ import LeadsPipeline from './pages/admin/LeadsPipeline'
 import LeadsKB from './pages/admin/LeadsKB'
 import Colaboradores from './pages/admin/Colaboradores'
 import IVADrivers from './pages/admin/IVADrivers'
+import ConfiguracionLegal from './pages/admin/ConfiguracionLegal'
 import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
 import PickupEnvios from './pages/pickup/PickupEnvios'
@@ -79,6 +80,7 @@ import TrabajadorLiquidaciones from './pages/trabajador/TrabajadorLiquidaciones'
 import TrabajadorPagos from './pages/trabajador/TrabajadorPagos'
 import TrabajadorImposiciones from './pages/trabajador/TrabajadorImposiciones'
 import TrabajadorFirma from './pages/trabajador/TrabajadorFirma'
+import TrabajadorAnexos from './pages/trabajador/TrabajadorAnexos'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -148,6 +150,7 @@ export default function App() {
         <Route path="finanzas" element={<Finanzas />} />
         <Route path="cpc" element={<CPC />} />
         <Route path="usuarios" element={<Usuarios />} />
+        <Route path="configuracion-legal" element={<ConfiguracionLegal />} />
         <Route path="asistente" element={<Asistente />} />
         <Route path="pickups" element={<Pickups />} />
         <Route path="cpp" element={<CPP />} />
@@ -206,6 +209,7 @@ export default function App() {
         <Route path="pagos" element={<TrabajadorPagos />} />
         <Route path="imposiciones" element={<TrabajadorImposiciones />} />
         <Route path="firma" element={<TrabajadorFirma />} />
+        <Route path="anexos" element={<TrabajadorAnexos />} />
       </Route>
 
       <Route path="/driver" element={<DriverRoute><Layout /></DriverRoute>}>

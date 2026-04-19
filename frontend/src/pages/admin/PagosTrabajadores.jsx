@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
 import {
-  Users, Download, Upload, FileText, X, Check, AlertCircle,
+  Users, Download, Upload, FileText, X, Check, AlertCircle, AlertTriangle,
   DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle, Zap, Archive, Eye,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
@@ -623,6 +623,21 @@ export default function PagosTrabajadores() {
   const [liqModalOpen, setLiqModalOpen] = useState(false)
   const [liqDescargando, setLiqDescargando] = useState(false)
   const [viewerLiqId, setViewerLiqId] = useState(null)
+  const [validacionImm, setValidacionImm] = useState(null)
+  const [validandoImm, setValidandoImm] = useState(false)
+
+  const correrValidadorImm = async () => {
+    setValidandoImm(true)
+    setValidacionImm(null)
+    try {
+      const { data } = await api.post('/contratos/validar-imm', null, { params: { mes, anio } })
+      setValidacionImm(data)
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error en validador IMM')
+    } finally {
+      setValidandoImm(false)
+    }
+  }
 
   const handleGenerarLiquidaciones = async () => {
     setLiqGenerando(true)
@@ -737,7 +752,7 @@ export default function PagosTrabajadores() {
               <Upload size={14} /> Cargar Cartola
             </button>
             <button
-              onClick={() => { setLiqModalOpen(true); setLiqResultado(null) }}
+              onClick={() => { setLiqModalOpen(true); setLiqResultado(null); correrValidadorImm() }}
               className="btn btn-primary flex items-center gap-2 text-sm"
               title="Generar liquidaciones de sueldo para el período seleccionado"
             >
@@ -884,6 +899,45 @@ export default function PagosTrabajadores() {
             <div className="p-6 space-y-4">
               {!liqResultado ? (
                 <>
+                  {/* Validador IMM */}
+                  {validandoImm && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 flex items-center gap-2">
+                      <RotateCcw size={14} className="animate-spin" /> Validando IMM…
+                    </div>
+                  )}
+                  {!validandoImm && validacionImm && validacionImm.alertas?.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm text-amber-900">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                          <p className="font-medium mb-1">
+                            {validacionImm.alertas.length} alerta(s) al validar IMM (${validacionImm.imm_legal?.toLocaleString('es-CL')})
+                          </p>
+                          <ul className="list-disc list-inside space-y-1 text-xs">
+                            {validacionImm.alertas.slice(0, 6).map((a, i) => (
+                              <li key={i}>
+                                <strong>{a.nombre}:</strong> {a.mensaje}
+                              </li>
+                            ))}
+                          </ul>
+                          {validacionImm.alertas.length > 6 && (
+                            <p className="text-xs mt-1 italic">… y {validacionImm.alertas.length - 6} más</p>
+                          )}
+                          <p className="text-xs mt-2">
+                            Resuelve estas alertas en la ficha de cada trabajador antes de continuar
+                            (Sección Contratación → Nuevo cambio → Reajuste IMM).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!validandoImm && validacionImm && validacionImm.alertas?.length === 0 && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 flex items-center gap-2">
+                      <Check size={16} className="text-emerald-600" />
+                      Todos los trabajadores cumplen con el IMM vigente.
+                    </div>
+                  )}
+
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
                     <p className="font-medium mb-1">¿Qué hace este proceso?</p>
                     <ul className="list-disc list-inside space-y-1 text-xs text-blue-700">

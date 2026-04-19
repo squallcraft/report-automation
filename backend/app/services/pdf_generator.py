@@ -1062,6 +1062,20 @@ def generar_pdf_liquidacion(
         [Paragraph("Sueldo Base", st_td_b),               Paragraph(_fmt(liquidacion.sueldo_base or 0), st_td_br)],
         [Paragraph("Gratificación Legal (Art. 50 CT)", st_td_b), Paragraph(_fmt(liquidacion.gratificacion or 0), st_td_br)],
     ]
+    he_50_cant = float(getattr(liquidacion, "horas_extras_50_cantidad", 0) or 0)
+    he_100_cant = float(getattr(liquidacion, "horas_extras_100_cantidad", 0) or 0)
+    he_50_monto = getattr(liquidacion, "horas_extras_50_monto", 0) or 0
+    he_100_monto = getattr(liquidacion, "horas_extras_100_monto", 0) or 0
+    if he_50_cant > 0 or he_50_monto > 0:
+        hab_rows.append([
+            Paragraph(f"Horas extras 50% ({he_50_cant:g} hrs, Art. 32 CT)", st_td_b),
+            Paragraph(_fmt(he_50_monto), st_td_br),
+        ])
+    if he_100_cant > 0 or he_100_monto > 0:
+        hab_rows.append([
+            Paragraph(f"Horas extras 100% ({he_100_cant:g} hrs, Art. 38 CT)", st_td_b),
+            Paragraph(_fmt(he_100_monto), st_td_br),
+        ])
     if liquidacion.movilizacion:
         hab_rows.append([Paragraph("Movilización (no imponible)", st_td_b), Paragraph(_fmt(liquidacion.movilizacion), st_td_br)])
     if liquidacion.colacion:

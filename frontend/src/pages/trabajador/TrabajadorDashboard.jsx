@@ -221,6 +221,7 @@ export default function TrabajadorDashboard() {
           { label: 'Mis Liquidaciones', icon: FileText,  color: 'text-blue-600',    bg: 'bg-blue-50',    to: '/trabajador/liquidaciones' },
           { label: 'Mis Pagos',         icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', to: '/trabajador/pagos' },
           { label: 'Imposiciones',      icon: TrendingUp, color: 'text-purple-600',  bg: 'bg-purple-50',  to: '/trabajador/imposiciones' },
+          { label: 'Mis Anexos',        icon: FileText,   color: 'text-indigo-600',  bg: 'bg-indigo-50',  to: '/trabajador/anexos' },
           { label: 'Mi Firma',          icon: CheckCircle,color: 'text-amber-600',   bg: 'bg-amber-50',   to: '/trabajador/firma' },
         ].map(({ label, icon: Icon, color, bg, to }) => (
           <button

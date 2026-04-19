@@ -79,10 +79,11 @@ class ResultadoCalculo:
     movilizacion: int
     colacion: int
     viaticos: int
-    costo_empresa_sis: int
-    costo_empresa_cesantia: int
-    costo_empresa_mutual: int
-    costo_empresa_total: int
+    horas_extras_monto: int = 0
+    costo_empresa_sis: int = 0
+    costo_empresa_cesantia: int = 0
+    costo_empresa_mutual: int = 0
+    costo_empresa_total: int = 0
     # Alias de compatibilidad
     sueldo_bruto: int = field(init=False)
     costo_afp: int    = field(init=False)
@@ -150,6 +151,7 @@ def bruto_a_liquido(
     movilizacion: int = 0,
     colacion: int = 0,
     viaticos: int = 0,
+    horas_extras_monto: int = 0,
     utm: int = UTM,
     valor_uf: float = VALOR_UF,
     imm: int = IMM,
@@ -160,6 +162,9 @@ def bruto_a_liquido(
     Dado el imponible bruto calcula el líquido exacto aplicando:
     topes AFP/salud (90 UF) y cesantía (135,2 UF), IUSC por tramos,
     y separa el adicional Isapre del descuento 7% legal.
+
+    `remuneracion_imponible` debe incluir ya el `horas_extras_monto` si las hay.
+    El argumento horas_extras_monto se usa solo para descomposición y reporting.
     """
     tope_afp      = round(TOPE_IMPONIBLE_AFP_UF * valor_uf)
     tope_cesantia = round(TOPE_IMPONIBLE_CESANTIA_UF * valor_uf)
@@ -206,7 +211,9 @@ def bruto_a_liquido(
     costo_empresa_total = remuneracion_imponible + no_imponibles + costo_sis + costo_ces_emp + costo_mutual
 
     # ── Descomponer en base + gratificación ───────────────────────────────────
-    sueldo_base, gratificacion = _descomponer_en_base_grat(remuneracion_imponible, tope_grat_mes)
+    # Las horas extras NO entran a base ni gratificación; quedan como ítem aparte
+    imponible_base = max(0, remuneracion_imponible - horas_extras_monto)
+    sueldo_base, gratificacion = _descomponer_en_base_grat(imponible_base, tope_grat_mes)
 
     return ResultadoCalculo(
         sueldo_liquido=liquido_verificado,
@@ -224,6 +231,7 @@ def bruto_a_liquido(
         movilizacion=movilizacion,
         colacion=colacion,
         viaticos=viaticos,
+        horas_extras_monto=horas_extras_monto,
         costo_empresa_sis=costo_sis,
         costo_empresa_cesantia=costo_ces_emp,
         costo_empresa_mutual=costo_mutual,
@@ -241,6 +249,7 @@ def calcular_desde_liquido(
     movilizacion: int = 0,
     colacion: int = 0,
     viaticos: int = 0,
+    horas_extras_monto: int = 0,
     utm: int = UTM,
     valor_uf: float = VALOR_UF,
     imm: int = IMM,
@@ -252,9 +261,47 @@ def calcular_desde_liquido(
     Itera sobre bruto_a_liquido() hasta encontrar el imponible que produce
     exactamente el líquido pactado (tolerancia ±1 peso por redondeo).
 
+    El líquido pactado se refiere al **sueldo regular** sin horas extras.
+    Si se pasa horas_extras_monto > 0, primero se converge el imponible base
+    para el líquido pactado, y luego se agregan las HE al imponible
+    (afectando cotizaciones e IUSC marginales). El líquido final será
+    mayor que el pactado — esto es lo esperado.
+
     Soporta cualquier nivel salarial — el IUSC por tramos y los topes
     de UF son manejados transparentemente por la Capa A.
     """
+    # Si hay HE, primero converger sin ellas y después agregarlas al imponible
+    if horas_extras_monto > 0:
+        base_sin_he = calcular_desde_liquido(
+            sueldo_liquido=sueldo_liquido,
+            afp=afp,
+            sistema_salud=sistema_salud,
+            monto_cotizacion_salud=monto_cotizacion_salud,
+            tipo_contrato=tipo_contrato,
+            movilizacion=movilizacion,
+            colacion=colacion,
+            viaticos=viaticos,
+            horas_extras_monto=0,
+            utm=utm,
+            valor_uf=valor_uf,
+            imm=imm,
+            tolerancia=tolerancia,
+        )
+        return bruto_a_liquido(
+            remuneracion_imponible=base_sin_he.remuneracion_imponible + horas_extras_monto,
+            afp=afp,
+            sistema_salud=sistema_salud,
+            monto_cotizacion_salud=monto_cotizacion_salud,
+            tipo_contrato=tipo_contrato,
+            movilizacion=movilizacion,
+            colacion=colacion,
+            viaticos=viaticos,
+            horas_extras_monto=horas_extras_monto,
+            utm=utm,
+            valor_uf=valor_uf,
+            imm=imm,
+        )
+
     kwargs = dict(
         afp=afp,
         sistema_salud=sistema_salud,
@@ -263,6 +310,7 @@ def calcular_desde_liquido(
         movilizacion=movilizacion,
         colacion=colacion,
         viaticos=viaticos,
+        horas_extras_monto=0,
         utm=utm,
         valor_uf=valor_uf,
         imm=imm,

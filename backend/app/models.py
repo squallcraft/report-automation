@@ -952,6 +952,15 @@ class LiquidacionMensual(Base):
     movilizacion = Column(Integer, nullable=False, default=0)
     colacion = Column(Integer, nullable=False, default=0)
     viaticos = Column(Integer, nullable=False, default=0)
+    # Horas extras (Art. 32) — se suman al imponible
+    horas_extras_50_cantidad = Column(Numeric(6, 2), nullable=False, default=0)
+    horas_extras_100_cantidad = Column(Numeric(6, 2), nullable=False, default=0)
+    horas_extras_50_monto = Column(Integer, nullable=False, default=0)
+    horas_extras_100_monto = Column(Integer, nullable=False, default=0)
+    horas_extras_monto = Column(Integer, nullable=False, default=0)
+    valor_hora_usado = Column(Integer, nullable=False, default=0)
+    jornada_semanal_usada = Column(Integer, nullable=False, default=44)
+
     remuneracion_imponible = Column(Integer, nullable=False, default=0)
     descuento_afp = Column(Integer, nullable=False, default=0)
     descuento_salud_legal = Column(Integer, nullable=False, default=0)
@@ -1498,3 +1507,182 @@ class NotificacionComercial(Base):
     leida = Column(Boolean, default=False)
     accion_url = Column(String(200), nullable=True)  # wa.me link o ruta interna
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Gestión contractual del trabajador (versionado + horas extras + anexos) ──
+
+
+class TipoJornadaEnum(str, enum.Enum):
+    COMPLETA = "COMPLETA"           # > 30 hrs/sem
+    PARCIAL = "PARCIAL"             # ≤ 30 hrs/sem (Art. 40 bis)
+    EXCEPCIONAL = "EXCEPCIONAL"     # turnos / sistemas excepcionales DT
+
+
+class MotivoVersionContratoEnum(str, enum.Enum):
+    CONTRATACION = "CONTRATACION"
+    AUMENTO_SUELDO = "AUMENTO_SUELDO"
+    REDUCCION_JORNADA = "REDUCCION_JORNADA"
+    ADECUACION_JORNADA_LEGAL = "ADECUACION_JORNADA_LEGAL"
+    REAJUSTE_IMM = "REAJUSTE_IMM"
+    CAMBIO_CARGO = "CAMBIO_CARGO"
+    CAMBIO_ASIGNACIONES = "CAMBIO_ASIGNACIONES"
+    OTRO = "OTRO"
+
+
+class ContratoTrabajadorVersion(Base):
+    """
+    Versión inmutable de las condiciones contractuales de un trabajador.
+    Cada cambio de sueldo, jornada, cargo o asignaciones genera una nueva versión.
+    Es la fuente de verdad histórica para auditorías, reajustes IMM y horas extras.
+    """
+    __tablename__ = "contrato_trabajador_versiones"
+    __table_args__ = (
+        Index("ix_contrato_trab_vigencia", "trabajador_id", "vigente_desde"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+
+    vigente_desde = Column(Date, nullable=False)
+    vigente_hasta = Column(Date, nullable=True)  # NULL = vigente
+
+    # Condiciones económicas
+    sueldo_liquido = Column(Integer, nullable=False, default=0)
+    sueldo_base = Column(Integer, nullable=False, default=0)
+    gratificacion = Column(Integer, nullable=False, default=0)
+    movilizacion = Column(Integer, nullable=False, default=0)
+    colacion = Column(Integer, nullable=False, default=0)
+    viaticos = Column(Integer, nullable=False, default=0)
+
+    # Condiciones de jornada
+    jornada_semanal_horas = Column(Integer, nullable=False, default=44)
+    tipo_jornada = Column(String, nullable=False, default=TipoJornadaEnum.COMPLETA.value)
+    distribucion_jornada = Column(String, nullable=True)  # LUNES_VIERNES / LUNES_SABADO / TURNOS / OTRO
+
+    # Otros datos contractuales
+    cargo = Column(String, nullable=True)
+    tipo_contrato = Column(String, nullable=True)  # INDEFINIDO / PLAZO_FIJO / OBRA_FAENA / HONORARIOS
+
+    # Trazabilidad
+    motivo = Column(String, nullable=False, default=MotivoVersionContratoEnum.CONTRATACION.value)
+    notas = Column(Text, nullable=True)
+    creado_por = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    trabajador = relationship("Trabajador")
+    anexos = relationship(
+        "AnexoContrato",
+        back_populates="version",
+        cascade="all, delete-orphan",
+    )
+
+
+class TipoAnexoEnum(str, enum.Enum):
+    CONTRATO_INICIAL = "CONTRATO_INICIAL"   # PDF físico digitalizado de la contratación original
+    AUMENTO_SUELDO = "AUMENTO_SUELDO"
+    REDUCCION_JORNADA = "REDUCCION_JORNADA"
+    ADECUACION_JORNADA_LEGAL = "ADECUACION_JORNADA_LEGAL"
+    REAJUSTE_IMM = "REAJUSTE_IMM"
+    CAMBIO_CARGO = "CAMBIO_CARGO"
+    CAMBIO_ASIGNACIONES = "CAMBIO_ASIGNACIONES"
+    OTRO = "OTRO"
+
+
+class EstadoAnexoEnum(str, enum.Enum):
+    BORRADOR = "BORRADOR"
+    EMITIDO = "EMITIDO"           # Generado, esperando firma del trabajador
+    INFORMATIVO = "INFORMATIVO"   # No requiere firma (ej. reajuste IMM); queda como notificación
+    FIRMADO = "FIRMADO"
+    RECHAZADO = "RECHAZADO"
+
+
+class AnexoContrato(Base):
+    """
+    Anexo contractual generado (o subido) ligado a una versión del contrato.
+    Si requiere firma del trabajador, queda visible en su portal hasta que firme.
+    """
+    __tablename__ = "anexos_contrato"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    version_id = Column(Integer, ForeignKey("contrato_trabajador_versiones.id"), nullable=True)
+    tipo = Column(String, nullable=False)
+    titulo = Column(String, nullable=False)
+
+    # PDF: o se generó por el motor (pdf_generado) o se subió físico (pdf_subido_path)
+    pdf_generado = Column(Text, nullable=True)        # base64 (PDF generado por anexos_engine)
+    pdf_subido_path = Column(String, nullable=True)   # path en disco para PDFs subidos
+
+    requiere_firma_trabajador = Column(Boolean, nullable=False, default=True)
+    estado = Column(String, nullable=False, default=EstadoAnexoEnum.BORRADOR.value)
+
+    # Firma capturada al momento (snapshot)
+    firma_trabajador_snapshot = Column(Text, nullable=True)  # base64
+    firmado_at = Column(DateTime, nullable=True)
+    firmado_ip = Column(String, nullable=True)
+
+    visto_at = Column(DateTime, nullable=True)
+    creado_por = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    version = relationship("ContratoTrabajadorVersion", back_populates="anexos")
+    trabajador = relationship("Trabajador")
+
+
+class HoraExtraTrabajador(Base):
+    """
+    Carga de horas extras de un trabajador para un mes/año.
+    El monto se calcula con la versión contractual vigente al momento de la carga.
+    Se importa automáticamente al imponible al generar la liquidación mensual.
+    """
+    __tablename__ = "horas_extras_trabajadores"
+    __table_args__ = (
+        UniqueConstraint("trabajador_id", "mes", "anio", name="uq_he_trab_mes"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+
+    cantidad_50 = Column(Numeric(6, 2), nullable=False, default=0)   # horas con recargo 50%
+    cantidad_100 = Column(Numeric(6, 2), nullable=False, default=0)  # horas con recargo 100%
+
+    # Snapshot del cálculo
+    valor_hora_calculado = Column(Integer, nullable=False, default=0)
+    monto_50 = Column(Integer, nullable=False, default=0)
+    monto_100 = Column(Integer, nullable=False, default=0)
+    monto_total = Column(Integer, nullable=False, default=0)
+
+    # Snapshot de las condiciones usadas (auditoría)
+    contrato_version_id = Column(Integer, ForeignKey("contrato_trabajador_versiones.id"), nullable=True)
+    sueldo_base_snapshot = Column(Integer, nullable=False, default=0)
+    jornada_snapshot = Column(Integer, nullable=False, default=44)
+
+    nota = Column(Text, nullable=True)
+    creado_por = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    trabajador = relationship("Trabajador")
+
+
+class ConfiguracionLegal(Base):
+    """
+    Parámetros legales del sistema editables por admin.
+    Una sola fila (id=1) que se actualiza cuando cambia la ley.
+    """
+    __tablename__ = "configuracion_legal"
+
+    id = Column(Integer, primary_key=True, default=1)
+    jornada_legal_vigente = Column(Integer, nullable=False, default=44)
+    jornada_legal_proxima = Column(Integer, nullable=True)        # Ej. 42 (vigente desde X)
+    jornada_legal_proxima_desde = Column(Date, nullable=True)
+    rep_legal_nombre = Column(String, nullable=True)
+    rep_legal_rut = Column(String, nullable=True)
+    empresa_razon_social = Column(String, nullable=True)
+    empresa_rut = Column(String, nullable=True)
+    empresa_direccion = Column(String, nullable=True)
+    actualizado_por = Column(String, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

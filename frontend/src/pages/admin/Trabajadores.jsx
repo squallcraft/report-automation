@@ -3,8 +3,9 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator, KeyRound } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator, KeyRound, Briefcase } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import ContratacionPanel from './ContratacionPanel'
 
 const fmt = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
@@ -234,6 +235,7 @@ export default function Trabajadores() {
   }
 
   const [pwdModal, setPwdModal] = useState(null) // { id, nombre }
+  const [contratacionFor, setContratacionFor] = useState(null)
   const [pwdValue, setPwdValue] = useState('')
   const [pwdLoading, setPwdLoading] = useState(false)
 
@@ -295,6 +297,11 @@ export default function Trabajadores() {
     { key: 'actions', label: '', render: (_, row) => (
       <div className="flex gap-1">
         <button onClick={() => openEdit(row)} className="p-1 rounded hover:bg-blue-100 text-blue-600" title="Editar"><Pencil size={14} /></button>
+        <button
+          onClick={() => setContratacionFor(row)}
+          className="p-1 rounded hover:bg-indigo-100 text-indigo-600"
+          title="Gestión contractual (versiones, anexos, contrato físico)"
+        ><Briefcase size={14} /></button>
         <button
           onClick={() => { setPwdModal({ id: row.id, nombre: row.nombre }); setPwdValue('') }}
           className="p-1 rounded hover:bg-amber-100 text-amber-600"
@@ -506,6 +513,13 @@ export default function Trabajadores() {
           </div>
         </div>
       </Modal>
+
+      {contratacionFor && (
+        <ContratacionPanel
+          trabajador={contratacionFor}
+          onClose={() => { setContratacionFor(null); load() }}
+        />
+      )}
     </div>
   )
 }
