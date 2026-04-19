@@ -56,8 +56,24 @@ class EnvioCreate(BaseModel):
     plantilla_id: int
     segmento: str
     seller_ids: List[int] = []
+    emails_extra: List[str] = []  # destinatarios sueltos (no necesariamente sellers)
     variables_valores: Dict[str, str] = {}
     nombre_campana: Optional[str] = None
+
+
+def _normalizar_emails_extra(raw: List[str]) -> List[str]:
+    """Limpia, valida y deduplica una lista de correos."""
+    import re
+    out: List[str] = []
+    seen = set()
+    pat = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+    for e in raw or []:
+        e = (e or "").strip().lower()
+        if not e or e in seen or not pat.match(e):
+            continue
+        seen.add(e)
+        out.append(e)
+    return out
 
 
 # ── Segmentación ──────────────────────────────────────────────────────────────
@@ -76,6 +92,10 @@ def _resolver_segmento_email(
         Seller.email.isnot(None),
         Seller.email != "",
     )
+
+    if segmento == "solo_extras":
+        # No se incluyen sellers; sólo correos extra (manejados aparte).
+        return []
 
     if segmento == "manual":
         return db.query(Seller).filter(
@@ -133,12 +153,16 @@ def _ejecutar_envio(envio_id: int):
         db.commit()
 
         sellers = _resolver_segmento_email(envio.segmento, envio.seller_ids or [], db)
-        envio.total = len(sellers)
+        emails_seller = {(s.email or "").strip().lower() for s in sellers}
+        extras = [e for e in (envio.emails_extra or []) if e and e.strip().lower() not in emails_seller]
+
+        envio.total = len(sellers) + len(extras)
         db.commit()
 
         enviados = errores = 0
         variables_base = envio.variables_valores or {}
 
+        # Envío a sellers (con personalización nombre/empresa).
         for seller in sellers:
             variables = {**variables_base, "nombre": seller.nombre or "", "empresa": seller.empresa or ""}
             asunto = substitute_variables(plantilla.asunto, variables)
@@ -167,7 +191,38 @@ def _ejecutar_envio(envio_id: int):
             envio.enviados = enviados
             envio.errores = errores
             db.commit()
-            time.sleep(0.05)  # ~20 envíos/seg para no saturar SES sandbox
+            time.sleep(0.05)
+
+        # Envío a correos extra (sin seller asociado, sólo variables base).
+        for email_addr in extras:
+            variables = {**variables_base, "nombre": variables_base.get("nombre", ""), "empresa": variables_base.get("empresa", "")}
+            asunto = substitute_variables(plantilla.asunto, variables)
+            html = substitute_variables(plantilla.cuerpo_html, variables)
+            texto = substitute_variables(plantilla.cuerpo_texto or "", variables) or None
+
+            msg = EmailMensaje(
+                envio_id=envio.id,
+                seller_id=None,
+                email=email_addr,
+                estado="pendiente",
+            )
+            db.add(msg)
+            db.flush()
+
+            ses_id = send_campaign_email(email_addr, asunto, html, texto, msg.id)
+            if ses_id:
+                msg.ses_message_id = ses_id
+                msg.estado = "enviado"
+                enviados += 1
+            else:
+                msg.estado = "error"
+                msg.error = "SES no disponible o error de envío"
+                errores += 1
+
+            envio.enviados = enviados
+            envio.errores = errores
+            db.commit()
+            time.sleep(0.05)
 
         envio.estado = "completado"
         envio.fecha_fin = __import__("datetime").datetime.utcnow()
@@ -294,23 +349,30 @@ def crear_envio(
         raise HTTPException(404, "Plantilla no encontrada")
 
     sellers_preview = _resolver_segmento_email(body.segmento, body.seller_ids, db)
-    if not sellers_preview:
-        raise HTTPException(400, "El segmento seleccionado no tiene sellers con email registrado")
+    extras_norm = _normalizar_emails_extra(body.emails_extra)
+
+    if not sellers_preview and not extras_norm:
+        raise HTTPException(400, "Debes elegir un segmento con destinatarios o agregar al menos un correo extra válido")
+
+    emails_seller = {(s.email or "").strip().lower() for s in sellers_preview}
+    extras_unicos = [e for e in extras_norm if e not in emails_seller]
+    total_estimado = len(sellers_preview) + len(extras_unicos)
 
     envio = EmailEnvio(
         nombre_campana=body.nombre_campana,
         plantilla_id=body.plantilla_id,
         segmento=body.segmento,
         seller_ids=body.seller_ids,
+        emails_extra=extras_norm,
         variables_valores=body.variables_valores,
-        total=len(sellers_preview),
+        total=total_estimado,
     )
     db.add(envio)
     db.commit()
     db.refresh(envio)
 
     background_tasks.add_task(_ejecutar_envio, envio.id)
-    return {"id": envio.id, "total_estimado": len(sellers_preview), "ok": True}
+    return {"id": envio.id, "total_estimado": total_estimado, "ok": True}
 
 
 @router.get("/envios/{envio_id}/mensajes")
@@ -348,12 +410,23 @@ def listar_mensajes(
 def preview_segmento(
     segmento: str = Query(...),
     seller_ids: str = Query(""),
+    emails_extra: str = Query(""),
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
     ids = [int(x) for x in seller_ids.split(",") if x.strip().isdigit()]
     sellers = _resolver_segmento_email(segmento, ids, db)
-    return {"total": len(sellers), "emails": [s.email for s in sellers[:5]]}
+    extras = _normalizar_emails_extra([e for e in emails_extra.split(",") if e.strip()])
+    emails_seller = {(s.email or "").strip().lower() for s in sellers}
+    extras_unicos = [e for e in extras if e not in emails_seller]
+    total = len(sellers) + len(extras_unicos)
+    muestra = [s.email for s in sellers[:3]] + extras_unicos[:3]
+    return {
+        "total": total,
+        "sellers": len(sellers),
+        "extras": len(extras_unicos),
+        "emails": muestra[:5],
+    }
 
 
 # ── Tracking pixel de aperturas ───────────────────────────────────────────────

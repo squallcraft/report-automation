@@ -16,6 +16,7 @@ const SEGMENTOS = [
   { value: 'en_gestion',     label: 'En gestión / Seguimiento' },
   { value: 'sin_whatsapp',   label: 'Sin WhatsApp (solo contacto por email)' },
   { value: 'manual',         label: 'Selección manual de sellers' },
+  { value: 'solo_extras',    label: 'Solo correos extra (sin sellers)' },
 ]
 
 const ESTADO_ENVIO = {
@@ -300,8 +301,8 @@ function TabCampanas({ onVerDetalle }) {
 
 function TabNuevaCampana({ onCreated }) {
   const [templates, setTemplates] = useState([])
-  const [form, setForm] = useState({ nombre_campana: '', plantilla_id: '', segmento: 'todos', variables_valores: '' })
-  const [preview, setPreview] = useState(null)  // { total, emails }
+  const [form, setForm] = useState({ nombre_campana: '', plantilla_id: '', segmento: 'todos', variables_valores: '', emails_extra: '' })
+  const [preview, setPreview] = useState(null)  // { total, sellers, extras, emails }
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [sending, setSending] = useState(false)
 
@@ -309,12 +310,20 @@ function TabNuevaCampana({ onCreated }) {
     api.get('/email-campaigns/templates').then(r => setTemplates(r.data))
   }, [])
 
+  function parsearExtras(raw) {
+    return (raw || '')
+      .split(/[\s,;]+/)
+      .map(e => e.trim().toLowerCase())
+      .filter(Boolean)
+  }
+
   async function cargarPreview() {
     if (!form.segmento) return
     setLoadingPreview(true)
     try {
+      const extras = parsearExtras(form.emails_extra)
       const { data } = await api.get('/email-campaigns/preview-segmento', {
-        params: { segmento: form.segmento },
+        params: { segmento: form.segmento, emails_extra: extras.join(',') },
       })
       setPreview(data)
     } catch { setPreview(null) }
@@ -324,6 +333,10 @@ function TabNuevaCampana({ onCreated }) {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.plantilla_id) return alert('Selecciona una plantilla')
+    const extras = parsearExtras(form.emails_extra)
+    if (form.segmento === 'solo_extras' && extras.length === 0) {
+      return alert('Agrega al menos un correo extra')
+    }
     setSending(true)
     try {
       let variables_valores = {}
@@ -337,6 +350,7 @@ function TabNuevaCampana({ onCreated }) {
         plantilla_id: parseInt(form.plantilla_id),
         segmento: form.segmento,
         seller_ids: [],
+        emails_extra: extras,
         variables_valores,
         nombre_campana: form.nombre_campana || undefined,
       })
@@ -382,15 +396,33 @@ function TabNuevaCampana({ onCreated }) {
             value={form.segmento} onChange={e => { setForm(f => ({ ...f, segmento: e.target.value })); setPreview(null) }}>
             {SEGMENTOS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
-          <div className="flex items-center gap-2 mt-2">
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Correos extra (opcional)
+          </label>
+          <textarea rows={3}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={form.emails_extra}
+            onChange={e => { setForm(f => ({ ...f, emails_extra: e.target.value })); setPreview(null) }}
+            placeholder={'o.guzman@grupoenix.com\na.fernandez@grupoenix.com'} />
+          <p className="text-xs text-gray-400 mt-1">
+            Uno por línea (también acepta separados por coma o punto y coma). Se enviarán además de los del segmento, sin duplicados. Para enviar <em>solo</em> a estos, elige el segmento "Solo correos extra".
+          </p>
+        </div>
+
+        <div className="-mt-2">
+          <div className="flex items-center gap-2">
             <button type="button" onClick={cargarPreview} disabled={loadingPreview}
               className="text-xs text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50">
               {loadingPreview ? <Loader2 size={11} className="animate-spin" /> : <Users size={11} />}
               Ver cuántos recibirán el correo
             </button>
             {preview && (
-              <span className="text-xs text-gray-600 font-medium bg-blue-50 px-2 py-0.5 rounded-full">
+              <span className="text-xs text-gray-700 font-medium bg-blue-50 px-2 py-0.5 rounded-full">
                 {preview.total} destinatarios
+                {(preview.sellers != null || preview.extras != null) && ` (${preview.sellers || 0} sellers + ${preview.extras || 0} extras)`}
                 {preview.emails?.length > 0 && ` · ej: ${preview.emails.slice(0, 2).join(', ')}`}
               </span>
             )}

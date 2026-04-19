@@ -2052,6 +2052,7 @@ class EmailEnvio(Base):
     plantilla_id = Column(Integer, ForeignKey("email_plantillas.id"), nullable=False)
     segmento = Column(String(50), nullable=False)
     seller_ids = Column(JSON, default=list)
+    emails_extra = Column(JSON, default=list)  # destinatarios sueltos, no son sellers
     variables_valores = Column(JSON, default=dict)
     estado = Column(String(20), default="pendiente")  # pendiente | enviando | completado | error
     total = Column(Integer, default=0)

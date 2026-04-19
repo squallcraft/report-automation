@@ -712,6 +712,12 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE boletas_colaboradores ADD COLUMN concepto TEXT")
         safe_exec("ALTER TABLE boletas_colaboradores DROP CONSTRAINT IF EXISTS uq_boleta_colaborador_periodo")
 
+    # ── Migración: emails_extra en email_envios (correos sueltos por campaña) ──
+    if "email_envios" in insp.get_table_names():
+        ee_cols = [c["name"] for c in insp.get_columns("email_envios")]
+        if "emails_extra" not in ee_cols:
+            safe_exec("ALTER TABLE email_envios ADD COLUMN emails_extra JSONB DEFAULT '[]'::jsonb")
+
     # ── Migración: tipo_documento en facturas_drivers ──
     if "facturas_drivers" in insp.get_table_names():
         fd_cols = [c["name"] for c in insp.get_columns("facturas_drivers")]
