@@ -11,70 +11,105 @@ import logoEcourier from '../assets/logo-ecourier.png'
 
 const adminMenu = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
+
+  // ── Operaciones ──────────────────────────────────────────────────────────
   {
-    group: 'Configuración', icon: Settings, children: [
-      { to: '/admin/sellers', icon: Users, label: 'Sellers', permiso: 'sellers' },
-      { to: '/admin/drivers', icon: Truck, label: 'Drivers', permiso: 'drivers' },
-      { to: '/admin/pickups', icon: Store, label: 'Pickups', permiso: 'pickups' },
-      { to: '/admin/productos', icon: Package, label: 'Productos Extra', permiso: 'productos' },
-      { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes Tarifarios', permiso: 'comunas' },
-      { to: '/admin/trabajadores', icon: Briefcase, label: 'Trabajadores', permiso: 'trabajadores' },
-      { to: '/admin/colaboradores', icon: Users, label: 'Colaboradores', permiso: 'colaboradores' },
-      { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios' },
-      { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
-      { to: '/admin/configuracion-legal', icon: Shield, label: 'Configuración Legal' },
-      { to: '/admin/plantillas-contrato', icon: FileSignature, label: 'Plantillas de Contrato' },
-    ],
-  },
-  {
-    group: 'Envíos', icon: Package, children: [
+    group: 'Operaciones', icon: Package, children: [
       { to: '/admin/ingesta', icon: Upload, label: 'Ingesta', permiso: 'ingesta' },
       { to: '/admin/envios', icon: FileText, label: 'Envíos', permiso: 'envios' },
       { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
+      { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
+      { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
     ],
   },
+
+  // ── Conductores ──────────────────────────────────────────────────────────
+  {
+    group: 'Conductores', icon: Truck, children: [
+      { to: '/admin/drivers', icon: Truck, label: 'Perfiles', permiso: 'drivers' },
+      { to: '/admin/cpc', icon: CreditCard, label: 'Cuentas por pagar', permiso: 'cpc' },
+      { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA conductores', permiso: 'cpc' },
+      { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos conductores' },
+    ],
+  },
+
+  // ── Sellers ──────────────────────────────────────────────────────────────
+  {
+    group: 'Sellers', icon: Store, children: [
+      { to: '/admin/sellers', icon: Users, label: 'Perfiles', permiso: 'sellers' },
+      { to: '/admin/facturacion', icon: Receipt, label: 'Cuentas por pagar', permiso: 'facturacion' },
+      { to: '/admin/reportes-sellers', icon: BarChart3, label: 'Reportes' },
+      { to: '/admin/retencion', icon: TrendingUp, label: 'Retención comercial' },
+    ],
+  },
+
+  // ── Pickups ──────────────────────────────────────────────────────────────
+  {
+    group: 'Pickups', icon: MapPin, children: [
+      { to: '/admin/pickups', icon: Store, label: 'Puntos pickup', permiso: 'pickups' },
+      { to: '/admin/cpp', icon: CreditCard, label: 'Cuentas por pagar', permiso: 'cpp' },
+    ],
+  },
+
+  // ── Finanzas ─────────────────────────────────────────────────────────────
   {
     group: 'Finanzas', icon: Wallet, children: [
       { to: '/admin/finanzas', icon: Wallet, label: 'Estado ECourier', permiso: 'finanzas' },
       { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
-      { to: '/admin/facturacion', icon: Receipt, label: 'CPS Sellers', permiso: 'facturacion' },
-      { to: '/admin/cpc', icon: CreditCard, label: 'CPC Drivers', permiso: 'cpc' },
-      { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA Conductores', permiso: 'cpc' },
-      { to: '/admin/cpp', icon: CreditCard, label: 'CPP Pickups', permiso: 'cpp' },
       { to: '/admin/ajustes', icon: CircleDollarSign, label: 'Ajustes / Préstamos', permiso: 'ajustes' },
-      { to: '/admin/pagos-trabajadores', icon: Briefcase, label: 'Pagos Nómina', permiso: 'pagos-trabajadores' },
     ],
   },
+
+  // ── RR.HH. ───────────────────────────────────────────────────────────────
   {
-    group: 'RR.HH.', icon: Users, children: [
-      { to: '/admin/trabajadores', icon: Briefcase, label: 'Trabajadores', permiso: 'trabajadores' },
+    group: 'RR.HH.', icon: Briefcase, children: [
+      { to: '/admin/trabajadores', icon: Users, label: 'Trabajadores', permiso: 'trabajadores' },
+      { to: '/admin/pagos-trabajadores', icon: HandCoins, label: 'Pagos nómina', permiso: 'pagos-trabajadores' },
       { to: '/admin/vacaciones', icon: Calendar, label: 'Vacaciones', permiso: 'rrhh-vacaciones' },
       { to: '/admin/asistencia', icon: Clock, label: 'Control horario', permiso: 'asistencia' },
+      { to: '/admin/plantillas-contrato', icon: FileSignature, label: 'Plantillas de contrato' },
+      { to: '/admin/configuracion-legal', icon: Shield, label: 'Configuración legal' },
     ],
   },
+
+  // ── Comercial ────────────────────────────────────────────────────────────
+  {
+    group: 'Comercial', icon: Kanban, children: [
+      { to: '/admin/leads', icon: Inbox, label: 'Leads WhatsApp' },
+      { to: '/admin/leads/pipeline', icon: Kanban, label: 'Pipeline CRM' },
+      { to: '/admin/leads/kb', icon: BookOpen, label: 'Base de conocimiento' },
+    ],
+  },
+
+  // ── Comunicaciones ───────────────────────────────────────────────────────
+  {
+    group: 'Comunicaciones', icon: MessageSquare, children: [
+      { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },
+      { to: '/admin/consultas', icon: ClipboardList, label: 'Consultas', permiso: 'consultas' },
+      { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de tareas' },
+    ],
+  },
+
+  // ── Análisis ─────────────────────────────────────────────────────────────
   {
     group: 'Análisis', icon: BarChart3, children: [
       { to: '/admin/bi', icon: BarChart3, label: 'Business Intelligence', permiso: 'finanzas' },
-      { to: '/admin/reportes-sellers', icon: Store, label: 'Reportes Sellers' },
-      { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
-      { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos Conductores' },
-      { to: '/admin/retencion', icon: Users, label: 'Retención Comercial' },
-      { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de Tareas' },
-      { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },
     ],
   },
+
+  // ── Sistema ──────────────────────────────────────────────────────────────
   {
-    group: 'Comercial', icon: Store, children: [
-      { to: '/admin/leads', icon: MessageSquare, label: 'Leads WhatsApp' },
-      { to: '/admin/leads/pipeline', icon: Kanban, label: 'Pipeline' },
-      { to: '/admin/leads/kb', icon: BookOpen, label: 'Base Conocimiento' },
+    group: 'Sistema', icon: Settings, children: [
+      { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios y permisos' },
+      { to: '/admin/colaboradores', icon: Users, label: 'Colaboradores', permiso: 'colaboradores' },
+      { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes tarifarios', permiso: 'comunas' },
+      { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
+      { to: '/admin/productos', icon: Package, label: 'Productos extra', permiso: 'productos' },
+      { to: '/admin/auditoria', icon: ShieldCheck, label: 'Auditoría' },
+      { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
+      { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
     ],
   },
-  { to: '/admin/consultas', icon: MessageSquare, label: 'Consultas', permiso: 'consultas' },
-  { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
-  { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
-  { to: '/admin/auditoria', icon: Shield, label: 'Auditoría' },
-  { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
 ]
 
 const sellerLinks = [
@@ -195,7 +230,18 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(false)
   const [pickupProfile, setPickupProfile] = useState(null)
-  const [openGroups, setOpenGroups] = useState({ Configuración: true, Envíos: true, Finanzas: true, 'Análisis': true, Comercial: true })
+  const [openGroups, setOpenGroups] = useState({
+    Operaciones: true,
+    Conductores: false,
+    Sellers: false,
+    Pickups: false,
+    Finanzas: false,
+    'RR.HH.': false,
+    Comercial: false,
+    Comunicaciones: false,
+    'Análisis': false,
+    Sistema: false,
+  })
   const [tareasCount, setTareasCount] = useState({ total: 0, criticas: 0 })
   const [notifTrabCount, setNotifTrabCount] = useState(0)
 
