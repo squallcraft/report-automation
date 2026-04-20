@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import JornadaHoraria
-from app.dependencies import require_admin_or_administracion
+from app.auth import require_admin_or_administracion
 
 router = APIRouter(prefix="/jornadas-horarias", tags=["jornadas-horarias"])
 
