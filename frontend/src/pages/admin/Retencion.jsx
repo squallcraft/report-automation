@@ -60,10 +60,11 @@ const ESTADO_ORDER = {
 }
 
 const TIER_COLORS = {
-  EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33', min: 500 },
-  CLAVE:  { label: 'Clave',  color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33', min: 100 },
-  BUENO:  { label: 'Bueno',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33', min: 20  },
-  NORMAL: { label: 'Normal', color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22', min: 0   },
+  EPICO:     { label: 'Épico',     color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33', min: 500 },
+  CLAVE:     { label: 'Clave',     color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33', min: 100 },
+  DESTACADO: { label: 'Destacado', color: '#14b8a6', bg: 'rgba(20,184,166,0.12)',  border: '#14b8a633', min: 50  },
+  BUENO:     { label: 'Bueno',     color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33', min: 20  },
+  NORMAL:    { label: 'Normal',    color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22', min: 0   },
 }
 
 function TierBadge({ tier }) {
@@ -302,7 +303,7 @@ export default function Retencion() {
         return tiersSortDir === 'asc' ? c : -c
       }
       if (tiersSortCol === 'tier') {
-        const TIER_ORD = { EPICO: 0, CLAVE: 1, BUENO: 2, NORMAL: 3 }
+        const TIER_ORD = { EPICO: 0, CLAVE: 1, DESTACADO: 2, BUENO: 3, NORMAL: 4 }
         const c = (TIER_ORD[a.tier] ?? 9) - (TIER_ORD[b.tier] ?? 9)
         return tiersSortDir === 'asc' ? c : -c
       }
@@ -590,8 +591,8 @@ export default function Retencion() {
               ) : !tiersData ? null : (
                 <>
                   {/* Tier summary cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-                    {['EPICO', 'CLAVE', 'BUENO', 'NORMAL'].map(tier => {
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+                    {['EPICO', 'CLAVE', 'DESTACADO', 'BUENO', 'NORMAL'].map(tier => {
                       const cfg = TIER_COLORS[tier]
                       const res = tiersData.resumen_tiers?.[tier] || {}
                       return (
@@ -630,7 +631,7 @@ export default function Retencion() {
                       <select value={tiersFiltroTier} onChange={e => setTiersFiltroTier(e.target.value)}
                         style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
                         <option value="">Todos los tiers</option>
-                        {['EPICO', 'CLAVE', 'BUENO', 'NORMAL'].map(t => <option key={t} value={t}>{TIER_COLORS[t].label}</option>)}
+                        {['EPICO', 'CLAVE', 'DESTACADO', 'BUENO', 'NORMAL'].map(t => <option key={t} value={t}>{TIER_COLORS[t].label}</option>)}
                       </select>
                       <span style={{ color: C.dimmed, fontSize: 11, marginLeft: 'auto' }}>{tiersSellers.length} sellers</span>
                     </div>

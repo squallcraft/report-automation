@@ -21,10 +21,11 @@ const MESES_S = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Se
 const MESES_L = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 const TIER_CFG = {
-  EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa44' },
-  CLAVE:  { label: 'Clave',  color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa44' },
-  BUENO:  { label: 'Bueno',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e44' },
-  NORMAL: { label: 'Normal', color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22' },
+  EPICO:     { label: 'Épico',     color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa44' },
+  CLAVE:     { label: 'Clave',     color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa44' },
+  DESTACADO: { label: 'Destacado', color: '#14b8a6', bg: 'rgba(20,184,166,0.12)',  border: '#14b8a644' },
+  BUENO:     { label: 'Bueno',     color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e44' },
+  NORMAL:    { label: 'Normal',    color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22' },
 }
 
 function fmt(v) { return `$${Math.abs(v || 0).toLocaleString('es-CL')}` }

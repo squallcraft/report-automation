@@ -373,9 +373,9 @@ def resumen_semanal(
             })
 
     # Ordenar empeoraron por tier (más importantes primero)
-    TIER_SCORE = {"EPICO": 0, "CLAVE": 1, "BUENO": 2, "NORMAL": 3}
-    empeoraron.sort(key=lambda x: TIER_SCORE.get(x["tier"] or "NORMAL", 3))
-    mejoraron.sort(key=lambda x: TIER_SCORE.get(x["tier"] or "NORMAL", 3))
+    TIER_SCORE = {"EPICO": 0, "CLAVE": 1, "DESTACADO": 2, "BUENO": 3, "NORMAL": 4}
+    empeoraron.sort(key=lambda x: TIER_SCORE.get(x["tier"] or "NORMAL", 4))
+    mejoraron.sort(key=lambda x: TIER_SCORE.get(x["tier"] or "NORMAL", 4))
 
     # ── Top oportunidades: sellers creciendo este mes vs mes anterior ─────────
     mes_actual = hoy.month

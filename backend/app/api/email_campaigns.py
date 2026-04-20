@@ -131,9 +131,10 @@ def _resolver_segmento_email(
     }
 
     TIER_MAP = {
-        "tier_epico": lambda s: s.tier == "EPICO",
-        "tier_clave":  lambda s: s.tier == "CLAVE",
-        "tier_bueno":  lambda s: s.tier == "BUENO",
+        "tier_epico":     lambda s: s.tier == "EPICO",
+        "tier_clave":     lambda s: s.tier == "CLAVE",
+        "tier_destacado": lambda s: s.tier == "DESTACADO",
+        "tier_bueno":     lambda s: s.tier == "BUENO",
         "en_riesgo":   lambda s: s.estado_efectivo in ("en_riesgo", "pendiente_validacion"),
         "en_gestion":  lambda s: s.estado_efectivo in ("en_gestion", "seguimiento"),
     }

@@ -980,17 +980,20 @@ def _asignar_tier(avg_diario: float) -> str:
         return "EPICO"
     elif avg_diario >= 100:
         return "CLAVE"
+    elif avg_diario >= 50:
+        return "DESTACADO"
     elif avg_diario >= 20:
         return "BUENO"
     return "NORMAL"
 
 
-TIER_ORDER = {"EPICO": 0, "CLAVE": 1, "BUENO": 2, "NORMAL": 3}
+TIER_ORDER = {"EPICO": 0, "CLAVE": 1, "DESTACADO": 2, "BUENO": 3, "NORMAL": 4}
 TIER_META = {
-    "EPICO":  {"label": "Épico",  "min": 500,  "color": "#7c3aed"},
-    "CLAVE":  {"label": "Clave",  "min": 100,  "color": "#2563eb"},
-    "BUENO":  {"label": "Bueno",  "min": 20,   "color": "#16a34a"},
-    "NORMAL": {"label": "Normal", "min": 0,    "color": "#6b7280"},
+    "EPICO":     {"label": "Épico",     "min": 500,  "color": "#7c3aed"},
+    "CLAVE":     {"label": "Clave",     "min": 100,  "color": "#2563eb"},
+    "DESTACADO": {"label": "Destacado", "min": 50,   "color": "#0d9488"},
+    "BUENO":     {"label": "Bueno",     "min": 20,   "color": "#16a34a"},
+    "NORMAL":    {"label": "Normal",    "min": 0,    "color": "#6b7280"},
 }
 
 
@@ -1017,12 +1020,12 @@ def _health_score(avg_diario_mes: float, meses_activo_6: int, delta_pct: float, 
     Score 0-100.
     Recencia/consistencia (35%): meses_activo_6 / 6
     Tendencia (30%): -1..+1 normalizado de delta_pct clamped a [-50, +50]
-    Tier/valor (35%): EPICO=100, CLAVE=80, BUENO=55, NORMAL=30
+    Tier/valor (35%): EPICO=100, CLAVE=80, DESTACADO=68, BUENO=55, NORMAL=30
     """
     consistencia = min(meses_activo_6 / 6, 1.0)
     tendencia_norm = max(-1.0, min(1.0, delta_pct / 50.0))
     tendencia_score = (tendencia_norm + 1) / 2  # 0..1
-    tier_scores = {"EPICO": 1.0, "CLAVE": 0.8, "BUENO": 0.55, "NORMAL": 0.3}
+    tier_scores = {"EPICO": 1.0, "CLAVE": 0.8, "DESTACADO": 0.68, "BUENO": 0.55, "NORMAL": 0.3}
     tier_score = tier_scores.get(tier, 0.3)
 
     raw = (consistencia * 35) + (tendencia_score * 30) + (tier_score * 35)

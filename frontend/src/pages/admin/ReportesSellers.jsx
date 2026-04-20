@@ -17,13 +17,14 @@ const C = {
 const MESES_L = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 const TIER_CFG = {
-  EPICO:  { label: 'Épico',  color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33' },
-  CLAVE:  { label: 'Clave',  color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33' },
-  BUENO:  { label: 'Bueno',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33' },
-  NORMAL: { label: 'Normal', color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22' },
+  EPICO:     { label: 'Épico',     color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: '#a78bfa33' },
+  CLAVE:     { label: 'Clave',     color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: '#60a5fa33' },
+  DESTACADO: { label: 'Destacado', color: '#14b8a6', bg: 'rgba(20,184,166,0.12)',  border: '#14b8a633' },
+  BUENO:     { label: 'Bueno',     color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: '#22c55e33' },
+  NORMAL:    { label: 'Normal',    color: '#9ca3af', bg: 'rgba(156,163,175,0.08)', border: '#9ca3af22' },
 }
 
-const TIER_ORDER = { EPICO: 0, CLAVE: 1, BUENO: 2, NORMAL: 3 }
+const TIER_ORDER = { EPICO: 0, CLAVE: 1, DESTACADO: 2, BUENO: 3, NORMAL: 4 }
 
 const now = new Date()
 
@@ -159,8 +160,8 @@ export default function ReportesSellers() {
 
       {/* Tier summary cards */}
       {data && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-          {['EPICO', 'CLAVE', 'BUENO', 'NORMAL'].map(tier => {
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
+          {['EPICO', 'CLAVE', 'DESTACADO', 'BUENO', 'NORMAL'].map(tier => {
             const cfg = TIER_CFG[tier]
             const r = res[tier] || {}
             return (
@@ -200,7 +201,7 @@ export default function ReportesSellers() {
           <select value={filtroTier} onChange={e => setFiltroTier(e.target.value)}
             style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>
             <option value="">Todos los tiers</option>
-            {['EPICO', 'CLAVE', 'BUENO', 'NORMAL'].map(t => <option key={t} value={t}>{TIER_CFG[t].label}</option>)}
+            {['EPICO', 'CLAVE', 'DESTACADO', 'BUENO', 'NORMAL'].map(t => <option key={t} value={t}>{TIER_CFG[t].label}</option>)}
           </select>
           <select value={pageSize} onChange={e => { setPageSize(+e.target.value); setPage(1) }}
             style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '6px 10px', fontSize: 12 }}>

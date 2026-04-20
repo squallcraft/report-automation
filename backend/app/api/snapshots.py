@@ -24,6 +24,8 @@ def _asignar_tier(avg_diario: float) -> str:
         return "EPICO"
     elif avg_diario >= 100:
         return "CLAVE"
+    elif avg_diario >= 50:
+        return "DESTACADO"
     elif avg_diario >= 20:
         return "BUENO"
     return "NORMAL"
