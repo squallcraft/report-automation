@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import {
   Users, Download, Upload, FileText, X, Check, AlertCircle, AlertTriangle,
   DollarSign, Lock, Calendar, RotateCcw, CreditCard, PlusCircle, Zap, Archive, Eye,
+  ScanSearch, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import LiquidacionViewer from '../../components/LiquidacionViewer'
@@ -625,6 +626,10 @@ export default function PagosTrabajadores() {
   const [viewerLiqId, setViewerLiqId] = useState(null)
   const [validacionImm, setValidacionImm] = useState(null)
   const [validandoImm, setValidandoImm] = useState(false)
+  const [previewModalOpen, setPreviewModalOpen] = useState(false)
+  const [previewData, setPreviewData] = useState(null)
+  const [previewCargando, setPreviewCargando] = useState(false)
+  const [previewExpandido, setPreviewExpandido] = useState(null)
 
   const correrValidadorImm = async () => {
     setValidandoImm(true)
@@ -652,6 +657,22 @@ export default function PagosTrabajadores() {
       toast.error(e?.response?.data?.detail || 'Error generando liquidaciones')
     } finally {
       setLiqGenerando(false)
+    }
+  }
+
+  const handlePreviewLiquidaciones = async () => {
+    setPreviewCargando(true)
+    setPreviewData(null)
+    setPreviewExpandido(null)
+    try {
+      const { data: res } = await api.get('/remuneraciones/liquidaciones/preview', {
+        params: { mes, anio },
+      })
+      setPreviewData(res)
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error cargando vista previa')
+    } finally {
+      setPreviewCargando(false)
     }
   }
 
@@ -750,6 +771,13 @@ export default function PagosTrabajadores() {
             </button>
             <button onClick={() => setModalCartola(true)} className="btn btn-secondary flex items-center gap-2 text-sm">
               <Upload size={14} /> Cargar Cartola
+            </button>
+            <button
+              onClick={() => { setPreviewModalOpen(true); handlePreviewLiquidaciones() }}
+              className="btn btn-secondary flex items-center gap-2 text-sm"
+              title="Vista previa sin guardar"
+            >
+              <ScanSearch size={14} /> Vista previa
             </button>
             <button
               onClick={() => { setLiqModalOpen(true); setLiqResultado(null); correrValidadorImm() }}
@@ -1005,6 +1033,195 @@ export default function PagosTrabajadores() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Vista Previa */}
+      {previewModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-[96vw] max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <ScanSearch size={18} className="text-indigo-600" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">
+                    Vista previa · {MESES[mes]} {anio}
+                  </h2>
+                  <p className="text-xs text-gray-500">Cálculo en tiempo real · nada se guarda</p>
+                </div>
+              </div>
+              <button onClick={() => setPreviewModalOpen(false)} className="text-gray-400 hover:text-gray-700 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {previewCargando && (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
+                  <RotateCcw size={28} className="animate-spin" />
+                  <p className="text-sm">Calculando liquidaciones…</p>
+                </div>
+              )}
+
+              {!previewCargando && previewData && (
+                <>
+                  {/* Parámetros */}
+                  <div className="flex flex-wrap gap-3">
+                    {[
+                      { label: 'UF', value: `$${parseFloat(previewData.uf).toLocaleString('es-CL')}` },
+                      { label: 'UTM', value: `$${previewData.utm.toLocaleString('es-CL')}` },
+                      { label: 'IMM', value: `$${previewData.imm.toLocaleString('es-CL')}` },
+                      { label: 'Trabajadores', value: previewData.total_trabajadores },
+                    ].map(p => (
+                      <div key={p.label} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-center min-w-[100px]">
+                        <p className="text-[10px] text-gray-500 uppercase tracking-wide">{p.label}</p>
+                        <p className="text-sm font-semibold text-gray-800">{p.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Totales */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Imponible total', v: previewData.totales.bruto, color: 'purple' },
+                      { label: 'Descuentos total', v: previewData.totales.descuentos, color: 'red' },
+                      { label: 'Líquido total', v: previewData.totales.liquido, color: 'green' },
+                      { label: 'Costo empresa', v: previewData.totales.costo_empresa, color: 'amber' },
+                    ].map(t => {
+                      const colors = {
+                        purple: 'bg-purple-50 text-purple-700 border-purple-200',
+                        red: 'bg-red-50 text-red-700 border-red-200',
+                        green: 'bg-green-50 text-green-700 border-green-200',
+                        amber: 'bg-amber-50 text-amber-700 border-amber-200',
+                      }
+                      return (
+                        <div key={t.label} className={`rounded-xl border p-4 text-center ${colors[t.color]}`}>
+                          <p className="text-xs uppercase tracking-wide opacity-70 mb-1">{t.label}</p>
+                          <p className="text-lg font-bold">${t.v.toLocaleString('es-CL')}</p>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Tabla detalle */}
+                  <div className="overflow-x-auto rounded-xl border border-gray-200">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          {['Trabajador', 'AFP · Salud', 'S. Base', 'Grat.', 'H.Extra', 'Imponible', 'AFP', 'Salud', 'IUSC', 'Tot. Desc.', 'Líquido', 'Costo emp.'].map(h => (
+                            <th key={h} className="px-3 py-2.5 text-left font-medium text-gray-500 whitespace-nowrap border-b border-gray-200">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {previewData.filas.map((f, idx) => (
+                          <React.Fragment key={f.id}>
+                            <tr
+                              className={`hover:bg-indigo-50 cursor-pointer transition-colors ${previewExpandido === idx ? 'bg-indigo-50' : ''}`}
+                              onClick={() => setPreviewExpandido(previewExpandido === idx ? null : idx)}
+                            >
+                              <td className="px-3 py-2.5 whitespace-nowrap">
+                                <div className="flex items-center gap-1.5">
+                                  {previewExpandido === idx
+                                    ? <ChevronUp size={12} className="text-indigo-400 shrink-0" />
+                                    : <ChevronDown size={12} className="text-gray-300 shrink-0" />}
+                                  <div>
+                                    <p className="font-medium text-gray-800">{f.nombre}</p>
+                                    <p className="text-gray-400 text-[10px]">{f.cargo}</p>
+                                  </div>
+                                  {!f.tiene_version && (
+                                    <span className="ml-1 text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">perfil</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">{f.afp} · {f.sistema_salud}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-gray-700">${f.sueldo_base.toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-gray-500">${f.gratificacion.toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-gray-500">{f.horas_extras > 0 ? `$${f.horas_extras.toLocaleString('es-CL')}` : '—'}</td>
+                              <td className="px-3 py-2.5 text-right font-mono font-semibold text-gray-700">${f.remuneracion_imponible.toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-red-500">-${f.descuento_afp.toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-red-500">-${(f.descuento_salud + f.adicional_isapre).toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-red-500">{f.iusc > 0 ? `-$${f.iusc.toLocaleString('es-CL')}` : '—'}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-red-600 font-medium">-${f.total_descuentos.toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono font-bold text-green-700">${f.sueldo_liquido.toLocaleString('es-CL')}</td>
+                              <td className="px-3 py-2.5 text-right font-mono text-amber-700">${f.costo_empresa.toLocaleString('es-CL')}</td>
+                            </tr>
+                            {previewExpandido === idx && (
+                              <tr className="bg-indigo-50/60">
+                                <td colSpan={12} className="px-6 py-3">
+                                  <div className="grid grid-cols-3 gap-4 text-xs text-gray-600">
+                                    <div>
+                                      <p className="font-semibold text-gray-700 mb-1">No imponibles</p>
+                                      <p>Movilización: <span className="font-mono">${f.movilizacion.toLocaleString('es-CL')}</span></p>
+                                      <p>Colación: <span className="font-mono">${f.colacion.toLocaleString('es-CL')}</span></p>
+                                      <p>Viáticos: <span className="font-mono">${f.viaticos.toLocaleString('es-CL')}</span></p>
+                                    </div>
+                                    <div>
+                                      <p className="font-semibold text-gray-700 mb-1">Descuentos detalle</p>
+                                      <p>AFP ({f.afp}): <span className="font-mono text-red-500">-${f.descuento_afp.toLocaleString('es-CL')}</span></p>
+                                      <p>Salud legal: <span className="font-mono text-red-500">-${f.descuento_salud.toLocaleString('es-CL')}</span></p>
+                                      {f.adicional_isapre > 0 && (
+                                        <p>Adicional Isapre: <span className="font-mono text-red-500">-${f.adicional_isapre.toLocaleString('es-CL')}</span></p>
+                                      )}
+                                      <p>Cesantía: <span className="font-mono text-red-500">-${f.descuento_cesantia.toLocaleString('es-CL')}</span></p>
+                                      {f.iusc > 0 && <p>IUSC: <span className="font-mono text-red-500">-${f.iusc.toLocaleString('es-CL')}</span></p>}
+                                    </div>
+                                    <div>
+                                      <p className="font-semibold text-gray-700 mb-1">Resumen</p>
+                                      <p>Tipo contrato: <span className="font-semibold">{f.tipo_contrato}</span></p>
+                                      <p>Fuente datos: <span className={`font-semibold ${f.tiene_version ? 'text-indigo-600' : 'text-amber-600'}`}>{f.tiene_version ? 'Versión contrato' : 'Perfil trabajador'}</span></p>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                        <tr className="font-semibold text-gray-700">
+                          <td colSpan={5} className="px-3 py-2.5 text-xs uppercase tracking-wide text-gray-500">Totales</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-sm">${previewData.totales.bruto.toLocaleString('es-CL')}</td>
+                          <td colSpan={3} className="px-3 py-2.5" />
+                          <td className="px-3 py-2.5 text-right font-mono text-sm text-red-600">-${previewData.totales.descuentos.toLocaleString('es-CL')}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-sm text-green-700">${previewData.totales.liquido.toLocaleString('es-CL')}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-sm text-amber-700">${previewData.totales.costo_empresa.toLocaleString('es-CL')}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  <p className="text-[11px] text-gray-400 text-center">
+                    Las filas con etiqueta <span className="bg-amber-100 text-amber-700 px-1 rounded font-medium">perfil</span> usan datos del perfil del trabajador (sin versión de contrato para este mes).
+                  </p>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between shrink-0">
+              <button
+                onClick={handlePreviewLiquidaciones}
+                disabled={previewCargando}
+                className="btn btn-secondary flex items-center gap-2 text-sm"
+              >
+                {previewCargando ? <><RotateCcw size={14} className="animate-spin" /> Calculando…</> : <><RotateCcw size={14} /> Recalcular</>}
+              </button>
+              <div className="flex gap-3">
+                <button onClick={() => setPreviewModalOpen(false)} className="btn btn-secondary text-sm">Cerrar</button>
+                <button
+                  onClick={() => { setPreviewModalOpen(false); setLiqModalOpen(true); setLiqResultado(null); correrValidadorImm() }}
+                  className="btn btn-primary flex items-center gap-2 text-sm"
+                >
+                  <Zap size={14} /> Generar liquidaciones
+                </button>
+              </div>
             </div>
           </div>
         </div>

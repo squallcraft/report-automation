@@ -188,6 +188,124 @@ def _generar_pdf_para_liquidacion(liq: LiquidacionMensual, db: Session) -> bytes
     )
 
 
+# ── Admin — Preview sin guardar ──────────────────────────────────────────────
+
+@router.get("/liquidaciones/preview")
+def preview_liquidaciones_mes(
+    mes: int = Query(..., ge=1, le=12),
+    anio: int = Query(..., ge=2020),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_admin_or_administracion),
+):
+    """
+    Calcula las liquidaciones del mes SIN guardar nada en base de datos.
+    Útil para revisar montos antes de confirmar la generación.
+    """
+    from app.services.contratos import obtener_version_para_mes, calcular_monto_he
+    from app.models import HoraExtraTrabajador
+
+    parametros = obtener_parametros(db, anio, mes)
+    trabajadores = db.query(Trabajador).filter(Trabajador.activo == True).all()
+
+    filas = []
+    totales = {"bruto": 0, "descuentos": 0, "liquido": 0, "costo_empresa": 0, "no_imponibles": 0}
+
+    for t in trabajadores:
+        if not t.sueldo_liquido or t.sueldo_liquido <= 0:
+            continue
+
+        version = obtener_version_para_mes(db, t.id, mes, anio)
+
+        if version:
+            sueldo_liquido_efectivo = version.sueldo_liquido or t.sueldo_liquido
+            mov = version.movilizacion or 0
+            col = version.colacion or 0
+            via = version.viaticos or 0
+            jornada = version.jornada_semanal_horas or 44
+            tipo_contrato = version.tipo_contrato or t.tipo_contrato
+            sueldo_base_para_he = version.sueldo_base or 0
+        else:
+            sueldo_liquido_efectivo = t.sueldo_liquido
+            mov = t.movilizacion or 0
+            col = t.colacion or 0
+            via = t.viaticos or 0
+            jornada = 44
+            tipo_contrato = t.tipo_contrato
+            sueldo_base_para_he = t.sueldo_base or 0
+
+        he_row = db.query(HoraExtraTrabajador).filter_by(trabajador_id=t.id, mes=mes, anio=anio).first()
+        he_50_cant = float(he_row.cantidad_50) if he_row else 0.0
+        he_100_cant = float(he_row.cantidad_100) if he_row else 0.0
+
+        if sueldo_base_para_he <= 0 and (he_50_cant > 0 or he_100_cant > 0):
+            r0 = calcular_desde_liquido(
+                sueldo_liquido=sueldo_liquido_efectivo,
+                afp=t.afp, sistema_salud=t.sistema_salud,
+                monto_cotizacion_salud=t.monto_cotizacion_salud,
+                tipo_contrato=tipo_contrato,
+                movilizacion=mov, colacion=col, viaticos=via,
+                utm=int(parametros["utm"]), valor_uf=float(parametros["uf"]), imm=int(parametros["imm"]),
+            )
+            sueldo_base_para_he = r0.sueldo_base
+
+        he_calc = calcular_monto_he(sueldo_base_para_he, jornada, he_50_cant, he_100_cant)
+
+        try:
+            r = calcular_desde_liquido(
+                sueldo_liquido=sueldo_liquido_efectivo,
+                afp=t.afp, sistema_salud=t.sistema_salud,
+                monto_cotizacion_salud=t.monto_cotizacion_salud,
+                tipo_contrato=tipo_contrato,
+                movilizacion=mov, colacion=col, viaticos=via,
+                horas_extras_monto=he_calc["monto_total"],
+                utm=int(parametros["utm"]), valor_uf=float(parametros["uf"]), imm=int(parametros["imm"]),
+            )
+        except Exception:
+            continue
+
+        no_imponibles = mov + col + via
+        filas.append({
+            "id": t.id,
+            "nombre": t.nombre,
+            "cargo": t.cargo or "—",
+            "afp": t.afp or "—",
+            "sistema_salud": t.sistema_salud or "—",
+            "tipo_contrato": (tipo_contrato or "").replace("_", " ").title(),
+            "sueldo_base": r.sueldo_base,
+            "gratificacion": r.gratificacion,
+            "horas_extras": he_calc["monto_total"],
+            "remuneracion_imponible": r.remuneracion_imponible,
+            "movilizacion": mov,
+            "colacion": col,
+            "viaticos": via,
+            "descuento_afp": r.descuento_afp,
+            "descuento_salud": r.descuento_salud_legal,
+            "adicional_isapre": r.adicional_isapre,
+            "descuento_cesantia": r.descuento_cesantia,
+            "iusc": r.iusc,
+            "total_descuentos": r.total_descuentos,
+            "sueldo_liquido": r.sueldo_liquido,
+            "costo_empresa": r.costo_empresa_total,
+            "tiene_version": bool(version),
+        })
+        totales["bruto"] += r.remuneracion_imponible
+        totales["descuentos"] += r.total_descuentos
+        totales["liquido"] += r.sueldo_liquido
+        totales["costo_empresa"] += r.costo_empresa_total
+        totales["no_imponibles"] += no_imponibles
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "uf": float(parametros["uf"]),
+        "utm": int(parametros["utm"]),
+        "imm": int(parametros["imm"]),
+        "total_trabajadores": len(filas),
+        "totales": totales,
+        "filas": filas,
+    }
+
+
 # ── Admin — Generación de liquidaciones ──────────────────────────────────────
 
 @router.post("/liquidaciones/generar-mes")
