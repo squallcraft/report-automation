@@ -294,22 +294,43 @@ def listar_semanas(
 
 @router.get("/general")
 def rentabilidad_general(
-    semana: int = Query(...),
+    semana: Optional[int] = Query(None),
     mes: int = Query(...),
     anio: int = Query(...),
     zona: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin_or_administracion),
 ):
-    """Vista de todos los conductores: margen bruto semanal."""
+    """Vista de todos los conductores: margen bruto. Si semana=None, agrega todo el mes."""
     q = db.query(Driver).filter(Driver.activo == True)
     if zona:
         q = q.filter(Driver.zona.ilike(f"%{zona}%"))
     drivers = q.order_by(Driver.nombre).all()
 
-    rows = [_row_general(db, d, semana, mes, anio) for d in drivers]
+    if semana is not None:
+        rows = [_row_general(db, d, semana, mes, anio) for d in drivers]
+    else:
+        nums_semana = [
+            cal.semana for cal in _semanas_del_mes(db, mes, anio)
+        ] or [1, 2, 3, 4]
+        rows = []
+        for driver in drivers:
+            agg: dict = {
+                "driver_id": driver.id,
+                "driver_nombre": driver.nombre,
+                "zona": driver.zona,
+                "contratado": driver.contratado,
+                "semana": None, "mes": mes, "anio": anio,
+                "paquetes": 0, "ingresos_generados": 0, "costo_cpc": 0,
+            }
+            for s in nums_semana:
+                r = _row_general(db, driver, s, mes, anio)
+                agg["paquetes"] += r["paquetes"]
+                agg["ingresos_generados"] += r["ingresos_generados"]
+                agg["costo_cpc"] += r["costo_cpc"]
+            agg["margen_bruto"] = agg["ingresos_generados"] - agg["costo_cpc"]
+            rows.append(agg)
 
-    # Sólo conductores que tuvieron actividad
     rows = [r for r in rows if r["paquetes"] > 0 or r["ingresos_generados"] > 0]
     rows.sort(key=lambda x: x["margen_bruto"], reverse=True)
 
@@ -325,21 +346,13 @@ def rentabilidad_general(
 
 @router.get("/contratados")
 def rentabilidad_contratados(
-    semana: int = Query(...),
+    semana: Optional[int] = Query(None),
     mes: int = Query(...),
     anio: int = Query(...),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin_or_administracion),
 ):
-    """Vista detallada de conductores contratados con nómina, combustible y TAG."""
-    cal = (
-        db.query(CalendarioSemanas)
-        .filter_by(semana=semana, mes=mes, anio=anio)
-        .first()
-    )
-    if not cal:
-        raise HTTPException(status_code=404, detail="Semana no encontrada en el calendario")
-
+    """Vista detallada de conductores contratados. Si semana=None, agrega todo el mes."""
     drivers = (
         db.query(Driver)
         .filter(Driver.contratado == True, Driver.activo == True)
@@ -347,7 +360,56 @@ def rentabilidad_contratados(
         .all()
     )
 
-    rows = [_row_contratado(db, d, cal) for d in drivers]
+    if semana is not None:
+        cal = (
+            db.query(CalendarioSemanas)
+            .filter_by(semana=semana, mes=mes, anio=anio)
+            .first()
+        )
+        if not cal:
+            raise HTTPException(status_code=404, detail="Semana no encontrada en el calendario")
+        rows = [_row_contratado(db, d, cal) for d in drivers]
+        fecha_inicio = cal.fecha_inicio.isoformat()
+        fecha_fin = cal.fecha_fin.isoformat()
+    else:
+        semanas_mes = _semanas_del_mes(db, mes, anio)
+        if not semanas_mes:
+            raise HTTPException(status_code=404, detail="No hay semanas configuradas para ese período")
+        fecha_inicio = semanas_mes[0].fecha_inicio.isoformat()
+        fecha_fin = semanas_mes[-1].fecha_fin.isoformat()
+        rows = []
+        for driver in drivers:
+            serie = [_row_contratado(db, driver, cal) for cal in semanas_mes]
+            resultado_neto = sum(r["resultado_neto"] for r in serie)
+            nomina = sum(r["nomina_semana"] for r in serie)
+            rows.append({
+                "driver_id": driver.id,
+                "driver_nombre": driver.nombre,
+                "zona": driver.zona,
+                "vehiculo_patente": driver.vehiculo_patente,
+                "semana": None, "mes": mes, "anio": anio,
+                "fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin,
+                "paquetes": sum(r["paquetes"] for r in serie),
+                "paquetes_diarios_promedio": round(sum(r["paquetes"] for r in serie) / (len(semanas_mes) * 5), 1),
+                "meta_semana": 150 * len(semanas_mes),
+                "cumple_meta": sum(r["paquetes"] for r in serie) >= 150 * len(semanas_mes),
+                "ingresos_entregas": sum(r["ingresos_entregas"] for r in serie),
+                "retiros_cantidad": sum(r["retiros_cantidad"] for r in serie),
+                "retiros_valor": sum(r["retiros_valor"] for r in serie),
+                "total_ingresos": sum(r["total_ingresos"] for r in serie),
+                "nomina_semana": nomina,
+                "combustible_semana": sum(r["combustible_semana"] for r in serie),
+                "tag_semana": sum(r["tag_semana"] for r in serie),
+                "total_costos": sum(r["total_costos"] for r in serie),
+                "resultado_neto": resultado_neto,
+                "proyeccion_mensual": resultado_neto,  # mes completo, la proyección ES el real
+                "estado": (
+                    "verde" if resultado_neto >= 0 else
+                    "amarillo" if resultado_neto >= -nomina * 0.3 else
+                    "rojo"
+                ),
+            })
+
     rows.sort(key=lambda x: x["resultado_neto"], reverse=True)
 
     totales = {
@@ -363,8 +425,8 @@ def rentabilidad_contratados(
 
     return {
         "semana": semana, "mes": mes, "anio": anio,
-        "fecha_inicio": cal.fecha_inicio.isoformat(),
-        "fecha_fin": cal.fecha_fin.isoformat(),
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
         "drivers": rows,
         "totales": totales,
     }
