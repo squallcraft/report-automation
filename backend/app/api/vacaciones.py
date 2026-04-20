@@ -164,19 +164,33 @@ def _generar_y_guardar_pdf(db: Session, vac: VacacionTrabajador) -> None:
     """Genera el PDF del comprobante y lo guarda en `vac.pdf_comprobante` (base64)."""
     cfg = obtener_config_legal(db)
     saldo_actual = _saldo_trabajador(db, vac.trabajador)
+    # `saldo_actual` ya incluye esta vacación como consumida (porque ya se hizo flush).
+    # Para el snapshot del PDF mostramos `dias_tomados` SIN contar esta vacación,
+    # de modo que el documento refleje el estado del trabajador justo antes de tomarla.
+    estado_actual = vac.estado
+    cuenta_como_consumida = estado_actual in (
+        EstadoVacacionEnum.APROBADA.value,
+        EstadoVacacionEnum.TOMADA.value,
+        EstadoVacacionEnum.REGISTRO_HISTORICO.value,
+    )
+    dias_tomados_sin_actual = saldo_actual["dias_tomados"]
+    if cuenta_como_consumida:
+        dias_tomados_sin_actual = round(max(0.0, dias_tomados_sin_actual - (vac.dias_habiles or 0)), 2)
     snapshot = {
         "dias_acumulados": saldo_actual["dias_acumulados"],
-        "dias_tomados": saldo_actual["dias_tomados"],
+        "dias_tomados": dias_tomados_sin_actual,
         "saldo_previo": float(vac.saldo_previo_snapshot) if vac.saldo_previo_snapshot is not None else saldo_actual["dias_disponibles"],
         "dias_progresivo": vac.dias_progresivo_snapshot if vac.dias_progresivo_snapshot is not None else saldo_actual["dias_progresivo"],
     }
+    # Sin fallbacks hardcoded: si Configuración Legal está incompleta, el PDF
+    # mostrará "—" para forzar al admin a completar los datos antes de emitir.
     pdf_bytes = generar_pdf_vacacion(
         vac=vac,
         trabajador=vac.trabajador,
         saldo_snapshot=snapshot,
-        rep_legal_nombre=cfg.rep_legal_nombre or "Adriana Colina Aguilar",
-        rep_legal_rut=cfg.rep_legal_rut or "25.936.753-0",
-        empresa_razon_social=cfg.empresa_razon_social or "E-Courier SPA",
+        rep_legal_nombre=cfg.rep_legal_nombre or "—",
+        rep_legal_rut=cfg.rep_legal_rut or "—",
+        empresa_razon_social=cfg.empresa_razon_social or "—",
         empresa_rut=cfg.empresa_rut or "—",
     )
     vac.pdf_comprobante = base64.b64encode(pdf_bytes).decode("ascii")
@@ -512,8 +526,9 @@ def solicitar_portal(
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
     if payload.fecha_fin < payload.fecha_inicio:
         raise HTTPException(status_code=400, detail="La fecha fin debe ser ≥ fecha inicio")
-    if payload.fecha_inicio <= date.today():
-        raise HTTPException(status_code=400, detail="La fecha de inicio debe ser futura")
+    # La fecha de inicio puede ser HOY (mismo día) o futura, pero nunca pasada.
+    if payload.fecha_inicio < date.today():
+        raise HTTPException(status_code=400, detail="La fecha de inicio no puede ser anterior a hoy")
 
     firma = _resolver_firma(payload.firma_base64, t)
     if not firma:

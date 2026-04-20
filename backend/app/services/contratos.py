@@ -130,12 +130,32 @@ def crear_version(
     """
     Crea una nueva versión contractual y cierra la anterior (vigente_hasta = vigente_desde - 1 día).
     No genera anexo: eso lo hace el motor anexos_engine al recibir esta versión.
+
+    Si ya existe una versión con la MISMA fecha vigente_desde, la cerramos también
+    (queda vigente_hasta = vigente_desde) para evitar overlap; esto cubre re-emisiones
+    el mismo día. Sólo se cierran versiones cuya vigencia ya empezó (no las futuras).
     """
     from datetime import timedelta
 
-    anterior = obtener_version_vigente(db, trabajador_id, en_fecha=vigente_desde)
-    if anterior and anterior.vigente_hasta is None and anterior.vigente_desde < vigente_desde:
-        anterior.vigente_hasta = vigente_desde - timedelta(days=1)
+    # Cerrar TODA versión abierta cuya vigencia ya empezó (anterior o el mismo día).
+    # Las versiones futuras se mantienen intactas.
+    abiertas_anteriores = (
+        db.query(ContratoTrabajadorVersion)
+        .filter(
+            ContratoTrabajadorVersion.trabajador_id == trabajador_id,
+            ContratoTrabajadorVersion.vigente_hasta == None,  # noqa: E711
+            ContratoTrabajadorVersion.vigente_desde <= vigente_desde,
+        )
+        .order_by(desc(ContratoTrabajadorVersion.vigente_desde))
+        .all()
+    )
+    for anterior in abiertas_anteriores:
+        if anterior.vigente_desde < vigente_desde:
+            anterior.vigente_hasta = vigente_desde - timedelta(days=1)
+        else:
+            # Mismo día: cerramos en la misma fecha para que no queden ambas abiertas.
+            # La consulta de "vigente" devolverá la nueva por orden DESC de id.
+            anterior.vigente_hasta = vigente_desde
 
     # Auto-clasificar jornada según horas si no se pasa explícita
     tipo = tipo_jornada

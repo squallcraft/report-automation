@@ -40,6 +40,7 @@ VARIABLES_DISPONIBLES: list[dict] = [
     {"key": "trabajador.telefono", "label": "Teléfono", "grupo": "Trabajador"},
     {"key": "trabajador.whatsapp", "label": "WhatsApp", "grupo": "Trabajador"},
     {"key": "trabajador.fecha_nacimiento", "label": "Fecha de nacimiento", "grupo": "Trabajador"},
+    {"key": "trabajador.fecha_ingreso", "label": "Fecha de ingreso", "grupo": "Trabajador"},
     {"key": "trabajador.nacionalidad", "label": "Nacionalidad", "grupo": "Trabajador"},
     {"key": "trabajador.estado_civil", "label": "Estado civil", "grupo": "Trabajador"},
     {"key": "trabajador.afp", "label": "AFP", "grupo": "Trabajador"},
@@ -71,6 +72,7 @@ VARIABLES_DISPONIBLES: list[dict] = [
     {"key": "empresa.telefono", "label": "Teléfono empresa", "grupo": "Empresa"},
     {"key": "empresa.dia_pago", "label": "Día de pago del mes", "grupo": "Empresa"},
     {"key": "empresa.canal_portal_url", "label": "URL portal consultas", "grupo": "Empresa"},
+    {"key": "empresa.plazo_fijo_meses", "label": "Plazo fijo conductor (meses)", "grupo": "Empresa"},
     # Representante legal
     {"key": "rep_legal.nombre", "label": "Nombre representante legal", "grupo": "Rep. legal"},
     {"key": "rep_legal.rut", "label": "RUT representante legal", "grupo": "Rep. legal"},

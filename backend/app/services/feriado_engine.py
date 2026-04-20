@@ -121,12 +121,29 @@ def calcular_saldo(
     previos = max(0, min(int(anios_servicio_previos or 0), TOPE_ANIOS_PREVIOS_ACREDITABLES))
     anios_totales = previos + anios_actual
     dias_progresivo = calcular_dias_progresivos(anios_actual, previos)
-    # Días por año = 15 base + progresivo
+    # Días por año actuales = 15 base + progresivo vigente HOY
     dias_por_anio = DIAS_BASE_ANUALES + dias_progresivo
-    # Devengado prorrateado: (días_por_año / 12) por mes trabajado.
-    # Solo el progresivo se aplica a partir del año en que se gana.
-    # Para simplicidad: se prorratea el total anual sobre los meses ya trabajados.
-    dias_acumulados = round(meses * (dias_por_anio / 12), 2)
+
+    # Devengado prorrateado por TRAMOS para no inflar el saldo histórico:
+    #   - meses ANTES de cumplir 10 años totales: solo 15/12 (sin progresivo)
+    #   - meses DESPUÉS del umbral: 15/12 + (días_progresivos_aplicables_en_ese_momento)/12
+    # Aproximación práctica: usamos los días progresivos VIGENTES hoy para todo el
+    # tramo post-umbral (subestima ligeramente vs. ir incrementando 1 día cada 3 años,
+    # pero no infla el saldo previo al umbral, que era el bug).
+    if previos >= TOPE_ANIOS_PREVIOS_ACREDITABLES:
+        # Ya entró al empleador con el umbral cumplido por años previos.
+        meses_post_umbral = meses
+        meses_pre_umbral = 0
+    else:
+        meses_para_umbral = (TOPE_ANIOS_PREVIOS_ACREDITABLES - previos) * 12
+        meses_pre_umbral = min(meses, meses_para_umbral)
+        meses_post_umbral = max(0, meses - meses_para_umbral)
+
+    dias_acumulados = round(
+        meses_pre_umbral * (DIAS_BASE_ANUALES / 12)
+        + meses_post_umbral * (dias_por_anio / 12),
+        2,
+    )
     disponibles = round(dias_acumulados - dias_tomados_aprobados - dias_solicitados_pendientes, 2)
 
     # Próximo día extra por progresivo (si aplica)

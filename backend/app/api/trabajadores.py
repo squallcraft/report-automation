@@ -26,7 +26,10 @@ router = APIRouter(prefix="/trabajadores", tags=["trabajadores"])
 
 
 @router.get("/constantes-remuneracion")
-def constantes_remuneracion(db: Session = Depends(get_db)):
+def constantes_remuneracion(
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
     """Constantes y tasas vigentes para cálculo de remuneraciones (valores del mes actual)."""
     from datetime import date
     hoy = date.today()
@@ -56,6 +59,7 @@ def simular_calculo(
     colacion: int = Query(0),
     viaticos: int = Query(0),
     db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
 ):
     """Simula el cálculo sin crear ni modificar un trabajador. Usa UF/UTM del mes actual."""
     from datetime import date
@@ -102,6 +106,7 @@ def simular_imm(
     monto_cotizacion_salud: Optional[str] = Query(None),
     tipo_contrato: str = Query("INDEFINIDO"),
     db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
 ):
     """
     Calcula cuánto en asignaciones no imponibles (colación + movilización)
@@ -132,7 +137,11 @@ def simular_imm(
         imm=imm,
     )
 
-    brecha = max(0, liquido_objetivo - r.liquido_imponible)
+    # Diferencia REAL entre el imponible neto del IMM y el líquido pactado.
+    # - delta > 0 → faltan asignaciones para llegar (factible añadiendo no imponibles)
+    # - delta <= 0 → el imponible solo ya cubre/supera el objetivo (no se necesita brecha)
+    delta = liquido_objetivo - r.liquido_imponible
+    brecha = max(0, delta)
     sugerencia_colacion     = round(brecha * 0.5)
     sugerencia_movilizacion = brecha - sugerencia_colacion
 
@@ -142,7 +151,10 @@ def simular_imm(
         "sueldo_base_imm": imm,
         "gratificacion_imm": grat_imm,
         "descuento_afp": r.descuento_afp,
-        "descuento_salud": r.descuento_salud_legal,
+        # Para Isapre, salud incluye el adicional sobre el 7% legal.
+        "descuento_salud": r.descuento_salud_legal + r.adicional_isapre,
+        "descuento_salud_legal": r.descuento_salud_legal,
+        "adicional_isapre": r.adicional_isapre,
         "descuento_cesantia": r.descuento_cesantia,
         "iusc": r.iusc,
         "total_descuentos": r.total_descuentos,
@@ -151,7 +163,10 @@ def simular_imm(
         "brecha": brecha,
         "sugerencia_colacion": sugerencia_colacion,
         "sugerencia_movilizacion": sugerencia_movilizacion,
-        "factible": brecha >= 0,
+        # Factible solo si hace falta asignación (brecha positiva real).
+        # Si delta <= 0 el imponible solo ya cubre el objetivo y no se requieren no imponibles.
+        "factible": delta > 0,
+        "imm_solo_cubre_objetivo": delta <= 0,
         "uf_usada": uf,
         "utm_usada": utm,
         "fuente": params.get("fuente"),

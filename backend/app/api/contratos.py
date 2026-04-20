@@ -252,17 +252,21 @@ def crear_version_endpoint(
         creado_por=current_user.get("nombre") or current_user.get("username"),
     )
 
-    # Sincronizar la ficha base del trabajador con el último cambio
-    t.sueldo_liquido = payload.sueldo_liquido
-    t.sueldo_base = sueldo_base
-    t.gratificacion = gratificacion
-    t.movilizacion = payload.movilizacion
-    t.colacion = payload.colacion
-    t.viaticos = payload.viaticos
-    if payload.tipo_contrato:
-        t.tipo_contrato = payload.tipo_contrato
-    if payload.cargo:
-        t.cargo = payload.cargo
+    # Sincronizar la ficha base SOLO si la vigencia ya empezó.
+    # Para versiones con vigente_desde futuro, la ficha del trabajador conserva
+    # los valores actuales hasta que la nueva versión entre en vigor (la liquidación
+    # mensual debe leer el contrato vigente al cierre del mes, no la ficha base).
+    if payload.vigente_desde <= date.today():
+        t.sueldo_liquido = payload.sueldo_liquido
+        t.sueldo_base = sueldo_base
+        t.gratificacion = gratificacion
+        t.movilizacion = payload.movilizacion
+        t.colacion = payload.colacion
+        t.viaticos = payload.viaticos
+        if payload.tipo_contrato:
+            t.tipo_contrato = payload.tipo_contrato
+        if payload.cargo:
+            t.cargo = payload.cargo
 
     anexo = None
     if payload.generar_anexo:
@@ -412,9 +416,9 @@ def regenerar_pdf_anexo(
         trabajador=t,
         version_nueva=a.version,
         version_anterior=anterior,
-        rep_legal_nombre=cfg.rep_legal_nombre or "Adriana Colina Aguilar",
-        rep_legal_rut=cfg.rep_legal_rut or "25.936.753-0",
-        empresa_razon_social=cfg.empresa_razon_social or "E-Courier SPA",
+        rep_legal_nombre=cfg.rep_legal_nombre or "—",
+        rep_legal_rut=cfg.rep_legal_rut or "—",
+        empresa_razon_social=cfg.empresa_razon_social or "—",
         empresa_rut=cfg.empresa_rut or "—",
     )
     a.pdf_generado = base64.b64encode(pdf_bytes).decode("ascii")
@@ -474,26 +478,23 @@ def actualizar_config(
     cfg.jornada_legal_vigente = payload.jornada_legal_vigente
     cfg.jornada_legal_proxima = payload.jornada_legal_proxima
     cfg.jornada_legal_proxima_desde = payload.jornada_legal_proxima_desde
-    if payload.rep_legal_nombre is not None:
-        cfg.rep_legal_nombre = payload.rep_legal_nombre
-    if payload.rep_legal_rut is not None:
-        cfg.rep_legal_rut = payload.rep_legal_rut
-    if payload.rep_legal_ci is not None:
-        cfg.rep_legal_ci = payload.rep_legal_ci
-    if payload.rep_legal_cargo is not None:
-        cfg.rep_legal_cargo = payload.rep_legal_cargo
-    if payload.empresa_razon_social is not None:
-        cfg.empresa_razon_social = payload.empresa_razon_social
-    if payload.empresa_rut is not None:
-        cfg.empresa_rut = payload.empresa_rut
-    if payload.empresa_direccion is not None:
-        cfg.empresa_direccion = payload.empresa_direccion
-    if payload.empresa_ciudad_comuna is not None:
-        cfg.empresa_ciudad_comuna = payload.empresa_ciudad_comuna
-    if payload.empresa_giro is not None:
-        cfg.empresa_giro = payload.empresa_giro
-    if payload.canal_portal_url is not None:
-        cfg.canal_portal_url = payload.canal_portal_url
+    # Strings: aceptamos cadena vacía como "borrar"; solo None significa "no enviado".
+    # Convertimos "" → None en BD para mantener semántica consistente con NULL SQL.
+    def _set_str(field: str, value):
+        if value is None:
+            return  # campo no enviado
+        setattr(cfg, field, value if value != "" else None)
+
+    _set_str("rep_legal_nombre", payload.rep_legal_nombre)
+    _set_str("rep_legal_rut", payload.rep_legal_rut)
+    _set_str("rep_legal_ci", payload.rep_legal_ci)
+    _set_str("rep_legal_cargo", payload.rep_legal_cargo)
+    _set_str("empresa_razon_social", payload.empresa_razon_social)
+    _set_str("empresa_rut", payload.empresa_rut)
+    _set_str("empresa_direccion", payload.empresa_direccion)
+    _set_str("empresa_ciudad_comuna", payload.empresa_ciudad_comuna)
+    _set_str("empresa_giro", payload.empresa_giro)
+    _set_str("canal_portal_url", payload.canal_portal_url)
     cfg.actualizado_por = current_user.get("nombre") or current_user.get("username")
     db.commit()
     return _config_to_dict(cfg)
@@ -589,9 +590,9 @@ def firmar_anexo_portal(
                 titulo=a.titulo,
                 trabajador=t,
                 version_nueva=a.version,
-                rep_legal_nombre=cfg.rep_legal_nombre or "Adriana Colina Aguilar",
-                rep_legal_rut=cfg.rep_legal_rut or "25.936.753-0",
-                empresa_razon_social=cfg.empresa_razon_social or "E-Courier SPA",
+                rep_legal_nombre=cfg.rep_legal_nombre or "—",
+                rep_legal_rut=cfg.rep_legal_rut or "—",
+                empresa_razon_social=cfg.empresa_razon_social or "—",
                 empresa_rut=cfg.empresa_rut or "—",
                 firma_trabajador_src=firma,
                 requiere_firma_trabajador=True,
@@ -612,9 +613,9 @@ def firmar_anexo_portal(
                 trabajador=t,
                 version_nueva=a.version,
                 version_anterior=anterior,
-                rep_legal_nombre=cfg.rep_legal_nombre or "Adriana Colina Aguilar",
-                rep_legal_rut=cfg.rep_legal_rut or "25.936.753-0",
-                empresa_razon_social=cfg.empresa_razon_social or "E-Courier SPA",
+                rep_legal_nombre=cfg.rep_legal_nombre or "—",
+                rep_legal_rut=cfg.rep_legal_rut or "—",
+                empresa_razon_social=cfg.empresa_razon_social or "—",
                 empresa_rut=cfg.empresa_rut or "—",
             )
         a.pdf_generado = base64.b64encode(pdf_bytes).decode("ascii")
@@ -796,9 +797,9 @@ def caminob_emitir(
         titulo="Contrato Individual de Trabajo",
         trabajador=t,
         version_nueva=nueva,
-        rep_legal_nombre=cfg.rep_legal_nombre or "Adriana Colina Aguilar",
-        rep_legal_rut=cfg.rep_legal_rut or "25.936.753-0",
-        empresa_razon_social=cfg.empresa_razon_social or "E-Courier SPA",
+        rep_legal_nombre=cfg.rep_legal_nombre or "—",
+        rep_legal_rut=cfg.rep_legal_rut or "—",
+        empresa_razon_social=cfg.empresa_razon_social or "—",
         empresa_rut=cfg.empresa_rut or "—",
         firma_trabajador_src=None,
         requiere_firma_trabajador=True,
@@ -819,17 +820,18 @@ def caminob_emitir(
     )
     db.add(anexo)
 
-    # Sincronizar ficha base del trabajador
-    t.sueldo_liquido = payload.sueldo_liquido
-    t.sueldo_base = sueldo_base
-    t.gratificacion = gratificacion
-    t.movilizacion = payload.movilizacion
-    t.colacion = payload.colacion
-    t.viaticos = payload.viaticos
-    if payload.tipo_contrato:
-        t.tipo_contrato = payload.tipo_contrato
-    if payload.cargo:
-        t.cargo = payload.cargo
+    # Sincronizar ficha base SOLO si la vigencia ya empezó (ver nota en crear_version_endpoint)
+    if payload.vigente_desde <= date.today():
+        t.sueldo_liquido = payload.sueldo_liquido
+        t.sueldo_base = sueldo_base
+        t.gratificacion = gratificacion
+        t.movilizacion = payload.movilizacion
+        t.colacion = payload.colacion
+        t.viaticos = payload.viaticos
+        if payload.tipo_contrato:
+            t.tipo_contrato = payload.tipo_contrato
+        if payload.cargo:
+            t.cargo = payload.cargo
 
     db.commit()
     db.refresh(anexo)
@@ -862,18 +864,23 @@ def aprobar_emision_anexo(
 
     t = db.get(Trabajador, a.trabajador_id)
     if t:
-        notificar_trabajador(
-            db,
-            trabajador=t,
-            titulo="Tienes un contrato pendiente de firma",
-            mensaje=(
-                f"Hola {t.nombre.split()[0]}. Tu {a.titulo} está disponible en tu portal "
-                f"para revisión y firma electrónica. Ingresa para revisarlo."
-            ),
-            tipo=TipoNotificacionEnum.ANEXO_PARA_FIRMA.value,
-            url_accion=f"/portal/anexos/{a.id}",
-            commit=False,
-        )
+        # Best-effort: si la notificación falla (WhatsApp caído, plantilla rota, etc.)
+        # NO debe abortar el cambio de estado del anexo.
+        try:
+            notificar_trabajador(
+                db,
+                trabajador=t,
+                titulo="Tienes un contrato pendiente de firma",
+                mensaje=(
+                    f"Hola {t.nombre.split()[0]}. Tu {a.titulo} está disponible en tu portal "
+                    f"para revisión y firma electrónica. Ingresa para revisarlo."
+                ),
+                tipo=TipoNotificacionEnum.ANEXO_PARA_FIRMA.value,
+                url_accion=f"/portal/anexos/{a.id}",
+                commit=False,
+            )
+        except Exception:
+            pass
 
     db.commit()
     db.refresh(a)

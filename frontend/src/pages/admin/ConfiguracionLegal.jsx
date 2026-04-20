@@ -59,20 +59,22 @@ export default function ConfiguracionLegal() {
   const guardar = (e) => {
     e?.preventDefault()
     setSaving(true)
+    // Mandamos los campos string como cadena (incluso vacía "") para que el backend
+    // pueda BORRAR un valor previo. Solo los numéricos / fechas usan null cuando vacío.
     api.put('/contratos/configuracion-legal', {
       jornada_legal_vigente: Number(cfg.jornada_legal_vigente),
       jornada_legal_proxima: cfg.jornada_legal_proxima ? Number(cfg.jornada_legal_proxima) : null,
       jornada_legal_proxima_desde: cfg.jornada_legal_proxima_desde || null,
-      rep_legal_nombre: cfg.rep_legal_nombre || null,
-      rep_legal_rut: cfg.rep_legal_rut || null,
-      rep_legal_ci: cfg.rep_legal_ci || null,
-      rep_legal_cargo: cfg.rep_legal_cargo || null,
-      empresa_razon_social: cfg.empresa_razon_social || null,
-      empresa_rut: cfg.empresa_rut || null,
-      empresa_direccion: cfg.empresa_direccion || null,
-      empresa_ciudad_comuna: cfg.empresa_ciudad_comuna || null,
-      empresa_giro: cfg.empresa_giro || null,
-      canal_portal_url: cfg.canal_portal_url || null,
+      rep_legal_nombre: cfg.rep_legal_nombre ?? '',
+      rep_legal_rut: cfg.rep_legal_rut ?? '',
+      rep_legal_ci: cfg.rep_legal_ci ?? '',
+      rep_legal_cargo: cfg.rep_legal_cargo ?? '',
+      empresa_razon_social: cfg.empresa_razon_social ?? '',
+      empresa_rut: cfg.empresa_rut ?? '',
+      empresa_direccion: cfg.empresa_direccion ?? '',
+      empresa_ciudad_comuna: cfg.empresa_ciudad_comuna ?? '',
+      empresa_giro: cfg.empresa_giro ?? '',
+      canal_portal_url: cfg.canal_portal_url ?? '',
     })
       .then(({ data }) => { setCfg(data); toast.success('Configuración guardada') })
       .catch(err => toast.error(err.response?.data?.detail || 'Error al guardar'))

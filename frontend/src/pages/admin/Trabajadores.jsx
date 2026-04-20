@@ -143,7 +143,7 @@ function AsistenteIMM({ form, onAplicar }) {
                   <span className="font-semibold text-right border-t border-gray-100 pt-1">{fmt(resultado.imponible_imm)}</span>
                   <span className="text-red-500">Desc. AFP</span>
                   <span className="font-medium text-red-600 text-right">− {fmt(resultado.descuento_afp)}</span>
-                  <span className="text-red-500">Desc. Salud</span>
+                  <span className="text-red-500">Desc. Salud {resultado.adicional_isapre > 0 ? '(7% + adic.)' : '(7%)'}</span>
                   <span className="font-medium text-red-600 text-right">− {fmt(resultado.descuento_salud)}</span>
                   {resultado.descuento_cesantia > 0 && <>
                     <span className="text-red-500">Cesantía</span>
@@ -160,6 +160,11 @@ function AsistenteIMM({ form, onAplicar }) {
                   <span className="text-violet-700 font-semibold">Asignaciones necesarias</span>
                   <span className="font-bold text-violet-800 text-sm">{fmt(resultado.brecha)}</span>
                 </div>
+                {resultado.imm_solo_cubre_objetivo && (
+                  <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 mt-2">
+                    ✓ El imponible IMM por sí solo ya cubre el líquido objetivo. No se requieren asignaciones no imponibles.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

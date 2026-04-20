@@ -247,8 +247,14 @@ export default function Envios() {
     { key: 'seller_code', label: 'Seller ID', className: sm, render: (v) => v || '—' },
     { key: 'tracking_id', label: 'Tracking', className: sm, render: (v) => v || '—' },
     { key: 'bultos', label: 'Blt', align: 'center', className: sm },
-    { key: 'descripcion_producto', label: 'Descripción', className: 'text-xs !whitespace-normal min-w-[250px]', render: (v) => v ? (
-      <span className="line-clamp-2 block" title={v}>{v}</span>
+    { key: 'descripcion_producto', label: 'Descripción', className: 'text-xs !whitespace-normal min-w-[260px] max-w-[320px] align-top', render: (v) => v ? (
+      // Altura fija de 3 líneas → todas las filas miden lo mismo → sin saltos al scrollear.
+      // Tooltip y modal de detalle muestran el texto completo si excede 3 líneas.
+      <span
+        className="block leading-snug line-clamp-3"
+        title={v}
+        style={{ minHeight: '3.45rem', maxHeight: '3.45rem' }}
+      >{v}</span>
     ) : '—' },
     { key: 'costo_orden', label: 'C.Orden', align: 'right', className: sm, render: (v) => v ? fmtClp(v) : '—' },
     { key: 'cobro_seller', label: 'Cobro', align: 'right', className: sm, render: (v) => fmtClp(v) },

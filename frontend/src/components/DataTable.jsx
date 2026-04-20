@@ -65,15 +65,14 @@ export default function DataTable({
     estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN,
     enabled: !!useVirtual,
+    // Medir la altura REAL de cada fila renderizada (las descripciones largas
+    // wrapean a 2-3 líneas). Sin esto, el virtualizer asume todas miden 33px
+    // y los offsets quedan desincronizados → "salto" visual al scrollear.
+    measureElement:
+      typeof window !== 'undefined' && navigator.userAgent.indexOf('Firefox') === -1
+        ? (element) => element?.getBoundingClientRect().height
+        : undefined,
   })
-
-  if (!data || data.length === 0) {
-    return (
-      <div className="card text-center py-12 text-gray-500">
-        {emptyMessage}
-      </div>
-    )
-  }
 
   const virtualItems = useVirtual ? rowVirtualizer.getVirtualItems() : null
   const totalSize = useVirtual ? rowVirtualizer.getTotalSize() : 0
@@ -83,6 +82,14 @@ export default function DataTable({
     : 0
 
   const scrollStyle = maxHeight ? { maxHeight, overflowY: 'auto' } : {}
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="card text-center py-12 text-gray-500">
+        {emptyMessage}
+      </div>
+    )
+  }
 
   return (
     <div className="card overflow-hidden p-0 h-full flex flex-col">
@@ -154,12 +161,14 @@ export default function DataTable({
           <tbody className="divide-y divide-gray-100">
             {useVirtual ? (
               <>
-                {paddingTop > 0 && <tr><td style={{ height: paddingTop }} /></tr>}
+                {paddingTop > 0 && <tr aria-hidden="true"><td colSpan={columns.length} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>}
                 {virtualItems.map((virtualRow) => {
                   const row = displayData[virtualRow.index]
                   return (
                     <tr
                       key={row.id ?? virtualRow.index}
+                      data-index={virtualRow.index}
+                      ref={(node) => node && rowVirtualizer.measureElement(node)}
                       onClick={() => onRowClick?.(row)}
                       className={`transition-colors ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
                     >
@@ -177,7 +186,7 @@ export default function DataTable({
                     </tr>
                   )
                 })}
-                {paddingBottom > 0 && <tr><td style={{ height: paddingBottom }} /></tr>}
+                {paddingBottom > 0 && <tr aria-hidden="true"><td colSpan={columns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>}
               </>
             ) : (
               displayData.map((row, idx) => (

@@ -464,9 +464,9 @@ def crear_anexo_para_version(
         trabajador=trabajador,
         version_nueva=version_nueva,
         version_anterior=version_anterior,
-        rep_legal_nombre=cfg.rep_legal_nombre or "Adriana Colina Aguilar",
-        rep_legal_rut=cfg.rep_legal_rut or "25.936.753-0",
-        empresa_razon_social=cfg.empresa_razon_social or "E-Courier SPA",
+        rep_legal_nombre=cfg.rep_legal_nombre or "—",
+        rep_legal_rut=cfg.rep_legal_rut or "—",
+        empresa_razon_social=cfg.empresa_razon_social or "—",
         empresa_rut=cfg.empresa_rut or "—",
     )
     pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
