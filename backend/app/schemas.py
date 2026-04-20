@@ -203,6 +203,9 @@ class DriverOut(DriverBase):
     subordinados_count: int = 0
     created_at: Optional[datetime] = None
     trabajador_nombre: Optional[str] = None
+    acuerdo_aceptado: Optional[bool] = None
+    acuerdo_version: Optional[str] = None
+    acuerdo_fecha: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

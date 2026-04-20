@@ -23,10 +23,15 @@ CURRENT_CONTRATO_TRABAJO_VERSION = "1.0"
 
 
 def _enrich_driver(d: Driver, db: Session) -> dict:
+    from app.api.auth import CURRENT_ACUERDO_VERSION
     data = {c.name: getattr(d, c.name) for c in d.__table__.columns}
     data.pop("acuerdo_firma", None)
     data.pop("carnet_frontal", None)
     data.pop("carnet_trasero", None)
+    # Recalcular acuerdo_aceptado con chequeo de versión vigente
+    data["acuerdo_aceptado"] = bool(d.contratado) or bool(
+        d.acuerdo_aceptado and d.acuerdo_version == CURRENT_ACUERDO_VERSION
+    )
     data["aliases"] = d.aliases or []
     if d.jefe_flota_id:
         jefe = db.get(Driver, d.jefe_flota_id)
