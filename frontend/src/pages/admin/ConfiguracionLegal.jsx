@@ -245,7 +245,16 @@ export default function ConfiguracionLegal() {
 
 // ── Gestión de jornadas horarias ──────────────────────────────────────────────
 
-const JORNADA_EMPTY = { nombre: '', hora_entrada: '08:00', hora_salida: '17:00', minutos_colacion: 45, activa: true }
+const JORNADA_EMPTY = { nombre: '', hora_entrada: '08:00', hora_salida: '17:00', minutos_colacion: 45, horas_semana: 40, activa: true }
+
+function calcularSalida(hora_entrada, horas_semana, minutos_colacion) {
+  const [h, m] = (hora_entrada || '08:00').split(':').map(Number)
+  const minsDia = Math.round((Number(horas_semana) / 5) * 60)
+  const total = h * 60 + m + minsDia + Number(minutos_colacion)
+  const hh = Math.floor(total / 60) % 24
+  const mm = total % 60
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
 
 function JornadasSection() {
   const [jornadas, setJornadas] = useState([])
@@ -263,7 +272,14 @@ function JornadasSection() {
   const abrirNueva = () => { setEditId(null); setForm(JORNADA_EMPTY); setModal(true) }
   const abrirEditar = (j) => {
     setEditId(j.id)
-    setForm({ nombre: j.nombre, hora_entrada: j.hora_entrada, hora_salida: j.hora_salida, minutos_colacion: j.minutos_colacion, activa: j.activa })
+    setForm({
+      nombre: j.nombre,
+      hora_entrada: j.hora_entrada,
+      hora_salida: j.hora_salida,
+      minutos_colacion: j.minutos_colacion,
+      horas_semana: 40,
+      activa: j.activa,
+    })
     setModal(true)
   }
 
@@ -351,23 +367,75 @@ function JornadasSection() {
             <input required className="input-field" placeholder="ej. Santiago 40hrs mañana"
               value={form.nombre} onChange={e => set('nombre', e.target.value)} />
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Hora de entrada</label>
-              <input required type="time" className="input-field"
-                value={form.hora_entrada} onChange={e => set('hora_entrada', e.target.value)} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Horas semanales</label>
+              <div className="flex items-center gap-2">
+                <input
+                  required type="number" min={1} max={60}
+                  className="input-field"
+                  value={form.horas_semana}
+                  onChange={e => {
+                    const v = e.target.value
+                    set('horas_semana', v)
+                    set('hora_salida', calcularSalida(form.hora_entrada, v, form.minutos_colacion))
+                  }}
+                />
+                <span className="text-sm text-gray-500 whitespace-nowrap">hrs/sem</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">{Math.round((Number(form.horas_semana) / 5) * 10) / 10} hrs/día</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Hora de salida</label>
-              <input required type="time" className="input-field"
-                value={form.hora_salida} onChange={e => set('hora_salida', e.target.value)} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Minutos de colación</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={120}
+                  className="input-field"
+                  value={form.minutos_colacion}
+                  onChange={e => {
+                    const v = e.target.value
+                    set('minutos_colacion', v)
+                    set('hora_salida', calcularSalida(form.hora_entrada, form.horas_semana, v))
+                  }}
+                />
+                <span className="text-sm text-gray-500 whitespace-nowrap">min</span>
+              </div>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Minutos de colación</label>
-            <input type="number" min={0} max={120} className="input-field"
-              value={form.minutos_colacion} onChange={e => set('minutos_colacion', e.target.value)} />
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hora de ingreso</label>
+              <input
+                required type="time" className="input-field"
+                value={form.hora_entrada}
+                onChange={e => {
+                  const v = e.target.value
+                  set('hora_entrada', v)
+                  set('hora_salida', calcularSalida(v, form.horas_semana, form.minutos_colacion))
+                }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Hora de salida
+                <span className="ml-1.5 text-xs font-normal text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">calculada</span>
+              </label>
+              <input
+                type="time" className="input-field bg-gray-50 text-gray-700 font-mono"
+                value={form.hora_salida}
+                onChange={e => set('hora_salida', e.target.value)}
+              />
+              <p className="text-xs text-gray-400 mt-0.5">Puedes ajustarla manualmente si es necesario</p>
+            </div>
           </div>
+
+          <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3 text-sm text-indigo-800 flex items-center justify-between">
+            <span>Jornada diaria</span>
+            <span className="font-semibold font-mono">{form.hora_entrada} → {form.hora_salida}</span>
+          </div>
+
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
             <input type="checkbox" className="rounded" checked={form.activa} onChange={e => set('activa', e.target.checked)} />
             Jornada activa (disponible para asignar a trabajadores)
