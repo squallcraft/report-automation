@@ -141,6 +141,8 @@ class Driver(Base):
     acuerdo_firma = Column(Text, nullable=True)
     carnet_frontal = Column(Text, nullable=True)
     carnet_trasero = Column(Text, nullable=True)
+    correo_notificaciones = Column(String, nullable=True)
+    whatsapp = Column(String, nullable=True)
     trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=True)
     contrato_trabajo_aceptado = Column(Boolean, default=False, nullable=False)
     contrato_trabajo_version = Column(String, nullable=True)

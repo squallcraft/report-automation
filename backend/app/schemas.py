@@ -165,6 +165,8 @@ class DriverBase(BaseModel):
     activo: bool = True
     contratado: bool = False
     email: Optional[str] = None
+    correo_notificaciones: Optional[str] = None
+    whatsapp: Optional[str] = None
     trabajador_id: Optional[int] = None
 
 
@@ -189,6 +191,8 @@ class DriverUpdate(BaseModel):
     activo: Optional[bool] = None
     contratado: Optional[bool] = None
     email: Optional[str] = None
+    correo_notificaciones: Optional[str] = None
+    whatsapp: Optional[str] = None
     password: Optional[str] = None
     trabajador_id: Optional[int] = None
 

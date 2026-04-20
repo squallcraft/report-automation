@@ -107,6 +107,8 @@ const initialForm = {
   contratado: false,
   trabajador_id: '',
   email: '',
+  correo_notificaciones: '',
+  whatsapp: '',
   password: '',
   rut: '',
   banco_codigo: '',
@@ -211,6 +213,8 @@ export default function Drivers() {
       contratado: driver.contratado ?? false,
       trabajador_id: driver.trabajador_id ?? '',
       email: driver.email || '',
+      correo_notificaciones: driver.correo_notificaciones || '',
+      whatsapp: driver.whatsapp || '',
       password: '',
       rut: driver.rut || '',
       banco_codigo: bancoCodigoDesdeNombre(driver.banco),
@@ -258,6 +262,8 @@ export default function Drivers() {
       jefe_flota_id: form.jefe_flota_id ? parseInt(form.jefe_flota_id, 10) : null,
       trabajador_id: form.trabajador_id ? parseInt(form.trabajador_id, 10) : null,
       email: form.email?.trim() || null,
+      correo_notificaciones: form.correo_notificaciones?.trim() || null,
+      whatsapp: form.whatsapp?.trim() || null,
       rut: form.rut?.trim() || null,
       banco: form.banco_codigo ? bancoNombreCanonicoDesde(form.banco_codigo) : null,
       tipo_cuenta: form.tipo_cuenta || null,
@@ -450,13 +456,35 @@ export default function Drivers() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email (acceso portal)</label>
               <input
                 type="email"
                 className="input-field"
                 value={form.email}
                 onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Correo de notificaciones</label>
+              <input
+                type="email"
+                className="input-field"
+                placeholder="notificaciones@ejemplo.com"
+                value={form.correo_notificaciones}
+                onChange={(e) => setForm((f) => ({ ...f, correo_notificaciones: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Recibe avisos de pagos, liquidaciones, etc.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp</label>
+              <input
+                type="tel"
+                className="input-field"
+                placeholder="+56912345678"
+                value={form.whatsapp}
+                onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value }))}
+              />
+              <p className="text-xs text-gray-500 mt-1">Número con código de país para campañas y avisos.</p>
             </div>
           </div>
           <div>
