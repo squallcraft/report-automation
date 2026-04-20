@@ -122,6 +122,7 @@ def construir_contexto(
     trabajador: Trabajador,
     contrato: Optional[ContratoTrabajadorVersion],
     cfg: Optional[ConfiguracionLegal],
+    jornada=None,  # JornadaHoraria | None
 ) -> dict[str, str]:
     """Devuelve un dict plano con `clave_dot.notation` -> string ya formateado."""
     hoy = date.today()
@@ -188,35 +189,45 @@ def construir_contexto(
         })
 
     # Variables de jornada calculadas (conductor contratado con jornada promediada)
-    # Se calculan a partir de los datos del contrato si existen
+    # Si el trabajador tiene una jornada horaria asignada, se usa directamente.
+    # Si no, se calcula automáticamente por zona (lógica legacy).
     if contrato is not None:
-        zona = getattr(trabajador, "zona", "") or "" if trabajador else ""
         horas_semana = contrato.jornada_semanal_horas or 40
-        horas_dia = horas_semana / 5  # distribución 5x2
-        mins_colacion = int(getattr(contrato, "minutos_colacion", 45) or 45)
 
-        # Hora de entrada según zona (para conductores)
-        if "valpara" in zona.lower() or "valparaiso" in zona.lower() or "valparaíso" in zona.lower():
-            entrada_h, entrada_m = 10, 0
-        elif any(z in zona.lower() for z in ["santiago", "metropolitana", "rm"]):
-            entrada_h, entrada_m = 12, 0
+        if jornada is not None:
+            # ── Jornada fija seleccionada en el perfil ────────────────────────
+            ctx.update({
+                "jornada.hora_entrada": jornada.hora_entrada or "08:00",
+                "jornada.hora_salida": jornada.hora_salida or "17:00",
+                "jornada.minutos_colacion": str(jornada.minutos_colacion or 45),
+                "jornada.horas_semana": str(horas_semana),
+            })
         else:
-            entrada_h, entrada_m = 8, 0
+            # ── Cálculo automático por zona (legacy) ──────────────────────────
+            zona = getattr(trabajador, "zona", "") or "" if trabajador else ""
+            horas_dia = horas_semana / 5
+            mins_colacion = int(getattr(contrato, "minutos_colacion", 45) or 45)
 
-        # Hora de salida = entrada + horas de trabajo + colación
-        total_mins = int(horas_dia * 60) + mins_colacion
-        salida_h = entrada_h + total_mins // 60
-        salida_m = entrada_m + total_mins % 60
-        if salida_m >= 60:
-            salida_h += 1
-            salida_m -= 60
+            if "valpara" in zona.lower() or "valparaiso" in zona.lower() or "valparaíso" in zona.lower():
+                entrada_h, entrada_m = 10, 0
+            elif any(z in zona.lower() for z in ["santiago", "metropolitana", "rm"]):
+                entrada_h, entrada_m = 12, 0
+            else:
+                entrada_h, entrada_m = 8, 0
 
-        ctx.update({
-            "jornada.hora_entrada": f"{entrada_h:02d}:{entrada_m:02d}",
-            "jornada.hora_salida": f"{salida_h:02d}:{salida_m:02d}",
-            "jornada.minutos_colacion": str(mins_colacion),
-            "jornada.horas_semana": str(horas_semana),
-        })
+            total_mins = int(horas_dia * 60) + mins_colacion
+            salida_h = entrada_h + total_mins // 60
+            salida_m = entrada_m + total_mins % 60
+            if salida_m >= 60:
+                salida_h += 1
+                salida_m -= 60
+
+            ctx.update({
+                "jornada.hora_entrada": f"{entrada_h:02d}:{entrada_m:02d}",
+                "jornada.hora_salida": f"{salida_h:02d}:{salida_m:02d}",
+                "jornada.minutos_colacion": str(mins_colacion),
+                "jornada.horas_semana": str(horas_semana),
+            })
 
     return ctx
 

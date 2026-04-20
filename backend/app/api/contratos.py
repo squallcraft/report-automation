@@ -42,6 +42,7 @@ from app.models import (
     TipoJornadaEnum,
     PlantillaContrato,
     TipoNotificacionEnum,
+    JornadaHoraria,
 )
 from app.services.contratos import (
     obtener_config_legal,
@@ -700,7 +701,8 @@ def caminob_preview(
 
     cfg = obtener_config_legal(db)
     contrato = _construir_version_in_memory(payload, trabajador_id)
-    contexto = construir_contexto(t, contrato, cfg)
+    jornada = db.query(JornadaHoraria).filter(JornadaHoraria.id == getattr(t, "jornada_horaria_id", None)).first() if getattr(t, "jornada_horaria_id", None) else None
+    contexto = construir_contexto(t, contrato, cfg, jornada=jornada)
     rendered = renderizar(p.contenido, contexto)
     if payload.clausulas_adicionales:
         rendered += "\n\n## Cláusulas adicionales\n\n" + payload.clausulas_adicionales
@@ -782,7 +784,8 @@ def caminob_emitir(
 
     # Render
     cfg = obtener_config_legal(db)
-    contexto = construir_contexto(t, nueva, cfg)
+    jornada = db.query(JornadaHoraria).filter(JornadaHoraria.id == getattr(t, "jornada_horaria_id", None)).first() if getattr(t, "jornada_horaria_id", None) else None
+    contexto = construir_contexto(t, nueva, cfg, jornada=jornada)
     rendered = renderizar(p.contenido, contexto)
     if payload.clausulas_adicionales:
         rendered += "\n\n## Cláusulas adicionales\n\n" + payload.clausulas_adicionales

@@ -883,6 +883,8 @@ class Trabajador(Base):
     hora_entrada_esperada = Column(String, nullable=True)  # "HH:MM"
     hora_salida_esperada = Column(String, nullable=True)   # "HH:MM"
     minutos_colacion = Column(Integer, nullable=False, default=60)
+    # Jornada horaria predefinida (para contratos digitales)
+    jornada_horaria_id = Column(Integer, ForeignKey("jornadas_horarias.id"), nullable=True)
 
     pagos = relationship("PagoTrabajador", back_populates="trabajador")
     pagos_mes = relationship("PagoMesTrabajador", back_populates="trabajador")
@@ -1807,6 +1809,28 @@ class ConfiguracionLegal(Base):
     # Plazo fijo por defecto para nuevos contratos de conductores (meses)
     plazo_fijo_conductor_meses = Column(Integer, nullable=False, default=3)
     actualizado_por = Column(String, nullable=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Jornadas horarias (plantillas de horario para contratos)
+# ─────────────────────────────────────────────────────────────────────────────
+class JornadaHoraria(Base):
+    """
+    Plantilla de horario reutilizable. El admin crea las jornadas disponibles
+    (ej. "Santiago 40hrs", "Valparaíso 44hrs") y en el perfil del trabajador
+    se selecciona la que aplica. El motor de contratos usa estos valores para
+    las variables {{jornada.hora_entrada}}, {{jornada.hora_salida}}, etc.
+    """
+    __tablename__ = "jornadas_horarias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)            # "Santiago 40hrs mañana"
+    hora_entrada = Column(String(5), nullable=False)   # "08:00"
+    hora_salida = Column(String(5), nullable=False)    # "17:00"
+    minutos_colacion = Column(Integer, nullable=False, default=45)
+    activa = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

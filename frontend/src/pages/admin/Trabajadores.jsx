@@ -50,6 +50,7 @@ const initialForm = {
   movilizacion: 0, colacion: 0, viaticos: 0,
   tipo_contrato: '', monto_cotizacion_salud: '',
   anios_servicio_previos: 0,
+  jornada_horaria_id: '',
 }
 
 const ESTADOS_CIVILES = [
@@ -316,6 +317,7 @@ export default function Trabajadores() {
   const [form, setForm] = useState({ ...initialForm })
   const [filterText, setFilterText] = useState('')
   const [showInactivos, setShowInactivos] = useState(false)
+  const [jornadas, setJornadas] = useState([])
 
   const load = () => {
     setLoading(true)
@@ -326,6 +328,11 @@ export default function Trabajadores() {
   }
 
   useEffect(load, [showInactivos])
+  useEffect(() => {
+    api.get('/jornadas-horarias', { params: { solo_activas: true } })
+      .then(({ data }) => setJornadas(data || []))
+      .catch(() => {})
+  }, [])
 
   const openNew = () => {
     setEditId(null)
@@ -360,6 +367,7 @@ export default function Trabajadores() {
       tipo_contrato: t.tipo_contrato || '',
       monto_cotizacion_salud: t.monto_cotizacion_salud || '',
       anios_servicio_previos: t.anios_servicio_previos || 0,
+      jornada_horaria_id: t.jornada_horaria_id || '',
     })
     setShowModal(true)
   }
@@ -374,6 +382,7 @@ export default function Trabajadores() {
       viaticos: Number(form.viaticos),
       anios_servicio_previos: Number(form.anios_servicio_previos || 0),
       fecha_ingreso: form.fecha_ingreso || null,
+      jornada_horaria_id: form.jornada_horaria_id ? Number(form.jornada_horaria_id) : null,
     }
     try {
       if (editId) {
@@ -618,6 +627,22 @@ export default function Trabajadores() {
                 className="input-field"
               />
               <p className="text-xs text-gray-400 mt-0.5">Tope 10. Para feriado progresivo (Art. 68 CT)</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Jornada horaria</label>
+              <select
+                value={form.jornada_horaria_id}
+                onChange={e => setForm(f => ({ ...f, jornada_horaria_id: e.target.value }))}
+                className="input-field"
+              >
+                <option value="">Sin asignar (automática por zona)</option>
+                {jornadas.map(j => (
+                  <option key={j.id} value={j.id}>
+                    {j.nombre} — {j.hora_entrada}–{j.hora_salida} ({j.minutos_colacion} min col.)
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-0.5">Usada en <code>{'{{jornada.hora_entrada}}'}</code> del contrato</p>
             </div>
           </div>
 

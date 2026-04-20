@@ -693,6 +693,8 @@ class TrabajadorBase(BaseModel):
     monto_cotizacion_salud: Optional[str] = None
     # Feriado progresivo (Art. 68 CT): años acreditados con empleadores anteriores
     anios_servicio_previos: int = 0
+    # Jornada horaria predefinida (para contratos digitales)
+    jornada_horaria_id: Optional[int] = None
 
 class TrabajadorCreate(TrabajadorBase):
     pass
@@ -722,6 +724,7 @@ class TrabajadorUpdate(BaseModel):
     nacionalidad: Optional[str] = None
     estado_civil: Optional[str] = None
     anios_servicio_previos: Optional[int] = None
+    jornada_horaria_id: Optional[int] = None
 
 class TrabajadorOut(TrabajadorBase):
     id: int

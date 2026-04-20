@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Settings, Save, AlertTriangle, Calendar } from 'lucide-react'
+import { Settings, Save, AlertTriangle, Clock, Plus, Pencil, Trash2 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import Modal from '../../components/Modal'
 
 export default function ConfiguracionLegal() {
   const [cfg, setCfg] = useState(null)
@@ -225,6 +226,137 @@ export default function ConfiguracionLegal() {
           </button>
         </div>
       </form>
+
+      <JornadasSection />
+    </div>
+  )
+}
+
+
+// ── Gestión de jornadas horarias ─────────────────────────────────────────────
+
+const JORNADA_EMPTY = { nombre: '', hora_entrada: '08:00', hora_salida: '17:00', minutos_colacion: 45, activa: true }
+
+function JornadasSection() {
+  const [jornadas, setJornadas] = useState([])
+  const [modal, setModal] = useState(false)
+  const [editId, setEditId] = useState(null)
+  const [form, setForm] = useState(JORNADA_EMPTY)
+
+  const cargar = () =>
+    api.get('/jornadas-horarias', { params: { solo_activas: false } })
+      .then(({ data }) => setJornadas(data || []))
+      .catch(() => toast.error('Error al cargar jornadas'))
+
+  useEffect(cargar, [])
+
+  const abrirNueva = () => { setEditId(null); setForm(JORNADA_EMPTY); setModal(true) }
+  const abrirEditar = (j) => { setEditId(j.id); setForm({ nombre: j.nombre, hora_entrada: j.hora_entrada, hora_salida: j.hora_salida, minutos_colacion: j.minutos_colacion, activa: j.activa }); setModal(true) }
+
+  const guardar = (e) => {
+    e.preventDefault()
+    const payload = { ...form, minutos_colacion: Number(form.minutos_colacion) }
+    const req = editId
+      ? api.put(`/jornadas-horarias/${editId}`, payload)
+      : api.post('/jornadas-horarias', payload)
+    req.then(() => { toast.success(editId ? 'Jornada actualizada' : 'Jornada creada'); setModal(false); cargar() })
+       .catch(err => toast.error(err.response?.data?.detail || 'Error al guardar'))
+  }
+
+  const eliminar = (j) => {
+    if (!window.confirm(`¿Eliminar jornada "${j.nombre}"?`)) return
+    api.delete(`/jornadas-horarias/${j.id}`)
+      .then(() => { toast.success('Jornada eliminada'); cargar() })
+      .catch(() => toast.error('Error al eliminar'))
+  }
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-3xl">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2"><Clock size={16} /> Jornadas horarias</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Define los horarios disponibles (entrada, salida, colación). Asigna una a cada trabajador en su perfil
+            para que los contratos usen los valores correctos en <code className="bg-gray-100 px-1 rounded">{'{{jornada.hora_entrada}}'}</code>.
+          </p>
+        </div>
+        <button onClick={abrirNueva} className="btn-primary flex items-center gap-1.5 text-sm">
+          <Plus size={14} /> Nueva jornada
+        </button>
+      </div>
+
+      {jornadas.length === 0
+        ? <p className="text-sm text-gray-400 py-4 text-center">No hay jornadas definidas aún.</p>
+        : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase text-gray-500 border-b border-gray-100">
+                <th className="text-left py-2 font-medium">Nombre</th>
+                <th className="text-center py-2 font-medium">Entrada</th>
+                <th className="text-center py-2 font-medium">Salida</th>
+                <th className="text-center py-2 font-medium">Colación</th>
+                <th className="text-center py-2 font-medium">Estado</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {jornadas.map(j => (
+                <tr key={j.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="py-2 font-medium text-gray-800">{j.nombre}</td>
+                  <td className="py-2 text-center text-gray-600">{j.hora_entrada}</td>
+                  <td className="py-2 text-center text-gray-600">{j.hora_salida}</td>
+                  <td className="py-2 text-center text-gray-500">{j.minutos_colacion} min</td>
+                  <td className="py-2 text-center">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${j.activa ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {j.activa ? 'Activa' : 'Inactiva'}
+                    </span>
+                  </td>
+                  <td className="py-2 text-right">
+                    <button onClick={() => abrirEditar(j)} className="p-1 hover:text-blue-600 text-gray-400 rounded"><Pencil size={14} /></button>
+                    <button onClick={() => eliminar(j)} className="p-1 hover:text-red-600 text-gray-400 rounded ml-1"><Trash2 size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+      <Modal open={modal} onClose={() => setModal(false)} title={editId ? 'Editar jornada' : 'Nueva jornada horaria'}>
+        <form onSubmit={guardar} className="space-y-4">
+          <div>
+            <label className="text-xs uppercase font-medium text-gray-600">Nombre</label>
+            <input required className="input mt-1" placeholder="ej. Santiago 40hrs mañana"
+              value={form.nombre} onChange={e => set('nombre', e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs uppercase font-medium text-gray-600">Hora de entrada</label>
+              <input required type="time" className="input mt-1"
+                value={form.hora_entrada} onChange={e => set('hora_entrada', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs uppercase font-medium text-gray-600">Hora de salida</label>
+              <input required type="time" className="input mt-1"
+                value={form.hora_salida} onChange={e => set('hora_salida', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs uppercase font-medium text-gray-600">Minutos de colación</label>
+            <input type="number" min={0} max={120} className="input mt-1"
+              value={form.minutos_colacion} onChange={e => set('minutos_colacion', e.target.value)} />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={form.activa} onChange={e => set('activa', e.target.checked)} />
+            Jornada activa (disponible para asignar a trabajadores)
+          </label>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <button type="button" onClick={() => setModal(false)} className="btn-secondary">Cancelar</button>
+            <button type="submit" className="btn-primary">{editId ? 'Guardar cambios' : 'Crear jornada'}</button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

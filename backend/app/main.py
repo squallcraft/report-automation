@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -301,6 +301,27 @@ with engine.connect() as conn:
         for col, tipo in nuevas_cl.items():
             if col not in cl_cols:
                 safe_exec(f"ALTER TABLE configuracion_legal ADD COLUMN {col} {tipo}")
+
+    # ── Tabla jornadas_horarias ──────────────────────────────────────────────
+    if "jornadas_horarias" not in insp.get_table_names():
+        safe_exec("""
+            CREATE TABLE jornadas_horarias (
+                id SERIAL PRIMARY KEY,
+                nombre TEXT NOT NULL,
+                hora_entrada VARCHAR(5) NOT NULL DEFAULT '08:00',
+                hora_salida VARCHAR(5) NOT NULL DEFAULT '17:00',
+                minutos_colacion INTEGER NOT NULL DEFAULT 45,
+                activa BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
+    # ── jornada_horaria_id en trabajadores ──────────────────────────────────
+    if "trabajadores" in insp.get_table_names():
+        tr_cols = [c["name"] for c in insp.get_columns("trabajadores")]
+        if "jornada_horaria_id" not in tr_cols:
+            safe_exec("ALTER TABLE trabajadores ADD COLUMN jornada_horaria_id INTEGER REFERENCES jornadas_horarias(id) ON DELETE SET NULL")
 
     # ── Tabla plantillas_contrato (Camino B: contratos digitales) ────────────
     if "plantillas_contrato" not in insp.get_table_names():
@@ -1486,6 +1507,7 @@ app.include_router(parametros_remuneracion.router, prefix="/api")
 app.include_router(remuneraciones.router, prefix="/api")
 app.include_router(iva_drivers.router, prefix="/api")
 app.include_router(contratos.router, prefix="/api")
+app.include_router(jornadas_horarias.router, prefix="/api")
 app.include_router(horas_extras.router, prefix="/api")
 app.include_router(plantillas_contrato.router, prefix="/api")
 app.include_router(notificaciones_trabajador.router, prefix="/api")
