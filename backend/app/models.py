@@ -1797,6 +1797,7 @@ class ConfiguracionLegal(Base):
     empresa_razon_social = Column(String, nullable=True)
     empresa_rut = Column(String, nullable=True)
     empresa_direccion = Column(String, nullable=True)
+    empresa_ciudad_comuna = Column(String, nullable=True)         # ciudad / comuna de la empresa (para contratos)
     empresa_correo = Column(String, nullable=True)                # correo oficial de la empresa
     empresa_giro = Column(String, nullable=True)                  # giro / actividad económica para contratos
     empresa_telefono = Column(String, nullable=True)

@@ -90,10 +90,14 @@ class ConfigLegalIn(BaseModel):
     jornada_legal_proxima_desde: Optional[date] = None
     rep_legal_nombre: Optional[str] = None
     rep_legal_rut: Optional[str] = None
+    rep_legal_ci: Optional[str] = None
+    rep_legal_cargo: Optional[str] = None
     empresa_razon_social: Optional[str] = None
     empresa_rut: Optional[str] = None
     empresa_direccion: Optional[str] = None
+    empresa_ciudad_comuna: Optional[str] = None
     empresa_giro: Optional[str] = None
+    canal_portal_url: Optional[str] = None
 
 
 # ── Mappers ─────────────────────────────────────────────────────────────────
@@ -151,10 +155,14 @@ def _config_to_dict(c: ConfiguracionLegal) -> dict:
         "jornada_legal_proxima_desde": c.jornada_legal_proxima_desde.isoformat() if c.jornada_legal_proxima_desde else None,
         "rep_legal_nombre": c.rep_legal_nombre,
         "rep_legal_rut": c.rep_legal_rut,
+        "rep_legal_ci": getattr(c, "rep_legal_ci", None),
+        "rep_legal_cargo": getattr(c, "rep_legal_cargo", None),
         "empresa_razon_social": c.empresa_razon_social,
         "empresa_rut": c.empresa_rut,
         "empresa_direccion": c.empresa_direccion,
+        "empresa_ciudad_comuna": getattr(c, "empresa_ciudad_comuna", None),
         "empresa_giro": getattr(c, "empresa_giro", None),
+        "canal_portal_url": getattr(c, "canal_portal_url", None),
         "actualizado_por": c.actualizado_por,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
     }
@@ -469,14 +477,22 @@ def actualizar_config(
         cfg.rep_legal_nombre = payload.rep_legal_nombre
     if payload.rep_legal_rut is not None:
         cfg.rep_legal_rut = payload.rep_legal_rut
+    if payload.rep_legal_ci is not None:
+        cfg.rep_legal_ci = payload.rep_legal_ci
+    if payload.rep_legal_cargo is not None:
+        cfg.rep_legal_cargo = payload.rep_legal_cargo
     if payload.empresa_razon_social is not None:
         cfg.empresa_razon_social = payload.empresa_razon_social
     if payload.empresa_rut is not None:
         cfg.empresa_rut = payload.empresa_rut
     if payload.empresa_direccion is not None:
         cfg.empresa_direccion = payload.empresa_direccion
+    if payload.empresa_ciudad_comuna is not None:
+        cfg.empresa_ciudad_comuna = payload.empresa_ciudad_comuna
     if payload.empresa_giro is not None:
         cfg.empresa_giro = payload.empresa_giro
+    if payload.canal_portal_url is not None:
+        cfg.canal_portal_url = payload.canal_portal_url
     cfg.actualizado_por = current_user.get("nombre") or current_user.get("username")
     db.commit()
     return _config_to_dict(cfg)

@@ -296,6 +296,7 @@ with engine.connect() as conn:
             "dia_pago_mes": "INTEGER DEFAULT 5",
             "canal_portal_url": "TEXT",
             "plazo_fijo_conductor_meses": "INTEGER DEFAULT 3",
+            "empresa_ciudad_comuna": "TEXT",
         }
         for col, tipo in nuevas_cl.items():
             if col not in cl_cols:

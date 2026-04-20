@@ -27,9 +27,14 @@ export default function ConfiguracionLegal() {
       jornada_legal_proxima_desde: cfg.jornada_legal_proxima_desde || null,
       rep_legal_nombre: cfg.rep_legal_nombre || null,
       rep_legal_rut: cfg.rep_legal_rut || null,
+      rep_legal_ci: cfg.rep_legal_ci || null,
+      rep_legal_cargo: cfg.rep_legal_cargo || null,
       empresa_razon_social: cfg.empresa_razon_social || null,
       empresa_rut: cfg.empresa_rut || null,
       empresa_direccion: cfg.empresa_direccion || null,
+      empresa_ciudad_comuna: cfg.empresa_ciudad_comuna || null,
+      empresa_giro: cfg.empresa_giro || null,
+      canal_portal_url: cfg.canal_portal_url || null,
     })
       .then(({ data }) => { setCfg(data); toast.success('Configuración guardada') })
       .catch(err => toast.error(err.response?.data?.detail || 'Error al guardar'))
@@ -126,6 +131,24 @@ export default function ConfiguracionLegal() {
                 onChange={(e) => set('rep_legal_rut', e.target.value)}
               />
             </div>
+            <div>
+              <label className="text-xs uppercase font-medium text-gray-600">Cédula de identidad</label>
+              <input
+                type="text" className="input mt-1"
+                placeholder="ej. 12.345.678-9"
+                value={cfg.rep_legal_ci || ''}
+                onChange={(e) => set('rep_legal_ci', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase font-medium text-gray-600">Cargo</label>
+              <input
+                type="text" className="input mt-1"
+                placeholder="ej. Gerente General"
+                value={cfg.rep_legal_cargo || ''}
+                onChange={(e) => set('rep_legal_cargo', e.target.value)}
+              />
+            </div>
           </div>
         </div>
 
@@ -159,6 +182,34 @@ export default function ConfiguracionLegal() {
                 value={cfg.empresa_direccion || ''}
                 onChange={(e) => set('empresa_direccion', e.target.value)}
               />
+            </div>
+            <div>
+              <label className="text-xs uppercase font-medium text-gray-600">Ciudad / Comuna</label>
+              <input
+                type="text" className="input mt-1"
+                placeholder="ej. Santiago, Las Condes"
+                value={cfg.empresa_ciudad_comuna || ''}
+                onChange={(e) => set('empresa_ciudad_comuna', e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase font-medium text-gray-600">Giro</label>
+              <input
+                type="text" className="input mt-1"
+                placeholder="ej. Transporte de carga"
+                value={cfg.empresa_giro || ''}
+                onChange={(e) => set('empresa_giro', e.target.value)}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs uppercase font-medium text-gray-600">URL Portal de consultas</label>
+              <input
+                type="text" className="input mt-1"
+                placeholder="ej. https://trabajadores.e-courier.cl"
+                value={cfg.canal_portal_url || ''}
+                onChange={(e) => set('canal_portal_url', e.target.value)}
+              />
+              <p className="text-xs text-gray-400 mt-0.5">Aparece en los contratos como canal de consultas del trabajador</p>
             </div>
           </div>
         </div>
