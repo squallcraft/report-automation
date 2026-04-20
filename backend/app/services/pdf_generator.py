@@ -887,6 +887,7 @@ def generar_pdf_liquidacion(
     liquidacion,
     trabajador,
     descuentos_adicionales: Optional[list] = None,
+    cfg=None,  # ConfiguracionLegal | None — para nombre/RUT del rep. legal en firma
 ) -> bytes:
     """
     Genera la liquidación de sueldo mensual oficial (formato chileno).
@@ -1214,8 +1215,8 @@ def generar_pdf_liquidacion(
         return elems
 
     firma_rep   = _firma_cell(
-        "Adriana Colina Aguilar — Representante Legal",
-        "RUT 25.936.753-0",
+        f"{getattr(cfg, 'rep_legal_nombre', None) or 'Adriana Colina Aguilar'} — {getattr(cfg, 'rep_legal_cargo', None) or 'Representante Legal'}",
+        f"RUT {getattr(cfg, 'rep_legal_rut', None) or '25.936.753-0'}",
         FIRMA_REP_PATH,
     )
     firma_trab  = _firma_cell(

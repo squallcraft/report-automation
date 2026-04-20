@@ -134,9 +134,11 @@ def _liq_to_dict(liq: LiquidacionMensual, nombre: str = "") -> dict:
 def _generar_pdf_para_liquidacion(liq: LiquidacionMensual, db: Session) -> bytes:
     from app.services.pdf_generator import generar_pdf_liquidacion
     from app.models import AjusteLiquidacion, CuotaPrestamo, Prestamo, EstadoPrestamoEnum
+    from app.services.contratos import obtener_config_legal
     trabajador = db.get(Trabajador, liq.trabajador_id)
     if not trabajador:
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    cfg = obtener_config_legal(db)
 
     # Recopilar descuentos adicionales (préstamos + ajustes negativos) para el período
     descuentos_adicionales = []
@@ -182,6 +184,7 @@ def _generar_pdf_para_liquidacion(liq: LiquidacionMensual, db: Session) -> bytes
     return generar_pdf_liquidacion(
         liq, trabajador,
         descuentos_adicionales=descuentos_adicionales or None,
+        cfg=cfg,
     )
 
 
