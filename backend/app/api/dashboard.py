@@ -1072,6 +1072,25 @@ def sellers_tiers(
     ).group_by(Envio.seller_id).all()
     prev_map = {r.seller_id: r.total for r in prev}
 
+    # Conteo diario por seller para calcular el mejor día (peak histórico del mes).
+    # Sirve para análisis de capacidad: cuántos envíos llegó a hacer en su mejor jornada.
+    daily_counts = db.query(
+        Envio.seller_id,
+        Envio.fecha_entrega,
+        sqlfunc.count(Envio.id).label("n"),
+    ).filter(
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.seller_id.isnot(None),
+    ).group_by(Envio.seller_id, Envio.fecha_entrega).all()
+
+    seller_daily: dict = {}
+    for r in daily_counts:
+        seller_daily.setdefault(r.seller_id, []).append((r.fecha_entrega, r.n))
+    mejor_dia_seller = {
+        sid: max(lst, key=lambda t: t[1]) if lst else (None, 0)
+        for sid, lst in seller_daily.items()
+    }
+
     sellers_db = {s.id: s for s in db.query(Seller).filter(Seller.activo == True).all()}
 
     result = []
@@ -1096,12 +1115,15 @@ def sellers_tiers(
             delta_pct = 100.0
         tendencia = "CRECIENDO" if delta_pct > 5 else ("BAJANDO" if delta_pct < -5 else "ESTABLE")
 
+        mejor_fecha, mejor_n = mejor_dia_seller.get(r.seller_id, (None, 0))
         result.append({
             "seller_id": r.seller_id,
             "nombre": seller.nombre,
             "empresa": seller.empresa or "ECOURIER",
             "tier": tier,
             "avg_diario": round(avg_diario, 1),
+            "mejor_dia": mejor_n,
+            "mejor_dia_fecha": mejor_fecha.isoformat() if mejor_fecha else None,
             "total_mes": total,
             "dias_activos": dias,
             "ingreso_mes": ingreso,
@@ -1116,6 +1138,18 @@ def sellers_tiers(
         })
 
     # ── Aplicar agrupaciones analytics ──────────────────────────────────────
+    # Para grupos, el "mejor día" es la fecha donde la suma de envíos de TODOS los
+    # sellers del grupo es máxima (no el max individual de cualquier miembro).
+    group_daily: dict = {}
+    for sid, lst in seller_daily.items():
+        seller_obj = sellers_db.get(sid)
+        if not seller_obj:
+            continue
+        gname = group_seller(seller_obj.nombre)
+        bucket = group_daily.setdefault(gname, {})
+        for fecha, n in lst:
+            bucket[fecha] = bucket.get(fecha, 0) + n
+
     _tier_groups: dict = {}
     for row in result:
         gname = group_seller(row["nombre"])
@@ -1144,6 +1178,16 @@ def sellers_tiers(
             g["margen_pp"] = round(g["margen_mes"] / g["total_mes"]) if g["total_mes"] else 0
             g["delta_pct"] = round((g["total_mes"] - g["prev_total"]) / g["prev_total"] * 100, 1) if g["prev_total"] else (100.0 if g["total_mes"] else 0)
             g["tendencia"] = "CRECIENDO" if g["delta_pct"] > 5 else ("BAJANDO" if g["delta_pct"] < -5 else "ESTABLE")
+
+    for g in _tier_groups.values():
+        bucket = group_daily.get(g["nombre"]) or {}
+        if bucket:
+            mejor_fecha, mejor_n = max(bucket.items(), key=lambda kv: kv[1])
+            g["mejor_dia"] = mejor_n
+            g["mejor_dia_fecha"] = mejor_fecha.isoformat()
+        else:
+            g["mejor_dia"] = 0
+            g["mejor_dia_fecha"] = None
 
     result = list(_tier_groups.values())
     result.sort(key=lambda x: (TIER_ORDER.get(x["tier"], 9), -x["avg_diario"]))

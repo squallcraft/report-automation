@@ -643,6 +643,7 @@ export default function Retencion() {
                               ['nombre', 'Seller', 'left'],
                               ['tier', 'Tier', 'center'],
                               ['avg_diario', 'Prom. diario', 'right'],
+                              ['mejor_dia', 'Mejor día', 'right'],
                               ['total_mes', 'Total mes', 'right'],
                               ['ingreso_mes', 'Ingreso mes', 'right'],
                               ['margen_mes', 'Margen', 'right'],
@@ -671,6 +672,12 @@ export default function Retencion() {
                               <td style={{ padding: '9px 12px', color: C.text, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}><TierBadge tier={s.tier} /></td>
                               <td style={{ padding: '9px 12px', textAlign: 'right', color: C.text, fontWeight: 600 }}>{s.avg_diario.toFixed(1)}</td>
+                              <td
+                                style={{ padding: '9px 12px', textAlign: 'right', color: C.text, fontWeight: 600 }}
+                                title={s.mejor_dia_fecha ? `Mejor día: ${new Date(s.mejor_dia_fecha + 'T12:00:00').toLocaleDateString('es-CL')}` : 'Sin envíos'}
+                              >
+                                {(s.mejor_dia || 0).toLocaleString()}
+                              </td>
                               <td style={{ padding: '9px 12px', textAlign: 'right', color: C.muted }}>{(s.total_mes || 0).toLocaleString()}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'right', color: C.green, fontWeight: 600 }}>${(s.ingreso_mes || 0).toLocaleString('es-CL')}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'right', color: s.margen_mes >= 0 ? C.green : C.red, fontWeight: 600 }}>${(s.margen_mes || 0).toLocaleString('es-CL')}</td>
@@ -682,7 +689,7 @@ export default function Retencion() {
                             </tr>
                           ))}
                           {tiersSellers.length === 0 && (
-                            <tr><td colSpan={9} style={{ padding: '32px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
+                            <tr><td colSpan={10} style={{ padding: '32px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
                           )}
                         </tbody>
                       </table>

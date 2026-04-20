@@ -222,6 +222,7 @@ export default function ReportesSellers() {
                 <ThSort col="nombre"     label="Seller"       align="left"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <ThSort col="tier"       label="Tier"         align="center" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <ThSort col="avg_diario" label="Prom. diario" align="right" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <ThSort col="mejor_dia"  label="Mejor día"    align="right" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <ThSort col="total_mes"  label="Total mes"    align="right" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <ThSort col="ingreso_mes" label="Ingreso"     align="right" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <ThSort col="margen_mes" label="Margen"       align="right" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -232,9 +233,9 @@ export default function ReportesSellers() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ padding: '48px', textAlign: 'center', color: C.dimmed }}>Cargando…</td></tr>
+                <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: C.dimmed }}>Cargando…</td></tr>
               ) : sellersVisible.length === 0 ? (
-                <tr><td colSpan={9} style={{ padding: '48px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
+                <tr><td colSpan={10} style={{ padding: '48px', textAlign: 'center', color: C.dimmed }}>Sin resultados</td></tr>
               ) : sellersVisible.map(s => (
                 <tr key={s.seller_id ?? s.nombre}
                   onClick={() => handleRowClick(s)}
@@ -252,6 +253,12 @@ export default function ReportesSellers() {
                   </td>
                   <td style={{ padding: '10px 14px', textAlign: 'center' }}><TierBadge tier={s.tier} /></td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: C.text, fontWeight: 600 }}>{s.avg_diario?.toFixed(1)}</td>
+                  <td
+                    style={{ padding: '10px 14px', textAlign: 'right', color: C.text, fontWeight: 600 }}
+                    title={s.mejor_dia_fecha ? `Mejor día: ${new Date(s.mejor_dia_fecha + 'T12:00:00').toLocaleDateString('es-CL')}` : 'Sin envíos'}
+                  >
+                    {(s.mejor_dia || 0).toLocaleString()}
+                  </td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: C.muted }}>{(s.total_mes || 0).toLocaleString()}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: C.green, fontWeight: 600 }}>{fmt(s.ingreso_mes)}</td>
                   <td style={{ padding: '10px 14px', textAlign: 'right', color: s.margen_mes >= 0 ? C.green : C.red, fontWeight: 600 }}>{fmt(s.margen_mes)}</td>
