@@ -296,7 +296,7 @@ export default function PlantillasContrato() {
         </table>
       </div>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editId ? 'Editar plantilla' : 'Nueva plantilla'} size="xl">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title={editId ? 'Editar plantilla' : 'Nueva plantilla'} size="4xl">
         <form onSubmit={submit} className="grid grid-cols-12 gap-4">
           <div className="col-span-12 md:col-span-9 space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -336,7 +336,7 @@ export default function PlantillasContrato() {
                 value={form.contenido}
                 onChange={e => setForm(f => ({ ...f, contenido: e.target.value }))}
                 className="input-field font-mono text-sm leading-relaxed"
-                rows={20}
+                rows={28}
                 placeholder={`# Contrato Individual de Trabajo
 
 En Santiago de Chile, a {{fecha.hoy_largo}}, entre {{empresa.razon_social}}, RUT {{empresa.rut}}, ...`}
@@ -348,7 +348,9 @@ En Santiago de Chile, a {{fecha.hoy_largo}}, entre {{empresa.razon_social}}, RUT
             </div>
           </div>
           <div className="col-span-12 md:col-span-3">
-            <VariablesPanel variables={variables} onInsert={insertVar} />
+            <div className="sticky top-0">
+              <VariablesPanel variables={variables} onInsert={insertVar} />
+            </div>
           </div>
           <div className="col-span-12 flex justify-end gap-2 pt-2 border-t">
             <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancelar</button>
