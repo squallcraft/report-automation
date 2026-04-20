@@ -10,7 +10,7 @@ from app.auth import (
     DRIVER_CUTOFF_ANIO, DRIVER_CUTOFF_MES, DRIVER_CUTOFF_SEMANA,
 )
 from app.models import Envio, Seller, Driver, Pickup, RolEnum
-from app.schemas import EnvioOut, EnvioUpdate
+from app.schemas import EnvioOut, EnvioUpdate, EnvioBulkUpdate, EnvioBulkUpdateResult
 from app.services.audit import registrar as audit
 
 router = APIRouter(prefix="/envios", tags=["Envíos"])
@@ -185,6 +185,63 @@ def contar_envios(
     query = db.query(Envio)
     query = _apply_common_filters(query, semana, mes, anio, seller_id, driver_id, homologado, search, comuna, empresa, meses=meses_list)
     return {"count": query.count()}
+
+
+@router.put("/bulk", response_model=EnvioBulkUpdateResult)
+def actualizar_envios_bulk(
+    data: EnvioBulkUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Aplica los mismos extras manuales a varios envíos a la vez.
+
+    Reglas:
+    - Solo envíos en estado 'pendiente' son modificados.
+    - Solo se actualizan los campos enviados explícitamente (los demás quedan intactos).
+    - Cada cambio se audita individualmente para mantener trazabilidad por envío.
+    """
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="Debe indicar al menos un envío")
+
+    # Pydantic v2 trae exclude_unset; permite distinguir "no enviado" de "enviado como 0/null".
+    update_fields = {
+        k: v for k, v in data.model_dump(exclude_unset=True).items()
+        if k in {"cobro_extra_manual", "pago_extra_manual"}
+    }
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No se indicaron campos a actualizar")
+
+    envios = db.query(Envio).filter(Envio.id.in_(data.ids)).all()
+    encontrados_ids = {e.id for e in envios}
+
+    skipped = []
+    for missing_id in set(data.ids) - encontrados_ids:
+        skipped.append({"id": missing_id, "motivo": "no_encontrado"})
+
+    updated = 0
+    for envio in envios:
+        if envio.estado_financiero != "pendiente":
+            skipped.append({
+                "id": envio.id,
+                "motivo": f"estado={envio.estado_financiero}",
+                "tracking": envio.tracking_id,
+            })
+            continue
+
+        antes = {c: getattr(envio, c) for c in update_fields}
+        for k, v in update_fields.items():
+            setattr(envio, k, v)
+        despues = {c: getattr(envio, c) for c in update_fields}
+        cambios = {c: {"antes": antes[c], "despues": despues[c]} for c in update_fields if antes[c] != despues[c]}
+        if cambios:
+            audit(db, "editar_envio_bulk", usuario=current_user, request=request,
+                  entidad="envio", entidad_id=envio.id, cambios=cambios,
+                  metadata={"tracking": envio.tracking_id, "bulk_size": len(data.ids)})
+        updated += 1
+
+    db.commit()
+    return {"updated": updated, "skipped": skipped, "total": len(data.ids)}
 
 
 @router.get("/{envio_id}", response_model=EnvioOut)

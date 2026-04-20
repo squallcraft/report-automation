@@ -255,6 +255,22 @@ class EnvioUpdate(BaseModel):
     pago_extra_manual: Optional[int] = None
 
 
+class EnvioBulkUpdate(BaseModel):
+    """Edición masiva de extras manuales sobre múltiples envíos.
+
+    Solo se aplica a envíos en estado 'pendiente'; el resto se reporta como skipped.
+    """
+    ids: List[int]
+    cobro_extra_manual: Optional[int] = None
+    pago_extra_manual: Optional[int] = None
+
+
+class EnvioBulkUpdateResult(BaseModel):
+    updated: int
+    skipped: List[dict]
+    total: int
+
+
 # ── Tarifas Plan-Comuna ──
 
 class TarifaPlanComunaBase(BaseModel):

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react'
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 
@@ -10,6 +10,14 @@ export default function DataTable({
   sortable = false, columnFilters, onColumnFilterChange,
   maxHeight,
   onSort, externalSortKey, externalSortDir,
+  // ── Selección múltiple opcional ──
+  // Si `selectable` es true, se renderiza una columna izquierda con checkboxes.
+  // El estado vive en el padre (Set de ids) para que persista al scrollear el virtualizer.
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
+  getRowId = (row) => row?.id,
+  isRowSelectable = () => true,
 }) {
   const [localSortKey, setLocalSortKey] = useState(null)
   const [localSortDir, setLocalSortDir] = useState('asc')
@@ -83,6 +91,46 @@ export default function DataTable({
 
   const scrollStyle = maxHeight ? { maxHeight, overflowY: 'auto' } : {}
 
+  // ── Selección múltiple ──
+  const selectableRows = useMemo(
+    () => (selectable && displayData ? displayData.filter(isRowSelectable) : []),
+    [selectable, displayData, isRowSelectable],
+  )
+  const selectedCount = useMemo(() => {
+    if (!selectable || !selectedIds) return 0
+    return selectableRows.reduce((acc, r) => acc + (selectedIds.has(getRowId(r)) ? 1 : 0), 0)
+  }, [selectable, selectedIds, selectableRows, getRowId])
+  const allChecked = selectable && selectableRows.length > 0 && selectedCount === selectableRows.length
+  const someChecked = selectable && selectedCount > 0 && selectedCount < selectableRows.length
+
+  const headerCheckboxRef = useRef(null)
+  useEffect(() => {
+    if (headerCheckboxRef.current) headerCheckboxRef.current.indeterminate = someChecked
+  }, [someChecked])
+
+  const toggleAll = useCallback(() => {
+    if (!onSelectionChange) return
+    const next = new Set(selectedIds || [])
+    if (allChecked) {
+      selectableRows.forEach((r) => next.delete(getRowId(r)))
+    } else {
+      selectableRows.forEach((r) => next.add(getRowId(r)))
+    }
+    onSelectionChange(next)
+  }, [allChecked, onSelectionChange, selectedIds, selectableRows, getRowId])
+
+  const toggleOne = useCallback((row) => {
+    if (!onSelectionChange) return
+    const id = getRowId(row)
+    if (id == null) return
+    const next = new Set(selectedIds || [])
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectionChange(next)
+  }, [onSelectionChange, selectedIds, getRowId])
+
+  const totalCols = columns.length + (selectable ? 1 : 0)
+
   if (!data || data.length === 0) {
     return (
       <div className="card text-center py-12 text-gray-500">
@@ -101,6 +149,19 @@ export default function DataTable({
         <table className="w-full text-xs sm:text-sm min-w-[480px]">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-gray-200 bg-gray-50">
+              {selectable && (
+                <th className="px-2 py-2 sm:py-3 bg-gray-50 w-8">
+                  <input
+                    ref={headerCheckboxRef}
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    aria-label="Seleccionar todos"
+                    title={allChecked ? 'Deseleccionar todos' : 'Seleccionar todos los visibles'}
+                  />
+                </th>
+              )}
               {columns.map((col) => {
                 const isSortable = sortable && col.key !== 'actions' && col.key !== 'acciones' && col.label
                 const isActive = activeSortKey === col.key
@@ -127,6 +188,7 @@ export default function DataTable({
             </tr>
             {hasFilters && (
               <tr className="border-b border-gray-200 bg-gray-50">
+                {selectable && <th className="px-2 py-1.5 bg-gray-50 w-8" />}
                 {columns.map((col) => {
                   const filter = columnFilters[col.key]
                   if (!filter) return <th key={col.key} className="px-2 py-1.5 bg-gray-50" />
@@ -161,17 +223,33 @@ export default function DataTable({
           <tbody className="divide-y divide-gray-100">
             {useVirtual ? (
               <>
-                {paddingTop > 0 && <tr aria-hidden="true"><td colSpan={columns.length} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>}
+                {paddingTop > 0 && <tr aria-hidden="true"><td colSpan={totalCols} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>}
                 {virtualItems.map((virtualRow) => {
                   const row = displayData[virtualRow.index]
+                  const rowId = selectable ? getRowId(row) : null
+                  const isSelected = selectable && rowId != null && selectedIds?.has(rowId)
+                  const canSelect = selectable && isRowSelectable(row)
                   return (
                     <tr
                       key={row.id ?? virtualRow.index}
                       data-index={virtualRow.index}
                       ref={(node) => node && rowVirtualizer.measureElement(node)}
                       onClick={() => onRowClick?.(row)}
-                      className={`transition-colors ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
+                      className={`transition-colors ${isSelected ? 'bg-primary-50/60' : ''} ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
                     >
+                      {selectable && (
+                        <td className="px-2 py-1.5 sm:py-2 align-top w-8" onClick={(e) => e.stopPropagation()}>
+                          {canSelect ? (
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                              checked={!!isSelected}
+                              onChange={() => toggleOne(row)}
+                              aria-label="Seleccionar fila"
+                            />
+                          ) : null}
+                        </td>
+                      )}
                       {columns.map((col) => (
                         <td
                           key={col.key}
@@ -186,28 +264,46 @@ export default function DataTable({
                     </tr>
                   )
                 })}
-                {paddingBottom > 0 && <tr aria-hidden="true"><td colSpan={columns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>}
+                {paddingBottom > 0 && <tr aria-hidden="true"><td colSpan={totalCols} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>}
               </>
             ) : (
-              displayData.map((row, idx) => (
-                <tr
-                  key={row.id || idx}
-                  onClick={() => onRowClick?.(row)}
-                  className={`transition-colors ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
-                >
-                  {columns.map((col) => (
-                    <td
-                      key={col.key}
-                      className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap text-xs sm:text-sm
-                        ${col.align === 'right' ? 'text-right' : ''}
-                        ${col.align === 'center' ? 'text-center' : ''}
-                        ${col.className || ''}`}
-                    >
-                      {col.render ? col.render(row[col.key], row) : row[col.key]}
-                    </td>
-                  ))}
-                </tr>
-              ))
+              displayData.map((row, idx) => {
+                const rowId = selectable ? getRowId(row) : null
+                const isSelected = selectable && rowId != null && selectedIds?.has(rowId)
+                const canSelect = selectable && isRowSelectable(row)
+                return (
+                  <tr
+                    key={row.id || idx}
+                    onClick={() => onRowClick?.(row)}
+                    className={`transition-colors ${isSelected ? 'bg-primary-50/60' : ''} ${onRowClick ? 'cursor-pointer hover:bg-primary-50' : 'hover:bg-gray-50'}`}
+                  >
+                    {selectable && (
+                      <td className="px-2 py-1.5 sm:py-2 w-8" onClick={(e) => e.stopPropagation()}>
+                        {canSelect ? (
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                            checked={!!isSelected}
+                            onChange={() => toggleOne(row)}
+                            aria-label="Seleccionar fila"
+                          />
+                        ) : null}
+                      </td>
+                    )}
+                    {columns.map((col) => (
+                      <td
+                        key={col.key}
+                        className={`px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap text-xs sm:text-sm
+                          ${col.align === 'right' ? 'text-right' : ''}
+                          ${col.align === 'center' ? 'text-center' : ''}
+                          ${col.className || ''}`}
+                      >
+                        {col.render ? col.render(row[col.key], row) : row[col.key]}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

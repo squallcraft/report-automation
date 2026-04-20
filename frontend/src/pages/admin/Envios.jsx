@@ -4,7 +4,7 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { FileText, Search, PackagePlus, Pencil, X, Lock, Package } from 'lucide-react'
+import { FileText, Search, PackagePlus, Pencil, X, Lock, Package, CheckSquare } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
 const ESTADO_BADGE = {
@@ -58,6 +58,20 @@ export default function Envios() {
   const [productoForm, setProductoForm] = useState({ codigo_mlc: '', descripcion: '', extra_seller: 0, extra_driver: 0 })
   const [savingProducto, setSavingProducto] = useState(false)
 
+  // ── Selección múltiple ──
+  // Solo se pueden editar masivamente envíos en estado 'pendiente' (igual que el edit individual).
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkModal, setBulkModal] = useState(false)
+  const [bulkForm, setBulkForm] = useState({
+    set_cobro: false, cobro_extra_manual: 0,
+    set_pago: false, pago_extra_manual: 0,
+  })
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const isRowSelectable = useCallback(
+    (row) => !row?.estado_financiero || row.estado_financiero === 'pendiente',
+    [],
+  )
+
   useEffect(() => {
     api.get('/sellers', { params: { activo: true } }).then(({ data }) => {
       setSellers(Array.isArray(data) ? data : [])
@@ -107,6 +121,17 @@ export default function Envios() {
   useEffect(() => {
     fetchEnvios()
   }, [fetchEnvios])
+
+  // Limpiar selección de ids que ya no están en el listado actual (cambio de filtros/período).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      const visible = new Set(envios.map((e) => e.id))
+      const next = new Set()
+      prev.forEach((id) => { if (visible.has(id)) next.add(id) })
+      return next.size === prev.size ? prev : next
+    })
+  }, [envios])
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -177,6 +202,39 @@ export default function Envios() {
       extra_seller: 0,
       extra_driver: 0,
     })
+  }
+
+  const openBulkModal = () => {
+    setBulkForm({ set_cobro: false, cobro_extra_manual: 0, set_pago: false, pago_extra_manual: 0 })
+    setBulkModal(true)
+  }
+
+  const handleSaveBulk = (e) => {
+    e.preventDefault()
+    if (!bulkForm.set_cobro && !bulkForm.set_pago) {
+      toast.error('Marcá al menos un campo a actualizar')
+      return
+    }
+    if (selectedIds.size === 0) return
+    const payload = { ids: Array.from(selectedIds) }
+    if (bulkForm.set_cobro) payload.cobro_extra_manual = parseInt(bulkForm.cobro_extra_manual, 10) || 0
+    if (bulkForm.set_pago) payload.pago_extra_manual = parseInt(bulkForm.pago_extra_manual, 10) || 0
+
+    setBulkSaving(true)
+    api.put('/envios/bulk', payload)
+      .then(({ data }) => {
+        const skipped = (data?.skipped || []).length
+        if (skipped > 0) {
+          toast.success(`${data.updated} actualizados, ${skipped} omitidos (no estaban en estado pendiente)`)
+        } else {
+          toast.success(`${data.updated} envío(s) actualizado(s)`)
+        }
+        setBulkModal(false)
+        setSelectedIds(new Set())
+        fetchEnvios()
+      })
+      .catch((err) => toast.error(err.response?.data?.detail || 'Error al actualizar masivamente'))
+      .finally(() => setBulkSaving(false))
   }
 
   const handleSaveProducto = (e) => {
@@ -385,7 +443,30 @@ export default function Envios() {
           columnFilters={columnFiltersConfig}
           onColumnFilterChange={handleColumnFilter}
           maxHeight="calc(100vh - 280px)"
+          selectable
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          isRowSelectable={isRowSelectable}
         />
+      )}
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-white border border-gray-200 shadow-xl rounded-full pl-4 pr-2 py-2 flex items-center gap-3">
+          <CheckSquare size={16} className="text-primary-600" />
+          <span className="text-sm font-medium text-gray-700">
+            {selectedIds.size} env{selectedIds.size === 1 ? 'ío' : 'íos'} seleccionado{selectedIds.size === 1 ? '' : 's'}
+          </span>
+          <button onClick={openBulkModal} className="btn-primary text-xs py-1.5 px-3 rounded-full flex items-center gap-1">
+            <Pencil size={12} /> Editar extras
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-full"
+            title="Limpiar selección"
+          >
+            <X size={16} />
+          </button>
+        </div>
       )}
 
       <Modal open={!!detailModal} onClose={() => setDetailModal(null)} title="Detalle del Envío" wide>
@@ -441,6 +522,60 @@ export default function Envios() {
             </div>
           </form>
         )}
+      </Modal>
+
+      <Modal open={bulkModal} onClose={() => setBulkModal(false)} title={`Editar ${selectedIds.size} envíos`}>
+        <form onSubmit={handleSaveBulk} className="space-y-4">
+          <div className="bg-blue-50 border border-blue-100 text-blue-800 rounded-lg p-3 text-xs">
+            Solo se aplicará a envíos en estado <strong>pendiente</strong>. Los liquidados/facturados quedan intactos.
+            Marcá únicamente los campos que querés cambiar; el resto no se toca.
+          </div>
+
+          <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={bulkForm.set_cobro}
+                onChange={(e) => setBulkForm((f) => ({ ...f, set_cobro: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Cobro Extra al Seller (CLP)</span>
+            </label>
+            <input
+              type="number"
+              className="input-field"
+              value={bulkForm.cobro_extra_manual}
+              onChange={(e) => setBulkForm((f) => ({ ...f, cobro_extra_manual: e.target.value }))}
+              disabled={!bulkForm.set_cobro}
+            />
+          </div>
+
+          <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={bulkForm.set_pago}
+                onChange={(e) => setBulkForm((f) => ({ ...f, set_pago: e.target.checked }))}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Pago Extra al Driver (CLP)</span>
+            </label>
+            <input
+              type="number"
+              className="input-field"
+              value={bulkForm.pago_extra_manual}
+              onChange={(e) => setBulkForm((f) => ({ ...f, pago_extra_manual: e.target.value }))}
+              disabled={!bulkForm.set_pago}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+            <button type="button" onClick={() => setBulkModal(false)} className="btn-secondary">Cancelar</button>
+            <button type="submit" disabled={bulkSaving} className="btn-primary">
+              {bulkSaving ? 'Guardando...' : `Aplicar a ${selectedIds.size} envíos`}
+            </button>
+          </div>
+        </form>
       </Modal>
 
       <Modal open={!!productoModal} onClose={() => setProductoModal(null)} title="Crear Producto Extra">
