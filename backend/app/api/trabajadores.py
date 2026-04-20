@@ -16,7 +16,10 @@ from app.auth import require_admin, require_admin_or_administracion, require_per
 from app.models import Trabajador, PagoTrabajador, Prestamo, VacacionTrabajador
 from app.schemas import TrabajadorCreate, TrabajadorUpdate, TrabajadorOut, VacacionCreate, VacacionOut
 from app.services.audit import registrar as audit
-from app.services.remuneraciones import aplicar_calculo_a_trabajador, calcular_desde_liquido, TASAS_AFP, IMM, VALOR_UF, TOPE_GRATIFICACION_MENSUAL
+from app.services.remuneraciones import (
+    aplicar_calculo_a_trabajador, calcular_desde_liquido,
+    bruto_a_liquido, TASAS_AFP, IMM, VALOR_UF, TOPE_GRATIFICACION_MENSUAL,
+)
 from app.services.parametros import obtener_parametros, actualizar_mes_actual
 
 router = APIRouter(prefix="/trabajadores", tags=["trabajadores"])
@@ -87,6 +90,70 @@ def simular_calculo(
         "uf_usada": float(params["uf"]),
         "utm_usada": params["utm"],
         "imm_usado": params["imm"],
+        "fuente": params.get("fuente"),
+    }
+
+
+@router.post("/simular-imm")
+def simular_imm(
+    liquido_objetivo: int = Query(..., gt=0),
+    afp: str = Query("Capital"),
+    sistema_salud: str = Query("FONASA"),
+    monto_cotizacion_salud: Optional[str] = Query(None),
+    tipo_contrato: str = Query("INDEFINIDO"),
+    db: Session = Depends(get_db),
+):
+    """
+    Calcula cuánto en asignaciones no imponibles (colación + movilización)
+    se necesita para que un trabajador con base = IMM llegue al líquido objetivo.
+    """
+    from datetime import date
+    hoy = date.today()
+    params = obtener_parametros(db, hoy.year, hoy.month)
+    imm = params["imm"]
+    uf  = float(params["uf"])
+    utm = params["utm"]
+
+    tope_grat = round(4.75 * imm / 12)
+    grat_imm  = min(round(imm * 0.25), tope_grat)
+    imponible_imm = imm + grat_imm
+
+    r = bruto_a_liquido(
+        remuneracion_imponible=imponible_imm,
+        afp=afp,
+        sistema_salud=sistema_salud,
+        monto_cotizacion_salud=monto_cotizacion_salud,
+        tipo_contrato=tipo_contrato,
+        movilizacion=0,
+        colacion=0,
+        viaticos=0,
+        utm=utm,
+        valor_uf=uf,
+        imm=imm,
+    )
+
+    brecha = max(0, liquido_objetivo - r.liquido_imponible)
+    sugerencia_colacion     = round(brecha * 0.5)
+    sugerencia_movilizacion = brecha - sugerencia_colacion
+
+    return {
+        "imm": imm,
+        "imponible_imm": imponible_imm,
+        "sueldo_base_imm": imm,
+        "gratificacion_imm": grat_imm,
+        "descuento_afp": r.descuento_afp,
+        "descuento_salud": r.descuento_salud_legal,
+        "descuento_cesantia": r.descuento_cesantia,
+        "iusc": r.iusc,
+        "total_descuentos": r.total_descuentos,
+        "liquido_imponible": r.liquido_imponible,
+        "liquido_objetivo": liquido_objetivo,
+        "brecha": brecha,
+        "sugerencia_colacion": sugerencia_colacion,
+        "sugerencia_movilizacion": sugerencia_movilizacion,
+        "factible": brecha >= 0,
+        "uf_usada": uf,
+        "utm_usada": utm,
         "fuente": params.get("fuente"),
     }
 

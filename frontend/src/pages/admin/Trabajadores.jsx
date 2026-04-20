@@ -3,7 +3,7 @@ import api from '../../api'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator, KeyRound, Briefcase } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users, DollarSign, Calendar, CalendarDays, Calculator, KeyRound, Briefcase, Wand2, ChevronDown, ChevronUp, Info } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import ContratacionPanel from './ContratacionPanel'
 
@@ -59,6 +59,155 @@ const ESTADOS_CIVILES = [
   { value: 'DIVORCIADO', label: 'Divorciado/a' },
   { value: 'VIUDO', label: 'Viudo/a' },
 ]
+
+function AsistenteIMM({ form, onAplicar }) {
+  const [abierto, setAbierto] = useState(false)
+  const [liquidoObj, setLiquidoObj] = useState('')
+  const [resultado, setResultado] = useState(null)
+  const [cargando, setCargando] = useState(false)
+  const [colEdit, setColEdit] = useState(0)
+  const [movEdit, setMovEdit] = useState(0)
+
+  const calcular = useCallback(() => {
+    const liq = Number(liquidoObj)
+    if (!liq || !form.afp) return
+    setCargando(true)
+    const params = {
+      liquido_objetivo: liq,
+      afp: form.afp,
+      sistema_salud: form.sistema_salud || 'FONASA',
+      tipo_contrato: form.tipo_contrato || 'INDEFINIDO',
+    }
+    if (form.monto_cotizacion_salud) params.monto_cotizacion_salud = form.monto_cotizacion_salud
+    api.post('/trabajadores/simular-imm', null, { params })
+      .then(({ data }) => {
+        setResultado(data)
+        setColEdit(data.sugerencia_colacion)
+        setMovEdit(data.sugerencia_movilizacion)
+      })
+      .catch(() => toast.error('Error al calcular modo IMM'))
+      .finally(() => setCargando(false))
+  }, [liquidoObj, form.afp, form.sistema_salud, form.tipo_contrato, form.monto_cotizacion_salud])
+
+  const totalAsignado = (Number(colEdit) || 0) + (Number(movEdit) || 0)
+  const diferencia = resultado ? totalAsignado - resultado.brecha : 0
+
+  return (
+    <div className="rounded-lg border border-violet-200 bg-violet-50">
+      <button
+        type="button"
+        onClick={() => setAbierto(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-violet-800"
+      >
+        <span className="flex items-center gap-2"><Wand2 size={15} /> Asistente IMM — calcular asignaciones desde líquido objetivo</span>
+        {abierto ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+      </button>
+
+      {abierto && (
+        <div className="px-4 pb-4 space-y-3">
+          <p className="text-xs text-violet-600 flex items-start gap-1.5">
+            <Info size={13} className="mt-0.5 shrink-0" />
+            Fija el sueldo base en el IMM vigente y calcula cuánto colación + movilización (no imponible) se necesita para llegar al líquido deseado.
+          </p>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-violet-700 mb-1">Líquido objetivo</label>
+              <input
+                type="number" min={0}
+                value={liquidoObj}
+                onChange={e => setLiquidoObj(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && calcular()}
+                className="input-field"
+                placeholder="ej. 700000"
+              />
+            </div>
+            <button
+              type="button" onClick={calcular} disabled={cargando || !form.afp}
+              className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-40 whitespace-nowrap"
+            >
+              {cargando ? 'Calculando…' : 'Calcular'}
+            </button>
+          </div>
+          {!form.afp && <p className="text-xs text-amber-600">⚠ Selecciona AFP primero para calcular.</p>}
+
+          {resultado && (
+            <div className="space-y-3">
+              <div className="rounded-md bg-white border border-violet-200 p-3 text-xs space-y-1.5">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  <span className="text-gray-500">IMM vigente</span>
+                  <span className="font-semibold text-right">{fmt(resultado.imm)}</span>
+                  <span className="text-gray-500">Gratificación (25%)</span>
+                  <span className="font-semibold text-right">+ {fmt(resultado.gratificacion_imm)}</span>
+                  <span className="text-gray-500">Imponible total</span>
+                  <span className="font-semibold text-right border-t border-gray-100 pt-1">{fmt(resultado.imponible_imm)}</span>
+                  <span className="text-red-500">Desc. AFP</span>
+                  <span className="font-medium text-red-600 text-right">− {fmt(resultado.descuento_afp)}</span>
+                  <span className="text-red-500">Desc. Salud</span>
+                  <span className="font-medium text-red-600 text-right">− {fmt(resultado.descuento_salud)}</span>
+                  {resultado.descuento_cesantia > 0 && <>
+                    <span className="text-red-500">Cesantía</span>
+                    <span className="font-medium text-red-600 text-right">− {fmt(resultado.descuento_cesantia)}</span>
+                  </>}
+                  {resultado.iusc > 0 && <>
+                    <span className="text-red-500">IUSC</span>
+                    <span className="font-medium text-red-600 text-right">− {fmt(resultado.iusc)}</span>
+                  </>}
+                  <span className="text-gray-700 font-medium">Líquido imponible</span>
+                  <span className="font-bold text-right">{fmt(resultado.liquido_imponible)}</span>
+                </div>
+                <div className="border-t border-dashed border-violet-200 pt-2 flex justify-between items-center">
+                  <span className="text-violet-700 font-semibold">Asignaciones necesarias</span>
+                  <span className="font-bold text-violet-800 text-sm">{fmt(resultado.brecha)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-violet-700">Distribuir asignaciones (editable):</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Colación</label>
+                    <input type="number" min={0} value={colEdit}
+                      onChange={e => setColEdit(Number(e.target.value) || 0)}
+                      className="input-field text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-600 mb-1 block">Movilización</label>
+                    <input type="number" min={0} value={movEdit}
+                      onChange={e => setMovEdit(Number(e.target.value) || 0)}
+                      className="input-field text-sm" />
+                  </div>
+                </div>
+                <div className={`text-xs flex justify-between px-1 ${Math.abs(diferencia) <= 1 ? 'text-green-600' : 'text-amber-600'}`}>
+                  <span>Total asignado: {fmt(totalAsignado)}</span>
+                  {Math.abs(diferencia) > 1
+                    ? <span>{diferencia > 0 ? `+${fmt(diferencia)} sobre objetivo` : `${fmt(Math.abs(diferencia))} bajo objetivo`}</span>
+                    : <span>✓ Cuadra exacto</span>}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onAplicar({
+                    sueldo_liquido: resultado.liquido_objetivo,
+                    colacion: colEdit,
+                    movilizacion: movEdit,
+                  })
+                  toast.success('Asignaciones aplicadas al formulario')
+                  setAbierto(false)
+                }}
+                className="w-full py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700"
+              >
+                Aplicar al formulario
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 function CalcPreview({ form }) {
   const [calc, setCalc] = useState(null)
@@ -489,6 +638,13 @@ export default function Trabajadores() {
               <p className="text-xs text-gray-400 mt-0.5">No imponible</p>
             </div>
           </div>
+
+          <AsistenteIMM
+            form={form}
+            onAplicar={({ sueldo_liquido, colacion, movilizacion }) =>
+              setForm(f => ({ ...f, sueldo_liquido, colacion, movilizacion }))
+            }
+          />
 
           <CalcPreview form={form} />
 
