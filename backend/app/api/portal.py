@@ -876,6 +876,7 @@ async def driver_upload_factura(
     semana: int = Query(...),
     mes: int = Query(...),
     anio: int = Query(...),
+    tipo_documento: Optional[str] = Query("BOLETA"),
     nota: Optional[str] = Query(None),
     archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -922,6 +923,8 @@ async def driver_upload_factura(
         existing.nota_admin = None
         existing.revisado_por = None
         existing.revisado_en = None
+        if tipo_documento:
+            existing.tipo_documento = tipo_documento.upper()
     else:
         existing = FacturaDriver(
             driver_id=driver_id, semana=semana, mes=mes, anio=anio,
@@ -929,6 +932,7 @@ async def driver_upload_factura(
             archivo_path=file_path,
             estado=EstadoFacturaDriverEnum.CARGADA.value,
             nota_driver=nota,
+            tipo_documento=(tipo_documento or "BOLETA").upper(),
         )
         db.add(existing)
 
