@@ -1638,35 +1638,25 @@ def envios_valparaiso(
     Devuelve, para cada seller con 'tarifa de Valparaíso', el número de envíos
     del mes/año solicitado desglosado por semana.
 
-    Un seller 'tiene tarifa de Valparaíso' si cumple al menos una de:
-      1. Seller.empresa == 'VALPARAISO'
-      2. Tiene al menos una TarifaEscalonadaSeller con zona_aplicable ILIKE '%valparaí%'
+    Un seller 'tiene tarifa de Valparaíso' si su plan_tarifario contiene
+    'valparaiso' o 'valparaí' (sin importar mayúsculas/minúsculas).
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import or_
 
-    # Sellers con empresa == VALPARAISO
-    ids_empresa = {
-        row[0] for row in
-        db.query(Seller.id).filter(Seller.empresa == "VALPARAISO").all()
-    }
+    # Sellers cuyo plan_tarifario sea un plan de Valparaíso
+    sellers_valpo = db.query(Seller).filter(
+        or_(
+            Seller.plan_tarifario.ilike("%valparaiso%"),
+            Seller.plan_tarifario.ilike("%valparaí%"),
+        )
+    ).all()
 
-    # Sellers con tarifa escalonada zona Valparaíso
-    ids_escalonada = {
-        row[0] for row in
-        db.query(TarifaEscalonadaSeller.seller_id).filter(
-            TarifaEscalonadaSeller.zona_aplicable.ilike("%valparaí%")
-        ).all()
-    }
+    sellers_map = {s.id: s.nombre for s in sellers_valpo}
+    seller_ids = list(sellers_map.keys())
+    planes_usados = sorted({s.plan_tarifario for s in sellers_valpo if s.plan_tarifario})
 
-    seller_ids = list(ids_empresa | ids_escalonada)
     if not seller_ids:
-        return {"mes": mes, "anio": anio, "semanas": [], "sellers": [], "matriz": {}}
-
-    # Sellers involucrados
-    sellers_map = {
-        s.id: s.nombre
-        for s in db.query(Seller).filter(Seller.id.in_(seller_ids)).all()
-    }
+        return {"mes": mes, "anio": anio, "semanas": [], "sellers": [], "matriz": {}, "planes": []}
 
     # Envíos del mes agrupados por seller y semana
     rows = (
@@ -1695,6 +1685,11 @@ def envios_valparaiso(
         totales_semana[r.semana] = totales_semana.get(r.semana, 0) + r.total
         totales_seller[nombre] = totales_seller.get(nombre, 0) + r.total
 
+    # Sellers del plan sin envíos en el período también aparecen con 0
+    for s in sellers_valpo:
+        if s.nombre not in totales_seller:
+            totales_seller[s.nombre] = 0
+
     sellers_ordenados = sorted(totales_seller.keys(), key=lambda n: totales_seller[n], reverse=True)
 
     return {
@@ -1705,8 +1700,7 @@ def envios_valparaiso(
         "matriz": matriz,
         "totales_semana": totales_semana,
         "totales_seller": totales_seller,
-        "criterio": {
-            "ids_empresa": list(ids_empresa),
-            "ids_escalonada": list(ids_escalonada),
-        },
+        "planes": planes_usados,
+        "total_sellers_plan": len(seller_ids),
+        "criterio": f"plan_tarifario ILIKE '%valparaiso%' — planes: {', '.join(planes_usados)}",
     }

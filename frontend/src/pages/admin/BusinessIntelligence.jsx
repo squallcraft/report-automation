@@ -1432,18 +1432,26 @@ function TabValparaiso({ mes, anio }) {
       {!cargando && datos && datos.sellers.length > 0 && (
         <>
           {/* Parámetros */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {[
-              { label: 'Sellers', value: datos.sellers.length, color: '#6366f1' },
-              { label: 'Semanas', value: datos.semanas.length, color: '#0ea5e9' },
-              { label: 'Total paquetes', value: totalGeneral.toLocaleString('es-CL'), color: '#16a34a' },
-            ].map(p => (
-              <div key={p.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 20px', textAlign: 'center', minWidth: 120 }}>
-                <p style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{p.label}</p>
-                <p style={{ fontSize: 22, fontWeight: 700, color: p.color }}>{p.value}</p>
-              </div>
-            ))}
-          </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'Sellers en plan', value: datos.total_sellers_plan ?? datos.sellers.length, color: '#6366f1' },
+                      { label: 'Semanas con envíos', value: datos.semanas.length, color: '#0ea5e9' },
+                      { label: 'Total paquetes', value: totalGeneral.toLocaleString('es-CL'), color: '#16a34a' },
+                    ].map(p => (
+                      <div key={p.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 20px', textAlign: 'center', minWidth: 120 }}>
+                        <p style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{p.label}</p>
+                        <p style={{ fontSize: 22, fontWeight: 700, color: p.color }}>{p.value}</p>
+                      </div>
+                    ))}
+                    {datos.planes?.length > 0 && (
+                      <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 }}>
+                        <p style={{ fontSize: 11, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Planes detectados</p>
+                        {datos.planes.map(p => (
+                          <span key={p} style={{ fontSize: 12, fontWeight: 600, color: '#4c1d95', background: '#ede9fe', borderRadius: 4, padding: '2px 8px', display: 'inline-block' }}>{p}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
           {/* Matriz sellers × semanas */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
@@ -1517,8 +1525,7 @@ function TabValparaiso({ mes, anio }) {
 
           {/* Nota criterio */}
           <p style={{ fontSize: 11, color: C.dimmed, textAlign: 'right' }}>
-            Criterio: sellers con empresa = VALPARAISO{datos.criterio?.ids_escalonada?.length > 0 ? ' o tarifa escalonada con zona Valparaíso' : ''}.
-            Solo envíos con estado_entrega = delivered.
+            {datos.criterio}. Solo envíos con estado_entrega = delivered.
           </p>
         </>
       )}
