@@ -129,6 +129,7 @@ export default function Drivers() {
   const [saving, setSaving] = useState(false)
   const [toDelete, setToDelete] = useState(null)
   const [trabajadores, setTrabajadores] = useState([])
+  const [filtroEstado, setFiltroEstado] = useState('activos')
 
   const [importingHomolog, setImportingHomolog] = useState(false)
   const [importingTarifas, setImportingTarifas] = useState(false)
@@ -399,6 +400,23 @@ export default function Drivers() {
     return <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
   }
 
+  // Filtros disponibles con su predicado
+  const FILTROS = [
+    { id: 'todos',         label: 'Todos',          test: () => true },
+    { id: 'activos',       label: 'Activos',        test: (d) => d.activo },
+    { id: 'inactivos',     label: 'Inactivos',      test: (d) => !d.activo },
+    { id: 'contratados',   label: 'Contratados',    test: (d) => d.activo && d.contratado },
+    { id: 'jefes',         label: 'Jefes de flota', test: (d) => d.activo && d.subordinados_count > 0 },
+    { id: 'sin_acuerdo',   label: 'Sin acuerdo',    test: (d) => d.activo && !d.acuerdo_aceptado },
+  ]
+  const conteo = FILTROS.reduce((acc, f) => {
+    acc[f.id] = drivers.filter(f.test).length
+    return acc
+  }, {})
+  const driversFiltrados = drivers.filter(
+    (FILTROS.find(f => f.id === filtroEstado) || FILTROS[0]).test
+  )
+
   return (
     <div className="flex flex-col h-full gap-4">
       <PageHeader
@@ -433,13 +451,43 @@ export default function Drivers() {
         ) : null}
       />
 
-      <div className="flex-1 min-h-0">
-      <DataTable
-        columns={columns}
-        data={drivers}
-        onRowClick={handleRowClick}
-        emptyMessage="No hay drivers"
-      />
+      <div className="flex-1 min-h-0 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {FILTROS.map((f) => {
+            const activo = filtroEstado === f.id
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFiltroEstado(f.id)}
+                className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                  activo
+                    ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {f.label}
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  activo ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  {conteo[f.id]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex-1 min-h-0">
+          <DataTable
+            columns={columns}
+            data={driversFiltrados}
+            onRowClick={handleRowClick}
+            emptyMessage={
+              filtroEstado === 'todos'
+                ? 'No hay drivers'
+                : `No hay drivers en el filtro "${(FILTROS.find(f => f.id === filtroEstado) || {}).label}"`
+            }
+          />
+        </div>
       </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Driver' : 'Nuevo Driver'} wide>
