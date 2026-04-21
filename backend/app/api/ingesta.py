@@ -62,6 +62,28 @@ def _run_ingesta_in_background(
             },
         )
         print(f"[INGESTA] Auditoría registrada para task={task_id}", flush=True)
+
+        # Hook: tras una ingesta de envíos, intentar reconciliar asignaciones
+        # de ruta que estaban sin envio_id. Va en otro hilo para no bloquear.
+        try:
+            import threading as _threading
+            from app.database import SessionLocal as _SL
+            from app.services.rutas_entregas import reconciliar_pendientes
+            from datetime import date as _date, timedelta as _td
+
+            def _reconciliar_post_ingesta():
+                _db = _SL()
+                try:
+                    info = reconciliar_pendientes(_db, fecha_desde=_date.today() - _td(days=30))
+                    print(f"[INGESTA] reconciliacion post-ingesta: {info}", flush=True)
+                except Exception as _exc:
+                    print(f"[INGESTA] reconciliacion post-ingesta fallo: {_exc}", flush=True)
+                finally:
+                    _db.close()
+
+            _threading.Thread(target=_reconciliar_post_ingesta, daemon=True).start()
+        except Exception as _exc:
+            print(f"[INGESTA] no se pudo lanzar reconciliacion post-ingesta: {_exc}", flush=True)
     except Exception as e:
         import traceback
         print(f"[INGESTA ERROR] task={task_id}: {e}", flush=True)

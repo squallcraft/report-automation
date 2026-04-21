@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -762,6 +762,15 @@ with engine.connect() as conn:
         if "correo_informativo" not in sel_cols:
             safe_exec("ALTER TABLE sellers ADD COLUMN correo_informativo VARCHAR(120)")
 
+    if "envios" in insp.get_table_names():
+        env_cols2 = [c["name"] for c in insp.get_columns("envios")]
+        if "fecha_retiro" not in env_cols2:
+            safe_exec("ALTER TABLE envios ADD COLUMN fecha_retiro DATE")
+            safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_fecha_retiro ON envios (fecha_retiro)")
+        if "ruta_id" not in env_cols2:
+            safe_exec("ALTER TABLE envios ADD COLUMN ruta_id INTEGER")
+            safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_ruta_id ON envios (ruta_id)")
+
     # ── Migración: Grok Memory System (brief + snapshot) ──
     safe_exec("""
         CREATE TABLE IF NOT EXISTS grok_brief (
@@ -1518,6 +1527,8 @@ app.include_router(asistencia.router, prefix="/api")
 app.include_router(email_campaigns.router, prefix="/api")
 app.include_router(flota.router, prefix="/api")
 app.include_router(rentabilidad.router, prefix="/api")
+app.include_router(cron_jobs.router, prefix="/api")
+app.include_router(asignaciones_ruta.router, prefix="/api")
 
 
 @app.on_event("startup")
@@ -1534,6 +1545,40 @@ async def _startup_parametros():
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning("Startup parametros failed (non-fatal): %s", exc)
+
+
+@app.on_event("startup")
+async def _startup_scheduler():
+    """Inicia APScheduler, registra handlers y siembra los cron jobs por defecto.
+
+    Cada worker uvicorn corre su propio scheduler. La duplicación se evita
+    con advisory locks de Postgres dentro del job (ver services/scheduler.py).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        from app.database import SessionLocal
+        from app.services.cron_handlers import register_all_handlers, seed_default_cron_jobs
+        from app.services.scheduler import start_scheduler
+
+        register_all_handlers()
+        db = SessionLocal()
+        try:
+            seed_default_cron_jobs(db)
+        finally:
+            db.close()
+        start_scheduler()
+    except Exception as exc:
+        logger.warning("Startup scheduler failed (non-fatal): %s", exc)
+
+
+@app.on_event("shutdown")
+async def _shutdown_scheduler():
+    try:
+        from app.services.scheduler import shutdown_scheduler
+        shutdown_scheduler()
+    except Exception:
+        pass
 
 
 @app.get("/")

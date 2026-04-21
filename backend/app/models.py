@@ -202,6 +202,8 @@ class Envio(Base):
     descripcion_producto = Column(Text, nullable=True)
     codigo_producto = Column(String, nullable=True)
     ruta_nombre = Column(String, nullable=True)
+    ruta_id = Column(Integer, nullable=True, index=True)
+    fecha_retiro = Column(Date, nullable=True, index=True)
     direccion = Column(Text, nullable=True)
     homologado = Column(Boolean, default=True)
     ingesta_id = Column(String, nullable=True)
@@ -2261,3 +2263,100 @@ class EmailMensaje(Base):
     rebotado = Column(Boolean, default=False)
     error = Column(Text, nullable=True)
     enviado_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CronJob(Base):
+    """Configuración persistida de jobs programados que el scheduler ejecuta."""
+    __tablename__ = "cron_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(80), nullable=False, unique=True)
+    descripcion = Column(Text, nullable=True)
+    job_key = Column(String(80), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=False)
+    hora_ejecucion = Column(String(5), nullable=False, default="03:00")
+    config = Column(JSON, nullable=True)
+
+    ultima_ejecucion_at = Column(DateTime, nullable=True)
+    ultima_ejecucion_estado = Column(String(20), nullable=True)
+    ultima_ejecucion_mensaje = Column(Text, nullable=True)
+    ultima_ejecucion_resultado = Column(JSON, nullable=True)
+    ultima_ejecucion_duracion_s = Column(Numeric(10, 2), nullable=True)
+    proxima_ejecucion_at = Column(DateTime, nullable=True)
+
+    actualizado_por = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class CronEjecucion(Base):
+    """Historial de ejecuciones de cron jobs."""
+    __tablename__ = "cron_ejecuciones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cron_job_id = Column(Integer, ForeignKey("cron_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_key = Column(String(80), nullable=False, index=True)
+    iniciado_at = Column(DateTime, nullable=False, server_default=func.now())
+    finalizado_at = Column(DateTime, nullable=True)
+    duracion_s = Column(Numeric(10, 2), nullable=True)
+    estado = Column(String(20), nullable=False, default="running")
+    mensaje = Column(Text, nullable=True)
+    resultado = Column(JSON, nullable=True)
+    disparado_por = Column(String(40), nullable=False, default="scheduler")
+    disparado_por_usuario = Column(String, nullable=True)
+
+
+class AsignacionRuta(Base):
+    """Asignación de un envío a una ruta de conductor según el endpoint del courier.
+
+    Es la fuente de verdad del DENOMINADOR para calcular efectividad.
+    Cada registro intenta enlazarse con un Envio por tracking_id; si el envío
+    todavía no existe en BD, queda con envio_id=NULL y se reintenta en cada
+    ingesta CSV (hook auto-background).
+
+    Estado calculado:
+      - 'entregado'   : envio_id != NULL y envio.fecha_entrega != NULL
+      - 'cancelado'   : status del endpoint indica cancelación (no afecta tasa)
+      - 'sin_entrega' : todo lo demás
+    """
+    __tablename__ = "asignacion_ruta"
+    __table_args__ = (
+        Index("ix_asig_ruta_withdrawal", "withdrawal_date"),
+        Index("ix_asig_ruta_driver_periodo", "driver_id", "withdrawal_date"),
+        Index("ix_asig_ruta_route", "route_id"),
+        Index("ix_asig_ruta_estado", "estado_calculado"),
+        Index("ix_asig_ruta_envio_pendiente", "envio_id", "withdrawal_date"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    tracking_id = Column(String, nullable=False, unique=True, index=True)
+    external_id = Column(String, nullable=True, index=True)
+
+    withdrawal_date = Column(Date, nullable=False)
+    withdrawal_at = Column(DateTime, nullable=True)
+    pedido_creado_at = Column(DateTime, nullable=True)
+
+    route_id = Column(Integer, nullable=True, index=True)
+    route_name = Column(String, nullable=True)
+
+    driver_externo_id = Column(Integer, nullable=True)
+    driver_name = Column(String, nullable=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True, index=True)
+
+    seller_code = Column(String, nullable=True, index=True)
+
+    envio_id = Column(Integer, ForeignKey("envios.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    status_externo = Column(String, nullable=True)
+    estado_calculado = Column(String(20), nullable=False, default="sin_entrega")
+
+    raw_payload = Column(JSON, nullable=True)
+
+    intentos_reconciliacion = Column(Integer, nullable=False, default=0)
+    ultima_reconciliacion_at = Column(DateTime, nullable=True)
+    primera_ingesta_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    driver = relationship("Driver")
+    envio = relationship("Envio")

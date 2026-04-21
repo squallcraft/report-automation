@@ -91,6 +91,8 @@ import Vacaciones from './pages/admin/Vacaciones'
 import Asistencia from './pages/admin/Asistencia'
 import Flota from './pages/admin/Flota'
 import Rentabilidad from './pages/admin/Rentabilidad'
+import CronJobs from './pages/admin/CronJobs'
+import AsignacionesRuta from './pages/admin/AsignacionesRuta'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -177,6 +179,8 @@ export default function App() {
         <Route path="bi" element={<BusinessIntelligence />} />
         <Route path="efectividad" element={<EfectividadEntregas />} />
         <Route path="efectividad/driver/:driverId" element={<EfectividadDriver />} />
+        <Route path="cron-jobs" element={<CronJobs />} />
+        <Route path="asignaciones-ruta" element={<AsignacionesRuta />} />
         <Route path="ingresos-drivers" element={<IngresosDrivers />} />
         <Route path="retencion" element={<Retencion />} />
         <Route path="reportes-sellers" element={<ReportesSellers />} />
