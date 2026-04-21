@@ -165,6 +165,14 @@ function tipoContratoLabel(tipo) {
   return tipo || '—'
 }
 
+function distribucionLabel(d) {
+  if (d === 'LUNES_VIERNES') return 'de lunes a viernes'
+  if (d === 'LUNES_SABADO') return 'de lunes a sábado'
+  if (d === 'TURNOS') return 'según sistema de turnos'
+  if (d === 'OTRO') return 'según acuerdo de las partes'
+  return d || ''
+}
+
 export default function ContratoTrabajoAceptacion() {
   const navigate = useNavigate()
   const { updateUser } = useAuth()
@@ -323,9 +331,12 @@ export default function ContratoTrabajoAceptacion() {
             </Clausula>
 
             <Clausula n="5" titulo="Jornada de Trabajo">
-              La jornada ordinaria de trabajo será de <strong>40 horas semanales</strong>, distribuidas
-              de lunes a sábado, con posibilidad de promediarse en ciclos de hasta cuatro semanas conforme
-              al artículo 22 bis del Código del Trabajo.
+              La jornada ordinaria de trabajo será de <strong>{info?.jornada_semanal_horas || '—'} horas semanales</strong>
+              {info?.distribucion_jornada && (
+                <>, distribuidas <strong>{distribucionLabel(info.distribucion_jornada)}</strong></>
+              )}
+              , con posibilidad de promediarse en ciclos de hasta cuatro semanas conforme al artículo 22 bis
+              del Código del Trabajo.
             </Clausula>
 
             <Clausula n="6" titulo="Tipo de Contrato">

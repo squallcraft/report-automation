@@ -492,6 +492,11 @@ function FormNuevaVersion({ trabajador, anterior, onClose, onSaved }) {
               <input type="number" min="0" className="input mt-1" value={form.colacion} onChange={(e) => set('colacion', e.target.value)} />
             </div>
             <div>
+              <label className="text-xs font-medium text-gray-600 uppercase">Viáticos</label>
+              <input type="number" min="0" className="input mt-1" value={form.viaticos} onChange={(e) => set('viaticos', e.target.value)} />
+              <p className="text-[11px] mt-1 text-gray-400">Asignación no imponible (Art. 41 CT)</p>
+            </div>
+            <div>
               <label className="text-xs font-medium text-gray-600 uppercase">Cargo</label>
               <input type="text" className="input mt-1" value={form.cargo} onChange={(e) => set('cargo', e.target.value)} />
             </div>

@@ -18,7 +18,7 @@ const adminMenu = [
       { to: '/admin/ingesta', icon: Upload, label: 'Ingesta', permiso: 'ingesta' },
       { to: '/admin/envios', icon: FileText, label: 'Envíos', permiso: 'envios' },
       { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
-      { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas' },
+      { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas', permiso: 'efectividad' },
       { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
     ],
   },
@@ -28,10 +28,10 @@ const adminMenu = [
     group: 'Conductores', icon: Truck, children: [
       { to: '/admin/drivers', icon: Truck, label: 'Perfiles', permiso: 'drivers' },
       { to: '/admin/cpc', icon: CreditCard, label: 'CPC', permiso: 'cpc' },
-      { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA conductores', permiso: 'cpc' },
-      { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos conductores' },
-      { to: '/admin/flota', icon: Truck, label: 'Flota', permiso: 'drivers' },
-      { to: '/admin/rentabilidad', icon: TrendingUp, label: 'Rentabilidad', permiso: 'drivers' },
+      { to: '/admin/iva-drivers', icon: Receipt, label: 'IVA conductores', permiso: ['iva-drivers', 'cpc'] },
+      { to: '/admin/ingresos-drivers', icon: DollarSign, label: 'Ingresos conductores', permiso: 'ingresos-drivers' },
+      { to: '/admin/flota', icon: Truck, label: 'Flota', permiso: ['flota', 'drivers'] },
+      { to: '/admin/rentabilidad', icon: TrendingUp, label: 'Rentabilidad', permiso: ['rentabilidad', 'drivers'] },
     ],
   },
 
@@ -40,8 +40,8 @@ const adminMenu = [
     group: 'Sellers', icon: Store, children: [
       { to: '/admin/sellers', icon: Users, label: 'Perfiles', permiso: 'sellers' },
       { to: '/admin/facturacion', icon: Receipt, label: 'CPS', permiso: 'facturacion' },
-      { to: '/admin/reportes-sellers', icon: BarChart3, label: 'Reportes' },
-      { to: '/admin/retencion', icon: TrendingUp, label: 'Retención comercial' },
+      { to: '/admin/reportes-sellers', icon: BarChart3, label: 'Reportes', permiso: 'reportes-sellers' },
+      { to: '/admin/retencion', icon: TrendingUp, label: 'Retención comercial', permiso: 'retencion' },
     ],
   },
 
@@ -69,46 +69,46 @@ const adminMenu = [
       { to: '/admin/pagos-trabajadores', icon: HandCoins, label: 'Pagos nómina', permiso: 'pagos-trabajadores' },
       { to: '/admin/vacaciones', icon: Calendar, label: 'Vacaciones', permiso: 'rrhh-vacaciones' },
       { to: '/admin/asistencia', icon: Clock, label: 'Control horario', permiso: 'asistencia' },
-      { to: '/admin/plantillas-contrato', icon: FileSignature, label: 'Plantillas de contrato' },
-      { to: '/admin/configuracion-legal', icon: Shield, label: 'Configuración legal' },
+      { to: '/admin/plantillas-contrato', icon: FileSignature, label: 'Plantillas de contrato', permiso: 'plantillas-contrato' },
+      { to: '/admin/configuracion-legal', icon: Shield, label: 'Configuración legal', permiso: 'configuracion-legal' },
     ],
   },
 
   // ── Comercial ────────────────────────────────────────────────────────────
   {
     group: 'Comercial', icon: Kanban, children: [
-      { to: '/admin/leads', icon: Inbox, label: 'Leads WhatsApp' },
-      { to: '/admin/leads/pipeline', icon: Kanban, label: 'Pipeline CRM' },
-      { to: '/admin/leads/kb', icon: BookOpen, label: 'Base de conocimiento' },
+      { to: '/admin/leads', icon: Inbox, label: 'Leads WhatsApp', permiso: 'leads' },
+      { to: '/admin/leads/pipeline', icon: Kanban, label: 'Pipeline CRM', permiso: 'crm' },
+      { to: '/admin/leads/kb', icon: BookOpen, label: 'Base de conocimiento', permiso: 'kb' },
     ],
   },
 
   // ── Comunicaciones ───────────────────────────────────────────────────────
   {
     group: 'Comunicaciones', icon: MessageSquare, children: [
-      { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business' },
-      { to: '/admin/email-campanas', icon: Mail, label: 'Email Campaigns' },
+      { to: '/admin/whatsapp', icon: MessageSquare, label: 'WhatsApp Business', permiso: 'whatsapp' },
+      { to: '/admin/email-campanas', icon: Mail, label: 'Email Campaigns', permiso: 'email-campanas' },
       { to: '/admin/consultas', icon: ClipboardList, label: 'Consultas', permiso: 'consultas' },
-      { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de tareas' },
+      { to: '/admin/bandeja', icon: Inbox, label: 'Bandeja de tareas', permiso: 'bandeja' },
     ],
   },
 
   // ── Análisis ─────────────────────────────────────────────────────────────
   {
     group: 'Análisis', icon: BarChart3, children: [
-      { to: '/admin/bi', icon: BarChart3, label: 'Business Intelligence', permiso: 'finanzas' },
+      { to: '/admin/bi', icon: BarChart3, label: 'Business Intelligence', permiso: ['bi', 'finanzas'] },
     ],
   },
 
   // ── Sistema ──────────────────────────────────────────────────────────────
   {
     group: 'Sistema', icon: Settings, children: [
-      { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios y permisos' },
+      { to: '/admin/usuarios', icon: UserCog, label: 'Usuarios y permisos', permiso: 'usuarios' },
       { to: '/admin/colaboradores', icon: Users, label: 'Colaboradores', permiso: 'colaboradores' },
-      { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes tarifarios', permiso: 'comunas' },
+      { to: '/admin/planes-tarifarios', icon: Layers, label: 'Planes tarifarios', permiso: ['planes-tarifarios', 'comunas'] },
       { to: '/admin/comunas', icon: MapPin, label: 'Comunas', permiso: 'comunas' },
       { to: '/admin/productos', icon: Package, label: 'Productos extra', permiso: 'productos' },
-      { to: '/admin/auditoria', icon: ShieldCheck, label: 'Auditoría' },
+      { to: '/admin/auditoria', icon: ShieldCheck, label: 'Auditoría', permiso: 'auditoria' },
       { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
       { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
     ],
@@ -139,8 +139,9 @@ function getDriverLinks(user) {
   return links
 }
 
-function tieneAcceso(permisos, slug) {
-  return permisos.includes(`${slug}:ver`) || permisos.includes(`${slug}:editar`)
+function tieneAcceso(permisos, slugs) {
+  const arr = Array.isArray(slugs) ? slugs : [slugs]
+  return arr.some(slug => permisos.includes(`${slug}:ver`) || permisos.includes(`${slug}:editar`))
 }
 
 function filterMenu(menu, permisos) {

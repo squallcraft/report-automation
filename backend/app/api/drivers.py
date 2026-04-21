@@ -806,10 +806,18 @@ def mi_contrato_trabajo_info(db: Session = Depends(get_db), user=Depends(get_cur
     if not driver.contratado or not driver.trabajador_id:
         raise HTTPException(status_code=400, detail="Solo para conductores contratados vinculados")
 
-    from app.models import Trabajador
+    from app.models import Trabajador, ContratoTrabajadorVersion
     trabajador = db.get(Trabajador, driver.trabajador_id)
     if not trabajador:
         raise HTTPException(status_code=404, detail="Trabajador vinculado no encontrado")
+
+    # Versión vigente del contrato (para jornada y distribución reales)
+    version_vigente = (
+        db.query(ContratoTrabajadorVersion)
+        .filter(ContratoTrabajadorVersion.trabajador_id == trabajador.id)
+        .order_by(ContratoTrabajadorVersion.vigente_desde.desc())
+        .first()
+    )
 
     return {
         "driver_nombre": driver.nombre,
@@ -836,6 +844,10 @@ def mi_contrato_trabajo_info(db: Session = Depends(get_db), user=Depends(get_cur
             "banco": trabajador.banco,
             "tipo_cuenta": trabajador.tipo_cuenta,
             "numero_cuenta": trabajador.numero_cuenta,
+            # Datos provenientes de la versión vigente del contrato
+            "jornada_semanal_horas": version_vigente.jornada_semanal_horas if version_vigente else None,
+            "distribucion_jornada": version_vigente.distribucion_jornada if version_vigente else None,
+            "tipo_jornada": version_vigente.tipo_jornada if version_vigente else None,
         },
     }
 

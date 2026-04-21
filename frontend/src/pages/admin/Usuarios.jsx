@@ -12,25 +12,43 @@ const ROL_COLORS = {
 }
 
 // Permisos disponibles agrupados por categoría (formato seccion:ver / seccion:editar)
+// Mantener sincronizado con los `permiso:` declarados en components/Sidebar.jsx
 const GRUPOS_PERMISOS = [
   {
-    grupo: 'Configuración',
-    items: [
-      { slug: 'sellers', label: 'Sellers' },
-      { slug: 'drivers', label: 'Drivers' },
-      { slug: 'pickups', label: 'Pickups' },
-      { slug: 'productos', label: 'Productos Extra' },
-      { slug: 'comunas', label: 'Comunas / Tarifas' },
-      { slug: 'trabajadores', label: 'Trabajadores' },
-      { slug: 'colaboradores', label: 'Colaboradores' },
-    ],
-  },
-  {
-    grupo: 'Envíos',
+    grupo: 'Operaciones',
     items: [
       { slug: 'ingesta', label: 'Ingesta' },
       { slug: 'envios', label: 'Envíos' },
       { slug: 'retiros', label: 'Retiros' },
+      { slug: 'efectividad', label: 'Efectividad de Entregas' },
+      { slug: 'calendario', label: 'Calendario' },
+    ],
+  },
+  {
+    grupo: 'Conductores',
+    items: [
+      { slug: 'drivers', label: 'Perfiles de drivers' },
+      { slug: 'cpc', label: 'CPC Drivers' },
+      { slug: 'iva-drivers', label: 'IVA conductores' },
+      { slug: 'ingresos-drivers', label: 'Ingresos conductores' },
+      { slug: 'flota', label: 'Flota' },
+      { slug: 'rentabilidad', label: 'Rentabilidad' },
+    ],
+  },
+  {
+    grupo: 'Sellers',
+    items: [
+      { slug: 'sellers', label: 'Perfiles de sellers' },
+      { slug: 'facturacion', label: 'CPS Sellers' },
+      { slug: 'reportes-sellers', label: 'Reportes' },
+      { slug: 'retencion', label: 'Retención comercial' },
+    ],
+  },
+  {
+    grupo: 'Pickups',
+    items: [
+      { slug: 'pickups', label: 'Puntos pickup' },
+      { slug: 'cpp', label: 'CPP Pickups' },
     ],
   },
   {
@@ -38,20 +56,53 @@ const GRUPOS_PERMISOS = [
     items: [
       { slug: 'finanzas', label: 'Estado ECourier' },
       { slug: 'liquidacion', label: 'Liquidación' },
-      { slug: 'facturacion', label: 'CPS Sellers' },
-      { slug: 'cpc', label: 'CPC Drivers' },
-      { slug: 'cpp', label: 'CPP Pickups' },
-      { slug: 'ajustes', label: 'Ajustes' },
-      { slug: 'prestamos', label: 'Préstamos' },
-      { slug: 'pagos-trabajadores', label: 'Pagos Nómina' },
+      { slug: 'ajustes', label: 'Ajustes / Préstamos' },
     ],
   },
   {
-    grupo: 'Otros',
+    grupo: 'RR.HH.',
     items: [
+      { slug: 'trabajadores', label: 'Trabajadores' },
+      { slug: 'pagos-trabajadores', label: 'Pagos nómina' },
+      { slug: 'rrhh-vacaciones', label: 'Vacaciones' },
+      { slug: 'asistencia', label: 'Control horario' },
+      { slug: 'plantillas-contrato', label: 'Plantillas de contrato' },
+      { slug: 'configuracion-legal', label: 'Configuración legal' },
+    ],
+  },
+  {
+    grupo: 'Comercial',
+    items: [
+      { slug: 'leads', label: 'Leads WhatsApp' },
+      { slug: 'crm', label: 'Pipeline CRM' },
+      { slug: 'kb', label: 'Base de conocimiento' },
+    ],
+  },
+  {
+    grupo: 'Comunicaciones',
+    items: [
+      { slug: 'whatsapp', label: 'WhatsApp Business' },
+      { slug: 'email-campanas', label: 'Email Campaigns' },
       { slug: 'consultas', label: 'Consultas' },
+      { slug: 'bandeja', label: 'Bandeja de tareas' },
+    ],
+  },
+  {
+    grupo: 'Análisis',
+    items: [
+      { slug: 'bi', label: 'Business Intelligence' },
+    ],
+  },
+  {
+    grupo: 'Sistema',
+    items: [
+      { slug: 'usuarios', label: 'Usuarios y permisos' },
+      { slug: 'colaboradores', label: 'Colaboradores' },
+      { slug: 'planes-tarifarios', label: 'Planes tarifarios' },
+      { slug: 'comunas', label: 'Comunas' },
+      { slug: 'productos', label: 'Productos Extra' },
+      { slug: 'auditoria', label: 'Auditoría' },
       { slug: 'logs', label: 'Logs' },
-      { slug: 'calendario', label: 'Calendario' },
       { slug: 'asistente', label: 'Asistente IA' },
     ],
   },
