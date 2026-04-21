@@ -20,20 +20,37 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 # y puede tener una lista custom guardada en AdminUser.permisos.
 # ---------------------------------------------------------------------------
 SECCIONES: list[str] = [
-    "sellers", "drivers", "pickups", "ingesta", "envios", "retiros",
-    "finanzas", "liquidacion", "facturacion", "cpc", "cpp", "ajustes",
-    "productos", "comunas", "calendario",
-    "consultas", "logs", "asistente",
-    "trabajadores", "prestamos", "pagos-trabajadores",
-    "colaboradores",
-    # ── RRHH granular (cada uno con :ver y :editar) ─────────────────────────
+    # Operaciones
+    "ingesta", "envios", "retiros", "efectividad", "calendario",
+    # Conductores
+    "drivers", "cpc", "iva-drivers", "ingresos-drivers", "flota", "rentabilidad",
+    # Sellers
+    "sellers", "facturacion", "reportes-sellers", "retencion",
+    # Pickups
+    "pickups", "cpp",
+    # Finanzas
+    "finanzas", "liquidacion", "ajustes",
+    # Histórico (mantener para retrocompatibilidad con permisos guardados)
+    "prestamos",
+    # RR.HH.
+    "trabajadores", "pagos-trabajadores", "rrhh-vacaciones", "asistencia",
+    "plantillas-contrato", "configuracion-legal",
+    # ── RRHH granular legacy (mantener) ─────────────────────────────────────
     # editar implica también aprobar/emitir/firmar acciones del módulo
     "rrhh-contratos",       # generar contratos digitales, plantillas, emitir/aprobar
-    "rrhh-vacaciones",      # registrar, aprobar, calendario
     "rrhh-licencias",       # cargar licencias, aprobar, recibir notificaciones
     "rrhh-documentacion",   # documentos del trabajador, vigencias
     "rrhh-plantillas",      # editor de plantillas de contrato
     "rrhh-alertas",         # recibe alertas de vencimientos, firmas pendientes
+    # Comercial
+    "leads", "crm", "kb",
+    # Comunicaciones
+    "whatsapp", "email-campanas", "consultas", "bandeja",
+    # Análisis
+    "bi",
+    # Sistema
+    "usuarios", "colaboradores", "planes-tarifarios", "comunas",
+    "productos", "auditoria", "logs", "asistente",
 ]
 
 _SECCIONES_SET = set(SECCIONES)
