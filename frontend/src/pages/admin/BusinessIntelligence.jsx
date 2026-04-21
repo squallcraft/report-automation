@@ -1359,6 +1359,174 @@ function GrokPanel({ open, onClose, mes, anio, activeTab }) {
 
 // ─── MAIN PAGE ─────────────────────────────────────────────────────────────────
 
+// ── Tab Valparaíso ────────────────────────────────────────────────────────────
+
+const MESES_NOMBRES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+function TabValparaiso({ mes, anio }) {
+  const [datos, setDatos] = useState(null)
+  const [cargando, setCargando] = useState(false)
+  const [mesSel, setMesSel] = useState(mes || 4)
+  const [anioSel, setAnioSel] = useState(anio || new Date().getFullYear())
+
+  const cargar = async () => {
+    setCargando(true)
+    try {
+      const { data } = await api.get('/bi/envios-valparaiso', { params: { mes: mesSel, anio: anioSel } })
+      setDatos(data)
+    } catch {
+      setDatos(null)
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  useEffect(() => { cargar() }, [mesSel, anioSel])
+
+  const totalGeneral = datos ? Object.values(datos.totales_seller || {}).reduce((a, b) => a + b, 0) : 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Controles */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <select
+          value={mesSel}
+          onChange={e => setMesSel(+e.target.value)}
+          style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: '6px 10px', fontSize: 13 }}
+        >
+          {MESES_NOMBRES.slice(1).map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+        </select>
+        <select
+          value={anioSel}
+          onChange={e => setAnioSel(+e.target.value)}
+          style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: '6px 10px', fontSize: 13 }}
+        >
+          {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button
+          onClick={cargar}
+          disabled={cargando}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: C.accent, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, cursor: cargando ? 'default' : 'pointer', opacity: cargando ? 0.6 : 1 }}
+        >
+          <RefreshCw size={13} style={cargando ? { animation: 'spin 1s linear infinite' } : {}} />
+          {cargando ? 'Cargando…' : 'Actualizar'}
+        </button>
+      </div>
+
+      {cargando && (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: C.muted }}>
+          <Loader2 size={28} style={{ animation: 'spin 1s linear infinite', margin: '0 auto 10px', display: 'block' }} />
+          <p style={{ fontSize: 13 }}>Calculando paquetes…</p>
+        </div>
+      )}
+
+      {!cargando && datos && datos.sellers.length === 0 && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 40, textAlign: 'center', color: C.muted }}>
+          <Store size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
+          <p style={{ fontSize: 14 }}>No se encontraron sellers con tarifa de Valparaíso para {MESES_NOMBRES[mesSel]} {anioSel}.</p>
+          <p style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>Se buscan sellers con empresa = VALPARAISO o con tarifa escalonada zona Valparaíso.</p>
+        </div>
+      )}
+
+      {!cargando && datos && datos.sellers.length > 0 && (
+        <>
+          {/* Parámetros */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Sellers', value: datos.sellers.length, color: '#6366f1' },
+              { label: 'Semanas', value: datos.semanas.length, color: '#0ea5e9' },
+              { label: 'Total paquetes', value: totalGeneral.toLocaleString('es-CL'), color: '#16a34a' },
+            ].map(p => (
+              <div key={p.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 20px', textAlign: 'center', minWidth: 120 }}>
+                <p style={{ fontSize: 11, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{p.label}</p>
+                <p style={{ fontSize: 22, fontWeight: 700, color: p.color }}>{p.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Matriz sellers × semanas */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Store size={15} style={{ color: '#6366f1' }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>
+                Paquetes por seller · semana — {MESES_NOMBRES[mesSel]} {anioSel}
+              </span>
+              <span style={{ fontSize: 11, color: C.muted, marginLeft: 4 }}>
+                (sellers con tarifa Valparaíso activa)
+              </span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: C.surface }}>
+                    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: C.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap', position: 'sticky', left: 0, background: C.surface, zIndex: 1 }}>
+                      Seller
+                    </th>
+                    {datos.semanas.map(s => (
+                      <th key={s} style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 600, color: C.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>
+                        Sem. {s}
+                      </th>
+                    ))}
+                    <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: C.text, fontSize: 11, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, background: '#f0fdf4', whiteSpace: 'nowrap' }}>
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datos.sellers.map((seller, idx) => {
+                    const total = datos.totales_seller[seller] || 0
+                    const maxTotal = Math.max(...Object.values(datos.totales_seller))
+                    const intensity = maxTotal > 0 ? total / maxTotal : 0
+                    return (
+                      <tr key={seller} style={{ borderBottom: `1px solid ${C.border}`, background: idx % 2 === 0 ? C.card : C.surface }}>
+                        <td style={{ padding: '10px 16px', fontWeight: 500, color: C.text, whiteSpace: 'nowrap', position: 'sticky', left: 0, background: idx % 2 === 0 ? C.card : C.surface, zIndex: 1 }}>
+                          {seller}
+                        </td>
+                        {datos.semanas.map(s => {
+                          const cnt = datos.matriz[seller]?.[s] || 0
+                          return (
+                            <td key={s} style={{ padding: '10px 14px', textAlign: 'center', color: cnt > 0 ? '#1e3a5f' : C.dimmed, fontWeight: cnt > 0 ? 600 : 400, fontFamily: 'monospace' }}>
+                              {cnt > 0 ? cnt.toLocaleString('es-CL') : '—'}
+                            </td>
+                          )
+                        })}
+                        <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 700, color: '#16a34a', background: `rgba(22,163,74,${0.06 + intensity * 0.14})`, fontFamily: 'monospace', fontSize: 14 }}>
+                          {total.toLocaleString('es-CL')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: `2px solid ${C.borderStrong}`, background: C.surface }}>
+                    <td style={{ padding: '10px 16px', fontWeight: 700, color: C.text, fontSize: 12, textTransform: 'uppercase', position: 'sticky', left: 0, background: C.surface, zIndex: 1 }}>Total semana</td>
+                    {datos.semanas.map(s => (
+                      <td key={s} style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 700, color: C.text, fontFamily: 'monospace' }}>
+                        {(datos.totales_semana[s] || 0).toLocaleString('es-CL')}
+                      </td>
+                    ))}
+                    <td style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 800, color: '#16a34a', background: '#f0fdf4', fontFamily: 'monospace', fontSize: 14 }}>
+                      {totalGeneral.toLocaleString('es-CL')}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Nota criterio */}
+          <p style={{ fontSize: 11, color: C.dimmed, textAlign: 'right' }}>
+            Criterio: sellers con empresa = VALPARAISO{datos.criterio?.ids_escalonada?.length > 0 ? ' o tarifa escalonada con zona Valparaíso' : ''}.
+            Solo envíos con estado_entrega = delivered.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+
 const TABS = [
   { key: 'pnl', label: 'P&L', icon: DollarSign },
   { key: 'unit', label: 'Unit Economics', icon: Target },
@@ -1366,6 +1534,7 @@ const TABS = [
   { key: 'costos', label: 'Costos', icon: Zap },
   { key: 'yoy', label: 'YoY', icon: BarChart3 },
   { key: 'salud', label: 'Salud', icon: ShieldCheck },
+  { key: 'valpo', label: 'Valparaíso', icon: Store },
 ]
 
 export default function BusinessIntelligence() {
@@ -1440,6 +1609,7 @@ export default function BusinessIntelligence() {
       {tab === 'costos' && <TabCostos mes={mes} anio={anio} />}
       {tab === 'yoy' && <TabYoY mes={mes} />}
       {tab === 'salud' && <TabSalud mes={mes} anio={anio} />}
+      {tab === 'valpo' && <TabValparaiso mes={mes} anio={anio} />}}
 
       {/* Grok FAB */}
       <button onClick={() => setGrokOpen(true)}

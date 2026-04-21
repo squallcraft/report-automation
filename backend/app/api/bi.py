@@ -12,6 +12,7 @@ from app.models import (
     PagoCartola, PagoCartolaSeller, PagoCartolaPickup,
     PagoTrabajador, CalendarioSemanas, GrokAnalisis,
     GrokBrief, GrokSnapshot, GrokMemoria,
+    TarifaEscalonadaSeller,
 )
 
 router = APIRouter(prefix="/bi", tags=["Business Intelligence"])
@@ -1622,3 +1623,90 @@ def eliminar_analisis(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+# ── Paquetes Valparaíso por seller/semana ─────────────────────────────────────
+
+@router.get("/envios-valparaiso")
+def envios_valparaiso(
+    mes: int = Query(4, ge=1, le=12),
+    anio: int = Query(..., ge=2020),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Devuelve, para cada seller con 'tarifa de Valparaíso', el número de envíos
+    del mes/año solicitado desglosado por semana.
+
+    Un seller 'tiene tarifa de Valparaíso' si cumple al menos una de:
+      1. Seller.empresa == 'VALPARAISO'
+      2. Tiene al menos una TarifaEscalonadaSeller con zona_aplicable ILIKE '%valparaí%'
+    """
+    from sqlalchemy import or_, select
+
+    # Sellers con empresa == VALPARAISO
+    ids_empresa = {
+        row[0] for row in
+        db.query(Seller.id).filter(Seller.empresa == "VALPARAISO").all()
+    }
+
+    # Sellers con tarifa escalonada zona Valparaíso
+    ids_escalonada = {
+        row[0] for row in
+        db.query(TarifaEscalonadaSeller.seller_id).filter(
+            TarifaEscalonadaSeller.zona_aplicable.ilike("%valparaí%")
+        ).all()
+    }
+
+    seller_ids = list(ids_empresa | ids_escalonada)
+    if not seller_ids:
+        return {"mes": mes, "anio": anio, "semanas": [], "sellers": [], "matriz": {}}
+
+    # Sellers involucrados
+    sellers_map = {
+        s.id: s.nombre
+        for s in db.query(Seller).filter(Seller.id.in_(seller_ids)).all()
+    }
+
+    # Envíos del mes agrupados por seller y semana
+    rows = (
+        db.query(Envio.seller_id, Envio.semana, F.count(Envio.id).label("total"))
+        .filter(
+            Envio.mes == mes,
+            Envio.anio == anio,
+            Envio.estado_entrega == "delivered",
+            Envio.seller_id.in_(seller_ids),
+        )
+        .group_by(Envio.seller_id, Envio.semana)
+        .order_by(Envio.semana)
+        .all()
+    )
+
+    semanas_set = sorted({r.semana for r in rows})
+    matriz = {}
+    totales_semana = {}
+    totales_seller = {}
+
+    for r in rows:
+        nombre = sellers_map.get(r.seller_id, f"Seller {r.seller_id}")
+        if nombre not in matriz:
+            matriz[nombre] = {}
+        matriz[nombre][r.semana] = r.total
+        totales_semana[r.semana] = totales_semana.get(r.semana, 0) + r.total
+        totales_seller[nombre] = totales_seller.get(nombre, 0) + r.total
+
+    sellers_ordenados = sorted(totales_seller.keys(), key=lambda n: totales_seller[n], reverse=True)
+
+    return {
+        "mes": mes,
+        "anio": anio,
+        "semanas": semanas_set,
+        "sellers": sellers_ordenados,
+        "matriz": matriz,
+        "totales_semana": totales_semana,
+        "totales_seller": totales_seller,
+        "criterio": {
+            "ids_empresa": list(ids_empresa),
+            "ids_escalonada": list(ids_escalonada),
+        },
+    }
