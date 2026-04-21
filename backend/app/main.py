@@ -770,6 +770,9 @@ with engine.connect() as conn:
         if "ruta_id" not in env_cols2:
             safe_exec("ALTER TABLE envios ADD COLUMN ruta_id INTEGER")
             safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_ruta_id ON envios (ruta_id)")
+        # Indice funcional para acelerar reconciliacion case-insensitive por tracking_id
+        # (rutas_entregas.reconciliar_asignacion hace LOWER(envios.tracking_id) = ...)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_tracking_id_lower ON envios (LOWER(tracking_id))")
 
     # ── Migración: Grok Memory System (brief + snapshot) ──
     safe_exec("""

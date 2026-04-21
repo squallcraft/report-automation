@@ -362,6 +362,15 @@ def ingestar_rutas(
             db.rollback()
             continue
 
+        # Commits intermedios para liberar memoria, evitar transacciones gigantes
+        # y permitir que el progreso sea visible en la BD durante la corrida.
+        if (idx + 1) % 200 == 0:
+            try:
+                db.commit()
+            except Exception:
+                logger.exception("Commit intermedio fallo en idx=%d", idx)
+                db.rollback()
+
         if task_id and ((idx + 1) % 25 == 0 or (idx + 1) == total):
             update_task(
                 task_id,
