@@ -22,6 +22,27 @@ router = APIRouter(prefix="/drivers", tags=["Drivers"])
 CURRENT_CONTRATO_TRABAJO_VERSION = "1.0"
 
 
+def _normalizar_rut(valor: str) -> str:
+    """Quita puntos, guiones y espacios del RUT; normaliza DV a mayúscula.
+    Ej: '12.733.783-8', '127337838', '12733783-8' → '127337838'."""
+    if not valor:
+        return ""
+    limpio = "".join(ch for ch in str(valor) if ch.isalnum()).upper()
+    return limpio
+
+
+def _normalizar_nombre(valor: str) -> str:
+    """Normaliza nombre para comparación: quita tildes/diacríticos, colapsa
+    espacios y baja a minúsculas."""
+    import unicodedata
+    if not valor:
+        return ""
+    s = unicodedata.normalize("NFKD", str(valor))
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = " ".join(s.split()).lower()
+    return s
+
+
 def _enrich_driver(d: Driver, db: Session) -> dict:
     from app.api.auth import CURRENT_ACUERDO_VERSION
     data = {c.name: getattr(d, c.name) for c in d.__table__.columns}
@@ -892,6 +913,50 @@ def aceptar_contrato_trabajo(
             detail=(
                 "Tu contrato aún no ha sido aprobado por administración. "
                 "Espera la notificación cuando esté listo para firmar."
+            ),
+        )
+
+    # Validar que nombre y RUT ingresados coincidan con los del trabajador
+    # vinculado al contrato. Evita firmas "por otro" y errores de tipeo.
+    from app.models import Trabajador
+    trabajador = db.get(Trabajador, driver.trabajador_id)
+    if not trabajador:
+        raise HTTPException(status_code=404, detail="Trabajador vinculado no encontrado")
+
+    rut_ingresado = _normalizar_rut(body.rut)
+    rut_contrato = _normalizar_rut(trabajador.rut)
+    if not rut_contrato:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Tu contrato no tiene RUT registrado. Contacta a RR.HH. antes de firmar."
+            ),
+        )
+    if rut_ingresado != rut_contrato:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "El RUT ingresado no coincide con el registrado en tu contrato. "
+                "Revisa que coincida con el que figura en tu cédula de identidad."
+            ),
+        )
+
+    nombre_ingresado = _normalizar_nombre(body.nombre_completo)
+    nombre_contrato = _normalizar_nombre(trabajador.nombre)
+    if not nombre_contrato:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Tu contrato no tiene nombre registrado. Contacta a RR.HH. antes de firmar."
+            ),
+        )
+    if nombre_ingresado != nombre_contrato:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "El nombre ingresado no coincide con el registrado en tu contrato. "
+                f"Debe ser exactamente: «{trabajador.nombre}». "
+                "Si hay un error en el nombre registrado, contacta a RR.HH."
             ),
         )
 

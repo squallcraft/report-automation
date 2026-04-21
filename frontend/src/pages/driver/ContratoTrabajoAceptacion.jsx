@@ -159,6 +159,19 @@ function formatRut(value) {
   return `${formatted}-${dv}`
 }
 
+function normalizarRut(value) {
+  return String(value || '').replace(/[^0-9kK]/g, '').toUpperCase()
+}
+
+function normalizarNombre(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
 function tipoContratoLabel(tipo) {
   if (tipo === 'INDEFINIDO') return 'Indefinido'
   if (tipo === 'PLAZO_FIJO') return 'Plazo Fijo'
@@ -208,8 +221,25 @@ export default function ContratoTrabajoAceptacion() {
     }
   }
 
-  const canSubmit = nombreCompleto.trim().length >= 5 && rut.length >= 9 && firma && carnetFrontal && carnetTrasero && leido && !loading
+  // Validación: nombre y RUT deben coincidir con los registrados en el contrato
+  const nombreContrato = info?.nombre || ''
+  const rutContrato = info?.rut || ''
+  const coincideNombre = Boolean(
+    nombreContrato && nombreCompleto.trim() &&
+    normalizarNombre(nombreCompleto) === normalizarNombre(nombreContrato)
+  )
+  const coincideRut = Boolean(
+    rutContrato && rut &&
+    normalizarRut(rut) === normalizarRut(rutContrato)
+  )
 
+  const canSubmit = (
+    nombreCompleto.trim().length >= 5 &&
+    rut.length >= 9 &&
+    firma && carnetFrontal && carnetTrasero &&
+    leido && !loading &&
+    coincideNombre && coincideRut
+  )
   const handleSubmit = async () => {
     if (!canSubmit) return
     setLoading(true)
@@ -418,8 +448,22 @@ export default function ContratoTrabajoAceptacion() {
               value={nombreCompleto}
               onChange={e => setNombreCompleto(e.target.value)}
               placeholder="Ej: Juan Carlos Pérez González"
-              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-600 focus:border-transparent"
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
+                !nombreCompleto.trim()
+                  ? 'border-gray-200 focus:ring-orange-600'
+                  : coincideNombre
+                    ? 'border-emerald-400 focus:ring-emerald-500 bg-emerald-50/40'
+                    : 'border-red-400 focus:ring-red-500 bg-red-50/40'
+              }`}
             />
+            {nombreCompleto.trim() && !coincideNombre && nombreContrato && (
+              <p className="text-xs text-red-600 mt-1">
+                No coincide con el nombre registrado en tu contrato. Ingrésalo tal como figura allí.
+              </p>
+            )}
+            {coincideNombre && (
+              <p className="text-xs text-emerald-600 mt-1">✓ Coincide con tu contrato</p>
+            )}
           </div>
 
           <div>
@@ -430,8 +474,22 @@ export default function ContratoTrabajoAceptacion() {
               onChange={e => setRut(formatRut(e.target.value))}
               placeholder="12.345.678-9"
               maxLength={12}
-              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-600 focus:border-transparent"
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
+                !rut
+                  ? 'border-gray-200 focus:ring-orange-600'
+                  : coincideRut
+                    ? 'border-emerald-400 focus:ring-emerald-500 bg-emerald-50/40'
+                    : 'border-red-400 focus:ring-red-500 bg-red-50/40'
+              }`}
             />
+            {rut && !coincideRut && rutContrato && (
+              <p className="text-xs text-red-600 mt-1">
+                No coincide con el RUT registrado en tu contrato. Revisa los dígitos.
+              </p>
+            )}
+            {coincideRut && (
+              <p className="text-xs text-emerald-600 mt-1">✓ Coincide con tu contrato</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
