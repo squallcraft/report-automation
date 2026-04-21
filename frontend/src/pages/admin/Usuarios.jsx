@@ -63,6 +63,7 @@ const GRUPOS_PERMISOS = [
     grupo: 'RR.HH.',
     items: [
       { slug: 'trabajadores', label: 'Trabajadores' },
+      { slug: 'contratos', label: 'Contratos (listado RR.HH.)' },
       { slug: 'pagos-trabajadores', label: 'Pagos nómina' },
       { slug: 'rrhh-vacaciones', label: 'Vacaciones' },
       { slug: 'asistencia', label: 'Control horario' },

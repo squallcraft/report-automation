@@ -421,7 +421,9 @@ def crear_anexo_para_version(
     if motivo == MotivoVersionContratoEnum.CONTRATACION.value:
         tipo = TipoAnexoEnum.CONTRATO_INICIAL.value
         titulo = "Contrato Individual de Trabajo"
-        estado = EstadoAnexoEnum.INFORMATIVO.value
+        # Requiere aprobación admin antes de quedar disponible para que el
+        # trabajador firme. Pasa por flujo BORRADOR → EMITIDO → FIRMADO.
+        estado = EstadoAnexoEnum.BORRADOR.value
         requiere_firma = True
     elif motivo == MotivoVersionContratoEnum.AUMENTO_SUELDO.value:
         tipo = TipoAnexoEnum.AUMENTO_SUELDO.value

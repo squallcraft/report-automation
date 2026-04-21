@@ -40,9 +40,11 @@ import DriverFacturas from './pages/driver/DriverFacturas'
 import AcuerdoAceptacion from './pages/driver/AcuerdoAceptacion'
 import ContratoTrabajoAceptacion from './pages/driver/ContratoTrabajoAceptacion'
 import DriverMiAcuerdo from './pages/driver/DriverMiAcuerdo'
+import DriverMiContrato from './pages/driver/DriverMiContrato'
 import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Trabajadores from './pages/admin/Trabajadores'
+import ContratosListado from './pages/admin/ContratosListado'
 import Prestamos from './pages/admin/Prestamos'
 import PagosTrabajadores from './pages/admin/PagosTrabajadores'
 import Auditoria from './pages/admin/Auditoria'
@@ -168,6 +170,7 @@ export default function App() {
         <Route path="pickups" element={<Pickups />} />
         <Route path="cpp" element={<CPP />} />
         <Route path="trabajadores" element={<Trabajadores />} />
+        <Route path="contratos" element={<ContratosListado />} />
         <Route path="prestamos" element={<Prestamos />} />
         <Route path="pagos-trabajadores" element={<PagosTrabajadores />} />
         <Route path="auditoria" element={<Auditoria />} />
@@ -238,6 +241,8 @@ export default function App() {
         <Route path="facturas" element={<DriverFacturas />} />
         <Route path="consultas" element={<DriverConsultas />} />
         <Route path="acuerdo-info" element={<DriverMiAcuerdo />} />
+        <Route path="mi-contrato" element={<DriverMiContrato />} />
+        <Route path="mis-vacaciones" element={<TrabajadorVacaciones />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />

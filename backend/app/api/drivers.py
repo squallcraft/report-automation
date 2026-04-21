@@ -873,6 +873,28 @@ def aceptar_contrato_trabajo(
     if not driver.contratado or not driver.trabajador_id:
         raise HTTPException(status_code=400, detail="Solo para conductores contratados vinculados")
 
+    # Validar que exista un anexo CONTRATO_INICIAL en estado EMITIDO o INFORMATIVO
+    # listo para firmar. Si está en BORRADOR, admin todavía no aprobó la emisión.
+    from app.models import AnexoContrato, EstadoAnexoEnum, TipoAnexoEnum
+    anexo_listo = (
+        db.query(AnexoContrato)
+        .filter(
+            AnexoContrato.trabajador_id == driver.trabajador_id,
+            AnexoContrato.tipo == TipoAnexoEnum.CONTRATO_INICIAL.value,
+            AnexoContrato.estado.in_([EstadoAnexoEnum.EMITIDO.value, EstadoAnexoEnum.INFORMATIVO.value]),
+        )
+        .order_by(AnexoContrato.created_at.desc())
+        .first()
+    )
+    if not anexo_listo:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Tu contrato aún no ha sido aprobado por administración. "
+                "Espera la notificación cuando esté listo para firmar."
+            ),
+        )
+
     ip = request.headers.get("X-Forwarded-For", "")
     if ip:
         ip = ip.split(",")[0].strip()
@@ -888,6 +910,12 @@ def aceptar_contrato_trabajo(
     driver.contrato_trabajo_firma = body.firma_base64
     driver.carnet_frontal = body.carnet_frontal
     driver.carnet_trasero = body.carnet_trasero
+
+    # Sincronizar el anexo como FIRMADO para mantener una sola fuente de verdad
+    anexo_listo.firma_trabajador_snapshot = body.firma_base64
+    anexo_listo.firmado_at = datetime.now(timezone.utc)
+    anexo_listo.firmado_ip = ip
+    anexo_listo.estado = EstadoAnexoEnum.FIRMADO.value
 
     audit(
         db, "aceptar_contrato_trabajo",

@@ -66,6 +66,7 @@ const adminMenu = [
   {
     group: 'RR.HH.', icon: Briefcase, children: [
       { to: '/admin/trabajadores', icon: Users, label: 'Trabajadores', permiso: 'trabajadores' },
+      { to: '/admin/contratos', icon: FileSignature, label: 'Contratos', permiso: 'contratos' },
       { to: '/admin/pagos-trabajadores', icon: HandCoins, label: 'Pagos nómina', permiso: 'pagos-trabajadores' },
       { to: '/admin/vacaciones', icon: Calendar, label: 'Vacaciones', permiso: 'rrhh-vacaciones' },
       { to: '/admin/asistencia', icon: Clock, label: 'Control horario', permiso: 'asistencia' },
@@ -133,7 +134,12 @@ function getDriverLinks(user) {
     { to: '/driver/facturas', icon: Receipt, label: 'Mis Facturas' },
     { to: '/driver/consultas', icon: MessageSquare, label: 'Consultas' },
   ]
-  if (!user?.contratado) {
+  if (user?.contratado) {
+    links.push(
+      { to: '/driver/mi-contrato', icon: FileSignature, label: 'Mi Contrato' },
+      { to: '/driver/mis-vacaciones', icon: Calendar, label: 'Mis Vacaciones' },
+    )
+  } else {
     links.push({ to: '/driver/acuerdo-info', icon: ClipboardList, label: 'Mi Acuerdo' })
   }
   return links

@@ -33,7 +33,7 @@ SECCIONES: list[str] = [
     # Histórico (mantener para retrocompatibilidad con permisos guardados)
     "prestamos",
     # RR.HH.
-    "trabajadores", "pagos-trabajadores", "rrhh-vacaciones", "asistencia",
+    "trabajadores", "contratos", "pagos-trabajadores", "rrhh-vacaciones", "asistencia",
     "plantillas-contrato", "configuracion-legal",
     # ── RRHH granular legacy (mantener) ─────────────────────────────────────
     # editar implica también aprobar/emitir/firmar acciones del módulo
@@ -155,7 +155,14 @@ def get_current_user(
             raise HTTPException(status_code=401, detail="Driver no encontrado")
         if not driver.activo:
             raise HTTPException(status_code=401, detail="Cuenta desactivada")
-        return {"rol": RolEnum.DRIVER, "id": driver.id, "nombre": driver.nombre, "permisos": []}
+        return {
+            "rol": RolEnum.DRIVER,
+            "id": driver.id,
+            "nombre": driver.nombre,
+            "permisos": [],
+            "contratado": bool(getattr(driver, "contratado", False)),
+            "trabajador_id": getattr(driver, "trabajador_id", None),
+        }
     elif rol == RolEnum.PICKUP:
         pickup = db.query(Pickup).filter(Pickup.id == uid).first()
         if not pickup:
@@ -239,9 +246,21 @@ def require_colaborador(current_user: dict = Depends(get_current_user)) -> dict:
 
 
 def require_trabajador_portal(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user["rol"] != RolEnum.TRABAJADOR:
-        raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
-    return current_user
+    """
+    Acceso al portal del trabajador. Acepta:
+      - rol TRABAJADOR (acceso directo).
+      - rol DRIVER si está marcado como contratado y vinculado a un trabajador
+        (el endpoint correspondiente debe resolver `trabajador_id` desde el
+        Driver para obtener el id efectivo).
+    """
+    rol = current_user["rol"]
+    if rol == RolEnum.TRABAJADOR:
+        return current_user
+    if rol == RolEnum.DRIVER and current_user.get("contratado") and current_user.get("trabajador_id"):
+        # Inyectamos el trabajador_id como id efectivo para que los endpoints
+        # que filtran por current_user["id"] funcionen sin más cambios.
+        return {**current_user, "id": current_user["trabajador_id"], "rol_origen": RolEnum.DRIVER}
+    raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
 
 
 def check_ownership(current_user: dict, entity_id: int) -> None:

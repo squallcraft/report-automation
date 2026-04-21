@@ -61,22 +61,42 @@ MESES_ES = [
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_trabajador_portal(current_user: dict, db: Session) -> Trabajador:
-    """Resuelve el trabajador autenticado desde rol TRABAJADOR."""
-    if current_user["rol"] != RolEnum.TRABAJADOR:
-        raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
-    t = db.query(Trabajador).filter(
-        Trabajador.id == current_user["id"],
-        Trabajador.activo == True,
-    ).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
-    return t
+    """
+    Resuelve el trabajador autenticado. Acepta:
+      - rol TRABAJADOR (acceso directo).
+      - rol DRIVER contratado vinculado (resuelve por driver.trabajador_id).
+    """
+    rol = current_user.get("rol")
+    if rol == RolEnum.TRABAJADOR:
+        t = db.query(Trabajador).filter(
+            Trabajador.id == current_user["id"],
+            Trabajador.activo == True,
+        ).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+        return t
+    if rol == RolEnum.DRIVER:
+        from app.models import Driver
+        d = db.get(Driver, current_user["id"])
+        if not d or not d.contratado or not d.trabajador_id:
+            raise HTTPException(status_code=403, detail="Solo conductores contratados")
+        t = db.query(Trabajador).filter(
+            Trabajador.id == d.trabajador_id,
+            Trabajador.activo == True,
+        ).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Trabajador vinculado no encontrado")
+        return t
+    raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
 
 
 def require_trabajador(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user["rol"] != RolEnum.TRABAJADOR:
-        raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
-    return current_user
+    rol = current_user["rol"]
+    if rol == RolEnum.TRABAJADOR:
+        return current_user
+    if rol == RolEnum.DRIVER and current_user.get("contratado") and current_user.get("trabajador_id"):
+        return current_user
+    raise HTTPException(status_code=403, detail="Acceso solo para trabajadores")
 
 
 def _liq_to_dict(liq: LiquidacionMensual, nombre: str = "") -> dict:

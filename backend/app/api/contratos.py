@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.auth import require_admin_or_administracion, get_current_user, RolEnum
+from app.auth import require_admin_or_administracion, get_current_user, RolEnum, require_permission
 from app.models import (
     Trabajador,
     ContratoTrabajadorVersion,
@@ -502,12 +502,27 @@ def actualizar_config(
 
 # ── Portal trabajador ───────────────────────────────────────────────────────
 def _require_trabajador(current_user: dict, db: Session) -> Trabajador:
-    if current_user.get("rol") != RolEnum.TRABAJADOR:
-        raise HTTPException(status_code=403, detail="Solo trabajadores")
-    t = db.query(Trabajador).filter(Trabajador.id == current_user["id"]).first()
-    if not t:
-        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
-    return t
+    """
+    Acepta dos vías de acceso:
+      - rol TRABAJADOR → resuelve por id directo.
+      - rol DRIVER contratado vinculado → resuelve por driver.trabajador_id.
+    """
+    rol = current_user.get("rol")
+    if rol == RolEnum.TRABAJADOR:
+        t = db.query(Trabajador).filter(Trabajador.id == current_user["id"]).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+        return t
+    if rol == RolEnum.DRIVER:
+        from app.models import Driver
+        d = db.get(Driver, current_user["id"])
+        if not d or not d.contratado or not d.trabajador_id:
+            raise HTTPException(status_code=403, detail="Solo conductores contratados")
+        t = db.get(Trabajador, d.trabajador_id)
+        if not t:
+            raise HTTPException(status_code=404, detail="Trabajador vinculado no encontrado")
+        return t
+    raise HTTPException(status_code=403, detail="No autorizado")
 
 
 @router.get("/portal/anexos")
@@ -519,10 +534,75 @@ def listar_anexos_portal(
     anexos = (
         db.query(AnexoContrato)
         .filter_by(trabajador_id=t.id)
+        # El trabajador no debe ver borradores que admin todavía no aprobó.
+        .filter(AnexoContrato.estado != EstadoAnexoEnum.BORRADOR.value)
         .order_by(AnexoContrato.created_at.desc())
         .all()
     )
     return [_anexo_to_dict(a) for a in anexos]
+
+
+@router.get("/portal/vigente")
+def contrato_vigente_portal(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Resumen del contrato vigente para el portal del trabajador (o driver contratado).
+    Devuelve datos del trabajador, versión vigente y estado del contrato inicial.
+    """
+    t = _require_trabajador(current_user, db)
+    version = (
+        db.query(ContratoTrabajadorVersion)
+        .filter(ContratoTrabajadorVersion.trabajador_id == t.id)
+        .order_by(ContratoTrabajadorVersion.vigente_desde.desc())
+        .first()
+    )
+    contrato_inicial = (
+        db.query(AnexoContrato)
+        .filter(
+            AnexoContrato.trabajador_id == t.id,
+            AnexoContrato.tipo == TipoAnexoEnum.CONTRATO_INICIAL.value,
+        )
+        .order_by(AnexoContrato.created_at.desc())
+        .first()
+    )
+    return {
+        "trabajador": {
+            "id": t.id,
+            "nombre": t.nombre,
+            "rut": t.rut,
+            "cargo": t.cargo,
+            "fecha_ingreso": t.fecha_ingreso.isoformat() if t.fecha_ingreso else None,
+            "afp": t.afp,
+            "sistema_salud": t.sistema_salud,
+        },
+        "version_vigente": (
+            {
+                "id": version.id,
+                "vigente_desde": version.vigente_desde.isoformat() if version.vigente_desde else None,
+                "vigente_hasta": version.vigente_hasta.isoformat() if version.vigente_hasta else None,
+                "tipo_contrato": version.tipo_contrato,
+                "cargo": version.cargo,
+                "sueldo_base": version.sueldo_base,
+                "sueldo_liquido": version.sueldo_liquido,
+                "movilizacion": version.movilizacion,
+                "colacion": version.colacion,
+                "viaticos": version.viaticos,
+                "jornada_semanal_horas": version.jornada_semanal_horas,
+                "distribucion_jornada": version.distribucion_jornada,
+                "tipo_jornada": version.tipo_jornada,
+                "motivo": version.motivo,
+            }
+            if version
+            else None
+        ),
+        "contrato_inicial": (
+            _anexo_to_dict(contrato_inicial)
+            if contrato_inicial and contrato_inicial.estado != EstadoAnexoEnum.BORRADOR.value
+            else None
+        ),
+    }
 
 
 @router.get("/portal/anexos/{anexo_id}/pdf")
@@ -567,6 +647,13 @@ def firmar_anexo_portal(
         raise HTTPException(status_code=400, detail="Este anexo no requiere firma")
     if a.estado == EstadoAnexoEnum.FIRMADO.value:
         return _anexo_to_dict(a)
+    # Solo se pueden firmar anexos APROBADOS por administración (estado EMITIDO).
+    # Los borradores no son visibles para el trabajador y no son firmables.
+    if a.estado not in (EstadoAnexoEnum.EMITIDO.value, EstadoAnexoEnum.INFORMATIVO.value):
+        raise HTTPException(
+            status_code=403,
+            detail="Este anexo aún no ha sido aprobado por administración para tu firma.",
+        )
     firma = getattr(t, "firma_base64", None)
     if not firma:
         raise HTTPException(
@@ -902,6 +989,107 @@ def rechazar_borrador_anexo(
     db.delete(a)
     db.commit()
     return {"ok": True}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Listado RR.HH. — todos los contratos (vigentes + estado de firma)
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/admin/listado")
+def listado_contratos_admin(
+    estado: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("contratos:ver")),
+):
+    """
+    Devuelve TODOS los trabajadores activos junto con:
+      - su versión vigente de contrato (si existe)
+      - el último anexo CONTRATO_INICIAL y su estado de firma
+      - resumen de anexos pendientes de firma
+
+    Permite filtrar por `estado` del contrato inicial:
+      SIN_CONTRATO | BORRADOR | EMITIDO | INFORMATIVO | FIRMADO | RECHAZADO
+    """
+    trabajadores = (
+        db.query(Trabajador)
+        .filter(Trabajador.activo == True)
+        .order_by(Trabajador.nombre.asc())
+        .all()
+    )
+    out = []
+    for t in trabajadores:
+        version = (
+            db.query(ContratoTrabajadorVersion)
+            .filter(ContratoTrabajadorVersion.trabajador_id == t.id)
+            .order_by(ContratoTrabajadorVersion.vigente_desde.desc())
+            .first()
+        )
+        contrato_inicial = (
+            db.query(AnexoContrato)
+            .filter(
+                AnexoContrato.trabajador_id == t.id,
+                AnexoContrato.tipo == TipoAnexoEnum.CONTRATO_INICIAL.value,
+            )
+            .order_by(AnexoContrato.created_at.desc())
+            .first()
+        )
+        anexos_pendientes = (
+            db.query(AnexoContrato)
+            .filter(
+                AnexoContrato.trabajador_id == t.id,
+                AnexoContrato.requiere_firma_trabajador == True,
+                AnexoContrato.estado == EstadoAnexoEnum.EMITIDO.value,
+            )
+            .count()
+        )
+        anexos_borrador = (
+            db.query(AnexoContrato)
+            .filter(
+                AnexoContrato.trabajador_id == t.id,
+                AnexoContrato.estado == EstadoAnexoEnum.BORRADOR.value,
+            )
+            .count()
+        )
+        estado_contrato = contrato_inicial.estado if contrato_inicial else "SIN_CONTRATO"
+        if estado and estado != estado_contrato:
+            continue
+        out.append({
+            "trabajador_id": t.id,
+            "nombre": t.nombre,
+            "rut": t.rut,
+            "cargo": t.cargo,
+            "email": t.email,
+            "fecha_ingreso": t.fecha_ingreso.isoformat() if t.fecha_ingreso else None,
+            "estado_contrato": estado_contrato,
+            "version_vigente": (
+                {
+                    "id": version.id,
+                    "tipo_contrato": version.tipo_contrato,
+                    "vigente_desde": version.vigente_desde.isoformat() if version.vigente_desde else None,
+                    "vigente_hasta": version.vigente_hasta.isoformat() if version.vigente_hasta else None,
+                    "sueldo_base": version.sueldo_base,
+                    "sueldo_liquido": version.sueldo_liquido,
+                    "jornada_semanal_horas": version.jornada_semanal_horas,
+                }
+                if version
+                else None
+            ),
+            "contrato_inicial": (
+                {
+                    "id": contrato_inicial.id,
+                    "estado": contrato_inicial.estado,
+                    "titulo": contrato_inicial.titulo,
+                    "created_at": contrato_inicial.created_at.isoformat() if contrato_inicial.created_at else None,
+                    "aprobado_at": contrato_inicial.aprobado_at.isoformat() if contrato_inicial.aprobado_at else None,
+                    "aprobado_por": contrato_inicial.aprobado_por,
+                    "firmado_at": contrato_inicial.firmado_at.isoformat() if contrato_inicial.firmado_at else None,
+                }
+                if contrato_inicial
+                else None
+            ),
+            "anexos_pendientes": anexos_pendientes,
+            "anexos_borrador": anexos_borrador,
+        })
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
