@@ -181,7 +181,12 @@ export default function ContratoTrabajoAceptacion() {
   const [scrolledToBottom, setScrolledToBottom] = useState(false)
 
   useEffect(() => {
-    api.get('/drivers/me/contrato-trabajo-info').then(r => setInfo(r.data)).catch(() => {})
+    api.get('/drivers/me/contrato-trabajo-info').then(r => {
+      // La API retorna { trabajador: {...}, driver_nombre, ... }
+      // Aplanamos para que el template acceda directo desde `info.*`
+      const d = r.data
+      setInfo({ ...d, ...(d.trabajador || {}) })
+    }).catch(() => {})
   }, [])
 
   const handleScroll = () => {
@@ -318,8 +323,9 @@ export default function ContratoTrabajoAceptacion() {
             </Clausula>
 
             <Clausula n="5" titulo="Jornada de Trabajo">
-              La jornada ordinaria de trabajo será de <strong>42 horas semanales</strong>, distribuidas
-              de lunes a viernes, o según la distribución que acuerden las partes dentro de los límites legales.
+              La jornada ordinaria de trabajo será de <strong>40 horas semanales</strong>, distribuidas
+              de lunes a sábado, con posibilidad de promediarse en ciclos de hasta cuatro semanas conforme
+              al artículo 22 bis del Código del Trabajo.
             </Clausula>
 
             <Clausula n="6" titulo="Tipo de Contrato">
