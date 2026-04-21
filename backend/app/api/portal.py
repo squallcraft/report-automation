@@ -899,8 +899,27 @@ async def driver_upload_factura(
         FacturaDriver.anio == anio,
     ).first()
 
-    if existing and existing.estado == EstadoFacturaDriverEnum.APROBADA.value:
-        raise HTTPException(status_code=400, detail="La factura de esta semana ya fue aprobada")
+    # Reglas de negocio:
+    #   - Solo 1 documento por semana (controlado por UNIQUE en DB).
+    #   - Si ya existe APROBADA → no se puede reemplazar (cierra el ciclo).
+    #   - Si ya existe CARGADA → no se puede reemplazar mientras admin no revise.
+    #   - Si ya existe RECHAZADA → se permite reemplazar (re-subida).
+    #   - Si no existe → primera carga.
+    if existing:
+        if existing.estado == EstadoFacturaDriverEnum.APROBADA.value:
+            raise HTTPException(
+                status_code=400,
+                detail="El documento de esta semana ya fue aprobado. No se puede reemplazar.",
+            )
+        if existing.estado == EstadoFacturaDriverEnum.CARGADA.value:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Ya enviaste un documento para esta semana y está pendiente de revisión. "
+                    "Solo podrás subir uno nuevo si el actual es rechazado."
+                ),
+            )
+        # estado == RECHAZADA → se permite re-subir
 
     os.makedirs(UPLOADS_DIR_DRIVERS, exist_ok=True)
     unique_name = f"{driver_id}_{semana}_{mes}_{anio}_{uuid.uuid4().hex[:8]}{ext}"

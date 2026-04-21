@@ -127,8 +127,18 @@ function Paso1TipoDoc({ tipoDoc, onChange, onNext }) {
 
 // ── Paso 2: Período ───────────────────────────────────────────────────────────
 
-function Paso2Periodo({ semana, mes, anio, onChange, onNext, onBack }) {
+function Paso2Periodo({ semana, mes, anio, onChange, onNext, onBack, facturas }) {
   const [s, m, a] = [semana, mes, anio]
+
+  // Estado de cada semana del mes/año seleccionado para feedback visual
+  const estadoSemana = (n) => {
+    const f = facturas?.find(x => x.semana === n && x.mes === m && x.anio === a)
+    return f?.estado || null
+  }
+
+  const semanaBloqueada = (estado) => estado === 'APROBADA' || estado === 'CARGADA'
+  const facturaActual = facturas?.find(f => f.semana === s && f.mes === m && f.anio === a)
+  const bloqueada = semanaBloqueada(facturaActual?.estado)
 
   return (
     <div className="space-y-4">
@@ -140,22 +150,46 @@ function Paso2Periodo({ semana, mes, anio, onChange, onNext, onBack }) {
       <div>
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Semana</label>
         <div className="grid grid-cols-5 gap-2">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => onChange({ semana: n, mes: m, anio: a })}
-              className={`py-3 rounded-xl text-sm font-bold transition-all ${
-                s === n
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
-                  : 'bg-gray-100 text-gray-600 hover:bg-indigo-100 hover:text-indigo-700'
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+          {[1, 2, 3, 4, 5].map((n) => {
+            const est = estadoSemana(n)
+            const block = semanaBloqueada(est)
+            const isSelected = s === n
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onChange({ semana: n, mes: m, anio: a })}
+                className={`relative py-3 rounded-xl text-sm font-bold transition-all ${
+                  isSelected
+                    ? block
+                      ? 'bg-amber-500 text-white shadow-md shadow-amber-200'
+                      : 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                    : block
+                      ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                      : est === 'RECHAZADA'
+                        ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                        : 'bg-gray-100 text-gray-600 hover:bg-indigo-100 hover:text-indigo-700'
+                }`}
+              >
+                {n}
+                {est && (
+                  <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                    est === 'APROBADA' ? 'bg-emerald-500' :
+                    est === 'CARGADA'  ? 'bg-blue-500' :
+                    est === 'RECHAZADA'? 'bg-red-500' : 'bg-gray-300'
+                  }`} />
+                )}
+              </button>
+            )
+          })}
         </div>
-        <p className="text-[11px] text-gray-400 mt-1.5 text-center">Selecciona el número de semana del mes</p>
+        <p className="text-[11px] text-gray-400 mt-1.5 text-center">
+          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Aprobado</span>
+          {' · '}
+          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />En revisión</span>
+          {' · '}
+          <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />Rechazado</span>
+        </p>
       </div>
 
       {/* Mes */}
@@ -209,11 +243,23 @@ function Paso2Periodo({ semana, mes, anio, onChange, onNext, onBack }) {
         </button>
         <button
           onClick={onNext}
-          className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3.5 rounded-xl transition-colors"
+          disabled={bloqueada}
+          className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-semibold text-sm py-3.5 rounded-xl transition-colors"
         >
           Continuar <ChevronRight size={16} />
         </button>
       </div>
+
+      {bloqueada && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+          <AlertCircle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-amber-800 leading-snug">
+            {facturaActual.estado === 'APROBADA'
+              ? 'Ya tienes un documento aprobado para esta semana. No se puede reemplazar.'
+              : 'Ya enviaste un documento para esta semana y está pendiente de revisión. Solo podrás subir uno nuevo si lo rechazan.'}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -535,6 +581,7 @@ export default function DriverFacturas() {
               onChange={setPeriodo}
               onNext={() => setPaso(3)}
               onBack={() => setPaso(1)}
+              facturas={facturas}
             />
           )}
 
