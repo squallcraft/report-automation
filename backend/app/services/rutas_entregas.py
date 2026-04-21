@@ -238,7 +238,7 @@ def reconciliar_asignacion(db: Session, asig: AsignacionRuta) -> bool:
     if envio is None:
         envio = (
             db.query(Envio)
-            .filter(func.lower(Envio.tracking) == asig.tracking_id.strip().lower())
+            .filter(func.lower(Envio.tracking_id) == asig.tracking_id.strip().lower())
             .first()
         )
         if envio is not None:
@@ -329,8 +329,12 @@ def ingestar_rutas(
         return resultado
 
     total = len(registros)
+    logger.info(
+        "ingestar_rutas: %d registros descargados de TrackingTech para %s -> %s",
+        total, fecha_inicio, fecha_fin,
+    )
     if task_id:
-        update_task(task_id, total=total, message=f"Descargados {total} registros. Procesando…")
+        update_task(task_id, total=total, message=f"Descargados {total} registros del courier. Procesando…")
 
     creadas = 0
     actualizadas = 0
@@ -340,20 +344,21 @@ def ingestar_rutas(
 
     for idx, raw in enumerate(registros):
         try:
-            asig, creada = upsert_asignacion(db, raw)
-            if creada:
+            asig, creada_provisional = upsert_asignacion(db, raw)
+            db.flush()
+            encontrado = reconciliar_asignacion(db, asig)
+            db.flush()
+            if creada_provisional:
                 creadas += 1
             else:
                 actualizadas += 1
-            db.flush()
-            encontrado = reconciliar_asignacion(db, asig)
             if encontrado:
                 enlazadas += 1
             else:
                 sin_envio += 1
         except Exception:  # noqa: BLE001
             errores += 1
-            logger.exception("Error procesando asignación: %s", raw.get("tracking_id"))
+            logger.exception("Error procesando asignacion: %s", raw.get("tracking_id"))
             db.rollback()
             continue
 
@@ -369,17 +374,24 @@ def ingestar_rutas(
 
     db.commit()
 
+    procesadas_ok = creadas + actualizadas
     resultado = {
         "ok": True,
-        "mensaje": f"{creadas} creadas, {actualizadas} actualizadas, {enlazadas} con envío local, {sin_envio} sin envío local",
+        "mensaje": (
+            f"API: {total} - Procesadas OK: {procesadas_ok} "
+            f"({creadas} nuevas, {actualizadas} actualizadas) - "
+            f"Con envio local: {enlazadas} - Sin envio local: {sin_envio} - Errores: {errores}"
+        ),
         "fecha_inicio": fecha_inicio,
         "fecha_fin": fecha_fin,
+        "total_api": total,
         "asignaciones_creadas": creadas,
         "asignaciones_actualizadas": actualizadas,
         "enlazadas_a_envio": enlazadas,
         "sin_envio": sin_envio,
         "errores": errores,
     }
+    logger.info("ingestar_rutas resumen: %s", resultado["mensaje"])
 
     if task_id:
         update_task(

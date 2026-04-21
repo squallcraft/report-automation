@@ -222,10 +222,10 @@ export default function AsignacionesRuta() {
             setIngesting(false)
             if (prog.status === 'done') {
               const r = prog.result || {}
-              toast.success(
-                `Creadas: ${fmtNumber(r.asignaciones_creadas)} · Actualizadas: ${fmtNumber(r.asignaciones_actualizadas)} · Con envío: ${fmtNumber(r.enlazadas_a_envio)} · Sin envío: ${fmtNumber(r.sin_envio)}`,
-                { duration: 7000 }
-              )
+              const errores = r.errores ?? 0
+              const msg = `Courier: ${fmtNumber(r.total_api)} · Nuevas: ${fmtNumber(r.asignaciones_creadas)} · Actualizadas: ${fmtNumber(r.asignaciones_actualizadas)} · Con envío local: ${fmtNumber(r.enlazadas_a_envio)} · Sin envío local: ${fmtNumber(r.sin_envio)}${errores ? ` · Errores: ${fmtNumber(errores)}` : ''}`
+              if (errores > 0) toast.error(msg, { duration: 12000 })
+              else toast.success(msg, { duration: 8000 })
               cargar(1)
             } else {
               toast.error(prog.message || 'Error en la ingesta')
