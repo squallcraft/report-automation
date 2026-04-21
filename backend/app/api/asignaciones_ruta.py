@@ -8,6 +8,8 @@ Notas:
 """
 from __future__ import annotations
 
+import threading
+import uuid
 from datetime import date, datetime
 from typing import Any, Optional
 
@@ -17,10 +19,11 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models import AsignacionRuta, Driver, Envio
 from app.services import rutas_entregas
 from app.services.audit import registrar as audit
+from app.services.task_progress import cleanup_old_tasks, create_task, get_task
 
 router = APIRouter(prefix="/asignaciones-ruta", tags=["Asignaciones Ruta"])
 
@@ -217,39 +220,80 @@ def reconciliar_pendientes(
     return info
 
 
+def _run_ingesta_background(task_id: str, fecha_inicio: str, fecha_fin: str, usuario_dict: dict):
+    """Ejecuta la ingesta de rutas en un thread con su propia sesión de BD."""
+    db = SessionLocal()
+    try:
+        resultado = rutas_entregas.ingestar_rutas(
+            db,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            task_id=task_id,
+        )
+        try:
+            audit(
+                db,
+                accion="asignaciones_ingesta_adhoc",
+                usuario=usuario_dict,
+                entidad="asignacion_ruta",
+                metadata={
+                    "fecha_inicio": fecha_inicio,
+                    "fecha_fin": fecha_fin,
+                    "task_id": task_id,
+                    "resultado": resultado,
+                },
+            )
+        except Exception:
+            pass
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        from app.services.task_progress import update_task as _ut
+        _ut(task_id, status="error", message=f"Error fatal: {str(e)}")
+    finally:
+        db.close()
+
+
 @router.post("/ingestar", response_model=dict)
 def ingestar_rango(
     request: Request,
     fecha_inicio: date = Query(..., description="YYYY-MM-DD"),
     fecha_fin: date = Query(..., description="YYYY-MM-DD"),
-    db: Session = Depends(get_db),
     usuario: dict = Depends(require_admin),
 ):
-    """Ejecuta la ingesta del courier para un rango ad-hoc (sin pasar por el cron).
+    """Lanza una ingesta ad-hoc del courier para el rango dado, en background.
 
-    Útil para reprocesar un día puntual o backfill, sin alterar la config del
-    job programado. Sincrónico: devuelve el resumen en la misma respuesta.
+    Devuelve `{ task_id }` para hacer polling en
+    `GET /asignaciones-ruta/ingestar/progress/{task_id}`.
     """
-    info = rutas_entregas.ingestar_rutas(
-        db,
-        fecha_inicio=fecha_inicio.isoformat(),
-        fecha_fin=fecha_fin.isoformat(),
-    )
-    try:
-        audit(
-            db,
-            accion="asignaciones_ingesta_adhoc",
-            usuario=usuario,
-            request=request,
-            metadata={
-                "fecha_inicio": fecha_inicio.isoformat(),
-                "fecha_fin": fecha_fin.isoformat(),
-                "resultado": info,
-            },
-        )
-    except Exception:
-        pass
-    return info
+    cleanup_old_tasks()
+    task_id = uuid.uuid4().hex
+    create_task(task_id, total=0, archivo=f"TrackingTech rutas {fecha_inicio} → {fecha_fin}")
+
+    usuario_dict = {
+        "id": usuario.get("id"),
+        "nombre": usuario.get("nombre"),
+        "rol": str(usuario.get("rol", "")),
+    }
+
+    threading.Thread(
+        target=_run_ingesta_background,
+        args=(task_id, fecha_inicio.isoformat(), fecha_fin.isoformat(), usuario_dict),
+        daemon=True,
+    ).start()
+
+    return {"task_id": task_id}
+
+
+@router.get("/ingestar/progress/{task_id}", response_model=dict)
+def ingestar_progress(
+    task_id: str,
+    _: dict = Depends(require_admin),
+):
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(404, "Tarea no encontrada o expirada")
+    return task
 
 
 @router.post("/{asig_id}/vincular-envio", response_model=AsignacionOut)

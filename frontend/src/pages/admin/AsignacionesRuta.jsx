@@ -1,7 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Inbox, RefreshCw, Link as LinkIcon, Search, Filter, CheckCircle2, XCircle, Clock, AlertCircle, DownloadCloud } from 'lucide-react'
+import {
+  Inbox, RefreshCw, Link as LinkIcon, Search, Filter, CheckCircle2,
+  XCircle, Clock, AlertCircle, DownloadCloud, Loader2, AlertTriangle,
+  HelpCircle, CheckCircle,
+} from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
 const ESTADOS = [
@@ -19,11 +23,19 @@ const ESTADO_STYLES = {
 
 function fmtDate(iso) {
   if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleDateString('es-CL')
-  } catch {
-    return iso
-  }
+  try { return new Date(iso).toLocaleDateString('es-CL') } catch { return iso }
+}
+
+function fmtNumber(n) {
+  return (n ?? 0).toLocaleString('es-CL')
+}
+
+function fmtTime(seconds) {
+  if (!seconds || seconds <= 0) return '...'
+  if (seconds < 60) return `${Math.ceil(seconds)}s`
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.ceil(seconds % 60)
+  return `${mins}m ${secs}s`
 }
 
 function todayMinusDays(days) {
@@ -32,6 +44,94 @@ function todayMinusDays(days) {
   return d.toISOString().slice(0, 10)
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Tarjeta de progreso (mismo patrón que Ingesta y Pickups → TrackingTech)
+// ──────────────────────────────────────────────────────────────────────────────
+function ProgressBar({ progress }) {
+  if (!progress) return null
+  const {
+    status, total, processed, nuevos, duplicados, errores, message,
+    elapsed_seconds, estimated_remaining_seconds, rate_per_second, archivo,
+  } = progress
+  const isDone = status === 'done'
+  const isError = status === 'error'
+  const pct = total > 0 ? Math.min(Math.round((processed / total) * 100), 100) : (isDone ? 100 : 0)
+
+  return (
+    <div className="bg-white rounded-xl border-l-4 border-l-purple-500 border border-gray-200 p-4 mb-4 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        {isDone ? (
+          <CheckCircle size={22} className="text-green-500 flex-shrink-0" />
+        ) : isError ? (
+          <AlertTriangle size={22} className="text-red-500 flex-shrink-0" />
+        ) : (
+          <Loader2 size={22} className="text-purple-500 animate-spin flex-shrink-0" />
+        )}
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-gray-800">
+            {isDone ? 'Ingesta completada' : isError ? 'Error en la ingesta' : 'Procesando ingesta…'}
+          </p>
+          {archivo && <p className="text-xs text-gray-500">{archivo}</p>}
+        </div>
+        {!isDone && !isError && elapsed_seconds > 0 && (
+          <div className="text-right flex-shrink-0">
+            <p className="text-xs text-gray-500 flex items-center gap-1 justify-end">
+              <Clock size={12} /> Transcurrido: {fmtTime(elapsed_seconds)}
+            </p>
+            {estimated_remaining_seconds > 0 && (
+              <p className="text-xs font-medium text-purple-600">
+                Restante: ~{fmtTime(estimated_remaining_seconds)}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="w-full bg-gray-200 rounded-full h-3 mb-2 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${
+            isError ? 'bg-red-500' : isDone ? 'bg-green-500' : 'bg-purple-500'
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
+        <span>{fmtNumber(processed)} de {fmtNumber(total)} registros ({pct}%)</span>
+        {rate_per_second > 0 && !isDone && <span>{Math.round(rate_per_second)} reg/s</span>}
+        {isDone && elapsed_seconds > 0 && <span>Tiempo total: {fmtTime(elapsed_seconds)}</span>}
+      </div>
+
+      {message && !isError && (
+        <p className="text-xs text-gray-600 italic mb-2">{message}</p>
+      )}
+      {isError && (
+        <p className="text-sm text-red-600 bg-red-50 rounded p-2">{message}</p>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="bg-green-50 rounded-lg p-2.5 text-center">
+          <p className="text-gray-500 text-xs">Nuevas</p>
+          <p className="text-lg font-bold text-green-600">{fmtNumber(nuevos)}</p>
+        </div>
+        <div className="bg-blue-50 rounded-lg p-2.5 text-center">
+          <p className="text-gray-500 text-xs">Actualizadas</p>
+          <p className="text-lg font-bold text-blue-600">{fmtNumber(duplicados)}</p>
+        </div>
+        <div className="bg-red-50 rounded-lg p-2.5 text-center">
+          <p className="text-gray-500 text-xs">Errores</p>
+          <p className="text-lg font-bold text-red-600">{fmtNumber(errores)}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-2.5 text-center">
+          <p className="text-gray-500 text-xs">Total</p>
+          <p className="text-lg font-bold text-gray-700">{fmtNumber(total)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 export default function AsignacionesRuta() {
   const [filtros, setFiltros] = useState({
     fecha_desde: todayMinusDays(7),
@@ -48,6 +148,9 @@ export default function AsignacionesRuta() {
   const [loading, setLoading] = useState(false)
   const [reconciling, setReconciling] = useState(false)
   const [ingesting, setIngesting] = useState(false)
+  const [progress, setProgress] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
+  const pollRef = useRef(null)
 
   const cargar = async (p = page) => {
     setLoading(true)
@@ -63,17 +166,14 @@ export default function AsignacionesRuta() {
       const [list, sum] = await Promise.all([
         api.get('/asignaciones-ruta', { params }),
         api.get('/asignaciones-ruta/resumen', {
-          params: {
-            fecha_desde: filtros.fecha_desde,
-            fecha_hasta: filtros.fecha_hasta,
-          },
+          params: { fecha_desde: filtros.fecha_desde, fecha_hasta: filtros.fecha_hasta },
         }),
       ])
       setItems(list.data?.items || [])
       setTotal(list.data?.total || 0)
       setResumen(sum.data || null)
       setPage(p)
-    } catch (e) {
+    } catch {
       toast.error('No se pudieron cargar las asignaciones')
     } finally {
       setLoading(false)
@@ -81,6 +181,7 @@ export default function AsignacionesRuta() {
   }
 
   useEffect(() => { cargar(1) }, [])
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
   const aplicarFiltros = () => cargar(1)
 
@@ -101,24 +202,44 @@ export default function AsignacionesRuta() {
       return
     }
     if (!confirm(`Ejecutar ingesta del courier para ${filtros.fecha_desde} → ${filtros.fecha_hasta}?`)) return
+
     setIngesting(true)
+    setProgress(null)
+
     try {
       const { data } = await api.post('/asignaciones-ruta/ingestar', null, {
         params: { fecha_inicio: filtros.fecha_desde, fecha_fin: filtros.fecha_hasta },
       })
-      if (data.ok) {
-        toast.success(
-          `Creadas: ${data.asignaciones_creadas} · Actualizadas: ${data.asignaciones_actualizadas} · Con envío: ${data.enlazadas_a_envio} · Sin envío: ${data.sin_envio}`,
-          { duration: 6000 }
-        )
-      } else {
-        toast.error(data.mensaje || 'Ingesta sin datos')
+      const taskId = data.task_id
+
+      const poll = async () => {
+        try {
+          const { data: prog } = await api.get(`/asignaciones-ruta/ingestar/progress/${taskId}`)
+          setProgress(prog)
+          if (prog.status === 'done' || prog.status === 'error') {
+            clearInterval(pollRef.current)
+            pollRef.current = null
+            setIngesting(false)
+            if (prog.status === 'done') {
+              const r = prog.result || {}
+              toast.success(
+                `Creadas: ${fmtNumber(r.asignaciones_creadas)} · Actualizadas: ${fmtNumber(r.asignaciones_actualizadas)} · Con envío: ${fmtNumber(r.enlazadas_a_envio)} · Sin envío: ${fmtNumber(r.sin_envio)}`,
+                { duration: 7000 }
+              )
+              cargar(1)
+            } else {
+              toast.error(prog.message || 'Error en la ingesta')
+            }
+          }
+        } catch {
+          // sigue polleando
+        }
       }
-      cargar(1)
+      poll()
+      pollRef.current = setInterval(poll, 1500)
     } catch (e) {
-      toast.error(e?.response?.data?.detail || 'Error en la ingesta')
-    } finally {
       setIngesting(false)
+      toast.error(e?.response?.data?.detail || 'No se pudo iniciar la ingesta')
     }
   }
 
@@ -163,6 +284,33 @@ export default function AsignacionesRuta() {
         stats={stats}
       />
 
+      {/* Card de ayuda */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowHelp(s => !s)}
+          className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900"
+        >
+          <HelpCircle size={14} />
+          {showHelp ? 'Ocultar' : '¿Qué significa esto?'}
+        </button>
+        {showHelp && (
+          <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-gray-700 space-y-1.5">
+            <p><b>Asignación de ruta:</b> cada paquete que salió a ruta del courier (TrackingTech). Es lo que vamos a usar como <b>denominador</b> para medir efectividad.</p>
+            <p><b>Envío local:</b> es la fila correspondiente en nuestra tabla <code className="font-mono bg-white px-1 rounded">envios</code>, la que llega cuando se sube el reporte CSV/Excel desde Operaciones → Ingesta. Una asignación se considera <b>conciliada</b> cuando tiene un envío local enlazado por <code className="font-mono">tracking_id</code>.</p>
+            <p><b>Estados:</b></p>
+            <ul className="list-disc pl-5 space-y-0.5">
+              <li><b>Entregado</b>: la asignación tiene envío local y el envío tiene <code className="font-mono">fecha_entrega</code>.</li>
+              <li><b>Cancelado</b>: el courier marcó la asignación como cancelada en su sistema. <i>No afecta la tasa de efectividad.</i></li>
+              <li><b>Sin entrega</b>: la asignación todavía no se pudo cerrar (puede estar esperando que la ingesta CSV traiga la entrega o ser una entrega no realizada).</li>
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Barra de progreso */}
+      <ProgressBar progress={progress} />
+
+      {/* Filtros */}
       <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <div>
@@ -194,15 +342,17 @@ export default function AsignacionesRuta() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Envío local</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1" title="Filtra por si la asignación está conciliada con la fila local en envios">
+              Conciliado
+            </label>
             <select
               value={filtros.sin_envio}
               onChange={e => setFiltros(f => ({ ...f, sin_envio: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
             >
               <option value="">Todos</option>
-              <option value="true">Sin envío local</option>
-              <option value="false">Con envío local</option>
+              <option value="false">Conciliados (con envío local)</option>
+              <option value="true">Sin conciliar (sin envío local)</option>
             </select>
           </div>
           <div className="md:col-span-2">
@@ -264,7 +414,7 @@ export default function AsignacionesRuta() {
                   <th className="text-left px-3 py-2">Retiro</th>
                   <th className="text-left px-3 py-2">Ruta</th>
                   <th className="text-left px-3 py-2">Conductor</th>
-                  <th className="text-left px-3 py-2">Envío local</th>
+                  <th className="text-left px-3 py-2" title="Fila correspondiente en la tabla envios (CSV)">Envío local</th>
                   <th className="text-left px-3 py-2">Entrega</th>
                   <th className="text-left px-3 py-2">Estado</th>
                   <th className="text-right px-3 py-2">Acciones</th>
@@ -287,11 +437,11 @@ export default function AsignacionesRuta() {
                       </td>
                       <td className="px-3 py-2">
                         {it.envio_id ? (
-                          <span className="inline-flex items-center gap-1 text-xs text-blue-700">
+                          <span className="inline-flex items-center gap-1 text-xs text-blue-700" title="Está conciliado con la fila correspondiente en envios">
                             <LinkIcon size={11} /> #{it.envio_id}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400">sin enlace</span>
+                          <span className="text-xs text-gray-400" title="Aún no llegó la fila por CSV o el tracking no coincide">sin enlace</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-gray-700">{fmtDate(it.envio_fecha_entrega)}</td>

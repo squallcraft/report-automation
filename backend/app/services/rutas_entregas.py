@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import AsignacionRuta, Driver, Envio
+from app.services.task_progress import update_task
 from app.services.trackingtech import fetch_packages_withdrawals
 
 logger = logging.getLogger(__name__)
@@ -301,14 +302,19 @@ def ingestar_rutas(
     db: Session,
     fecha_inicio: str,
     fecha_fin: str,
+    task_id: Optional[str] = None,
 ) -> dict:
     """
     Descarga del endpoint y procesa todas las asignaciones para el rango.
-    Se llama desde el handler del cron job.
+    Se llama desde el handler del cron job o desde un thread (con task_id)
+    para reportar progreso a la UI.
     """
+    if task_id:
+        update_task(task_id, message=f"Conectando con TrackingTech ({fecha_inicio} → {fecha_fin})…")
+
     registros, error = fetch_routes_by_date(fecha_inicio, fecha_fin)
     if registros is None:
-        return {
+        resultado = {
             "ok": False,
             "mensaje": error or "Sin datos",
             "fecha_inicio": fecha_inicio,
@@ -318,6 +324,13 @@ def ingestar_rutas(
             "enlazadas_a_envio": 0,
             "sin_envio": 0,
         }
+        if task_id:
+            update_task(task_id, status="error", message=error or "Sin datos", result=resultado)
+        return resultado
+
+    total = len(registros)
+    if task_id:
+        update_task(task_id, total=total, message=f"Descargados {total} registros. Procesando…")
 
     creadas = 0
     actualizadas = 0
@@ -325,7 +338,7 @@ def ingestar_rutas(
     sin_envio = 0
     errores = 0
 
-    for raw in registros:
+    for idx, raw in enumerate(registros):
         try:
             asig, creada = upsert_asignacion(db, raw)
             if creada:
@@ -343,11 +356,22 @@ def ingestar_rutas(
             logger.exception("Error procesando asignación: %s", raw.get("tracking_id"))
             db.rollback()
             continue
+
+        if task_id and ((idx + 1) % 25 == 0 or (idx + 1) == total):
+            update_task(
+                task_id,
+                processed=idx + 1,
+                nuevos=creadas,
+                duplicados=actualizadas,
+                errores=errores,
+                message=f"Procesando… {idx + 1}/{total}",
+            )
+
     db.commit()
 
-    return {
+    resultado = {
         "ok": True,
-        "mensaje": f"{creadas} creadas, {actualizadas} actualizadas, {enlazadas} con envío, {sin_envio} sin envío",
+        "mensaje": f"{creadas} creadas, {actualizadas} actualizadas, {enlazadas} con envío local, {sin_envio} sin envío local",
         "fecha_inicio": fecha_inicio,
         "fecha_fin": fecha_fin,
         "asignaciones_creadas": creadas,
@@ -356,3 +380,17 @@ def ingestar_rutas(
         "sin_envio": sin_envio,
         "errores": errores,
     }
+
+    if task_id:
+        update_task(
+            task_id,
+            status="done",
+            processed=total,
+            nuevos=creadas,
+            duplicados=actualizadas,
+            errores=errores,
+            message=resultado["mensaje"],
+            result=resultado,
+        )
+
+    return resultado
