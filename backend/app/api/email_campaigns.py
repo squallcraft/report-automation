@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, R
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sqlfunc
+from sqlalchemy import func as sqlfunc, or_, and_
 
 from app.database import get_db
 from app.auth import require_admin_or_administracion
@@ -78,6 +78,14 @@ def _normalizar_emails_extra(raw: List[str]) -> List[str]:
     return out
 
 
+def _seller_email_destino(seller: Seller) -> str:
+    """Email preferido para comunicación masiva: correo_informativo > email."""
+    ci = (getattr(seller, "correo_informativo", None) or "").strip()
+    if ci:
+        return ci
+    return (seller.email or "").strip()
+
+
 # ── Segmentación ──────────────────────────────────────────────────────────────
 
 def _resolver_segmento_email(
@@ -87,14 +95,18 @@ def _resolver_segmento_email(
     tags_filtro: List[str] = None,
     tags_modo: str = "cualquiera",
 ) -> List[Seller]:
-    """Devuelve sellers con email, según el segmento elegido."""
+    """Devuelve sellers con correo informativo o email, según el segmento elegido."""
     hoy = date.today()
+
+    tiene_correo = or_(
+        and_(Seller.correo_informativo.isnot(None), Seller.correo_informativo != ""),
+        and_(Seller.email.isnot(None), Seller.email != ""),
+    )
 
     q = db.query(Seller).filter(
         Seller.activo == True,
         Seller.tipo_cierre.is_(None),
-        Seller.email.isnot(None),
-        Seller.email != "",
+        tiene_correo,
     )
 
     if segmento == "solo_extras":
@@ -104,8 +116,7 @@ def _resolver_segmento_email(
         return db.query(Seller).filter(
             Seller.id.in_(seller_ids_manual),
             Seller.activo == True,
-            Seller.email.isnot(None),
-            Seller.email != "",
+            tiene_correo,
         ).all()
 
     if segmento == "por_tags":
@@ -169,7 +180,7 @@ def _ejecutar_envio(envio_id: int):
             tags_filtro=(envio.variables_valores or {}).get("_tags_filtro", "").split(",") if (envio.variables_valores or {}).get("_tags_filtro") else [],
             tags_modo=(envio.variables_valores or {}).get("_tags_modo", "cualquiera"),
         )
-        emails_seller = {(s.email or "").strip().lower() for s in sellers}
+        emails_seller = {_seller_email_destino(s).lower() for s in sellers if _seller_email_destino(s)}
         extras = [e for e in (envio.emails_extra or []) if e and e.strip().lower() not in emails_seller]
 
         envio.total = len(sellers) + len(extras)
@@ -180,6 +191,9 @@ def _ejecutar_envio(envio_id: int):
 
         # Envío a sellers (con personalización nombre/empresa).
         for seller in sellers:
+            destino = _seller_email_destino(seller)
+            if not destino:
+                continue
             variables = {**variables_base, "nombre": seller.nombre or "", "empresa": seller.empresa or ""}
             asunto = substitute_variables(plantilla.asunto, variables)
             html = substitute_variables(plantilla.cuerpo_html, variables)
@@ -188,13 +202,13 @@ def _ejecutar_envio(envio_id: int):
             msg = EmailMensaje(
                 envio_id=envio.id,
                 seller_id=seller.id,
-                email=seller.email,
+                email=destino,
                 estado="pendiente",
             )
             db.add(msg)
             db.flush()
 
-            ses_id = send_campaign_email(seller.email, asunto, html, texto, msg.id)
+            ses_id = send_campaign_email(destino, asunto, html, texto, msg.id)
             if ses_id:
                 msg.ses_message_id = ses_id
                 msg.estado = "enviado"
@@ -371,7 +385,7 @@ def crear_envio(
     if not sellers_preview and not extras_norm:
         raise HTTPException(400, "Debes elegir un segmento con destinatarios o agregar al menos un correo extra válido")
 
-    emails_seller = {(s.email or "").strip().lower() for s in sellers_preview}
+    emails_seller = {_seller_email_destino(s).lower() for s in sellers_preview if _seller_email_destino(s)}
     extras_unicos = [e for e in extras_norm if e not in emails_seller]
     total_estimado = len(sellers_preview) + len(extras_unicos)
 
@@ -442,10 +456,10 @@ def preview_segmento(
     tags = [t.strip() for t in tags_filtro.split(",") if t.strip()]
     sellers = _resolver_segmento_email(segmento, ids, db, tags_filtro=tags, tags_modo=tags_modo)
     extras = _normalizar_emails_extra([e for e in emails_extra.split(",") if e.strip()])
-    emails_seller = {(s.email or "").strip().lower() for s in sellers}
+    emails_seller = {_seller_email_destino(s).lower() for s in sellers if _seller_email_destino(s)}
     extras_unicos = [e for e in extras if e not in emails_seller]
     total = len(sellers) + len(extras_unicos)
-    muestra = [s.email for s in sellers[:3]] + extras_unicos[:3]
+    muestra = [_seller_email_destino(s) for s in sellers[:3] if _seller_email_destino(s)] + extras_unicos[:3]
     return {
         "total": total,
         "sellers": len(sellers),

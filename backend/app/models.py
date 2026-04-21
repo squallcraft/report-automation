@@ -69,6 +69,7 @@ class Seller(Base):
     dir_fiscal = Column(String(70), nullable=True)   # DirRecep — máx 70 caracteres (estándar SII)
     cmna_fiscal = Column(String(20), nullable=True)  # CmnaRecep — máx 20 caracteres (estándar SII)
     correo_dte = Column(String(80), nullable=True)   # CorreoRecep — notificación DTE, máx 80 caracteres
+    correo_informativo = Column(String(120), nullable=True)  # correo para comunicaciones masivas / campañas informativas
     activo = Column(Boolean, default=True)
     email = Column(String, unique=True, nullable=True)  # acceso al portal del seller
     password_hash = Column(String, nullable=True)

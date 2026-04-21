@@ -460,7 +460,7 @@ def actualizar_seller(
         "nombre", "precio_base", "tarifa_retiro", "aliases", "plan_tarifario",
         "usa_pickup", "tiene_retiro", "rut", "giro", "zona", "empresa",
         "tarifa_retiro_driver", "min_paquetes_retiro_gratis", "email",
-        "dir_fiscal", "cmna_fiscal", "correo_dte",
+        "dir_fiscal", "cmna_fiscal", "correo_dte", "correo_informativo",
     ]
     old_values = {c: getattr(seller, c, None) for c in campos_audit}
 

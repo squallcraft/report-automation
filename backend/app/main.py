@@ -759,6 +759,8 @@ with engine.connect() as conn:
         sel_cols = [c["name"] for c in insp.get_columns("sellers")]
         if "tipo_pago" not in sel_cols:
             safe_exec("ALTER TABLE sellers ADD COLUMN tipo_pago TEXT NOT NULL DEFAULT 'semanal'")
+        if "correo_informativo" not in sel_cols:
+            safe_exec("ALTER TABLE sellers ADD COLUMN correo_informativo VARCHAR(120)")
 
     # ── Migración: Grok Memory System (brief + snapshot) ──
     safe_exec("""
