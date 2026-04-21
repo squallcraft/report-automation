@@ -198,6 +198,7 @@ function AsistenteIMM({ form, onAplicar }) {
                     sueldo_liquido: resultado.liquido_objetivo,
                     colacion: colEdit,
                     movilizacion: movEdit,
+                    viaticos: 0,
                   })
                   toast.success('Asignaciones aplicadas al formulario')
                   setAbierto(false)
@@ -260,6 +261,21 @@ function CalcPreview({ form }) {
           </div>
         )}
       </div>
+      {calc.objetivo_inalcanzable && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 text-amber-900 text-xs p-2.5 flex items-start gap-2">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold">Líquido objetivo inalcanzable con estas asignaciones.</p>
+            <p className="mt-0.5">
+              Colación + movilización + viáticos ({fmt(calc.no_imponibles_total)})
+              ya superan el líquido pactado ({fmt(liq)}). No existe un sueldo base que produzca
+              exactamente ese líquido: el mínimo alcanzable con estas asignaciones es{' '}
+              <strong>{fmt(calc.liquido_verificado)}</strong>.
+              Revisa que los viáticos no estén duplicados o reduce las asignaciones.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div>
           <p className="text-blue-600 text-xs">Sueldo Base</p>
@@ -671,8 +687,14 @@ export default function Trabajadores() {
 
           <AsistenteIMM
             form={form}
-            onAplicar={({ sueldo_liquido, colacion, movilizacion }) =>
-              setForm(f => ({ ...f, sueldo_liquido, colacion, movilizacion }))
+            onAplicar={({ sueldo_liquido, colacion, movilizacion, viaticos }) =>
+              setForm(f => ({
+                ...f,
+                sueldo_liquido,
+                colacion,
+                movilizacion,
+                viaticos: viaticos ?? f.viaticos,
+              }))
             }
           />
 

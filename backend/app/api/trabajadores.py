@@ -78,6 +78,11 @@ def simular_calculo(
         valor_uf=float(params["uf"]),
         imm=params["imm"],
     )
+    # Detección de objetivo inalcanzable: las asignaciones no imponibles
+    # ya superan al líquido pactado (no hay imponible válido que lo produzca).
+    no_imponibles = (movilizacion or 0) + (colacion or 0) + (viaticos or 0)
+    objetivo_inalcanzable = bool(no_imponibles >= sueldo_liquido)
+    diferencia_liquido = int(r.liquido_verificado - sueldo_liquido)
     return {
         "sueldo_liquido": r.sueldo_liquido,
         "sueldo_base": r.sueldo_base,
@@ -95,6 +100,9 @@ def simular_calculo(
         "utm_usada": params["utm"],
         "imm_usado": params["imm"],
         "fuente": params.get("fuente"),
+        "objetivo_inalcanzable": objetivo_inalcanzable,
+        "diferencia_liquido": diferencia_liquido,
+        "no_imponibles_total": no_imponibles,
     }
 
 
