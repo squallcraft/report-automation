@@ -1096,11 +1096,6 @@ def cartola_seller_confirmar(
 
     for item in body.items:
         if item.seller_id <= 0 or item.monto <= 0:
-            # #region agent log
-            import json as _json, datetime as _dt
-            with open("/Users/oscarguzman/ecourier/.cursor/debug-adbcb9.log","a") as _f:
-                _f.write(_json.dumps({"sessionId":"adbcb9","location":"facturacion.py:cartola_seller_confirmar","message":"ITEM_SKIPPED_INVALID","data":{"seller_id":item.seller_id,"monto":item.monto},"timestamp":str(_dt.datetime.utcnow()),"hypothesisId":"B"})+"\n")
-            # #endregion
             continue
 
         fp = item.fingerprint or _generar_fingerprint(item.fecha or "", item.monto, item.descripcion or "")
@@ -1109,11 +1104,6 @@ def cartola_seller_confirmar(
         existe = db.query(PagoCartolaSeller.id).filter(
             PagoCartolaSeller.fingerprint == fp
         ).first()
-        # #region agent log
-        import json as _json, datetime as _dt
-        with open("/Users/oscarguzman/ecourier/.cursor/debug-adbcb9.log","a") as _f:
-            _f.write(_json.dumps({"sessionId":"adbcb9","location":"facturacion.py:cartola_seller_confirmar","message":"ITEM_FP_CHECK","data":{"seller_id":item.seller_id,"monto":item.monto,"semana":item.semana,"fp_from_client":item.fingerprint,"fp_used":fp,"is_duplicate":bool(existe)},"timestamp":str(_dt.datetime.utcnow()),"hypothesisId":"A-C"})+"\n")
-        # #endregion
         if existe:
             duplicados += 1
             continue

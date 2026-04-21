@@ -194,11 +194,14 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
       const half = Math.floor(orig.monto / 2)
       const rest = orig.monto - half
       const newItems = [...prev]
-      newItems[idx] = { ...orig, monto: half }
+      // Clear fingerprint on both rows: montos changed, backend must regenerate
+      // unique fingerprints from the new amounts to avoid duplicate detection
+      newItems[idx] = { ...orig, monto: half, fingerprint: null }
       const splitItem = {
         ...orig,
         _key: `split-${Date.now()}-${Math.random()}`,
         monto: rest,
+        fingerprint: null,
         seller_id_sel: null,
         seller_nombre_sel: null,
         incluir: false,
@@ -221,21 +224,17 @@ function ModalCartolaSeller({ mes, anio, onClose, onConfirmado }) {
     if (!seleccionados.length) return toast.error('No hay items válidos para confirmar')
     setConfirmando(true)
     try {
-      const payload = seleccionados.map(it => ({
-        seller_id: it.seller_id_sel,
-        monto: it.monto,
-        semana: it.semana_sel,
-        fecha: it.fecha,
-        descripcion: it.descripcion,
-        nombre_extraido: it.nombre_extraido,
-        fingerprint: it.fingerprint,
-      }))
-      // #region agent log
-      fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'adbcb9'},body:JSON.stringify({sessionId:'adbcb9',location:'Facturacion.jsx:confirmar',message:'CONFIRM_PAYLOAD',data:{count:payload.length,items:payload.map(i=>({seller_id:i.seller_id,monto:i.monto,semana:i.semana,fingerprint:i.fingerprint,_isSplit:String(seleccionados.find(s=>s.seller_id_sel===i.seller_id&&s.monto===i.monto)?._key||'').startsWith('split-')}))},timestamp:Date.now(),hypothesisId:'A-B-D'})}).catch(()=>{})
-      // #endregion
       await api.post('/facturacion/cartola/confirmar', {
         semana, mes, anio,
-        items: payload,
+        items: seleccionados.map(it => ({
+          seller_id: it.seller_id_sel,
+          monto: it.monto,
+          semana: it.semana_sel,
+          fecha: it.fecha,
+          descripcion: it.descripcion,
+          nombre_extraido: it.nombre_extraido,
+          fingerprint: it.fingerprint,
+        })),
       })
       toast.success(`${seleccionados.length} pagos registrados`)
       onConfirmado()
