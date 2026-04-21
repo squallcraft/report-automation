@@ -14,6 +14,7 @@ from app.models import (
     PagoSemanaDriver, PagoCartola, EstadoPagoEnum, RecepcionPaquete,
     MovimientoFinanciero, CategoriaFinanciera, Trabajador,
     GestionComercialEntry, AjusteLiquidacion, TipoEntidadEnum,
+    AsignacionRuta,
 )
 from app.schemas import DashboardStats
 from app.services.seller_groups import group_seller, get_group_seller_ids, is_in_group
@@ -377,42 +378,57 @@ def same_day_stats(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Efectividad de entregas — ciclo fecha_carga → fecha_entrega
+# Efectividad de entregas — ciclo fecha_retiro → fecha_entrega
+#
+# A partir de la integración con TrackingTech (asignacion_ruta), el ciclo de
+# entrega se mide desde que el courier retira el paquete (Envio.fecha_retiro)
+# hasta que se entrega (Envio.fecha_entrega), no desde la subida del seller.
+#
+# Cancelados externamente (AsignacionRuta.estado_calculado='cancelado') se
+# reportan aparte y NO entran al denominador del ciclo.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _ciclo_expr():
     """
-    Business days (Mon-Fri) between fecha_carga and fecha_entrega.
+    Business days (Mon-Fri) between fecha_retiro and fecha_entrega.
     Friday → Monday = 1 business day (weekend skipped).
 
-    Formula: wd_cumulative(entrega) - wd_cumulative(carga)
+    Formula: wd_cumulative(entrega) - wd_cumulative(retiro)
     where wd_cumulative(d) = (days_since_ref_monday / 7) * 5 + LEAST(ISODOW, 5)
     Reference 2024-01-01 is a Monday (ISODOW=1).
     """
     from sqlalchemy import cast, Integer as SAInteger, text
 
     def _wd(col):
-        # Days since a known Monday (integer division keeps only full weeks)
         days = cast(col - text("'2024-01-01'::date"), SAInteger)
-        # ISODOW: 1=Mon … 5=Fri, 6=Sat, 7=Sun → LEAST(isodow, 5) caps Sat/Sun at 5
         isodow = cast(sqlfunc.extract('isodow', col), SAInteger)
         return (days / 7) * 5 + sqlfunc.least(isodow, 5)
 
-    return _wd(Envio.fecha_entrega) - _wd(Envio.fecha_carga)
+    return _wd(Envio.fecha_entrega) - _wd(Envio.fecha_retiro)
 
 
-def _efectividad_row(rows_with_carga):
+def _cancelado_externo_subq():
+    """Sub-query EXISTS: el envío tiene una AsignacionRuta cancelada externamente."""
+    from sqlalchemy import exists
+    return exists().where(
+        (AsignacionRuta.envio_id == Envio.id)
+        & (AsignacionRuta.estado_calculado == "cancelado")
+    )
+
+
+def _efectividad_row(dias_ciclo):
     """Compute distribution and averages from a list of ciclo_dias ints."""
-    if not rows_with_carga:
+    if not dias_ciclo:
         return {"ciclo_promedio": None, "pct_0d": 0, "pct_1d": 0, "pct_2d": 0,
-                "pct_3d": 0, "pct_4plus": 0, "pct_rapida": 0}
-    n = len(rows_with_carga)
-    c0 = sum(1 for d in rows_with_carga if d == 0)
-    c1 = sum(1 for d in rows_with_carga if d == 1)
-    c2 = sum(1 for d in rows_with_carga if d == 2)
-    c3 = sum(1 for d in rows_with_carga if d == 3)
-    c4 = sum(1 for d in rows_with_carga if d >= 4)
-    avg = round(sum(rows_with_carga) / n, 1)
+                "pct_3d": 0, "pct_4plus": 0, "pct_rapida": 0,
+                "n_0d": 0, "n_1d": 0, "n_2d": 0, "n_3d": 0, "n_4plus": 0}
+    n = len(dias_ciclo)
+    c0 = sum(1 for d in dias_ciclo if d == 0)
+    c1 = sum(1 for d in dias_ciclo if d == 1)
+    c2 = sum(1 for d in dias_ciclo if d == 2)
+    c3 = sum(1 for d in dias_ciclo if d == 3)
+    c4 = sum(1 for d in dias_ciclo if d >= 4)
+    avg = round(sum(dias_ciclo) / n, 1)
     pct = lambda x: round(x / n * 100, 1)
     return {
         "ciclo_promedio": avg,
@@ -433,53 +449,103 @@ def efectividad_entregas(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Ciclo de entrega: fecha_carga → fecha_entrega por seller y driver."""
+    """Ciclo de entrega: fecha_retiro → fecha_entrega por seller y driver.
+
+    - Denominador del ciclo: envíos con fecha_retiro Y fecha_entrega presentes.
+    - Cancelados externos (TrackingTech) se reportan aparte y NO entran al
+      cómputo del ciclo ni al cómputo de la tasa.
+    """
     base = [Envio.mes == mes, Envio.anio == anio]
     if semana:
         base.append(Envio.semana == semana)
 
+    cancelado_subq = _cancelado_externo_subq()
+
     # ── Global ──
     rows_global = db.query(_ciclo_expr().label("d")).filter(
-        *base, Envio.fecha_carga.isnot(None)
+        *base,
+        Envio.fecha_retiro.isnot(None),
+        ~cancelado_subq,
     ).all()
     dias_global = [r.d for r in rows_global if r.d is not None and r.d >= 0]
 
     total_global = db.query(sqlfunc.count(Envio.id)).filter(*base).scalar() or 0
-    con_fecha_carga = len(dias_global)
+    cancelados_global = db.query(sqlfunc.count(Envio.id)).filter(*base, cancelado_subq).scalar() or 0
+    con_fecha_retiro = db.query(sqlfunc.count(Envio.id)).filter(
+        *base, Envio.fecha_retiro.isnot(None), ~cancelado_subq
+    ).scalar() or 0
 
     global_stats = {
         "total": total_global,
-        "con_fecha_carga": con_fecha_carga,
-        "sin_fecha_carga": total_global - con_fecha_carga,
+        "cancelados": cancelados_global,
+        "con_fecha_retiro": con_fecha_retiro,
+        "sin_fecha_retiro": max(0, total_global - cancelados_global - con_fecha_retiro),
+        # Backwards-compat con frontend antiguo (mismo nombre, semántica equivalente):
+        "con_fecha_carga": con_fecha_retiro,
+        "sin_fecha_carga": max(0, total_global - cancelados_global - con_fecha_retiro),
         **_efectividad_row(dias_global),
     }
 
     # ── Por Seller ──
-    seller_data = db.query(
+    # Total por seller (incluye cancelados, para mostrar el universo completo)
+    seller_total = db.query(
         Envio.seller_id,
         sqlfunc.count(Envio.id).label("total"),
-        sqlfunc.count(Envio.fecha_carga).label("con_carga"),
+    ).filter(*base, Envio.seller_id.isnot(None)).group_by(Envio.seller_id).all()
+    total_por_seller = {r.seller_id: int(r.total or 0) for r in seller_total}
+
+    # Cancelados por seller (excluidos del denominador)
+    seller_cancelados = db.query(
+        Envio.seller_id,
+        sqlfunc.count(Envio.id).label("cancelados"),
+    ).filter(*base, Envio.seller_id.isnot(None), cancelado_subq).group_by(Envio.seller_id).all()
+    cancelados_por_seller = {r.seller_id: int(r.cancelados or 0) for r in seller_cancelados}
+
+    # Métricas de ciclo (excluyen cancelados y exigen fecha_retiro)
+    seller_data = db.query(
+        Envio.seller_id,
+        sqlfunc.count(Envio.id).label("con_retiro"),
         sqlfunc.avg(_ciclo_expr()).label("avg_ciclo"),
         sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
         sqlfunc.sum(case((_ciclo_expr() == 1, 1), else_=0)).label("n_1d"),
         sqlfunc.sum(case((_ciclo_expr() >= 4, 1), else_=0)).label("n_4plus"),
-    ).filter(*base, Envio.fecha_carga.isnot(None), Envio.seller_id.isnot(None)
+    ).filter(
+        *base,
+        Envio.fecha_retiro.isnot(None),
+        Envio.seller_id.isnot(None),
+        ~cancelado_subq,
     ).group_by(Envio.seller_id).all()
 
     seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
 
     por_seller_raw = []
-    for r in sorted(seller_data, key=lambda x: -(x.total or 0)):
-        cc = r.con_carga or 0
+    seller_ids_vistos = set()
+    for r in seller_data:
+        seller_ids_vistos.add(r.seller_id)
+        cc = r.con_retiro or 0
         por_seller_raw.append({
             "seller_id": r.seller_id,
             "nombre": seller_nombres.get(r.seller_id, "Sin nombre"),
-            "total": r.total,
-            "con_fecha_carga": cc,
+            "total": total_por_seller.get(r.seller_id, 0),
+            "cancelados": cancelados_por_seller.get(r.seller_id, 0),
+            "con_fecha_retiro": cc,
             "_n_0d": r.n_0d or 0,
             "_n_1d": r.n_1d or 0,
             "_n_4plus": r.n_4plus or 0,
             "_ciclo_sum": float(r.avg_ciclo or 0) * cc,
+        })
+
+    # Sellers que solo tienen totales/cancelados (sin fecha_retiro válida)
+    for sid, tot in total_por_seller.items():
+        if sid in seller_ids_vistos:
+            continue
+        por_seller_raw.append({
+            "seller_id": sid,
+            "nombre": seller_nombres.get(sid, "Sin nombre"),
+            "total": tot,
+            "cancelados": cancelados_por_seller.get(sid, 0),
+            "con_fecha_retiro": 0,
+            "_n_0d": 0, "_n_1d": 0, "_n_4plus": 0, "_ciclo_sum": 0.0,
         })
 
     # ── Aplicar agrupaciones analytics ──────────────────────────────────────
@@ -492,12 +558,13 @@ def efectividad_entregas(
                 "nombre": gname,
                 "es_grupo": gname != row["nombre"],
                 "grupo_nombre": gname if gname != row["nombre"] else None,
-                "total": 0, "con_fecha_carga": 0,
+                "total": 0, "cancelados": 0, "con_fecha_retiro": 0,
                 "_n_0d": 0, "_n_1d": 0, "_n_4plus": 0, "_ciclo_sum": 0.0,
             }
         g = _ef_groups[gname]
         g["total"] += row["total"]
-        g["con_fecha_carga"] += row["con_fecha_carga"]
+        g["cancelados"] += row["cancelados"]
+        g["con_fecha_retiro"] += row["con_fecha_retiro"]
         g["_n_0d"] += row["_n_0d"]
         g["_n_1d"] += row["_n_1d"]
         g["_n_4plus"] += row["_n_4plus"]
@@ -505,14 +572,16 @@ def efectividad_entregas(
 
     por_seller = []
     for g in sorted(_ef_groups.values(), key=lambda x: -x["total"]):
-        cc = g["con_fecha_carga"]
+        cc = g["con_fecha_retiro"]
         por_seller.append({
             "seller_id": g["seller_id"],
             "nombre": g["nombre"],
             "es_grupo": g["es_grupo"],
             "grupo_nombre": g["grupo_nombre"],
             "total": g["total"],
-            "con_fecha_carga": cc,
+            "cancelados": g["cancelados"],
+            "con_fecha_retiro": cc,
+            "con_fecha_carga": cc,  # alias para compat
             "ciclo_promedio": round(g["_ciclo_sum"] / cc, 1) if cc else None,
             "pct_0d": round(g["_n_0d"] / cc * 100, 1) if cc else 0,
             "pct_rapida": round((g["_n_0d"] + g["_n_1d"]) / cc * 100, 1) if cc else 0,
@@ -520,34 +589,68 @@ def efectividad_entregas(
         })
 
     # ── Por Driver ──
-    driver_data = db.query(
+    driver_total = db.query(
         Envio.driver_id,
         sqlfunc.count(Envio.id).label("total"),
-        sqlfunc.count(Envio.fecha_carga).label("con_carga"),
+    ).filter(*base, Envio.driver_id.isnot(None)).group_by(Envio.driver_id).all()
+    total_por_driver = {r.driver_id: int(r.total or 0) for r in driver_total}
+
+    driver_cancel = db.query(
+        Envio.driver_id,
+        sqlfunc.count(Envio.id).label("cancelados"),
+    ).filter(*base, Envio.driver_id.isnot(None), cancelado_subq).group_by(Envio.driver_id).all()
+    cancelados_por_driver = {r.driver_id: int(r.cancelados or 0) for r in driver_cancel}
+
+    driver_data = db.query(
+        Envio.driver_id,
+        sqlfunc.count(Envio.id).label("con_retiro"),
         sqlfunc.avg(_ciclo_expr()).label("avg_ciclo"),
         sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
         sqlfunc.sum(case((_ciclo_expr() == 1, 1), else_=0)).label("n_1d"),
         sqlfunc.sum(case((_ciclo_expr() >= 4, 1), else_=0)).label("n_4plus"),
-    ).filter(*base, Envio.fecha_carga.isnot(None), Envio.driver_id.isnot(None)
+    ).filter(
+        *base,
+        Envio.fecha_retiro.isnot(None),
+        Envio.driver_id.isnot(None),
+        ~cancelado_subq,
     ).group_by(Envio.driver_id).all()
 
     driver_nombres = {d.id: d.nombre for d in db.query(Driver.id, Driver.nombre).all()}
 
     por_driver = []
-    for r in sorted(driver_data, key=lambda x: -(x.con_carga or 0)):
-        cc = r.con_carga or 0
+    driver_ids_vistos = set()
+    for r in sorted(driver_data, key=lambda x: -(x.con_retiro or 0)):
+        driver_ids_vistos.add(r.driver_id)
+        cc = r.con_retiro or 0
         ciclo = round(float(r.avg_ciclo), 1) if r.avg_ciclo is not None else None
-        pct_rapida = round((r.n_0d + r.n_1d) / cc * 100, 1) if cc else 0
+        pct_rapida = round(((r.n_0d or 0) + (r.n_1d or 0)) / cc * 100, 1) if cc else 0
         por_driver.append({
             "driver_id": r.driver_id,
             "nombre": driver_nombres.get(r.driver_id, "Sin nombre"),
-            "total": r.total,
-            "con_fecha_carga": cc,
+            "total": total_por_driver.get(r.driver_id, 0),
+            "cancelados": cancelados_por_driver.get(r.driver_id, 0),
+            "con_fecha_retiro": cc,
+            "con_fecha_carga": cc,  # alias para compat
             "ciclo_promedio": ciclo,
-            "pct_0d": round(r.n_0d / cc * 100, 1) if cc else 0,
+            "pct_0d": round((r.n_0d or 0) / cc * 100, 1) if cc else 0,
             "pct_rapida": pct_rapida,
-            "pct_4plus": round(r.n_4plus / cc * 100, 1) if cc else 0,
+            "pct_4plus": round((r.n_4plus or 0) / cc * 100, 1) if cc else 0,
             "alerta": ciclo is not None and ciclo > 2.5,
+        })
+
+    for did, tot in total_por_driver.items():
+        if did in driver_ids_vistos:
+            continue
+        por_driver.append({
+            "driver_id": did,
+            "nombre": driver_nombres.get(did, "Sin nombre"),
+            "total": tot,
+            "cancelados": cancelados_por_driver.get(did, 0),
+            "con_fecha_retiro": 0,
+            "con_fecha_carga": 0,
+            "ciclo_promedio": None,
+            "pct_0d": 0, "pct_rapida": 0, "pct_4plus": 0,
+            "alerta": False,
         })
 
     # Tendencia semanal por driver (últimas 4 semanas del mes)
@@ -557,8 +660,11 @@ def efectividad_entregas(
         sqlfunc.avg(_ciclo_expr()).label("avg_ciclo"),
         sqlfunc.sum(case((_ciclo_expr() <= 1, 1), else_=0)).label("rapidas"),
         sqlfunc.count(Envio.id).label("total"),
-    ).filter(Envio.mes == mes, Envio.anio == anio, Envio.fecha_carga.isnot(None),
-             Envio.driver_id.isnot(None)
+    ).filter(
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.fecha_retiro.isnot(None),
+        Envio.driver_id.isnot(None),
+        ~cancelado_subq,
     ).group_by(Envio.driver_id, Envio.semana).all()
 
     spark_by_driver: dict = defaultdict(dict)
@@ -585,14 +691,19 @@ def _efectividad_prev(mes: int, anio: int, db):
     prev_mes = mes - 1 if mes > 1 else 12
     prev_anio = anio if mes > 1 else anio - 1
     base_prev = [Envio.mes == prev_mes, Envio.anio == prev_anio]
+    cancel_subq = _cancelado_externo_subq()
     rows_prev = db.query(_ciclo_expr().label("d")).filter(
-        *base_prev, Envio.fecha_carga.isnot(None)
+        *base_prev, Envio.fecha_retiro.isnot(None), ~cancel_subq
     ).all()
     dias_prev = [r.d for r in rows_prev if r.d is not None and r.d >= 0]
     total_prev = db.query(sqlfunc.count(Envio.id)).filter(*base_prev).scalar() or 0
+    cancel_prev = db.query(sqlfunc.count(Envio.id)).filter(*base_prev, cancel_subq).scalar() or 0
     return {
         "mes": prev_mes, "anio": prev_anio,
-        "total": total_prev, "con_fecha_carga": len(dias_prev),
+        "total": total_prev,
+        "cancelados": cancel_prev,
+        "con_fecha_retiro": len(dias_prev),
+        "con_fecha_carga": len(dias_prev),  # alias compat
         **_efectividad_row(dias_prev),
     }
 
@@ -606,26 +717,40 @@ def efectividad_driver_detalle(
     _=Depends(require_admin_or_administracion),
 ):
     """Detalle de ciclo de entrega para un driver específico."""
+    cancel_subq = _cancelado_externo_subq()
     base = [Envio.mes == mes, Envio.anio == anio,
-            Envio.driver_id == driver_id, Envio.fecha_carga.isnot(None)]
+            Envio.driver_id == driver_id,
+            Envio.fecha_retiro.isnot(None),
+            ~cancel_subq]
 
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     nombre = driver.nombre if driver else f"Driver {driver_id}"
+
+    # Cancelados del driver en el periodo (para mostrar aparte)
+    cancelados_driver = db.query(sqlfunc.count(Envio.id)).filter(
+        Envio.mes == mes, Envio.anio == anio,
+        Envio.driver_id == driver_id, cancel_subq,
+    ).scalar() or 0
 
     # Resumen
     rows = db.query(_ciclo_expr().label("d")).filter(*base).all()
     dias = [r.d for r in rows if r.d is not None and r.d >= 0]
 
-    resumen = {"nombre": nombre, "total": len(dias), **_efectividad_row(dias)}
+    resumen = {
+        "nombre": nombre,
+        "total": len(dias),
+        "cancelados": cancelados_driver,
+        **_efectividad_row(dias),
+    }
 
-    # Tendencia diaria
+    # Tendencia diaria (agrupada por fecha_retiro)
     daily = db.query(
-        Envio.fecha_carga.label("fecha"),
+        Envio.fecha_retiro.label("fecha"),
         sqlfunc.count(Envio.id).label("total"),
         sqlfunc.avg(_ciclo_expr()).label("ciclo_avg"),
         sqlfunc.sum(case((_ciclo_expr() == 0, 1), else_=0)).label("n_0d"),
         sqlfunc.sum(case((_ciclo_expr() <= 1, 1), else_=0)).label("n_rapidos"),
-    ).filter(*base).group_by(Envio.fecha_carga).order_by(Envio.fecha_carga).all()
+    ).filter(*base).group_by(Envio.fecha_retiro).order_by(Envio.fecha_retiro).all()
 
     por_dia = [{
         "fecha": str(r.fecha),
@@ -672,7 +797,7 @@ def efectividad_driver_detalle(
     # Envíos lentos (+3 días)
     seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
     lentos_rows = db.query(
-        Envio.tracking_id, Envio.seller_id, Envio.fecha_carga,
+        Envio.tracking_id, Envio.seller_id, Envio.fecha_retiro,
         Envio.fecha_entrega, Envio.comuna,
         _ciclo_expr().label("ciclo_dias"),
     ).filter(*base, _ciclo_expr() >= 3
@@ -681,8 +806,9 @@ def efectividad_driver_detalle(
     lentos = [{
         "tracking_id": r.tracking_id or "—",
         "seller": seller_nombres.get(r.seller_id, "—"),
-        "fecha_carga": str(r.fecha_carga),
-        "fecha_entrega": str(r.fecha_entrega),
+        "fecha_retiro": str(r.fecha_retiro) if r.fecha_retiro else None,
+        "fecha_carga": str(r.fecha_retiro) if r.fecha_retiro else None,  # alias compat
+        "fecha_entrega": str(r.fecha_entrega) if r.fecha_entrega else None,
         "ciclo_dias": r.ciclo_dias,
         "comuna": r.comuna or "—",
     } for r in lentos_rows]

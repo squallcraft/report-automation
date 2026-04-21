@@ -95,7 +95,7 @@ export default function EfectividadEntregas() {
 
   // Driver table controls
   const [driverSearch, setDriverSearch] = useState('')
-  const [driverSort, setDriverSort] = useState({ col: 'con_fecha_carga', dir: 'desc' })
+  const [driverSort, setDriverSort] = useState({ col: 'con_fecha_retiro', dir: 'desc' })
   const [driverPageSize, setDriverPageSize] = useState(30)
   const [driverPage, setDriverPage] = useState(1)
 
@@ -196,11 +196,11 @@ export default function EfectividadEntregas() {
   const exportCSV = () => {
     if (!data?.por_seller) return
     const rows = [
-      ['Seller', 'Envíos', 'Con ciclo', 'Ciclo prom.', '% Rápida (≤1d)', '% Lenta (≥4d)'],
-      ...data.por_seller.map(s => [s.nombre, s.total, s.con_fecha_carga, s.ciclo_promedio ?? '', s.pct_rapida ?? '', s.pct_4plus ?? '']),
+      ['Seller', 'Envíos', 'Cancelados', 'Medibles', 'Ciclo prom.', '% Rápida (≤1d)', '% Lenta (≥4d)'],
+      ...data.por_seller.map(s => [s.nombre, s.total, s.cancelados ?? 0, s.con_fecha_retiro ?? s.con_fecha_carga ?? 0, s.ciclo_promedio ?? '', s.pct_rapida ?? '', s.pct_4plus ?? '']),
       [],
-      ['Driver', 'Envíos', 'Con ciclo', 'Ciclo prom.', '% Rápida (≤1d)', '% Lenta (≥4d)'],
-      ...data.por_driver.map(d => [d.nombre, d.total, d.con_fecha_carga, d.ciclo_promedio ?? '', d.pct_rapida ?? '', d.pct_4plus ?? '']),
+      ['Driver', 'Envíos', 'Cancelados', 'Medibles', 'Ciclo prom.', '% Rápida (≤1d)', '% Lenta (≥4d)'],
+      ...data.por_driver.map(d => [d.nombre, d.total, d.cancelados ?? 0, d.con_fecha_retiro ?? d.con_fecha_carga ?? 0, d.ciclo_promedio ?? '', d.pct_rapida ?? '', d.pct_4plus ?? '']),
     ]
     const csv = rows.map(r => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -261,13 +261,18 @@ export default function EfectividadEntregas() {
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Total envíos</p>
               <p className="text-3xl font-black text-gray-800 mt-1">{(g?.total || 0).toLocaleString()}</p>
-              <p className="text-xs text-gray-400 mt-1">{g?.con_fecha_carga} con ciclo medible</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {(g?.con_fecha_retiro ?? g?.con_fecha_carga ?? 0)} con ciclo medible
+                {(g?.cancelados ?? 0) > 0 && (
+                  <span className="ml-1">· <span className="text-red-500 font-semibold">{g.cancelados}</span> cancelados</span>
+                )}
+              </p>
             </div>
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 border-l-emerald-500">
               <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide">Ciclo promedio</p>
               <p className={`text-3xl font-black mt-1 ${colorCiclo(g?.ciclo_promedio)}`}>{fmtDias(g?.ciclo_promedio)}</p>
               <div className="text-xs text-gray-400 mt-1 flex items-center">
-                días hábiles · recepción → entrega
+                días hábiles · retiro → entrega
                 <DeltaBadge val={deltaCiclo} invert={false} />
               </div>
             </div>
@@ -287,7 +292,7 @@ export default function EfectividadEntregas() {
           </div>
 
           {/* Distribución global */}
-          {g?.con_fecha_carga > 0 && (
+          {(g?.con_fecha_retiro ?? g?.con_fecha_carga ?? 0) > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
               <p className="text-sm font-semibold text-gray-700 mb-4">Distribución global del ciclo de entrega</p>
               <div className="space-y-2.5">
@@ -339,6 +344,7 @@ export default function EfectividadEntregas() {
                         <span className="flex items-center gap-0.5">Seller <SortIcon col="nombre" sortState={sellerSort} /></span>
                       </th>
                       <SortableTh label="Total" col="total" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
+                      <SortableTh label="Cancelados" col="cancelados" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
                       <SortableTh label="Ciclo prom." col="ciclo_promedio" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
                       <SortableTh label="Entregados ≤1d" col="pct_rapida" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
                       <SortableTh label="Mismo día" col="pct_0d" sortState={sellerSort} onSort={handleSellerSort} className="text-center" />
@@ -360,6 +366,11 @@ export default function EfectividadEntregas() {
                           {s.pct_4plus > 15 && <span className="ml-1.5 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">Alerta</span>}
                         </td>
                         <td className="px-4 py-2.5 text-center text-gray-500">{s.total}</td>
+                        <td className="px-4 py-2.5 text-center" title="Cancelados externamente (no entran al denominador)">
+                          <span className={(s.cancelados ?? 0) > 0 ? 'text-red-500 font-semibold' : 'text-gray-300'}>
+                            {s.cancelados ?? 0}
+                          </span>
+                        </td>
                         <td className={`px-4 py-2.5 text-center font-bold ${colorCiclo(s.ciclo_promedio)}`}>{fmtDias(s.ciclo_promedio)}</td>
                         <td className="px-4 py-2.5 w-44">
                           <div className="flex items-center gap-2">
@@ -375,7 +386,7 @@ export default function EfectividadEntregas() {
                       </tr>
                     ))}
                     {sellersVisible.length === 0 && (
-                      <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">Sin resultados</td></tr>
+                      <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">Sin resultados</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -436,7 +447,9 @@ export default function EfectividadEntregas() {
                       >
                         <span className="flex items-center gap-0.5">Conductor <SortIcon col="nombre" sortState={driverSort} /></span>
                       </th>
-                      <SortableTh label="Medibles" col="con_fecha_carga" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="Asignados" col="total" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="Cancelados" col="cancelados" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
+                      <SortableTh label="Medibles" col="con_fecha_retiro" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
                       <SortableTh label="Ciclo prom." col="ciclo_promedio" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
                       <SortableTh label="≤1 día" col="pct_rapida" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
                       <SortableTh label="Mismo día" col="pct_0d" sortState={driverSort} onSort={handleDriverSort} className="text-center" />
@@ -456,7 +469,13 @@ export default function EfectividadEntregas() {
                           {d.nombre}
                           {d.alerta && <span className="ml-1.5 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">⚠ Alerta</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-center text-gray-500">{d.con_fecha_carga ?? d.total}</td>
+                        <td className="px-4 py-2.5 text-center text-gray-500">{d.total ?? 0}</td>
+                        <td className="px-4 py-2.5 text-center" title="Cancelados externamente (no entran al denominador)">
+                          <span className={(d.cancelados ?? 0) > 0 ? 'text-red-500 font-semibold' : 'text-gray-300'}>
+                            {d.cancelados ?? 0}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-gray-500">{d.con_fecha_retiro ?? d.con_fecha_carga ?? 0}</td>
                         <td className={`px-4 py-2.5 text-center font-bold ${colorCiclo(d.ciclo_promedio)}`}>{fmtDias(d.ciclo_promedio)}</td>
                         <td className="px-4 py-2.5 text-center">
                           <span className={`font-bold ${colorPct(d.pct_rapida)}`}>{fmtPct(d.pct_rapida)}</span>
@@ -478,7 +497,7 @@ export default function EfectividadEntregas() {
                       </tr>
                     ))}
                     {driversVisible.length === 0 && (
-                      <tr><td colSpan={8} className="px-4 py-6 text-center text-gray-400">Sin resultados</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-6 text-center text-gray-400">Sin resultados</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -498,11 +517,11 @@ export default function EfectividadEntregas() {
             </div>
           )}
 
-          {!g?.con_fecha_carga && !loading && (
+          {!(g?.con_fecha_retiro ?? g?.con_fecha_carga) && !loading && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
               <Clock size={20} className="text-amber-500 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-amber-800">Sin datos de fecha de carga en este período</p>
-              <p className="text-xs text-amber-600 mt-1">Los ciclos solo se calculan cuando el envío tiene <code>fecha_carga</code></p>
+              <p className="text-sm font-semibold text-amber-800">Sin datos de fecha de retiro en este período</p>
+              <p className="text-xs text-amber-600 mt-1">El ciclo se calcula desde <code>fecha_retiro</code> (TrackingTech) hasta <code>fecha_entrega</code>. Si todavía no corriste la ingesta de asignaciones para este mes, hazlo desde <b>Asignaciones de Ruta → Ingestar rango ahora</b>.</p>
             </div>
           )}
         </>

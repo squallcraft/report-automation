@@ -321,7 +321,7 @@ export default function EfectividadDriver() {
                     <tr className="bg-gray-50 text-[10px] text-gray-400 uppercase tracking-wide border-b border-gray-100">
                       <th className="px-4 py-2 text-left font-semibold">Tracking</th>
                       <th className="px-4 py-2 text-left font-semibold">Seller</th>
-                      <th className="px-4 py-2 text-left font-semibold">Fecha Carga</th>
+                      <th className="px-4 py-2 text-left font-semibold">Fecha Retiro</th>
                       <th className="px-4 py-2 text-left font-semibold">Fecha Entrega</th>
                       <th className="px-4 py-2 text-center font-semibold">Días</th>
                       <th className="px-4 py-2 text-left font-semibold">Comuna</th>
@@ -332,8 +332,8 @@ export default function EfectividadDriver() {
                       <tr key={i} className="hover:bg-gray-50 text-gray-700">
                         <td className="px-4 py-2.5 font-mono text-blue-600 text-[10px]">{l.tracking_id}</td>
                         <td className="px-4 py-2.5 max-w-[100px] truncate" title={l.seller}>{l.seller}</td>
-                        <td className="px-4 py-2.5 text-gray-500">{l.fecha_carga}</td>
-                        <td className="px-4 py-2.5 text-gray-500">{l.fecha_entrega}</td>
+                        <td className="px-4 py-2.5 text-gray-500">{l.fecha_retiro ?? l.fecha_carga ?? '—'}</td>
+                        <td className="px-4 py-2.5 text-gray-500">{l.fecha_entrega ?? '—'}</td>
                         <td className="px-4 py-2.5 text-center">
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${l.ciclo_dias >= 4 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
                             +{l.ciclo_dias}
