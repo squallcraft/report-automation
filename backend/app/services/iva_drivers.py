@@ -76,23 +76,47 @@ def _monto_semana_driver(db: Session, driver_id: int, semana: int, mes: int, ani
     return total
 
 
+def _semanas_con_factura_afecta(db: Session, driver_id: int, mes: int, anio: int) -> list[int]:
+    """
+    Retorna las semanas del mes en que el driver tiene una FacturaDriver
+    APROBADA de tipo FACTURA (afecta a IVA). Boletas de honorarios y semanas
+    sin factura aprobada se excluyen, ya que no generan IVA a devolver.
+    """
+    rows = db.query(FacturaDriver.semana).filter(
+        FacturaDriver.driver_id == driver_id,
+        FacturaDriver.mes == mes,
+        FacturaDriver.anio == anio,
+        FacturaDriver.estado == EstadoFacturaDriverEnum.APROBADA.value,
+        FacturaDriver.tipo_documento == "FACTURA",
+    ).all()
+    return [r[0] for r in rows]
+
+
 def calcular_base_iva_mes(db: Session, driver_id: int, mes: int, anio: int) -> int:
     """
-    Suma de montos de todas las semanas del mes para el driver.
-    Si es jefe de flota, consolida los montos de sus subordinados (igual que CPC).
-    Incluye envíos + extras + retiros + ajustes (positivos y negativos).
-    Solo debe llamarse cuando hay >= 1 factura aprobada.
-    """
-    semanas = _semanas_del_mes(db, mes, anio)
-    base = sum(_monto_semana_driver(db, driver_id, s, mes, anio) for s in semanas)
+    Suma de montos del mes SOLO de las semanas cuya factura aprobada es de
+    tipo FACTURA (con IVA). Las semanas con boleta de honorarios se excluyen
+    porque no generan IVA a devolver. Semanas sin factura aprobada tampoco
+    cuentan.
 
-    # Subordinados del jefe de flota
+    Si el driver es jefe de flota, consolida los montos de sus subordinados
+    aplicando la misma regla por semana (la factura la emite el jefe; los
+    subordinados no facturan).
+    """
+    semanas_afectas = _semanas_con_factura_afecta(db, driver_id, mes, anio)
+    if not semanas_afectas:
+        return 0
+    base = sum(_monto_semana_driver(db, driver_id, s, mes, anio) for s in semanas_afectas)
+
+    # Subordinados del jefe de flota: solo para las semanas en que el jefe
+    # tiene factura afecta. El monto semanal del subordinado se acumula bajo
+    # el jefe (igual que CPC consolidado).
     subordinados = db.query(Driver).filter(
         Driver.jefe_flota_id == driver_id,
         Driver.activo == True,
     ).all()
     for sub in subordinados:
-        base += sum(_monto_semana_driver(db, sub.id, s, mes, anio) for s in semanas)
+        base += sum(_monto_semana_driver(db, sub.id, s, mes, anio) for s in semanas_afectas)
 
     return base
 

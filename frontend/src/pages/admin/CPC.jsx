@@ -541,32 +541,35 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
                 </div>
               )}
 
-              {factura.estado !== 'APROBADA' && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Tipo de documento
-                  </label>
-                  <div className="flex gap-2">
-                    {[
-                      { value: 'FACTURA', label: 'Factura (con IVA)' },
-                      { value: 'BOLETA',  label: 'Boleta de honorarios' },
-                    ].map(({ value, label }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setTipoDocumento(value)}
-                        className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-lg border transition-colors ${
-                          tipoDocumento === value
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Tipo de documento
+                </label>
+                <div className="flex gap-2">
+                  {[
+                    { value: 'FACTURA', label: 'Factura (con IVA)' },
+                    { value: 'BOLETA',  label: 'Boleta de honorarios' },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setTipoDocumento(value)}
+                      className={`flex-1 text-xs font-medium py-1.5 px-3 rounded-lg border transition-colors ${
+                        tipoDocumento === value
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-              )}
+                {factura.estado === 'APROBADA' && tipoDocumento !== factura.tipo_documento && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Presiona "Guardar cambios" para aplicar el nuevo tipo al cálculo de IVA.
+                  </p>
+                )}
+              </div>
 
               {factura.estado !== 'APROBADA' && (
                 <div>
@@ -626,8 +629,15 @@ function ModalFacturaDriver({ facturaId, driverNombre, semana, mes, anio, monto,
           </div>
         )}
         {factura && factura.estado === 'APROBADA' && (
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
             <button onClick={onClose} className="btn btn-secondary">Cerrar</button>
+            <button
+              onClick={() => revisar('APROBADA')}
+              disabled={guardando || (tipoDocumento === factura.tipo_documento && (notaAdmin || '') === (factura.nota_admin || ''))}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              <CheckCircle size={15} /> Guardar cambios
+            </button>
           </div>
         )}
       </div>
