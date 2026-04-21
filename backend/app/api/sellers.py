@@ -11,7 +11,7 @@ import pandas as pd
 
 from app.database import get_db
 from app.auth import require_admin, require_admin_or_administracion, require_permission, hash_password
-from app.models import Seller, Sucursal
+from app.models import Seller, Sucursal, Pickup, Envio, RecepcionPaquete
 from app.schemas import SellerCreate, SellerUpdate, SellerOut, SucursalCreate, SucursalOut
 from app.services.audit import registrar as audit
 from app.services.audit import diff_campos
@@ -578,7 +578,7 @@ def eliminar_sucursal(
 # ──────────────────────────────────────────────────────────────────────────────
 from pydantic import BaseModel as _PB
 from datetime import date as _date
-from app.models import GestionComercialEntry, RecepcionPaquete
+from app.models import GestionComercialEntry
 
 
 class CerrarSellerBody(_PB):
@@ -745,42 +745,111 @@ def actualizar_tags(
 
 @router.post("/sync-tags-pickup")
 def sync_tags_pickup(
+    mes: int = Query(default=None, ge=1, le=12),
+    anio: int = Query(default=None, ge=2020),
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Detecta sellers que usan pickup y les aplica el tag automático 'auto:pickup'."""
-    from app.models import Envio as _Envio
+    """
+    Sincroniza tags de pickup para todos los sellers.
 
-    # Sellers con al menos 1 recepción de pickup (via envio_id → seller_id)
-    seller_ids_pickup = set()
-    rows = (
-        db.query(_Envio.seller_id)
-        .join(RecepcionPaquete, RecepcionPaquete.envio_id == _Envio.id)
-        .filter(_Envio.seller_id.isnot(None))
+    Para cada seller, a partir de sus recepciones en el período indicado:
+    - 'auto:pickup:nombre'         — histórico, se agrega pero nunca se borra
+    - 'auto:pickup:activo:nombre'  — solo el mes en curso, se reemplaza cada vez
+
+    Si no se especifica mes/anio usa el mes actual.
+    """
+    from datetime import date
+    from sqlalchemy import or_
+    hoy = date.today()
+    mes_sel  = mes  or hoy.month
+    anio_sel = anio or hoy.year
+
+    # ── 1. Obtener nombres normalizados de pickups para sanitizar tags ──────────
+    def _slug(nombre: str) -> str:
+        return (nombre or "").strip().lower()
+
+    # ── 2. Cruzar recepciones del período con sellers ───────────────────────────
+    # Join por envio_id directo O por tracking_id = pedido
+    rows_eid = (
+        db.query(Seller.id, Pickup.nombre)
+        .join(Envio, Envio.seller_id == Seller.id)
+        .join(RecepcionPaquete, RecepcionPaquete.envio_id == Envio.id)
+        .join(Pickup, Pickup.id == RecepcionPaquete.pickup_id)
+        .filter(
+            RecepcionPaquete.mes == mes_sel,
+            RecepcionPaquete.anio == anio_sel,
+            RecepcionPaquete.pickup_id.isnot(None),
+            Seller.activo == True,
+        )
         .distinct()
         .all()
     )
-    seller_ids_pickup = {r[0] for r in rows}
 
-    # Fallback: sellers marcados con usa_pickup=True
-    for s in db.query(Seller).filter(Seller.usa_pickup == True).all():
-        seller_ids_pickup.add(s.id)
+    rows_track = (
+        db.query(Seller.id, Pickup.nombre)
+        .join(Envio, Envio.seller_id == Seller.id)
+        .join(RecepcionPaquete, RecepcionPaquete.pedido == Envio.tracking_id)
+        .join(Pickup, Pickup.id == RecepcionPaquete.pickup_id)
+        .filter(
+            RecepcionPaquete.mes == mes_sel,
+            RecepcionPaquete.anio == anio_sel,
+            RecepcionPaquete.pickup_id.isnot(None),
+            Seller.activo == True,
+        )
+        .distinct()
+        .all()
+    )
 
+    # Construir mapa seller_id → set de nombres de pickup activos
+    seller_pickups: dict[int, set] = {}
+    for seller_id, pickup_nombre in list(rows_eid) + list(rows_track):
+        seller_pickups.setdefault(seller_id, set()).add(_slug(pickup_nombre))
+
+    # ── 3. Aplicar tags ─────────────────────────────────────────────────────────
     sellers = db.query(Seller).filter(Seller.activo == True).all()
     actualizados = 0
-    for seller in sellers:
-        tags_actuales = list(seller.tags or [])
-        tiene_tag = "auto:pickup" in tags_actuales
-        deberia_tener = seller.id in seller_ids_pickup
 
-        if deberia_tener and not tiene_tag:
-            tags_actuales.append("auto:pickup")
-            seller.tags = tags_actuales
-            actualizados += 1
-        elif not deberia_tener and tiene_tag:
-            seller.tags = [t for t in tags_actuales if t != "auto:pickup"]
+    for seller in sellers:
+        tags: list = list(seller.tags or [])
+
+        # Pickups activos para este seller en el período
+        pickups_activos = seller_pickups.get(seller.id, set())
+
+        # — Tags históricos: agregar los nuevos, nunca borrar ——————————————
+        for p in pickups_activos:
+            tag_hist = f"auto:pickup:{p}"
+            if tag_hist not in tags:
+                tags.append(tag_hist)
+
+        # — Tags activos: reemplazar todos los auto:pickup:activo:* ———————
+        tags = [t for t in tags if not t.startswith("auto:pickup:activo:")]
+        for p in pickups_activos:
+            tags.append(f"auto:pickup:activo:{p}")
+
+        # — Mantener compatibilidad con tag genérico legacy ————————————————
+        if pickups_activos and "auto:pickup" not in tags:
+            tags.append("auto:pickup")
+        elif not pickups_activos:
+            tags = [t for t in tags if t != "auto:pickup"]
+
+        if tags != list(seller.tags or []):
+            seller.tags = tags
             actualizados += 1
 
     db.commit()
-    return {"actualizados": actualizados, "sellers_pickup": len(seller_ids_pickup)}
+
+    # Resumen para la respuesta
+    total_activos = sum(len(v) for v in seller_pickups.values())
+    return {
+        "mes": mes_sel,
+        "anio": anio_sel,
+        "sellers_con_pickup": len(seller_pickups),
+        "asignaciones_activas": total_activos,
+        "sellers_actualizados": actualizados,
+        "detalle": [
+            {"seller_id": sid, "pickups": sorted(pnames)}
+            for sid, pnames in sorted(seller_pickups.items())
+        ],
+    }
 

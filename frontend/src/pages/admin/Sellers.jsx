@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle, Mail, MessageCircle, Tag, X as XIcon, Users } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, BarChart2, PlayCircle, Mail, MessageCircle, Tag, X as XIcon, Users, RefreshCw, MapPin } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 
 const EMPRESA_OPTIONS = ['ECOURIER', 'TERCERIZADO', 'OVIEDO', 'VALPARAISO', 'MELIPILLA']
@@ -123,6 +123,26 @@ export default function Sellers() {
   const [tab, setTab] = useState('activos')
   const [noActivos, setNoActivos] = useState({ pausados: [], cerrados: [] })
 
+  // Sync tags pickup
+  const hoy = new Date()
+  const [syncMes, setSyncMes] = useState(hoy.getMonth() + 1)
+  const [syncAnio, setSyncAnio] = useState(hoy.getFullYear())
+  const [syncing, setSyncing] = useState(false)
+  const [filterPickup, setFilterPickup] = useState('')
+
+  // Pickups únicos detectados de los tags activos de sellers
+  const pickupsDisponibles = useMemo(() => {
+    const set = new Set()
+    sellers.forEach(s => {
+      (s.tags || []).forEach(t => {
+        if (t.startsWith('auto:pickup:activo:')) {
+          set.add(t.replace('auto:pickup:activo:', ''))
+        }
+      })
+    })
+    return Array.from(set).sort()
+  }, [sellers])
+
   const fetchSellers = () => {
     api.get('/sellers')
       .then(({ data }) => setSellers(data))
@@ -132,6 +152,21 @@ export default function Sellers() {
 
   const fetchNoActivos = () => {
     api.get('/sellers/no-activos').then(({ data }) => setNoActivos(data)).catch(() => {})
+  }
+
+  const handleSyncPickupTags = async () => {
+    setSyncing(true)
+    try {
+      const { data } = await api.post('/sellers/sync-tags-pickup', null, {
+        params: { mes: syncMes, anio: syncAnio },
+      })
+      toast.success(`Tags actualizados: ${data.sellers_con_pickup} sellers · ${data.asignaciones_activas} asignaciones activas`)
+      fetchSellers()
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error al sincronizar tags')
+    } finally {
+      setSyncing(false)
+    }
   }
 
   const handleDownloadPlantilla = async () => {
@@ -362,6 +397,35 @@ export default function Sellers() {
     { key: 'plan_tarifario', label: 'Plan Tarifa', render: (v) => v || '—' },
     { key: 'precio_base', label: 'Precio Base', align: 'right', render: (v) => fmtClp(v) },
     { key: 'usa_pickup', label: 'Pickup', align: 'center', render: (v) => v ? <span className="text-blue-600 font-medium">Sí</span> : <span className="text-gray-400">No</span> },
+    {
+      key: 'tags',
+      label: 'Pickups activos',
+      render: (tags) => {
+        const activos = (tags || []).filter(t => t.startsWith('auto:pickup:activo:'))
+        const historicos = (tags || []).filter(t => t.startsWith('auto:pickup:') && !t.startsWith('auto:pickup:activo:') && t !== 'auto:pickup')
+        if (activos.length === 0 && historicos.length === 0) return <span className="text-gray-300 text-xs">—</span>
+        return (
+          <div className="flex flex-wrap gap-1">
+            {activos.map(t => {
+              const nombre = t.replace('auto:pickup:activo:', '')
+              return (
+                <span key={t} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+                  <MapPin size={9} /> {nombre}
+                </span>
+              )
+            })}
+            {historicos.filter(t => !activos.includes(t.replace('auto:pickup:', 'auto:pickup:activo:'))).map(t => {
+              const nombre = t.replace('auto:pickup:', '')
+              return (
+                <span key={t} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500 border border-gray-200" title="Histórico">
+                  <MapPin size={9} /> {nombre}
+                </span>
+              )
+            })}
+          </div>
+        )
+      }
+    },
     { key: 'telefono_whatsapp', label: 'WA', align: 'center', render: (v) => <WhatsAppBadge telefono={v} /> },
     { key: 'activo', label: 'Estado', align: 'center', render: (v) => <EstadoBadge activo={v} /> },
     {
@@ -453,10 +517,67 @@ export default function Sellers() {
           ))}
         </div>
 
+        {/* Barra de filtros pickup + sincronizar */}
+        {tab === 'activos' && canEdit && (
+          <div className="flex flex-wrap items-center gap-2 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+            <MapPin size={14} className="text-blue-500 shrink-0" />
+            <span className="text-xs font-semibold text-blue-700">Pickups</span>
+
+            {/* Filtro por pickup activo */}
+            <select
+              value={filterPickup}
+              onChange={e => setFilterPickup(e.target.value)}
+              className="input text-xs py-1 h-7 w-44"
+            >
+              <option value="">Todos los sellers</option>
+              {pickupsDisponibles.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+              <option value="__ninguno__">Sin pickup asignado</option>
+            </select>
+
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-xs text-blue-600">Sincronizar recepciones</span>
+              <select
+                value={syncMes}
+                onChange={e => setSyncMes(+e.target.value)}
+                className="input text-xs py-1 h-7 w-28"
+              >
+                {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
+                  <option key={i+1} value={i+1}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={syncAnio}
+                onChange={e => setSyncAnio(+e.target.value)}
+                className="input text-xs py-1 h-7 w-20"
+              >
+                {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <button
+                onClick={handleSyncPickupTags}
+                disabled={syncing}
+                className="btn btn-secondary flex items-center gap-1.5 text-xs py-1 h-7"
+              >
+                <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+                {syncing ? 'Sincronizando…' : 'Sincronizar'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {tab === 'activos' && (
           <DataTable
             columns={columns}
-            data={sellers.filter(s => s.activo)}
+            data={sellers.filter(s => {
+              if (!s.activo) return false
+              if (!filterPickup) return true
+              const tags = s.tags || []
+              if (filterPickup === '__ninguno__') {
+                return !tags.some(t => t.startsWith('auto:pickup:activo:'))
+              }
+              return tags.includes(`auto:pickup:activo:${filterPickup}`)
+            })}
             onRowClick={handleRowClick}
             emptyMessage="No hay sellers activos"
           />
