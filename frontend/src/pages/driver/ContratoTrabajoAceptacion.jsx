@@ -194,7 +194,10 @@ export default function ContratoTrabajoAceptacion() {
       // Aplanamos para que el template acceda directo desde `info.*`
       const d = r.data
       setInfo({ ...d, ...(d.trabajador || {}) })
-    }).catch(() => {})
+    }).catch(err => {
+      console.error('contrato-trabajo-info falló', err?.response?.data || err)
+      setError('No se pudo cargar el detalle del contrato. Refresca o contacta a RR.HH.')
+    })
   }, [])
 
   const handleScroll = () => {
@@ -259,7 +262,7 @@ export default function ContratoTrabajoAceptacion() {
             <p className="mb-4">
               En Santiago, entre <strong>LOGÍSTICA Y TRANSPORTE E-COURIER SpA</strong>, RUT N° 77.512.163-7, con domicilio en
               Moneda N° 1137, Oficina 56, comuna de Santiago, en adelante el "Empleador"; y{' '}
-              <strong>{info?.nombre_completo || '[nombre del trabajador]'}</strong>, RUT{' '}
+              <strong>{info?.nombre || '[nombre del trabajador]'}</strong>, RUT{' '}
               <strong>{info?.rut || '[RUT del trabajador]'}</strong>, en adelante el "Trabajador",
               se ha convenido el siguiente Contrato de Trabajo:
             </p>
