@@ -94,6 +94,7 @@ import Flota from './pages/admin/Flota'
 import Rentabilidad from './pages/admin/Rentabilidad'
 import CronJobs from './pages/admin/CronJobs'
 import AsignacionesRuta from './pages/admin/AsignacionesRuta'
+import BackfillCoordenadas from './pages/admin/BackfillCoordenadas'
 
 function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth()
@@ -183,6 +184,7 @@ export default function App() {
         <Route path="efectividad/seller/:sellerId" element={<EfectividadSeller />} />
         <Route path="cron-jobs" element={<CronJobs />} />
         <Route path="asignaciones-ruta" element={<AsignacionesRuta />} />
+        <Route path="coordenadas" element={<BackfillCoordenadas />} />
         <Route path="ingresos-drivers" element={<IngresosDrivers />} />
         <Route path="retencion" element={<Retencion />} />
         <Route path="reportes-sellers" element={<ReportesSellers />} />

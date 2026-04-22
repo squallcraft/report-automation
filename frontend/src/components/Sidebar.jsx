@@ -113,6 +113,7 @@ const adminMenu = [
       { to: '/admin/logs', icon: ClipboardList, label: 'Logs', permiso: 'logs' },
       { to: '/admin/cron-jobs', icon: Clock, label: 'Cron Jobs', permiso: 'cron-jobs' },
       { to: '/admin/asignaciones-ruta', icon: Inbox, label: 'Asignaciones de Ruta', permiso: 'asignaciones-ruta' },
+      { to: '/admin/coordenadas', icon: MapPin, label: 'Coordenadas envíos', permiso: 'coordenadas' },
       { to: '/admin/asistente', icon: Bot, label: 'Asistente IA', permiso: 'asistente' },
     ],
   },

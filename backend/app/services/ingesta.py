@@ -43,6 +43,10 @@ COLUMN_MAP = {
     "Descripción Paquete": "descripcion",
     "Ruta Nombre": "ruta_nombre",
     "Nombre Conductor": "driver_raw",
+    "Lat": "lat",
+    "Lon": "lon",
+    "Latitud": "lat",
+    "Longitud": "lon",
 }
 
 
@@ -210,6 +214,16 @@ def _build_envio_from_row(
     venta_id = str(row.get("venta_id", "")) if not pd.isna(row.get("venta_id")) else None
     ruta_nombre = str(row.get("ruta_nombre", "")) if not pd.isna(row.get("ruta_nombre")) else None
 
+    # Coordenadas geográficas (opcional). Tolera coma decimal y valida bounding box Chile.
+    # Si la columna no viene, no afecta nada (compat hacia atrás).
+    from app.services.coordenadas import parse_coord, coords_validas
+    raw_lat = row.get("lat") if "lat" in row.index else None
+    raw_lon = row.get("lon") if "lon" in row.index else None
+    lat_val = parse_coord(raw_lat) if raw_lat is not None and not (isinstance(raw_lat, float) and pd.isna(raw_lat)) else None
+    lon_val = parse_coord(raw_lon) if raw_lon is not None and not (isinstance(raw_lon, float) and pd.isna(raw_lon)) else None
+    if not coords_validas(lat_val, lon_val):
+        lat_val, lon_val = None, None
+
     envio = Envio(
         semana=semana,
         mes=mes_envio,
@@ -239,6 +253,8 @@ def _build_envio_from_row(
         codigo_producto=codigo_mlc,
         ruta_nombre=ruta_nombre,
         direccion=direccion,
+        lat=lat_val,
+        lon=lon_val,
         homologado=homologado,
         ingesta_id=ingesta_id,
     )

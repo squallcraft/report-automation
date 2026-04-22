@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from sqlalchemy import (
     Column, Integer, String, Boolean, Text, Date, DateTime,
-    Enum, ForeignKey, JSON, UniqueConstraint, Index, func, Numeric,
+    Enum, ForeignKey, JSON, UniqueConstraint, Index, func, Numeric, Float,
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -205,6 +205,8 @@ class Envio(Base):
     ruta_id = Column(Integer, nullable=True, index=True)
     fecha_retiro = Column(Date, nullable=True, index=True)
     direccion = Column(Text, nullable=True)
+    lat = Column(Float, nullable=True)
+    lon = Column(Float, nullable=True)
     homologado = Column(Boolean, default=True)
     ingesta_id = Column(String, nullable=True)
 

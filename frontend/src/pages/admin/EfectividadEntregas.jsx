@@ -7,6 +7,7 @@ import {
   Download, Calendar, Target, CheckCircle2, AlertCircle, Clock,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import MapaEntregas from '../../components/MapaEntregas'
 
 const now = new Date()
 
@@ -366,6 +367,9 @@ export default function EfectividadEntregas() {
               <TemporalChart data={data.serie_temporal} benchmark={benchmark} />
             </div>
           )}
+
+          {/* ── Mapa geográfico de entregas ────────────────────────────── */}
+          <MapaEntregas mes={period.mes} anio={period.anio} height={520} />
 
           {/* ── Tabla por Driver ───────────────────────────────────────── */}
           {data.por_driver?.length > 0 && (

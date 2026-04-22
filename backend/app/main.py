@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta, envios_coordenadas
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -773,6 +773,13 @@ with engine.connect() as conn:
         # Indice funcional para acelerar reconciliacion case-insensitive por tracking_id
         # (rutas_entregas.reconciliar_asignacion hace LOWER(envios.tracking_id) = ...)
         safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_tracking_id_lower ON envios (LOWER(tracking_id))")
+        # Coordenadas geográficas del destinatario (para mapa BI)
+        if "lat" not in env_cols2:
+            safe_exec("ALTER TABLE envios ADD COLUMN lat DOUBLE PRECISION")
+        if "lon" not in env_cols2:
+            safe_exec("ALTER TABLE envios ADD COLUMN lon DOUBLE PRECISION")
+        # Índice combinado para filtros de mapa (envíos con coordenadas en periodo)
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_geo ON envios (lat, lon) WHERE lat IS NOT NULL AND lon IS NOT NULL")
 
     # ── Migración: AsignacionRuta multi-intento (abril 2026) ──────────────────
     # Permite varias filas para el mismo tracking_id (una por withdrawal_date)
@@ -1556,6 +1563,7 @@ app.include_router(flota.router, prefix="/api")
 app.include_router(rentabilidad.router, prefix="/api")
 app.include_router(cron_jobs.router, prefix="/api")
 app.include_router(asignaciones_ruta.router, prefix="/api")
+app.include_router(envios_coordenadas.router, prefix="/api")
 
 
 @app.on_event("startup")

@@ -2408,3 +2408,110 @@ def efectividad_v2_seller(
         "serie_temporal": serie_temporal,
         "por_driver": por_driver,
     }
+
+
+# ── Mapa: puntos geográficos de envíos con KPI de same-day ──────────────────
+@router.get("/efectividad-v2/mapa")
+def efectividad_v2_mapa(
+    mes: Optional[int] = Query(None),
+    anio: Optional[int] = Query(None),
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    driver_id: Optional[int] = Query(None),
+    seller_id: Optional[int] = Query(None),
+    estado: Optional[str] = Query(None, description="entregado | sin_entrega | cancelado"),
+    limite: int = Query(8000, ge=100, le=20000),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Devuelve puntos geográficos para el mapa BI.
+
+    Solo incluye envíos con lat/lon válidos. El payload se mantiene compacto
+    (campos cortos: `t`, `la`, `lo`, `s`, `d`, `r`) para no saturar el frontend
+    al renderizar miles de marcadores.
+
+    Estados (`s`):
+      - 0: pendiente / sin entregar
+      - 1: same-day (entregado el mismo día hábil)
+      - 2: entregado pero NO same-day
+      - 3: cancelado
+    """
+    inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
+
+    q = db.query(AsignacionRuta, Envio).join(
+        Envio, AsignacionRuta.envio_id == Envio.id
+    ).filter(
+        AsignacionRuta.withdrawal_date >= inicio,
+        AsignacionRuta.withdrawal_date <= fin,
+        Envio.lat.isnot(None),
+        Envio.lon.isnot(None),
+    )
+    if driver_id is not None:
+        q = q.filter(AsignacionRuta.driver_id == driver_id)
+    if seller_id is not None:
+        q = q.filter(Envio.seller_id == seller_id)
+
+    rows = q.limit(limite + 1).all()
+    truncado = len(rows) > limite
+    if truncado:
+        rows = rows[:limite]
+
+    puntos: list[dict] = []
+    contador = {"same_day": 0, "entregado_no_sd": 0, "pendiente": 0, "cancelado": 0}
+
+    for asig, envio in rows:
+        if asig.estado_calculado == "cancelado":
+            estado_cod = 3
+            contador["cancelado"] += 1
+        elif envio.fecha_entrega and asig.withdrawal_date:
+            dias_habiles = _business_days_between(asig.withdrawal_date, envio.fecha_entrega)
+            if dias_habiles == 0:
+                estado_cod = 1
+                contador["same_day"] += 1
+            else:
+                estado_cod = 2
+                contador["entregado_no_sd"] += 1
+        else:
+            estado_cod = 0
+            contador["pendiente"] += 1
+
+        if estado and (
+            (estado == "entregado" and estado_cod not in (1, 2))
+            or (estado == "sin_entrega" and estado_cod != 0)
+            or (estado == "cancelado" and estado_cod != 3)
+        ):
+            continue
+
+        puntos.append({
+            "t": asig.tracking_id,
+            "la": float(envio.lat),
+            "lo": float(envio.lon),
+            "s": estado_cod,
+            "d": asig.driver_id,
+            "r": asig.route_name,
+            "fr": asig.withdrawal_date.isoformat() if asig.withdrawal_date else None,
+            "fe": envio.fecha_entrega.isoformat() if envio.fecha_entrega else None,
+            "co": envio.comuna,
+        })
+
+    total_periodo = db.query(func.count(AsignacionRuta.id)).filter(
+        AsignacionRuta.withdrawal_date >= inicio,
+        AsignacionRuta.withdrawal_date <= fin,
+    ).scalar() or 0
+    con_geo = len(puntos) + (0 if not truncado else 0)
+
+    return {
+        "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
+        "total_asignaciones_periodo": int(total_periodo),
+        "puntos": puntos,
+        "puntos_count": len(puntos),
+        "truncado": truncado,
+        "limite": limite,
+        "resumen": contador,
+        "leyenda": {
+            "1": "Same-Day (mismo día hábil)",
+            "2": "Entregado (>0 días hábiles)",
+            "0": "Sin entrega aún",
+            "3": "Cancelado",
+        },
+    }
