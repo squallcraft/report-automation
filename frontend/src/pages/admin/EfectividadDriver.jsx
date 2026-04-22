@@ -7,6 +7,7 @@ import {
   TrendingUp, Truck, Calendar,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import CalendarHeatmap from '../../components/CalendarHeatmap'
 
 const now = new Date()
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -17,17 +18,6 @@ const colorPct = (v, target = 60) => {
   if (v >= target) return 'text-emerald-600'
   if (v >= target * 0.65) return 'text-amber-600'
   return 'text-red-600'
-}
-
-const heatmapColor = (v, isEmpty) => {
-  if (isEmpty) return 'bg-gray-100 text-gray-300'
-  if (v == null) return 'bg-gray-100 text-gray-300'
-  if (v >= 90) return 'bg-emerald-600 text-white'
-  if (v >= 75) return 'bg-emerald-500 text-white'
-  if (v >= 60) return 'bg-emerald-400 text-white'
-  if (v >= 45) return 'bg-amber-400 text-white'
-  if (v >= 30) return 'bg-orange-400 text-white'
-  return 'bg-red-400 text-white'
 }
 
 function KPICard({ label, value, sub, accent = 'blue', icon: Icon, benchmark }) {
@@ -57,128 +47,6 @@ function KPICard({ label, value, sub, accent = 'blue', icon: Icon, benchmark }) 
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// Calendario tradicional: filas = semanas, columnas = días (Lun-Vie).
-// Cada celda muestra "same-day / a-ruta" y se colorea por % same-day.
-function CalendarHeatmap({ heatmap = [] }) {
-  if (!heatmap.length) return <p className="text-center text-xs text-gray-400 py-8">Sin datos en el rango</p>
-
-  const byKey = {}
-  heatmap.forEach(d => { byKey[d.fecha] = d })
-
-  const fechas = heatmap.map(d => new Date(d.fecha + 'T00:00:00')).sort((a, b) => a - b)
-  const fmin = fechas[0]
-  const fmax = fechas[fechas.length - 1]
-
-  // Primer lunes <= fmin (start ya alineado a lunes)
-  const start = new Date(fmin)
-  while (start.getDay() !== 1) start.setDate(start.getDate() - 1)
-  // Domingo final >= fmax
-  const end = new Date(fmax)
-  while (end.getDay() !== 0) end.setDate(end.getDate() + 1)
-
-  const weeks = []
-  const cursor = new Date(start)
-  while (cursor <= end) {
-    const week = []
-    for (let i = 0; i < 7; i++) {
-      const yyyy = cursor.getFullYear()
-      const mm = String(cursor.getMonth() + 1).padStart(2, '0')
-      const dd = String(cursor.getDate()).padStart(2, '0')
-      const dateStr = `${yyyy}-${mm}-${dd}`
-      week.push({
-        fecha: dateStr,
-        date: new Date(cursor),
-        data: byKey[dateStr] || null,
-      })
-      cursor.setDate(cursor.getDate() + 1)
-    }
-    weeks.push(week)
-  }
-
-  // Solo Lun-Vie: índices 0..4 dentro de la semana (asumiendo start = lunes).
-  const workdayIdx = [0, 1, 2, 3, 4]
-  const dayLabels = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
-  const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-
-  const fmtSemana = (week) => {
-    const lunes = week[0].date
-    const viernes = week[4].date
-    const mLun = monthNames[lunes.getMonth()]
-    const mVie = monthNames[viernes.getMonth()]
-    if (mLun === mVie) {
-      return `${lunes.getDate()} – ${viernes.getDate()} ${mVie}`
-    }
-    return `${lunes.getDate()} ${mLun} – ${viernes.getDate()} ${mVie}`
-  }
-
-  return (
-    <div>
-      <div className="overflow-x-auto pb-2">
-        <table className="border-separate" style={{ borderSpacing: '6px' }}>
-          <thead>
-            <tr>
-              <th className="text-[10px] text-gray-400 font-semibold pr-3 text-right" />
-              {dayLabels.map(d => (
-                <th key={d} className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide pb-1 text-center min-w-[78px]">
-                  {d}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {weeks.map((week, wi) => (
-              <tr key={wi}>
-                <td className="text-[10px] text-gray-400 font-medium pr-3 text-right whitespace-nowrap">
-                  {fmtSemana(week)}
-                </td>
-                {workdayIdx.map(di => {
-                  const cell = week[di]
-                  if (!cell) return <td key={di} />
-                  const isEmpty = !cell.data
-                  const colorCls = heatmapColor(cell.data?.pct_same_day, isEmpty)
-                  return (
-                    <td key={di} className="p-0">
-                      <div
-                        className={`h-14 w-full rounded-lg flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-default ${colorCls}`}
-                        title={isEmpty
-                          ? `${cell.fecha} · sin actividad`
-                          : `${cell.fecha} · ${cell.data.same_day} same-day de ${cell.data.a_ruta} a ruta (${cell.data.pct_same_day}%)`
-                        }
-                      >
-                        {!isEmpty ? (
-                          <>
-                            <span className="text-[14px] font-black leading-none">
-                              {cell.data.same_day}/{cell.data.a_ruta}
-                            </span>
-                            <span className="text-[10px] opacity-90 leading-none mt-1">{cell.data.pct_same_day}%</span>
-                          </>
-                        ) : (
-                          <span className="text-[10px] text-gray-300">—</span>
-                        )}
-                      </div>
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {/* Leyenda */}
-      <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-gray-500 flex-wrap">
-        <span>Bajo</span>
-        <div className="w-4 h-4 rounded-sm bg-red-400" />
-        <div className="w-4 h-4 rounded-sm bg-orange-400" />
-        <div className="w-4 h-4 rounded-sm bg-amber-400" />
-        <div className="w-4 h-4 rounded-sm bg-emerald-400" />
-        <div className="w-4 h-4 rounded-sm bg-emerald-500" />
-        <div className="w-4 h-4 rounded-sm bg-emerald-600" />
-        <span>Alto · Cada celda muestra <b>same-day / a-ruta</b></span>
-      </div>
     </div>
   )
 }
@@ -278,20 +146,24 @@ export default function EfectividadDriver() {
               </p>
               <p className="text-[10px] text-gray-400">Color = % Same-Day · Texto = entregados / a-ruta</p>
             </div>
-            <CalendarHeatmap heatmap={data.heatmap} />
+            <CalendarHeatmap data={data.heatmap} />
           </div>
 
           {/* ── Distribución del ciclo ─────────────────────────────────── */}
-          {k.distribucion && (k.paquetes_entregados ?? 0) > 0 && (
+          {k.distribucion && (k.paquetes_a_ruta ?? 0) > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <p className="text-sm font-semibold text-gray-700 mb-4">Distribución del ciclo de entrega</p>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm font-semibold text-gray-700">Distribución del ciclo de entrega</p>
+                <p className="text-[10px] text-gray-400">% sobre paquetes a ruta · suma 100%</p>
+              </div>
+              <div className="grid grid-cols-6 gap-2">
                 {[
                   { lab: 'Mismo día', pct: k.distribucion.pct_0d, n: k.distribucion.n_0d, color: 'bg-emerald-500' },
                   { lab: '1 día',     pct: k.distribucion.pct_1d, n: k.distribucion.n_1d, color: 'bg-emerald-400' },
                   { lab: '2 días',    pct: k.distribucion.pct_2d, n: k.distribucion.n_2d, color: 'bg-amber-400' },
                   { lab: '3 días',    pct: k.distribucion.pct_3d, n: k.distribucion.n_3d, color: 'bg-orange-400' },
                   { lab: '+4 días',   pct: k.distribucion.pct_4plus, n: k.distribucion.n_4plus, color: 'bg-red-400' },
+                  { lab: 'Sin entregar', pct: k.distribucion.pct_sin_entregar, n: k.distribucion.n_sin_entregar, color: 'bg-slate-400' },
                 ].map(b => (
                   <div key={b.lab} className="text-center">
                     <div className={`${b.color} text-white py-3 rounded-lg`}>

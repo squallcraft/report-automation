@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import MapaEntregas from '../../components/MapaEntregas'
+import CalendarHeatmap from '../../components/CalendarHeatmap'
 
 const now = new Date()
 
@@ -59,50 +60,6 @@ function KPICard({ label, value, sub, accent = 'blue', icon: Icon, target, bench
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function TemporalChart({ data = [], benchmark = 98 }) {
-  if (!data.length) return <p className="text-center text-xs text-gray-400 py-8">Sin datos en el rango</p>
-  const max = Math.max(100, ...data.map(d => d.pct_same_day || 0))
-  const w = 100 / Math.max(data.length, 1)
-  return (
-    <div>
-      <div className="flex items-end gap-[1px] relative" style={{ height: 200 }}>
-        {/* Linea benchmark */}
-        <div
-          className="absolute left-0 right-0 border-t-2 border-dashed border-emerald-300 z-10"
-          style={{ bottom: `${(benchmark / max) * 100}%` }}
-          title={`Meta: ${benchmark}%`}
-        />
-        <span
-          className="absolute right-0 text-[9px] font-semibold text-emerald-500 bg-white px-1 rounded z-10"
-          style={{ bottom: `calc(${(benchmark / max) * 100}% + 2px)` }}
-        >
-          ↑ {benchmark}%
-        </span>
-        {data.map((d, i) => {
-          const h = Math.round(((d.pct_same_day || 0) / max) * 180)
-          const color = (d.pct_same_day || 0) >= benchmark
-            ? 'bg-emerald-500'
-            : (d.pct_same_day || 0) >= benchmark * 0.7 ? 'bg-amber-400' : 'bg-red-400'
-          return (
-            <div
-              key={d.fecha}
-              className="flex flex-col items-center group cursor-pointer"
-              style={{ width: `${w}%` }}
-              title={`${d.fecha} · ${d.same_day}/${d.a_ruta} (${d.pct_same_day}%)`}
-            >
-              <div className={`${color} w-full rounded-t-sm group-hover:opacity-80 transition-opacity`} style={{ height: Math.max(h, 2) }} />
-            </div>
-          )
-        })}
-      </div>
-      <div className="mt-2 flex items-center justify-between text-[9px] text-gray-400">
-        <span>{data[0]?.fecha}</span>
-        <span>{data[data.length - 1]?.fecha}</span>
-      </div>
     </div>
   )
 }
@@ -320,19 +277,20 @@ export default function EfectividadEntregas() {
           </div>
 
           {/* ── Distribución del ciclo ────────────────────────────────── */}
-          {g.distribucion && (g.paquetes_entregados ?? 0) > 0 && (
+          {g.distribucion && (g.paquetes_a_ruta ?? 0) > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm font-semibold text-gray-700">Distribución del ciclo de entrega</p>
-                <p className="text-[10px] text-gray-400">días hábiles entre retiro y entrega</p>
+                <p className="text-[10px] text-gray-400">% sobre paquetes a ruta · suma 100%</p>
               </div>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-6 gap-2">
                 {[
                   { lab: 'Mismo día', pct: g.distribucion.pct_0d, n: g.distribucion.n_0d, color: 'bg-emerald-500' },
                   { lab: '1 día',     pct: g.distribucion.pct_1d, n: g.distribucion.n_1d, color: 'bg-emerald-400' },
                   { lab: '2 días',    pct: g.distribucion.pct_2d, n: g.distribucion.n_2d, color: 'bg-amber-400' },
                   { lab: '3 días',    pct: g.distribucion.pct_3d, n: g.distribucion.n_3d, color: 'bg-orange-400' },
                   { lab: '+4 días',   pct: g.distribucion.pct_4plus, n: g.distribucion.n_4plus, color: 'bg-red-400' },
+                  { lab: 'Sin entregar', pct: g.distribucion.pct_sin_entregar, n: g.distribucion.n_sin_entregar, color: 'bg-slate-400' },
                 ].map(b => (
                   <div key={b.lab} className="text-center">
                     <div className={`${b.color} text-white py-3 rounded-lg`}>
@@ -346,24 +304,21 @@ export default function EfectividadEntregas() {
             </div>
           )}
 
-          {/* ── Serie temporal ─────────────────────────────────────────── */}
+          {/* ── Calendario diario de Same-Day ──────────────────────────── */}
           {data.serie_temporal?.length > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div>
                   <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                     <Calendar size={14} className="text-slate-400" />
-                    Evolución diaria del % Same-Day
+                    Calendario diario · Same-Day
                   </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">{data.serie_temporal.length} días con datos en el rango</p>
-                </div>
-                <div className="flex items-center gap-3 text-[10px]">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> ≥ {benchmark}%</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> ≥ {Math.round(benchmark * 0.7)}%</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> &lt; {Math.round(benchmark * 0.7)}%</span>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {data.serie_temporal.length} días con datos · cada celda muestra <b>same-day / a-ruta</b>
+                  </p>
                 </div>
               </div>
-              <TemporalChart data={data.serie_temporal} benchmark={benchmark} />
+              <CalendarHeatmap data={data.serie_temporal} />
             </div>
           )}
 

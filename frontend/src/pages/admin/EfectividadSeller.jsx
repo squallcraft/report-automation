@@ -7,6 +7,7 @@ import {
   TrendingUp, Truck, Calendar,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import CalendarHeatmap from '../../components/CalendarHeatmap'
 
 const now = new Date()
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -55,39 +56,6 @@ function KPICard({ label, value, sub, accent = 'blue', icon: Icon, benchmark }) 
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function TemporalChart({ data = [], benchmark = 98 }) {
-  if (!data.length) return <p className="text-center text-xs text-gray-400 py-8">Sin datos en el rango</p>
-  const max = Math.max(100, ...data.map(d => d.pct_same_day || 0))
-  const w = 100 / Math.max(data.length, 1)
-  return (
-    <div>
-      <div className="flex items-end gap-[1px] relative" style={{ height: 180 }}>
-        <div
-          className="absolute left-0 right-0 border-t-2 border-dashed border-emerald-300 z-10"
-          style={{ bottom: `${(benchmark / max) * 100}%` }}
-          title={`Meta: ${benchmark}%`}
-        />
-        {data.map((d) => {
-          const h = Math.round(((d.pct_same_day || 0) / max) * 160)
-          const color = (d.pct_same_day || 0) >= benchmark
-            ? 'bg-emerald-500'
-            : (d.pct_same_day || 0) >= benchmark * 0.7 ? 'bg-amber-400' : 'bg-red-400'
-          return (
-            <div
-              key={d.fecha}
-              className="flex flex-col items-center group cursor-pointer"
-              style={{ width: `${w}%` }}
-              title={`${d.fecha} · ${d.same_day}/${d.a_ruta} (${d.pct_same_day}%)`}
-            >
-              <div className={`${color} w-full rounded-t-sm group-hover:opacity-80 transition-opacity`} style={{ height: Math.max(h, 2) }} />
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }
@@ -177,28 +145,32 @@ export default function EfectividadSeller() {
             <KPICard label="Cancelados" value={fmtN(k.cancelados)} sub="excluidos del denom." accent="red" icon={AlertCircle} />
           </div>
 
-          {/* ── Serie temporal ─────────────────────────────────────────── */}
+          {/* ── Calendario diario de Same-Day ──────────────────────────── */}
           {data.serie_temporal?.length > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
               <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
                 <Calendar size={14} className="text-slate-400" />
-                Evolución diaria del % Same-Day
+                Calendario diario · Same-Day
               </p>
-              <TemporalChart data={data.serie_temporal} />
+              <CalendarHeatmap data={data.serie_temporal} />
             </div>
           )}
 
           {/* ── Distribución del ciclo ─────────────────────────────────── */}
-          {k.distribucion && (k.paquetes_entregados ?? 0) > 0 && (
+          {k.distribucion && (k.paquetes_a_ruta ?? 0) > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <p className="text-sm font-semibold text-gray-700 mb-4">Distribución del ciclo de entrega</p>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-sm font-semibold text-gray-700">Distribución del ciclo de entrega</p>
+                <p className="text-[10px] text-gray-400">% sobre paquetes a ruta · suma 100%</p>
+              </div>
+              <div className="grid grid-cols-6 gap-2">
                 {[
                   { lab: 'Mismo día', pct: k.distribucion.pct_0d, n: k.distribucion.n_0d, color: 'bg-emerald-500' },
                   { lab: '1 día',     pct: k.distribucion.pct_1d, n: k.distribucion.n_1d, color: 'bg-emerald-400' },
                   { lab: '2 días',    pct: k.distribucion.pct_2d, n: k.distribucion.n_2d, color: 'bg-amber-400' },
                   { lab: '3 días',    pct: k.distribucion.pct_3d, n: k.distribucion.n_3d, color: 'bg-orange-400' },
                   { lab: '+4 días',   pct: k.distribucion.pct_4plus, n: k.distribucion.n_4plus, color: 'bg-red-400' },
+                  { lab: 'Sin entregar', pct: k.distribucion.pct_sin_entregar, n: k.distribucion.n_sin_entregar, color: 'bg-slate-400' },
                 ].map(b => (
                   <div key={b.lab} className="text-center">
                     <div className={`${b.color} text-white py-3 rounded-lg`}>

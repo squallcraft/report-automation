@@ -2133,14 +2133,21 @@ def _calcular_kpis_v2(asignaciones: list, *, incluir_buckets: bool = False) -> d
             elif c == 2: c2 += 1
             elif c == 3: c3 += 1
             else: c4 += 1
-        total_buckets = c0 + c1 + c2 + c3 + c4
+        # Para que el bucket "Mismo día" cuadre con el KPI Same-Day del header
+        # usamos `paquetes_a_ruta` como denominador y agregamos un bucket
+        # explícito de "sin entregar". Así los buckets suman 100% y son
+        # comparables 1:1 con la métrica principal.
+        sin_entregar = max(0, paquetes_a_ruta - (c0 + c1 + c2 + c3 + c4))
+        denom = paquetes_a_ruta
         out["distribucion"] = {
             "n_0d": c0, "n_1d": c1, "n_2d": c2, "n_3d": c3, "n_4plus": c4,
-            "pct_0d": _ratio(c0, total_buckets),
-            "pct_1d": _ratio(c1, total_buckets),
-            "pct_2d": _ratio(c2, total_buckets),
-            "pct_3d": _ratio(c3, total_buckets),
-            "pct_4plus": _ratio(c4, total_buckets),
+            "n_sin_entregar": sin_entregar,
+            "pct_0d": _ratio(c0, denom),
+            "pct_1d": _ratio(c1, denom),
+            "pct_2d": _ratio(c2, denom),
+            "pct_3d": _ratio(c3, denom),
+            "pct_4plus": _ratio(c4, denom),
+            "pct_sin_entregar": _ratio(sin_entregar, denom),
         }
     return out
 
