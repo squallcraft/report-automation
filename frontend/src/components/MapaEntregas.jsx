@@ -81,8 +81,12 @@ export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 4
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [filtroEstado, setFiltroEstado] = useState('todos')
+  // Carga lazy: el mapa solo hace fetch cuando el operador lo pide (ahorra
+  // segundos en la página de efectividad si no se usa).
+  const [activado, setActivado] = useState(false)
 
   useEffect(() => {
+    if (!activado) return
     let cancelado = false
     const fetchPuntos = async () => {
       setLoading(true); setError(null)
@@ -104,7 +108,44 @@ export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 4
     }
     fetchPuntos()
     return () => { cancelado = true }
-  }, [mes, anio, driverId, sellerId])
+  }, [activado, mes, anio, driverId, sellerId])
+
+  // Si cambia el período mientras el mapa está activado, lo refresca.
+  // Si NO está activado, queda cerrado para no gastar bandwidth.
+
+  if (!activado) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+              <MapIcon size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Mapa de entregas</p>
+              <p className="text-[10px] text-gray-400">
+                Visualización geográfica del periodo seleccionado
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-10 text-center">
+          <MapPin size={32} className="mx-auto mb-3 text-gray-300" />
+          <p className="text-sm text-gray-600 mb-1">Pulsa para cargar el mapa</p>
+          <p className="text-[11px] text-gray-400 mb-4">
+            Hasta 8.000 puntos. Cargar puede tardar unos segundos.
+          </p>
+          <button
+            onClick={() => setActivado(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-sm transition"
+          >
+            <MapIcon size={16} />
+            Mostrar mapa
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const puntosFiltrados = useMemo(() => {
     if (!data?.puntos) return []
@@ -137,7 +178,7 @@ export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 4
             </p>
           </div>
         </div>
-        {/* Filtros de estado */}
+        {/* Filtros de estado + cerrar */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {[
             { key: 'todos', label: 'Todos', color: '#6366f1' },
@@ -164,6 +205,13 @@ export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 4
               )}
             </button>
           ))}
+          <button
+            onClick={() => { setActivado(false); setData(null) }}
+            className="text-[11px] px-2.5 py-1 rounded-full font-semibold border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 transition"
+            title="Cerrar mapa"
+          >
+            ✕
+          </button>
         </div>
       </div>
 

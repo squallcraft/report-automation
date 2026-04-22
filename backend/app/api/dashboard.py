@@ -2004,10 +2004,45 @@ def _ratio(num: int, den: int) -> float:
     return round(num / den * 100, 1) if den else 0.0
 
 
+# ── Exclusiones de efectividad ───────────────────────────────────────────────
+# Sellers / drivers que NO deben contar en NINGUNA métrica de efectividad
+# (dashboards globales, drill-downs, mapa, KPIs).
+# Ej.: "Global Courier" es un seller administrativo, "Benitez César" hace
+# repartos especiales que distorsionan el promedio.
+EFECTIVIDAD_SELLERS_EXCLUIDOS: set[int] = {114}   # Global Courier
+EFECTIVIDAD_DRIVERS_EXCLUIDOS: set[int] = {96}    # Benitez César
+
+
+def _aplicar_exclusiones(q):
+    """Excluye sellers y drivers que no deben participar en métricas v2.
+
+    El driver_id se excluye en la propia AsignacionRuta. El seller se excluye
+    via Envio.seller_id (homologado por la ingesta), que cubre ~99% de las
+    asignaciones reconciliadas.
+    """
+    if EFECTIVIDAD_DRIVERS_EXCLUIDOS:
+        q = q.filter(
+            (AsignacionRuta.driver_id.is_(None))
+            | (~AsignacionRuta.driver_id.in_(EFECTIVIDAD_DRIVERS_EXCLUIDOS))
+        )
+    if EFECTIVIDAD_SELLERS_EXCLUIDOS:
+        q = q.filter(
+            (Envio.seller_id.is_(None))
+            | (~Envio.seller_id.in_(EFECTIVIDAD_SELLERS_EXCLUIDOS))
+        )
+    return q
+
+
 def _kpis_v2_base_query(db: Session, fecha_inicio: date, fecha_fin: date,
                         driver_id: Optional[int] = None,
-                        seller_code: Optional[str] = None):
-    """Query base sobre AsignacionRuta + Envio (LEFT JOIN) en el rango pedido."""
+                        seller_code: Optional[str] = None,
+                        aplicar_exclusiones: bool = True):
+    """Query base sobre AsignacionRuta + Envio (LEFT JOIN) en el rango pedido.
+
+    Por defecto aplica las exclusiones globales de efectividad. Pásale
+    `aplicar_exclusiones=False` cuando el caller necesita ver al excluido
+    explícitamente (p.ej. en su propio drill-down).
+    """
     q = db.query(AsignacionRuta, Envio).outerjoin(
         Envio, AsignacionRuta.envio_id == Envio.id
     ).filter(
@@ -2018,6 +2053,8 @@ def _kpis_v2_base_query(db: Session, fecha_inicio: date, fecha_fin: date,
         q = q.filter(AsignacionRuta.driver_id == driver_id)
     if seller_code:
         q = q.filter(AsignacionRuta.seller_code == seller_code)
+    if aplicar_exclusiones:
+        q = _aplicar_exclusiones(q)
     return q
 
 
@@ -2262,7 +2299,12 @@ def efectividad_v2_driver(
 ):
     """Drill-down por conductor con heatmap calendario y detalle de no-entregados."""
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
-    rows = _kpis_v2_base_query(db, inicio, fin, driver_id=driver_id).all()
+    # Si el drill-down es del propio driver excluido, NO aplicamos su propia
+    # exclusión (queremos ver sus métricas individuales). Las exclusiones de
+    # SELLERS sí se mantienen para mostrar números limpios.
+    aplicar_excl = driver_id not in EFECTIVIDAD_DRIVERS_EXCLUIDOS
+    rows = _kpis_v2_base_query(db, inicio, fin, driver_id=driver_id,
+                               aplicar_exclusiones=aplicar_excl).all()
 
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     nombre = driver.nombre if driver else f"Driver {driver_id}"
@@ -2351,8 +2393,10 @@ def efectividad_v2_seller(
 
     # Filtramos por `envio.seller_id` que es la fuente homologada por la ingesta
     # (la tabla `sellers` no tiene un `codigo` que matchee con el seller_code
-    # del courier).
-    q = _kpis_v2_base_query(db, inicio, fin)
+    # del courier). Si el drill-down es del propio seller excluido, NO
+    # aplicamos su propia exclusión (queremos ver sus métricas individuales).
+    aplicar_excl = seller_id not in EFECTIVIDAD_SELLERS_EXCLUIDOS
+    q = _kpis_v2_base_query(db, inicio, fin, aplicar_exclusiones=aplicar_excl)
     q = q.join(Envio, AsignacionRuta.envio_id == Envio.id, isouter=False)\
          .filter(Envio.seller_id == seller_id)
     rows = q.all()
@@ -2448,6 +2492,21 @@ def efectividad_v2_mapa(
         q = q.filter(AsignacionRuta.driver_id == driver_id)
     if seller_id is not None:
         q = q.filter(Envio.seller_id == seller_id)
+
+    # Aplica exclusiones globales salvo que el filtro sea EXACTAMENTE para el
+    # excluido (en cuyo caso el operador quiere ver sus puntos individualmente).
+    excluir_drivers = bool(EFECTIVIDAD_DRIVERS_EXCLUIDOS) and driver_id not in EFECTIVIDAD_DRIVERS_EXCLUIDOS
+    excluir_sellers = bool(EFECTIVIDAD_SELLERS_EXCLUIDOS) and seller_id not in EFECTIVIDAD_SELLERS_EXCLUIDOS
+    if excluir_drivers:
+        q = q.filter(
+            (AsignacionRuta.driver_id.is_(None))
+            | (~AsignacionRuta.driver_id.in_(EFECTIVIDAD_DRIVERS_EXCLUIDOS))
+        )
+    if excluir_sellers:
+        q = q.filter(
+            (Envio.seller_id.is_(None))
+            | (~Envio.seller_id.in_(EFECTIVIDAD_SELLERS_EXCLUIDOS))
+        )
 
     rows = q.limit(limite + 1).all()
     truncado = len(rows) > limite
