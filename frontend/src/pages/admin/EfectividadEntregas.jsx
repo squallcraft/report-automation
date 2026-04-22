@@ -9,8 +9,11 @@ import {
 import PageHeader from '../../components/PageHeader'
 import MapaEntregas from '../../components/MapaEntregas'
 import CalendarHeatmap from '../../components/CalendarHeatmap'
+import DateRangePicker, { toIsoLocal } from '../../components/DateRangePicker'
 
 const now = new Date()
+const _defInicio = new Date(now.getFullYear(), now.getMonth(), 1)
+const _defFin = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
 // ── Helpers de formato ─────────────────────────────────────────────────────
 const fmtPct = (v) => v != null ? `${v}%` : '—'
@@ -101,7 +104,7 @@ function MiniSpark({ data = [], benchmark = 98 }) {
 // ── Página principal ───────────────────────────────────────────────────────
 export default function EfectividadEntregas() {
   const navigate = useNavigate()
-  const [period, setPeriod] = useState({ mes: now.getMonth() + 1, anio: now.getFullYear() })
+  const [range, setRange] = useState({ inicio: _defInicio, fin: _defFin })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -113,13 +116,15 @@ export default function EfectividadEntregas() {
   const [driverSearch, setDriverSearch] = useState('')
   const [driverSort, setDriverSort] = useState({ col: 'paquetes_a_ruta', dir: 'desc' })
 
-  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+  const fechaInicioIso = useMemo(() => range.inicio ? toIsoLocal(range.inicio) : null, [range.inicio])
+  const fechaFinIso = useMemo(() => range.fin ? toIsoLocal(range.fin) : null, [range.fin])
 
   const load = useCallback(async () => {
+    if (!fechaInicioIso || !fechaFinIso) return
     setLoading(true)
     try {
       const { data: d } = await api.get('/dashboard/efectividad-v2', {
-        params: { mes: period.mes, anio: period.anio },
+        params: { fecha_inicio: fechaInicioIso, fecha_fin: fechaFinIso },
       })
       setData(d)
     } catch {
@@ -127,7 +132,7 @@ export default function EfectividadEntregas() {
     } finally {
       setLoading(false)
     }
-  }, [period])
+  }, [fechaInicioIso, fechaFinIso])
   useEffect(() => { load() }, [load])
 
   const sellersSorted = useMemo(() => {
@@ -184,7 +189,7 @@ export default function EfectividadEntregas() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `efectividad_v2_${period.mes}_${period.anio}.csv`
+    a.download = `efectividad_v2_${fechaInicioIso}_a_${fechaFinIso}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -201,18 +206,7 @@ export default function EfectividadEntregas() {
         accent="amber"
         actions={(
           <div className="flex items-center gap-3 flex-wrap">
-            <select
-              className="border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200"
-              value={`${period.mes}-${period.anio}`}
-              onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod({ mes: +m, anio: +a }) }}
-            >
-              {[now.getFullYear() - 1, now.getFullYear()].flatMap(anio =>
-                Array.from({ length: 12 }, (_, i) => {
-                  const mes = i + 1
-                  return <option key={`${mes}-${anio}`} value={`${mes}-${anio}`}>{meses[i]} {anio}</option>
-                }),
-              )}
-            </select>
+            <DateRangePicker value={range} onChange={setRange} />
             {data && (
               <button type="button" onClick={exportCSV}
                 className="flex items-center gap-1.5 border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors">
@@ -323,7 +317,7 @@ export default function EfectividadEntregas() {
           )}
 
           {/* ── Mapa geográfico de entregas ────────────────────────────── */}
-          <MapaEntregas mes={period.mes} anio={period.anio} height={520} />
+          <MapaEntregas fechaInicio={fechaInicioIso} fechaFin={fechaFinIso} height={520} />
 
           {/* ── Tabla por Driver ───────────────────────────────────────── */}
           {data.por_driver?.length > 0 && (
@@ -364,7 +358,7 @@ export default function EfectividadEntregas() {
                     {driversSorted.map((d) => (
                       <tr
                         key={d.driver_id ?? 'sin-driver'}
-                        onClick={() => d.driver_id && navigate(`/admin/efectividad/driver/${d.driver_id}?mes=${period.mes}&anio=${period.anio}`)}
+                        onClick={() => d.driver_id && navigate(`/admin/efectividad/driver/${d.driver_id}?fecha_inicio=${fechaInicioIso}&fecha_fin=${fechaFinIso}`)}
                         className={`text-gray-700 ${d.driver_id ? 'hover:bg-blue-50/40 cursor-pointer' : ''} transition-colors`}
                       >
                         <td className="px-3 py-2.5 font-medium">{d.nombre}</td>
@@ -435,7 +429,7 @@ export default function EfectividadEntregas() {
                     {sellersSorted.map(s => (
                       <tr
                         key={s.seller_id ?? s.nombre}
-                        onClick={() => s.seller_id && navigate(`/admin/efectividad/seller/${s.seller_id}?mes=${period.mes}&anio=${period.anio}`)}
+                        onClick={() => s.seller_id && navigate(`/admin/efectividad/seller/${s.seller_id}?fecha_inicio=${fechaInicioIso}&fecha_fin=${fechaFinIso}`)}
                         className={`text-gray-700 ${s.seller_id ? 'hover:bg-blue-50/40 cursor-pointer' : ''} transition-colors`}
                       >
                         <td className="px-3 py-2.5 font-medium">

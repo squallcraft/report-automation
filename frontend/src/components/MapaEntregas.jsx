@@ -76,7 +76,7 @@ function FitBoundsOnData({ puntos }) {
   return null
 }
 
-export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 480 }) {
+export default function MapaEntregas({ mes, anio, fechaInicio, fechaFin, driverId, sellerId, height = 480 }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -92,8 +92,13 @@ export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 4
       setLoading(true); setError(null)
       try {
         const params = { limite: 8000 }
-        if (mes != null) params.mes = mes
-        if (anio != null) params.anio = anio
+        if (fechaInicio && fechaFin) {
+          params.fecha_inicio = fechaInicio
+          params.fecha_fin = fechaFin
+        } else {
+          if (mes != null) params.mes = mes
+          if (anio != null) params.anio = anio
+        }
         if (driverId != null) params.driver_id = driverId
         if (sellerId != null) params.seller_id = sellerId
         const r = await api.get('/dashboard/efectividad-v2/mapa', { params })
@@ -108,7 +113,7 @@ export default function MapaEntregas({ mes, anio, driverId, sellerId, height = 4
     }
     fetchPuntos()
     return () => { cancelado = true }
-  }, [activado, mes, anio, driverId, sellerId])
+  }, [activado, mes, anio, fechaInicio, fechaFin, driverId, sellerId])
 
   // Si cambia el período mientras el mapa está activado, lo refresca.
   // Si NO está activado, queda cerrado para no gastar bandwidth.

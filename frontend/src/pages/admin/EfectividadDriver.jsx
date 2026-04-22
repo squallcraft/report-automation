@@ -8,8 +8,17 @@ import {
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import CalendarHeatmap from '../../components/CalendarHeatmap'
+import DateRangePicker, { toIsoLocal } from '../../components/DateRangePicker'
 
 const now = new Date()
+const _defInicio = new Date(now.getFullYear(), now.getMonth(), 1)
+const _defFin = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+const parseIso = (s) => {
+  if (!s) return null
+  const [y, m, d] = s.split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
 const fmtPct = (v) => v != null ? `${v}%` : '—'
 const fmtN = (v) => v != null ? v.toLocaleString('es-CL') : '—'
 
@@ -55,28 +64,28 @@ export default function EfectividadDriver() {
   const { driverId } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const initMes = searchParams.get('mes') ? +searchParams.get('mes') : now.getMonth() + 1
-  const initAnio = searchParams.get('anio') ? +searchParams.get('anio') : now.getFullYear()
-  const [period, setPeriod] = useState({ mes: initMes, anio: initAnio })
+  const initRange = useMemo(() => {
+    const fi = parseIso(searchParams.get('fecha_inicio'))
+    const ff = parseIso(searchParams.get('fecha_fin'))
+    if (fi && ff) return { inicio: fi, fin: ff }
+    const m = searchParams.get('mes') ? +searchParams.get('mes') : now.getMonth() + 1
+    const a = searchParams.get('anio') ? +searchParams.get('anio') : now.getFullYear()
+    return { inicio: new Date(a, m - 1, 1), fin: new Date(a, m, 0) }
+  }, [searchParams])
+  const [range, setRange] = useState(initRange)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showAllRoutes, setShowAllRoutes] = useState(false)
 
-  const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
-  const periodOptions = useMemo(() => {
-    const opts = []
-    for (let a = now.getFullYear(); a >= 2024; a--) {
-      const maxM = a === now.getFullYear() ? now.getMonth() + 1 : 12
-      for (let m = maxM; m >= 1; m--) opts.push({ mes: m, anio: a })
-    }
-    return opts
-  }, [])
+  const fechaInicioIso = useMemo(() => range.inicio ? toIsoLocal(range.inicio) : null, [range.inicio])
+  const fechaFinIso = useMemo(() => range.fin ? toIsoLocal(range.fin) : null, [range.fin])
 
   const load = useCallback(async () => {
+    if (!fechaInicioIso || !fechaFinIso) return
     setLoading(true)
     try {
       const { data: d } = await api.get(`/dashboard/efectividad-v2/driver/${driverId}`, {
-        params: { mes: period.mes, anio: period.anio },
+        params: { fecha_inicio: fechaInicioIso, fecha_fin: fechaFinIso },
       })
       setData(d)
     } catch {
@@ -84,7 +93,7 @@ export default function EfectividadDriver() {
     } finally {
       setLoading(false)
     }
-  }, [driverId, period])
+  }, [driverId, fechaInicioIso, fechaFinIso])
   useEffect(() => { load() }, [load])
 
   const k = data?.kpis
@@ -106,17 +115,7 @@ export default function EfectividadDriver() {
             subtitle="Detalle de Same-Day por período"
             icon={Truck}
             accent="emerald"
-            actions={(
-              <select
-                className="border border-slate-600 rounded-lg px-3 py-1.5 text-xs bg-slate-800 text-slate-200"
-                value={`${period.mes}-${period.anio}`}
-                onChange={e => { const [m, a] = e.target.value.split('-'); setPeriod({ mes: +m, anio: +a }) }}
-              >
-                {periodOptions.map(p => (
-                  <option key={`${p.mes}-${p.anio}`} value={`${p.mes}-${p.anio}`}>{meses[p.mes-1]} {p.anio}</option>
-                ))}
-              </select>
-            )}
+            actions={<DateRangePicker value={range} onChange={setRange} />}
           />
         </div>
       </div>
