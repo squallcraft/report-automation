@@ -2163,32 +2163,38 @@ def efectividad_v2_global(
             "pct_delivery_success": k["pct_delivery_success"],
         })
 
-    # ── Por seller (agrupado por seller_code) ───────────────────────────────
-    por_seller_buckets: dict[str, list] = defaultdict(list)
+    # ── Por seller (agrupado por envio.seller_id, no por seller_code crudo) ──
+    # `Sellers` no tiene un campo `codigo` que matchee con el `seller_code` del
+    # courier. La fuente de verdad real es la homologación que hizo `ingesta`
+    # cuando creó el Envio (Envio.seller_id). Cubre ~99% de las asignaciones
+    # (las que están reconciliadas con un envío).
+    #
+    # Asignaciones sin envio enlazado quedan agrupadas en "Sin seller (sin
+    # envío)" para que el operador sepa que existen y pueda actuar.
+    por_seller_buckets: dict[Optional[int], list] = defaultdict(list)
     for asig, envio in rows:
-        if asig.seller_code:
-            por_seller_buckets[asig.seller_code].append((asig, envio))
+        sid = envio.seller_id if envio is not None else None
+        por_seller_buckets[sid].append((asig, envio))
 
-    # Mapa seller_code → seller (usamos el campo `codigo`/`pickup_code` si existe)
-    seller_codes = list(por_seller_buckets.keys())
-    seller_by_code: dict[str, dict] = {}
-    if seller_codes:
-        # Probamos varios campos posibles del Seller que correspondan al code.
-        sellers_db = db.query(Seller).all()
-        for s in sellers_db:
-            for attr in ("codigo", "pickup_code", "id_externo", "external_code"):
-                v = getattr(s, attr, None)
-                if v and str(v) in seller_codes:
-                    seller_by_code[str(v)] = {"id": s.id, "nombre": s.nombre, "code": str(v)}
+    # Trae los sellers necesarios en una sola query.
+    seller_ids = [sid for sid in por_seller_buckets.keys() if sid is not None]
+    seller_nombres: dict[int, str] = {}
+    if seller_ids:
+        seller_nombres = {
+            s.id: s.nombre
+            for s in db.query(Seller.id, Seller.nombre).filter(Seller.id.in_(seller_ids)).all()
+        }
 
     por_seller = []
-    for code, asigs in por_seller_buckets.items():
-        info = seller_by_code.get(code, {"id": None, "nombre": f"Seller {code}", "code": code})
+    for sid, asigs in por_seller_buckets.items():
+        if sid is None:
+            nombre = "Sin envío reconciliado"
+        else:
+            nombre = seller_nombres.get(sid, f"Seller {sid}")
         k = _calcular_kpis_v2(asigs)
         por_seller.append({
-            "seller_code": code,
-            "seller_id": info["id"],
-            "nombre": info["nombre"],
+            "seller_id": sid,
+            "nombre": nombre,
             **k,
         })
     por_seller.sort(key=lambda x: -x["paquetes_a_ruta"])
@@ -2343,19 +2349,12 @@ def efectividad_v2_seller(
     if not seller:
         return {"error": "seller_no_encontrado"}
 
-    posibles_codes = []
-    for attr in ("codigo", "pickup_code", "id_externo", "external_code"):
-        v = getattr(seller, attr, None)
-        if v:
-            posibles_codes.append(str(v))
-
+    # Filtramos por `envio.seller_id` que es la fuente homologada por la ingesta
+    # (la tabla `sellers` no tiene un `codigo` que matchee con el seller_code
+    # del courier).
     q = _kpis_v2_base_query(db, inicio, fin)
-    if posibles_codes:
-        q = q.filter(AsignacionRuta.seller_code.in_(posibles_codes))
-    else:
-        # Fallback: enlazar por envio.seller_id
-        q = q.join(Envio, AsignacionRuta.envio_id == Envio.id, isouter=False)\
-             .filter(Envio.seller_id == seller_id)
+    q = q.join(Envio, AsignacionRuta.envio_id == Envio.id, isouter=False)\
+         .filter(Envio.seller_id == seller_id)
     rows = q.all()
 
     kpis = _calcular_kpis_v2(rows, incluir_buckets=True)
@@ -2402,7 +2401,6 @@ def efectividad_v2_seller(
     return {
         "seller_id": seller_id,
         "nombre": seller.nombre,
-        "codigos": posibles_codes,
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
         "kpis": kpis,
         "serie_temporal": serie_temporal,

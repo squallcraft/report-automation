@@ -197,6 +197,32 @@ def reconciliar_uno(
     return _to_out(asig)
 
 
+@router.post("/reresolver-drivers", response_model=dict)
+def reresolver_drivers(
+    request: Request,
+    fecha_desde: Optional[date] = None,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(require_admin),
+):
+    """Re-aplica el matching de driver local a las asignaciones con driver_id NULL.
+
+    Sirve cuando se modificó la lógica de matching o se agregaron aliases a un
+    Driver. No toca otros campos del registro.
+    """
+    info = rutas_entregas.reresolver_drivers(db, fecha_desde=fecha_desde)
+    try:
+        audit(
+            db,
+            accion="asignaciones_reresolver_drivers",
+            usuario=usuario,
+            request=request,
+            metadata=info,
+        )
+    except Exception:
+        pass
+    return info
+
+
 @router.post("/reconciliar-pendientes", response_model=dict)
 def reconciliar_pendientes(
     request: Request,

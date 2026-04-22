@@ -61,11 +61,9 @@ function KPICard({ label, value, sub, accent = 'blue', icon: Icon, benchmark }) 
   )
 }
 
-// "Contribution graph" tipo GitHub: una columna por semana, 5 filas (Lun-Vie),
-// cada celda muestra "X/Y" (entregados/a-ruta).
+// Calendario tradicional: filas = semanas, columnas = días (Lun-Vie).
+// Cada celda muestra "same-day / a-ruta" y se colorea por % same-day.
 function CalendarHeatmap({ heatmap = [] }) {
-  // Agrupamos por semana ISO simple: (año, semana) → dict por weekday.
-  // Calculamos semanas con date-only logic basado en fecha del primer día.
   if (!heatmap.length) return <p className="text-center text-xs text-gray-400 py-8">Sin datos en el rango</p>
 
   const byKey = {}
@@ -75,7 +73,7 @@ function CalendarHeatmap({ heatmap = [] }) {
   const fmin = fechas[0]
   const fmax = fechas[fechas.length - 1]
 
-  // Primer lunes <= fmin
+  // Primer lunes <= fmin (start ya alineado a lunes)
   const start = new Date(fmin)
   while (start.getDay() !== 1) start.setDate(start.getDate() - 1)
   // Domingo final >= fmax
@@ -87,64 +85,91 @@ function CalendarHeatmap({ heatmap = [] }) {
   while (cursor <= end) {
     const week = []
     for (let i = 0; i < 7; i++) {
-      const dateStr = cursor.toISOString().slice(0, 10)
-      week.push({ fecha: dateStr, weekday: cursor.getDay(), data: byKey[dateStr] || null })
+      const yyyy = cursor.getFullYear()
+      const mm = String(cursor.getMonth() + 1).padStart(2, '0')
+      const dd = String(cursor.getDate()).padStart(2, '0')
+      const dateStr = `${yyyy}-${mm}-${dd}`
+      week.push({
+        fecha: dateStr,
+        date: new Date(cursor),
+        data: byKey[dateStr] || null,
+      })
       cursor.setDate(cursor.getDate() + 1)
     }
     weeks.push(week)
   }
 
-  const dayLabels = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
+  // Solo Lun-Vie: índices 0..4 dentro de la semana (asumiendo start = lunes).
+  const workdayIdx = [0, 1, 2, 3, 4]
+  const dayLabels = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+  const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+
+  const fmtSemana = (week) => {
+    const lunes = week[0].date
+    const viernes = week[4].date
+    const mLun = monthNames[lunes.getMonth()]
+    const mVie = monthNames[viernes.getMonth()]
+    if (mLun === mVie) {
+      return `${lunes.getDate()} – ${viernes.getDate()} ${mVie}`
+    }
+    return `${lunes.getDate()} ${mLun} – ${viernes.getDate()} ${mVie}`
+  }
 
   return (
     <div>
-      <div className="flex gap-1 overflow-x-auto pb-2">
-        {/* Columna de etiquetas */}
-        <div className="flex flex-col gap-1 pr-2 pt-6">
-          {dayLabels.slice(0, 5).map((d, i) => (
-            <div key={i} className="text-[10px] text-gray-400 h-12 flex items-center font-semibold">{d}</div>
-          ))}
-        </div>
-        {weeks.map((week, wi) => (
-          <div key={wi} className="flex flex-col gap-1">
-            {/* Etiqueta del mes en la primera semana */}
-            <div className="h-4 text-[9px] text-gray-400 text-center">
-              {week.find(d => new Date(d.fecha + 'T00:00:00').getDate() <= 7) &&
-                ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][new Date(week[0].fecha + 'T00:00:00').getMonth()]}
-            </div>
-            {[1, 2, 3, 4, 5].map(weekdayIdx => {
-              // Map weekdayIdx 1..5 (Mon..Fri) into our week (week[i].weekday returns 0=Sun..6=Sat)
-              const cell = week.find(c => {
-                const d = new Date(c.fecha + 'T00:00:00').getDay()
-                const targetJsDay = weekdayIdx === 7 ? 0 : weekdayIdx
-                return d === targetJsDay
-              })
-              if (!cell) return <div key={weekdayIdx} className="h-12 w-12" />
-              const isEmpty = !cell.data
-              const colorCls = heatmapColor(cell.data?.pct_same_day, isEmpty)
-              return (
-                <div
-                  key={weekdayIdx}
-                  className={`h-12 w-12 rounded-md flex flex-col items-center justify-center transition-transform hover:scale-110 cursor-default ${colorCls}`}
-                  title={isEmpty
-                    ? `${cell.fecha} · sin actividad`
-                    : `${cell.fecha} · ${cell.data.label} (${cell.data.pct_same_day}% same-day)`
-                  }
-                >
-                  {!isEmpty && (
-                    <>
-                      <span className="text-[13px] font-black leading-none">{cell.data.label}</span>
-                      <span className="text-[9px] opacity-90 leading-none mt-0.5">{cell.data.pct_same_day}%</span>
-                    </>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ))}
+      <div className="overflow-x-auto pb-2">
+        <table className="border-separate" style={{ borderSpacing: '6px' }}>
+          <thead>
+            <tr>
+              <th className="text-[10px] text-gray-400 font-semibold pr-3 text-right" />
+              {dayLabels.map(d => (
+                <th key={d} className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide pb-1 text-center min-w-[78px]">
+                  {d}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((week, wi) => (
+              <tr key={wi}>
+                <td className="text-[10px] text-gray-400 font-medium pr-3 text-right whitespace-nowrap">
+                  {fmtSemana(week)}
+                </td>
+                {workdayIdx.map(di => {
+                  const cell = week[di]
+                  if (!cell) return <td key={di} />
+                  const isEmpty = !cell.data
+                  const colorCls = heatmapColor(cell.data?.pct_same_day, isEmpty)
+                  return (
+                    <td key={di} className="p-0">
+                      <div
+                        className={`h-14 w-full rounded-lg flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-default ${colorCls}`}
+                        title={isEmpty
+                          ? `${cell.fecha} · sin actividad`
+                          : `${cell.fecha} · ${cell.data.same_day} same-day de ${cell.data.a_ruta} a ruta (${cell.data.pct_same_day}%)`
+                        }
+                      >
+                        {!isEmpty ? (
+                          <>
+                            <span className="text-[14px] font-black leading-none">
+                              {cell.data.same_day}/{cell.data.a_ruta}
+                            </span>
+                            <span className="text-[10px] opacity-90 leading-none mt-1">{cell.data.pct_same_day}%</span>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-gray-300">—</span>
+                        )}
+                      </div>
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       {/* Leyenda */}
-      <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-gray-500">
+      <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-gray-500 flex-wrap">
         <span>Bajo</span>
         <div className="w-4 h-4 rounded-sm bg-red-400" />
         <div className="w-4 h-4 rounded-sm bg-orange-400" />
@@ -152,7 +177,7 @@ function CalendarHeatmap({ heatmap = [] }) {
         <div className="w-4 h-4 rounded-sm bg-emerald-400" />
         <div className="w-4 h-4 rounded-sm bg-emerald-500" />
         <div className="w-4 h-4 rounded-sm bg-emerald-600" />
-        <span>Alto · Cada celda muestra <b>entregados / a-ruta</b></span>
+        <span>Alto · Cada celda muestra <b>same-day / a-ruta</b></span>
       </div>
     </div>
   )
@@ -307,7 +332,7 @@ export default function EfectividadDriver() {
                         <td className="px-4 py-2.5 text-center text-gray-500">{fmtN(r.paquetes_entregados)}</td>
                         <td className="px-4 py-2.5 text-center">
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                            {r.paquetes_entregados}/{r.paquetes_a_ruta}
+                            {r.same_day}/{r.paquetes_a_ruta}
                           </span>
                         </td>
                         <td className={`px-4 py-2.5 text-center font-bold ${colorPct(r.pct_same_day, 80)}`}>{fmtPct(r.pct_same_day)}</td>

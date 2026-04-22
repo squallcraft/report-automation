@@ -176,8 +176,7 @@ export default function EfectividadEntregas() {
   const sellersSorted = useMemo(() => {
     if (!data?.por_seller) return []
     const rows = data.por_seller.filter(s =>
-      (s.nombre || '').toLowerCase().includes(sellerSearch.toLowerCase())
-      || (s.seller_code || '').toLowerCase().includes(sellerSearch.toLowerCase()),
+      (s.nombre || '').toLowerCase().includes(sellerSearch.toLowerCase()),
     )
     return [...rows].sort((a, b) => {
       if (sellerSort.col === 'nombre') {
@@ -480,13 +479,12 @@ export default function EfectividadEntregas() {
                   <tbody className="divide-y divide-gray-50">
                     {sellersSorted.map(s => (
                       <tr
-                        key={s.seller_code ?? s.nombre}
+                        key={s.seller_id ?? s.nombre}
                         onClick={() => s.seller_id && navigate(`/admin/efectividad/seller/${s.seller_id}?mes=${period.mes}&anio=${period.anio}`)}
                         className={`text-gray-700 ${s.seller_id ? 'hover:bg-blue-50/40 cursor-pointer' : ''} transition-colors`}
                       >
                         <td className="px-3 py-2.5 font-medium">
                           {s.nombre}
-                          {s.seller_code && <span className="ml-1.5 text-[9px] text-gray-400">#{s.seller_code}</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center text-gray-500">{fmtN(s.paquetes_a_ruta)}</td>
                         <td className="px-3 py-2.5 text-center text-gray-500">{fmtN(s.paquetes_entregados)}</td>

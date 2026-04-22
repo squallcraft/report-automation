@@ -178,14 +178,71 @@ def _calcular_estado(asig: AsignacionRuta, envio: Optional[Envio]) -> str:
     return ESTADO_SIN_ENTREGA
 
 
-def _resolver_driver_local(db: Session, driver_externo_id: Optional[int], driver_name: Optional[str]) -> Optional[int]:
-    """Mapea el driver_id externo o el nombre a un driver local (drivers.id).
-    Estrategia simple: por nombre exacto (case-insensitive).
+# Cache de drivers para resolver driver_local sin hacer una query por asignación.
+# Se invalida al inicio de cada ingesta (build_driver_index) o cuando se quiera
+# refrescar. Drivers son ~300 entries.
+_driver_index: Optional[dict] = None
+
+
+def build_driver_index(db: Session) -> dict:
+    """(Re)construye el índice de drivers en memoria. Llamar al inicio de la
+    ingesta y cada vez que se haya editado la tabla `drivers` durante el proceso.
+
+    Estructura:
+      {
+        "exact": {nombre_lower: driver_id},
+        "alias": {alias_lower: driver_id},
+        "prefix": [(nombre_lower_con_espacios, driver_id), ...]  # solo nombres ≥2 palabras
+      }
     """
-    if driver_name:
-        d = db.query(Driver).filter(func.lower(Driver.nombre) == driver_name.strip().lower()).first()
-        if d:
-            return d.id
+    global _driver_index
+    exact: dict[str, int] = {}
+    alias: dict[str, int] = {}
+    prefix: list[tuple[str, int]] = []
+    for d in db.query(Driver).all():
+        nl = (d.nombre or "").strip().lower()
+        if not nl:
+            continue
+        # El primer driver con ese nombre gana (raro que se repita).
+        exact.setdefault(nl, d.id)
+        if " " in nl:
+            prefix.append((nl, d.id))
+        for a in (d.aliases or []):
+            if isinstance(a, str):
+                al = a.strip().lower()
+                if al:
+                    alias.setdefault(al, d.id)
+    _driver_index = {"exact": exact, "alias": alias, "prefix": prefix}
+    return _driver_index
+
+
+def _resolver_driver_local(db: Session, driver_externo_id: Optional[int], driver_name: Optional[str]) -> Optional[int]:
+    """Mapea el driver del courier (id externo + nombre) a un driver local.
+
+    Estrategia, en orden:
+      1. Match exacto case-insensitive contra `Driver.nombre`.
+      2. Match dentro de `Driver.aliases` (JSON array case-insensitive). Aquí
+         cae la gran mayoría: el courier reporta "Augusto Guerrero" mientras
+         el local guarda "Augusto" + alias "Augusto Guerrero".
+      3. Fallback por prefijo: nombre local con ≥2 palabras es prefijo del
+         nombre del courier (p.ej. "Diego Mendez" prefijo de "Diego Mendez
+         Delgado"). Evita falsos positivos tipo "Diego" → "Diego Santander".
+    """
+    if not driver_name:
+        return None
+    name_low = driver_name.strip().lower()
+    if not name_low:
+        return None
+
+    idx = _driver_index if _driver_index is not None else build_driver_index(db)
+
+    if name_low in idx["exact"]:
+        return idx["exact"][name_low]
+    if name_low in idx["alias"]:
+        return idx["alias"][name_low]
+    for nl, did in idx["prefix"]:
+        if name_low.startswith(nl + " ") or name_low == nl:
+            return did
     return None
 
 
@@ -328,6 +385,50 @@ def reconciliar_pendientes(
     }
 
 
+def reresolver_drivers(
+    db: Session,
+    fecha_desde: Optional[date] = None,
+) -> dict:
+    """Re-aplica `_resolver_driver_local` a todas las asignaciones cuyo driver_id
+    local quedó NULL pero tienen `driver_name` del courier.
+
+    Útil después de ampliar la lógica de matching (p.ej. soporte de aliases) o
+    de agregar nuevos aliases a un Driver.
+    """
+    build_driver_index(db)
+    q = db.query(AsignacionRuta).filter(
+        AsignacionRuta.driver_id.is_(None),
+        AsignacionRuta.driver_name.isnot(None),
+    )
+    if fecha_desde is not None:
+        q = q.filter(AsignacionRuta.withdrawal_date >= fecha_desde)
+
+    revisadas = 0
+    resueltos = 0
+    sin_match: dict[str, int] = {}
+    BATCH = 500
+    for asig in q.yield_per(BATCH):
+        revisadas += 1
+        did = _resolver_driver_local(db, asig.driver_externo_id, asig.driver_name)
+        if did:
+            asig.driver_id = did
+            resueltos += 1
+        else:
+            sin_match[asig.driver_name] = sin_match.get(asig.driver_name, 0) + 1
+        if revisadas % BATCH == 0:
+            db.commit()
+    db.commit()
+
+    top_sin_match = sorted(sin_match.items(), key=lambda x: -x[1])[:10]
+    return {
+        "revisadas": revisadas,
+        "resueltos": resueltos,
+        "sin_match": revisadas - resueltos,
+        "top_sin_match": [{"driver_name": n, "n": c} for n, c in top_sin_match],
+        "fecha_desde": fecha_desde.isoformat() if fecha_desde else None,
+    }
+
+
 # ── Ingesta principal (a invocar desde el cron) ───────────────────────────────
 def ingestar_rutas(
     db: Session,
@@ -342,6 +443,10 @@ def ingestar_rutas(
     """
     if task_id:
         update_task(task_id, message=f"Conectando con TrackingTech ({fecha_inicio} → {fecha_fin})…")
+
+    # Refresca el índice de drivers en memoria para que `_resolver_driver_local`
+    # use los aliases más recientes (≈300 entries, costo despreciable).
+    build_driver_index(db)
 
     registros, error = fetch_routes_by_date(fecha_inicio, fecha_fin)
     if registros is None:
