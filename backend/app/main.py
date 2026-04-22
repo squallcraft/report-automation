@@ -774,6 +774,30 @@ with engine.connect() as conn:
         # (rutas_entregas.reconciliar_asignacion hace LOWER(envios.tracking_id) = ...)
         safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_tracking_id_lower ON envios (LOWER(tracking_id))")
 
+    # ── Migración: AsignacionRuta multi-intento (abril 2026) ──────────────────
+    # Permite varias filas para el mismo tracking_id (una por withdrawal_date)
+    # para soportar Delivery Success Rate y First-Attempt Delivery Rate.
+    if "asignacion_ruta" in insp.get_table_names():
+        ar_cols = [c["name"] for c in insp.get_columns("asignacion_ruta")]
+        if "intento_nro" not in ar_cols:
+            safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN intento_nro INTEGER NOT NULL DEFAULT 1")
+        # Quitar el unique simple de tracking_id (creado cuando el modelo
+        # tenía unique=True). El nombre por defecto en PG es <tabla>_<col>_key.
+        safe_exec("ALTER TABLE asignacion_ruta DROP CONSTRAINT IF EXISTS asignacion_ruta_tracking_id_key")
+        # En algunas instalaciones el unique se materializa como índice único
+        # con nombre ix_*. Lo intentamos por si acaso.
+        safe_exec("DROP INDEX IF EXISTS ix_asignacion_ruta_tracking_id")
+        # Crear unique compuesto (tracking_id, withdrawal_date) e índice de búsqueda.
+        safe_exec(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ux_asig_ruta_tracking_withdrawal "
+            "ON asignacion_ruta (tracking_id, withdrawal_date)"
+        )
+        safe_exec("CREATE INDEX IF NOT EXISTS ix_asig_ruta_tracking ON asignacion_ruta (tracking_id)")
+        # Backfill: las filas existentes que no fueron tocadas por la nueva
+        # lógica deben tener intento_nro=1 (es lo que ya hace el DEFAULT del
+        # ALTER, pero lo dejamos explícito por si alguien insertó NULL).
+        safe_exec("UPDATE asignacion_ruta SET intento_nro = 1 WHERE intento_nro IS NULL OR intento_nro = 0")
+
     # ── Migración: Grok Memory System (brief + snapshot) ──
     safe_exec("""
         CREATE TABLE IF NOT EXISTS grok_brief (

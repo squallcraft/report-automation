@@ -2310,6 +2310,14 @@ class AsignacionRuta(Base):
     """Asignación de un envío a una ruta de conductor según el endpoint del courier.
 
     Es la fuente de verdad del DENOMINADOR para calcular efectividad.
+
+    Modelo MULTI-INTENTO (a partir de abril 2026):
+      - Permite varias filas para el mismo tracking_id: una por cada día en que
+        el paquete sale a ruta. Si en un mismo día el paquete cambia de ruta,
+        sigue siendo UN solo intento (UPSERT por (tracking_id, withdrawal_date)).
+      - `intento_nro` se calcula al insertar como max(intento_nro)+1 para ese
+        tracking. Sirve para First-Attempt Delivery Rate y Delivery Success Rate.
+
     Cada registro intenta enlazarse con un Envio por tracking_id; si el envío
     todavía no existe en BD, queda con envio_id=NULL y se reintenta en cada
     ingesta CSV (hook auto-background).
@@ -2321,16 +2329,20 @@ class AsignacionRuta(Base):
     """
     __tablename__ = "asignacion_ruta"
     __table_args__ = (
+        UniqueConstraint("tracking_id", "withdrawal_date", name="ux_asig_ruta_tracking_withdrawal"),
         Index("ix_asig_ruta_withdrawal", "withdrawal_date"),
         Index("ix_asig_ruta_driver_periodo", "driver_id", "withdrawal_date"),
         Index("ix_asig_ruta_route", "route_id"),
         Index("ix_asig_ruta_estado", "estado_calculado"),
         Index("ix_asig_ruta_envio_pendiente", "envio_id", "withdrawal_date"),
+        Index("ix_asig_ruta_tracking", "tracking_id"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    tracking_id = Column(String, nullable=False, unique=True, index=True)
+    tracking_id = Column(String, nullable=False, index=True)
     external_id = Column(String, nullable=True, index=True)
+
+    intento_nro = Column(Integer, nullable=False, default=1)
 
     withdrawal_date = Column(Date, nullable=False)
     withdrawal_at = Column(DateTime, nullable=True)

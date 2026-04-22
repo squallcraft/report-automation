@@ -51,6 +51,7 @@ import Auditoria from './pages/admin/Auditoria'
 import BusinessIntelligence from './pages/admin/BusinessIntelligence'
 import EfectividadEntregas from './pages/admin/EfectividadEntregas'
 import EfectividadDriver from './pages/admin/EfectividadDriver'
+import EfectividadSeller from './pages/admin/EfectividadSeller'
 import IngresosDrivers from './pages/admin/IngresosDrivers'
 import Retencion from './pages/admin/Retencion'
 import SellerPerfil from './pages/admin/SellerPerfil'
@@ -179,6 +180,7 @@ export default function App() {
         <Route path="bi" element={<BusinessIntelligence />} />
         <Route path="efectividad" element={<EfectividadEntregas />} />
         <Route path="efectividad/driver/:driverId" element={<EfectividadDriver />} />
+        <Route path="efectividad/seller/:sellerId" element={<EfectividadSeller />} />
         <Route path="cron-jobs" element={<CronJobs />} />
         <Route path="asignaciones-ruta" element={<AsignacionesRuta />} />
         <Route path="ingresos-drivers" element={<IngresosDrivers />} />

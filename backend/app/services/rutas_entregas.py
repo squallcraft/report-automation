@@ -191,7 +191,18 @@ def _resolver_driver_local(db: Session, driver_externo_id: Optional[int], driver
 
 # ── Upsert + reconciliación ───────────────────────────────────────────────────
 def upsert_asignacion(db: Session, raw: dict) -> tuple[AsignacionRuta, bool]:
-    """Upsert por tracking_id. Devuelve (asignacion, creada)."""
+    """Upsert por (tracking_id, withdrawal_date). Devuelve (asignacion, creada).
+
+    Regla multi-intento (abril 2026):
+      - Si ya existe una fila con ese (tracking_id, withdrawal_date) → UPDATE.
+        Esto contempla el caso "el mismo día el paquete cambió de ruta": al
+        sólo recibir el último estado del día, esa fila se sobrescribe y NO
+        se cuenta como un nuevo intento.
+      - Si NO existe → INSERT con intento_nro = max(intento_nro)+1 para ese
+        tracking. Cada día distinto en que el paquete sale a ruta cuenta como
+        un intento independiente (First-Attempt Delivery Rate, Delivery Success
+        Rate).
+    """
     tracking_id = (raw.get("tracking_id") or "").strip()
     if not tracking_id:
         raise ValueError("tracking_id requerido")
@@ -200,15 +211,35 @@ def upsert_asignacion(db: Session, raw: dict) -> tuple[AsignacionRuta, bool]:
     if not withdrawal_date:
         raise ValueError("withdrawal_date requerido")
 
-    asig = db.query(AsignacionRuta).filter(AsignacionRuta.tracking_id == tracking_id).first()
+    asig = (
+        db.query(AsignacionRuta)
+        .filter(
+            AsignacionRuta.tracking_id == tracking_id,
+            AsignacionRuta.withdrawal_date == withdrawal_date,
+        )
+        .first()
+    )
     creada = False
     if asig is None:
-        asig = AsignacionRuta(tracking_id=tracking_id)
+        # Calcular el próximo número de intento para este tracking.
+        max_intento = (
+            db.query(func.coalesce(func.max(AsignacionRuta.intento_nro), 0))
+            .filter(AsignacionRuta.tracking_id == tracking_id)
+            .scalar()
+        ) or 0
+        asig = AsignacionRuta(
+            tracking_id=tracking_id,
+            withdrawal_date=withdrawal_date,
+            intento_nro=int(max_intento) + 1,
+        )
         db.add(asig)
         creada = True
+    else:
+        # Aseguramos coherencia: la fecha es la clave, no debería cambiar,
+        # pero si el cron repite el día sí actualizamos el resto del payload.
+        asig.withdrawal_date = withdrawal_date
 
     asig.external_id = raw.get("external_id") or asig.external_id
-    asig.withdrawal_date = withdrawal_date
     asig.withdrawal_at = _parse_dt(raw.get("withdrawal_at")) or asig.withdrawal_at
     asig.pedido_creado_at = _parse_dt(raw.get("pedido_creado_at")) or asig.pedido_creado_at
     asig.route_id = raw.get("route_id") if raw.get("route_id") is not None else asig.route_id
