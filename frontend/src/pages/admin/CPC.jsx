@@ -924,16 +924,17 @@ export default function CPC() {
     if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0 }
     const activas = filterSemanas.size > 0 ? filterSemanas : null
     const sums = drivers.reduce((acc, d) => {
-      let neto = 0, pagado = 0
+      let neto = 0, pagado = 0, porPagar = 0
       const dPagados = pagados[String(d.driver_id)] || {}
       Object.entries(d.semanas || {}).forEach(([sem, s]) => {
         if (activas && !activas.has(Number(sem))) return
         neto += s.monto_neto || 0
         pagado += dPagados[sem] || 0
+        if (s.estado !== 'PAGADO') porPagar += s.monto_neto || 0
       })
-      return { neto: acc.neto + neto, pagado: acc.pagado + pagado }
-    }, { neto: 0, pagado: 0 })
-    return { ...sums, porPagar: sums.neto - sums.pagado }
+      return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar }
+    }, { neto: 0, pagado: 0, porPagar: 0 })
+    return sums
   }, [drivers, filterSemanas, pagados])
 
   const estadoConteo = useMemo(() => {
