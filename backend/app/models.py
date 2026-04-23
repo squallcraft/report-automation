@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from sqlalchemy import (
-    Column, Integer, String, Boolean, Text, Date, DateTime,
+    Column, Integer, String, Boolean, Text, Date, DateTime, Time,
     Enum, ForeignKey, JSON, UniqueConstraint, Index, func, Numeric, Float,
 )
 from sqlalchemy.orm import relationship
@@ -178,6 +178,7 @@ class Envio(Base):
     anio = Column(Integer, nullable=False)
     fecha_carga = Column(Date, nullable=True)
     fecha_entrega = Column(Date, nullable=False)
+    hora_entrega = Column(Time, nullable=True)
     seller_id = Column(Integer, ForeignKey("sellers.id"), nullable=True)
     driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
     user_nombre = Column(String, nullable=True)

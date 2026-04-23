@@ -19,6 +19,7 @@ const adminMenu = [
       { to: '/admin/envios', icon: FileText, label: 'Envíos', permiso: 'envios' },
       { to: '/admin/retiros', icon: DollarSign, label: 'Retiros', permiso: 'retiros' },
       { to: '/admin/efectividad', icon: TrendingUp, label: 'Efectividad de Entregas', permiso: 'efectividad' },
+      { to: '/admin/franjas-horarias', icon: Clock, label: 'Franjas Horarias', permiso: 'franjas_horarias' },
       { to: '/admin/calendario', icon: CalendarDays, label: 'Calendario', permiso: 'calendario' },
     ],
   },

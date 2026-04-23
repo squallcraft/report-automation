@@ -8,7 +8,7 @@ from typing import Optional, Dict
 import os
 import re
 import uuid
-from datetime import date
+from datetime import date, time as time_type
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -27,6 +27,24 @@ from app.services.tarifas_escalonadas import recalcular_tarifas_escalonadas
 MLC_REGEX = re.compile(r"\[MLC(\d+)\]")
 
 BATCH_SIZE = 500
+
+
+def _parse_time(value) -> Optional[time_type]:
+    """Parsea una hora desde string 'HH:MM', 'HH:MM:SS', objeto time o datetime."""
+    if value is None:
+        return None
+    if isinstance(value, time_type):
+        return value
+    import datetime as _dt
+    if isinstance(value, _dt.datetime):
+        return value.time()
+    s = str(value).strip()
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return _dt.datetime.strptime(s, fmt).time()
+        except Exception:
+            pass
+    return None
 
 COLUMN_MAP = {
     "User - Nombre": "user_nombre",
@@ -47,6 +65,9 @@ COLUMN_MAP = {
     "Lon": "lon",
     "Latitud": "lat",
     "Longitud": "lon",
+    "Hora Entrega": "hora_entrega",
+    "Hora de Entrega": "hora_entrega",
+    "HoraEntrega": "hora_entrega",
 }
 
 
@@ -224,6 +245,11 @@ def _build_envio_from_row(
     if not coords_validas(lat_val, lon_val):
         lat_val, lon_val = None, None
 
+    hora_entrega_val = None
+    raw_hora = row.get("hora_entrega") if "hora_entrega" in row.index else None
+    if raw_hora is not None and not (isinstance(raw_hora, float) and pd.isna(raw_hora)):
+        hora_entrega_val = _parse_time(raw_hora)
+
     envio = Envio(
         semana=semana,
         mes=mes_envio,
@@ -255,6 +281,7 @@ def _build_envio_from_row(
         direccion=direccion,
         lat=lat_val,
         lon=lon_val,
+        hora_entrega=hora_entrega_val,
         homologado=homologado,
         ingesta_id=ingesta_id,
     )

@@ -2579,3 +2579,214 @@ def efectividad_v2_mapa(
             "3": "Cancelado",
         },
     }
+
+
+# ── Franjas Horarias ──────────────────────────────────────────────────────────
+#
+# Franjas definidas por el negocio:
+#   AM        : 08:00 – 15:00  (probablemente 2dos intentos)
+#   PM_IDEAL  : 15:01 – 21:00  (franja óptima)
+#   PM_LIMITE : 21:01 – 22:00  (límite aceptable)
+#   PM_TARDE  : 22:01 – 23:59  (rango a mejorar)
+#   MADRUGADA : 00:00 – 07:59  (muy tarde/fuera de horario)
+#   SIN_HORA  : envíos sin hora registrada
+
+_FRANJAS = [
+    ("am",        "AM (08–15)",       "08:00:00", "15:00:00"),
+    ("pm_ideal",  "PM ideal (15–21)", "15:00:01", "21:00:00"),
+    ("pm_limite", "PM límite (21–22)","21:00:01", "22:00:00"),
+    ("pm_tarde",  "PM tarde (22+)",   "22:00:01", "23:59:59"),
+    ("madrugada", "Madrugada (0–8)",  "00:00:00", "07:59:59"),
+]
+
+def _franja_case():
+    """CASE WHEN para asignar franja a cada envío según hora_entrega."""
+    from sqlalchemy import case
+    from app.models import Envio as _Envio
+    from sqlalchemy import cast
+    from sqlalchemy.dialects.postgresql import TIME
+    whens = [
+        ((_Envio.hora_entrega >= "08:00:00") & (_Envio.hora_entrega <= "15:00:00"), "am"),
+        ((_Envio.hora_entrega > "15:00:00") & (_Envio.hora_entrega <= "21:00:00"), "pm_ideal"),
+        ((_Envio.hora_entrega > "21:00:00") & (_Envio.hora_entrega <= "22:00:00"), "pm_limite"),
+        ((_Envio.hora_entrega > "22:00:00"), "pm_tarde"),
+        (_Envio.hora_entrega.isnot(None), "madrugada"),
+    ]
+    return case(*[(cond, val) for cond, val in whens], else_="sin_hora")
+
+
+def _build_franja_stats(rows) -> dict:
+    """Agrega una lista de (franja, count) en el dict estándar de franjas."""
+    total = sum(n for _, n in rows)
+    d = {k: {"n": 0, "pct": 0.0} for k, *_ in _FRANJAS}
+    d["madrugada"] = {"n": 0, "pct": 0.0}
+    d["sin_hora"] = {"n": 0, "pct": 0.0}
+    for franja, n in rows:
+        if franja in d:
+            d[franja]["n"] = n
+            d[franja]["pct"] = round(100 * n / total, 1) if total else 0.0
+    d["_total"] = total
+    return d
+
+
+@router.get("/franjas-horarias")
+def franjas_horarias_global(
+    mes: Optional[int] = Query(None),
+    anio: Optional[int] = Query(None),
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    driver_id: Optional[int] = Query(None),
+    seller_id: Optional[int] = Query(None),
+    agrupacion: str = Query("global", description="global | dia | semana | mes | driver | seller | ruta"),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """
+    Devuelve la distribución de entregas por franja horaria.
+
+    `agrupacion` controla el eje de análisis:
+    - global  → un solo bloque con totales del período
+    - dia     → una fila por fecha
+    - semana  → una fila por número de semana
+    - mes     → una fila por mes
+    - driver  → una fila por conductor
+    - seller  → una fila por seller
+    - ruta    → una fila por ruta (ruta_nombre)
+    """
+    inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
+
+    q = db.query(Envio).filter(
+        Envio.fecha_entrega >= inicio,
+        Envio.fecha_entrega <= fin,
+    )
+    if driver_id is not None:
+        q = q.filter(Envio.driver_id == driver_id)
+    if seller_id is not None:
+        q = q.filter(Envio.seller_id == seller_id)
+
+    # Aplicar exclusiones globales (igual que en efectividad)
+    if EFECTIVIDAD_SELLERS_EXCLUIDOS:
+        q = q.filter(~Envio.seller_id.in_(EFECTIVIDAD_SELLERS_EXCLUIDOS))
+    if EFECTIVIDAD_DRIVERS_EXCLUIDOS:
+        q = q.filter(~Envio.driver_id.in_(EFECTIVIDAD_DRIVERS_EXCLUIDOS))
+
+    def _franja_sql(h):
+        """Devuelve clave de franja para una hora Python time."""
+        if h is None:
+            return "sin_hora"
+        hm = h.hour * 60 + h.minute
+        if 8 * 60 <= hm <= 15 * 60:
+            return "am"
+        if 15 * 60 < hm <= 21 * 60:
+            return "pm_ideal"
+        if 21 * 60 < hm <= 22 * 60:
+            return "pm_limite"
+        if hm > 22 * 60:
+            return "pm_tarde"
+        return "madrugada"
+
+    # ── Construcción de filas ───────────────────────────────────────────────
+    # Cargamos sólo los campos necesarios, sin traer el objeto completo
+    cols_needed = [
+        Envio.id,
+        Envio.fecha_entrega,
+        Envio.mes,
+        Envio.semana,
+        Envio.driver_id,
+        Envio.seller_id,
+        Envio.ruta_nombre,
+        Envio.hora_entrega,
+    ]
+    rows = q.with_entities(*cols_needed).all()
+
+    # Índices para nombres
+    drivers_map = {d.id: d.nombre for d in db.query(Driver).all()}
+    sellers_map = {s.id: s.nombre for s in db.query(Seller).all()}
+
+    def _agg_key(row):
+        if agrupacion == "dia":
+            return str(row.fecha_entrega)
+        if agrupacion == "semana":
+            return f"Semana {row.semana}"
+        if agrupacion == "mes":
+            return f"{row.mes}/{row.anio if hasattr(row, 'anio') else ''}"
+        if agrupacion == "driver":
+            return str(row.driver_id) if row.driver_id else "sin_driver"
+        if agrupacion == "seller":
+            return str(row.seller_id) if row.seller_id else "sin_seller"
+        if agrupacion == "ruta":
+            return row.ruta_nombre or "Sin ruta"
+        return "global"
+
+    from collections import defaultdict
+    buckets: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    meta: dict[str, dict] = {}
+
+    for row in rows:
+        key = _agg_key(row)
+        franja = _franja_sql(row.hora_entrega)
+        buckets[key][franja] += 1
+        # guardar etiqueta legible
+        if key not in meta:
+            label = key
+            if agrupacion == "driver" and row.driver_id:
+                label = drivers_map.get(row.driver_id, key)
+            elif agrupacion == "seller" and row.seller_id:
+                label = sellers_map.get(row.seller_id, key)
+            meta[key] = {"key": key, "label": label}
+
+    franja_keys = ["am", "pm_ideal", "pm_limite", "pm_tarde", "madrugada", "sin_hora"]
+    franja_labels = {
+        "am":        "AM (08–15 h)",
+        "pm_ideal":  "PM ideal (15–21 h)",
+        "pm_limite": "PM límite (21–22 h)",
+        "pm_tarde":  "PM tarde (22+ h)",
+        "madrugada": "Madrugada (0–8 h)",
+        "sin_hora":  "Sin hora registrada",
+    }
+    franja_colors = {
+        "am":        "#f59e0b",
+        "pm_ideal":  "#10b981",
+        "pm_limite": "#f97316",
+        "pm_tarde":  "#ef4444",
+        "madrugada": "#8b5cf6",
+        "sin_hora":  "#94a3b8",
+    }
+
+    result_rows = []
+    for key, counts in sorted(buckets.items()):
+        total = sum(counts.values())
+        entry = {
+            "key": key,
+            "label": meta.get(key, {}).get("label", key),
+            "total": total,
+        }
+        for fk in franja_keys:
+            n = counts.get(fk, 0)
+            entry[fk] = n
+            entry[f"pct_{fk}"] = round(100 * n / total, 1) if total else 0.0
+        result_rows.append(entry)
+
+    # Resumen global
+    global_counts: dict[str, int] = defaultdict(int)
+    for counts in buckets.values():
+        for fk, n in counts.items():
+            global_counts[fk] += n
+    grand_total = sum(global_counts.values())
+    global_summary = {"total": grand_total}
+    for fk in franja_keys:
+        n = global_counts.get(fk, 0)
+        global_summary[fk] = n
+        global_summary[f"pct_{fk}"] = round(100 * n / grand_total, 1) if grand_total else 0.0
+
+    return {
+        "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
+        "agrupacion": agrupacion,
+        "franjas": [
+            {"key": fk, "label": franja_labels[fk], "color": franja_colors[fk]}
+            for fk in franja_keys
+        ],
+        "global": global_summary,
+        "rows": result_rows,
+    }
+
