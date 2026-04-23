@@ -116,8 +116,10 @@ def descargar_plantilla():
         "Comuna",
         "Cantidad de Bultos",
         "Descripción Paquete",
+        "Ruta ID",
+        "Ruta Fecha",
         "Ruta Nombre",
-        "Nombre Conductor",
+        "Ruta Conductor",
     ]
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -138,11 +140,11 @@ def descargar_plantilla():
         cell.border = thin_border
 
     ejemplo = [
-        ["Carlos Pérez",   "2026-02-24", "2026-02-25", "16:42:00", "TRK-00001", "MercadoLibre Chile", "SC-10045", "ML-V-123456", 25990, "Av. Providencia 1234, Providencia, Santiago, Chile", -33.4368, -70.6362, "Providencia",   1, "[MLC1774402962] - Crema Reductora 500ml",    "Ruta Santiago Centro", "Carlos Pérez"],
-        ["Miguel López",   "2026-02-24", "2026-02-25", "18:15:00", "TRK-00002", "Falabella",          "SC-10078", "FAL-789012",  45990, "Los Leones 567, Las Condes, Santiago, Chile",      -33.4161, -70.5996, "Las Condes",    2, "Zapatillas deportivas talla 42",              "Ruta Las Condes",      "Miguel López"],
-        ["Fernando Rojas", "2026-02-24", "2026-02-26", "11:30:00", "TRK-00003", "Ferretería Oviedo",  "SC-20012", "OV-345678",  12500, "Camino La Estrella 890, Padre Hurtado, Chile",    -33.5608, -70.7487, "Padre Hurtado", 1, "[MLC2220238846] - Taladro percutor 800W",    "Ruta Sur",             "Fernando Rojas"],
-        ["Augusto Silva",  "2026-02-25", "2026-02-26", "21:05:00", "TRK-00004", "Aventura Store",     "SC-30099", "AS-901234",  89990, "Av. Matta 2345, Santiago, Santiago, Chile",        -33.4589, -70.6483, "Santiago",      3, "Carpa camping 4 personas",                   "Ruta Santiago Sur",    "Augusto Silva"],
-        ["Carlos Pérez",   "2026-02-25", "2026-02-27", "19:50:00", "TRK-00005", "MercadoLibre Chile", "SC-10046", "ML-V-567890", 15990, "Av. Macul 4567, La Florida, Santiago, Chile",     -33.5085, -70.5880, "La Florida",    1, "Set de ollas antiadherentes",                "Ruta Santiago Centro", "Carlos Pérez"],
+        ["Carlos Pérez",   "2026-02-24", "2026-02-25", "16:42:00", "TRK-00001", "MercadoLibre Chile", "SC-10045", "ML-V-123456", 25990, "Av. Providencia 1234, Providencia, Santiago, Chile", -33.4368, -70.6362, "Providencia",   1, "[MLC1774402962] - Crema Reductora 500ml",    27001, "2026-02-25", "Ruta Santiago Centro", "Carlos Pérez"],
+        ["Miguel López",   "2026-02-24", "2026-02-25", "18:15:00", "TRK-00002", "Falabella",          "SC-10078", "FAL-789012",  45990, "Los Leones 567, Las Condes, Santiago, Chile",      -33.4161, -70.5996, "Las Condes",    2, "Zapatillas deportivas talla 42",              27002, "2026-02-25", "Ruta Las Condes",      "Miguel López"],
+        ["Fernando Rojas", "2026-02-24", "2026-02-26", "11:30:00", "TRK-00003", "Ferretería Oviedo",  "SC-20012", "OV-345678",  12500, "Camino La Estrella 890, Padre Hurtado, Chile",    -33.5608, -70.7487, "Padre Hurtado", 1, "[MLC2220238846] - Taladro percutor 800W",    27015, "2026-02-26", "Ruta Sur",             "Fernando Rojas"],
+        ["Augusto Silva",  "2026-02-25", "2026-02-26", "21:05:00", "TRK-00004", "Aventura Store",     "SC-30099", "AS-901234",  89990, "Av. Matta 2345, Santiago, Santiago, Chile",        -33.4589, -70.6483, "Santiago",      3, "Carpa camping 4 personas",                   27016, "2026-02-26", "Ruta Santiago Sur",    "Augusto Silva"],
+        ["Carlos Pérez",   "2026-02-25", "2026-02-27", "19:50:00", "TRK-00005", "MercadoLibre Chile", "SC-10046", "ML-V-567890", 15990, "Av. Macul 4567, La Florida, Santiago, Chile",     -33.5085, -70.5880, "La Florida",    1, "Set de ollas antiadherentes",                27030, "2026-02-27", "Ruta Santiago Centro", "Carlos Pérez"],
     ]
 
     data_font = Font(size=10)
@@ -158,11 +160,11 @@ def descargar_plantilla():
             if row_idx % 2 == 0:
                 cell.fill = alt_fill
 
-    anchos = [22, 14, 14, 12, 16, 22, 14, 18, 18, 50, 12, 12, 18, 16, 45, 22, 22]
+    anchos = [22, 14, 14, 12, 16, 22, 14, 18, 18, 50, 12, 12, 18, 16, 45, 12, 14, 22, 22]
     for col_idx, ancho in enumerate(anchos, 1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = ancho
 
-    ws.auto_filter.ref = "A1:Q1"
+    ws.auto_filter.ref = "A1:S1"
     ws.freeze_panes = "A2"
 
     ws_instrucciones = wb.create_sheet("Instrucciones")
@@ -185,8 +187,10 @@ def descargar_plantilla():
         ("Comuna", "Comuna de destino (OBLIGATORIA para cálculo de tarifa). Se usa para determinar el cobro al seller según su plan tarifario."),
         ("Cantidad de Bultos", "Número de bultos del envío (por defecto 1)."),
         ("Descripción Paquete", "Descripción del producto. Si contiene un código [MLCxxxxxxx], se detecta para aplicar extras."),
+        ("Ruta ID", "ID numérico de la ruta asignada al driver (ej: 27001). Opcional; mejora las métricas de efectividad."),
+        ("Ruta Fecha", "Fecha en que el paquete salió a ruta con el conductor. Formato: AAAA-MM-DD. Opcional; habilita métricas de efectividad del conductor."),
         ("Ruta Nombre", "Nombre de la ruta asignada al driver."),
-        ("Nombre Conductor", "Nombre completo del conductor que realizó la entrega."),
+        ("Ruta Conductor", "Nombre completo del conductor que realizó la entrega."),
         ("", ""),
         ("Notas importantes:", ""),
         ("", "• La columna 'Fecha Entrega' es OBLIGATORIA. Filas sin esta fecha serán ignoradas."),
@@ -194,7 +198,7 @@ def descargar_plantilla():
         ("", "• Si un nombre no se reconoce, el envío queda 'sin homologar' para revisión manual."),
         ("", "• Los códigos MLC en la descripción se extraen con formato [MLCxxxxxxx]."),
         ("", "• Las comunas se normalizan a minúsculas para buscar tarifas especiales."),
-        ("", "• Las columnas Lat, Lon y Hora Entrega son opcionales y pueden omitirse sin afectar el proceso."),
+        ("", "• Las columnas Lat, Lon, Hora Entrega, Ruta ID y Ruta Fecha son opcionales y pueden omitirse sin afectar el proceso."),
     ]
 
     title_font = Font(bold=True, size=14, color="1A365D")
@@ -209,7 +213,7 @@ def descargar_plantilla():
         elif row_idx == 3:
             cell_a.font = sub_font
             cell_b.font = sub_font
-        elif col_a and row_idx > 3 and row_idx <= 15:
+        elif col_a and row_idx > 3 and row_idx <= 17:
             cell_a.font = Font(bold=True, size=10, color="2D3748")
             cell_b.font = normal_font
         elif "Notas" in col_a:
