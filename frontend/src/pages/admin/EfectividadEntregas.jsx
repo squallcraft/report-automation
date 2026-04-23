@@ -317,7 +317,7 @@ export default function EfectividadEntregas() {
           )}
 
           {/* ── Mapa geográfico de entregas ────────────────────────────── */}
-          <MapaEntregas fechaInicio={fechaInicioIso} fechaFin={fechaFinIso} height={520} />
+          <MapaEntregas fechaInicio={fechaInicioIso} fechaFin={fechaFinIso} height={676} />
 
           {/* ── Tabla por Driver ───────────────────────────────────────── */}
           {data.por_driver?.length > 0 && (
