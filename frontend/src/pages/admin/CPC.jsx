@@ -785,6 +785,7 @@ export default function CPC() {
   const [filterText, setFilterText] = useState('')
   const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [filterEstado, setFilterEstado] = useState('')
+  const [filterFacturaRevisar, setFilterFacturaRevisar] = useState(false)
   const [sortMonto, setSortMonto] = useState(null)
   const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
@@ -846,6 +847,13 @@ export default function CPC() {
       )
     }
 
+    if (filterFacturaRevisar) {
+      const semanasACheck = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
+      result = result.filter(d =>
+        semanasACheck.some(sem => d.semanas[String(sem)]?.factura_estado === 'CARGADA')
+      )
+    }
+
     if (sortMonto) {
       const semList = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
       result = [...result].sort((a, b) => {
@@ -856,7 +864,7 @@ export default function CPC() {
     }
 
     return result
-  }, [data, filterText, filterEstado, filterSemanas, sortMonto, pagados])
+  }, [data, filterText, filterEstado, filterSemanas, filterFacturaRevisar, sortMonto, pagados])
 
   const updateEstado = async (driverId, semana, estado) => {
     const fechaPago = estado === 'PAGADO' ? new Date().toISOString().split('T')[0] : null
@@ -1117,7 +1125,12 @@ export default function CPC() {
 
           {/* Facturas por revisar */}
           {estadoConteo.FACTURAS_CARGADAS > 0 && (
-            <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#7c2d12,#f97316)'}}>
+            <button
+              onClick={() => setFilterFacturaRevisar(v => !v)}
+              title="Clic para mostrar solo conductores con facturas por revisar"
+              className={`rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white transition-all text-left ${filterFacturaRevisar ? 'ring-2 ring-white ring-offset-2 brightness-110' : ''}`}
+              style={{background:'linear-gradient(135deg,#7c2d12,#f97316)'}}
+            >
               <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
                 <FileText size={18} className="text-white" />
               </div>
@@ -1125,7 +1138,7 @@ export default function CPC() {
                 <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Fact. Revisar</p>
                 <p className="text-base font-bold leading-tight">{estadoConteo.FACTURAS_CARGADAS}</p>
               </div>
-            </div>
+            </button>
           )}
         </div>
       )}
