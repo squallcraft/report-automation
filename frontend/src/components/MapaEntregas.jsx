@@ -115,8 +115,14 @@ export default function MapaEntregas({ mes, anio, fechaInicio, fechaFin, driverI
     return () => { cancelado = true }
   }, [activado, mes, anio, fechaInicio, fechaFin, driverId, sellerId])
 
-  // Si cambia el período mientras el mapa está activado, lo refresca.
-  // Si NO está activado, queda cerrado para no gastar bandwidth.
+  // IMPORTANTE: todos los hooks deben declararse ANTES de cualquier early return
+  // para no romper las reglas de hooks de React.
+  const puntosFiltrados = useMemo(() => {
+    if (!data?.puntos) return []
+    if (filtroEstado === 'todos') return data.puntos
+    const codigo = { same_day: 1, entregado_no_sd: 2, sin_entrega: 0, cancelado: 3 }[filtroEstado]
+    return data.puntos.filter(p => p.s === codigo)
+  }, [data, filtroEstado])
 
   if (!activado) {
     return (
@@ -151,13 +157,6 @@ export default function MapaEntregas({ mes, anio, fechaInicio, fechaFin, driverI
       </div>
     )
   }
-
-  const puntosFiltrados = useMemo(() => {
-    if (!data?.puntos) return []
-    if (filtroEstado === 'todos') return data.puntos
-    const codigo = { same_day: 1, entregado_no_sd: 2, sin_entrega: 0, cancelado: 3 }[filtroEstado]
-    return data.puntos.filter(p => p.s === codigo)
-  }, [data, filtroEstado])
 
   const cobertura = data
     ? data.total_asignaciones_periodo > 0
