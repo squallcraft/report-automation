@@ -2009,8 +2009,8 @@ def _ratio(num: int, den: int) -> float:
 # (dashboards globales, drill-downs, mapa, KPIs).
 # Ej.: "Global Courier" es un seller administrativo, "Benitez César" hace
 # repartos especiales que distorsionan el promedio.
-EFECTIVIDAD_SELLERS_EXCLUIDOS: set[int] = {114}        # Global Courier
-EFECTIVIDAD_DRIVERS_EXCLUIDOS: set[int] = {96, 66}     # Benitez César, Wilmer (Sequea)
+EFECTIVIDAD_SELLERS_EXCLUIDOS: set[int] = {114}              # Global Courier
+EFECTIVIDAD_DRIVERS_EXCLUIDOS: set[int] = {96, 66, 154, 108}  # Benitez César, Wilmer (Sequea), Millenium, Move
 
 
 def _aplicar_exclusiones(q):
