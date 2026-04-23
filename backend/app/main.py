@@ -784,6 +784,9 @@ with engine.connect() as conn:
         if "hora_entrega" not in env_cols2:
             safe_exec("ALTER TABLE envios ADD COLUMN hora_entrega TIME")
             safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_hora_entrega ON envios (hora_entrega) WHERE hora_entrega IS NOT NULL")
+        if "fecha_ruta" not in env_cols2:
+            safe_exec("ALTER TABLE envios ADD COLUMN fecha_ruta DATE")
+            safe_exec("CREATE INDEX IF NOT EXISTS ix_envios_fecha_ruta ON envios (fecha_ruta) WHERE fecha_ruta IS NOT NULL")
 
     # ── Migración: AsignacionRuta multi-intento (abril 2026) ──────────────────
     # Permite varias filas para el mismo tracking_id (una por withdrawal_date)

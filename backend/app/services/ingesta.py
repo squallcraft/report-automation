@@ -61,6 +61,7 @@ COLUMN_MAP = {
     "Descripción Paquete": "descripcion",
     "Ruta Nombre": "ruta_nombre",
     "Nombre Conductor": "driver_raw",
+    "Ruta Conductor": "driver_raw",
     "Lat": "lat",
     "Lon": "lon",
     "Latitud": "lat",
@@ -68,6 +69,8 @@ COLUMN_MAP = {
     "Hora Entrega": "hora_entrega",
     "Hora de Entrega": "hora_entrega",
     "HoraEntrega": "hora_entrega",
+    "Ruta Fecha": "fecha_ruta",
+    "Ruta ID": "ruta_id_col",
 }
 
 
@@ -250,6 +253,25 @@ def _build_envio_from_row(
     if raw_hora is not None and not (isinstance(raw_hora, float) and pd.isna(raw_hora)):
         hora_entrega_val = _parse_time(raw_hora)
 
+    fecha_ruta_val = None
+    raw_fecha_ruta = row.get("fecha_ruta") if "fecha_ruta" in row.index else None
+    if raw_fecha_ruta is not None and not (isinstance(raw_fecha_ruta, float) and pd.isna(raw_fecha_ruta)):
+        try:
+            if isinstance(raw_fecha_ruta, str):
+                fecha_ruta_val = pd.to_datetime(raw_fecha_ruta, dayfirst=True).date()
+            else:
+                fecha_ruta_val = pd.Timestamp(raw_fecha_ruta).date()
+        except Exception:
+            fecha_ruta_val = None
+
+    ruta_id_from_col = None
+    raw_ruta_id = row.get("ruta_id_col") if "ruta_id_col" in row.index else None
+    if raw_ruta_id is not None and not (isinstance(raw_ruta_id, float) and pd.isna(raw_ruta_id)):
+        try:
+            ruta_id_from_col = int(float(str(raw_ruta_id)))
+        except Exception:
+            ruta_id_from_col = None
+
     envio = Envio(
         semana=semana,
         mes=mes_envio,
@@ -282,6 +304,8 @@ def _build_envio_from_row(
         lat=lat_val,
         lon=lon_val,
         hora_entrega=hora_entrega_val,
+        fecha_ruta=fecha_ruta_val,
+        ruta_id=ruta_id_from_col,
         homologado=homologado,
         ingesta_id=ingesta_id,
     )

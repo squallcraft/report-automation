@@ -205,6 +205,7 @@ class Envio(Base):
     ruta_nombre = Column(String, nullable=True)
     ruta_id = Column(Integer, nullable=True, index=True)
     fecha_retiro = Column(Date, nullable=True, index=True)
+    fecha_ruta = Column(Date, nullable=True, index=True)
     direccion = Column(Text, nullable=True)
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)
