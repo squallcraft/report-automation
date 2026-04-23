@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Store, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, Eye, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Store, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, Eye, CheckCircle, XCircle, Clock, TrendingUp, Banknote, Wallet, CalendarCheck, Hourglass } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import UltimaActividad from '../../components/UltimaActividad'
 
@@ -848,22 +848,42 @@ export default function CPP() {
       </div>
 
       {pickups.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="card bg-blue-50 border-blue-200 text-center">
-            <p className="text-xs text-blue-600 font-medium">Total Egresos</p>
-            <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#1e40af,#3b82f6)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <TrendingUp size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total Egresos</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
+            </div>
           </div>
-          <div className="card bg-emerald-50 border-emerald-200 text-center">
-            <p className="text-xs text-emerald-600 font-medium">Total Pagado</p>
-            <p className="text-lg font-bold text-emerald-800">{fmt(totalesGenerales.pagado)}</p>
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#065f46,#10b981)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Banknote size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total Pagado</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.pagado)}</p>
+            </div>
           </div>
-          <div className="card bg-green-50 border-green-200 text-center">
-            <p className="text-xs text-green-600 font-medium">Semanas Pagadas</p>
-            <p className="text-lg font-bold text-green-800">{estadoConteo.PAGADO}</p>
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#14532d,#22c55e)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <CalendarCheck size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Sem. Pagadas</p>
+              <p className="text-base font-bold leading-tight">{estadoConteo.PAGADO}</p>
+            </div>
           </div>
-          <div className="card bg-amber-50 border-amber-200 text-center">
-            <p className="text-xs text-amber-600 font-medium">Pendientes</p>
-            <p className="text-lg font-bold text-amber-800">{estadoConteo.PENDIENTE}</p>
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#78350f,#f59e0b)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Hourglass size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Pendientes</p>
+              <p className="text-base font-bold leading-tight">{estadoConteo.PENDIENTE}</p>
+            </div>
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X, RotateCcw } from 'lucide-react'
+import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X, RotateCcw, TrendingUp, Banknote, Wallet, Receipt } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
 import UltimaActividad from '../../components/UltimaActividad'
@@ -874,24 +874,44 @@ export default function Facturacion() {
       </div>
 
       {sellers.length > 0 && (
-        <div className={`grid gap-4 ${tab === 'pagos' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
-          <div className="card bg-blue-50 border-blue-200 text-center">
-            <p className="text-xs text-blue-600 font-medium">Subtotal Neto</p>
-            <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
+        <div className={`grid gap-3 ${tab === 'pagos' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#1e40af,#3b82f6)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <TrendingUp size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Subtotal Neto</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
+            </div>
           </div>
-          <div className="card bg-gray-50 border-gray-200 text-center">
-            <p className="text-xs text-gray-600 font-medium">IVA (19%)</p>
-            <p className="text-lg font-bold text-gray-800">{fmt(totalesGenerales.iva)}</p>
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#374151,#6b7280)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Receipt size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">IVA (19%)</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.iva)}</p>
+            </div>
           </div>
-          <div className="card bg-green-50 border-green-200 text-center">
-            <p className="text-xs text-green-600 font-medium">Total con IVA</p>
-            <p className="text-lg font-bold text-green-800">{fmt(totalesGenerales.total)}</p>
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#065f46,#10b981)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Banknote size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total con IVA</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.total)}</p>
+            </div>
           </div>
           {tab === 'pagos' && (
-            <div className="card bg-violet-50 border-violet-200 text-center">
-              <p className="text-xs text-violet-600 font-medium">Por ingresar</p>
-              <p className="text-lg font-bold text-violet-800">{fmt(porIngresar.neto)}</p>
-              <p className="text-[11px] text-violet-600/90 mt-1 font-mono">Con IVA: {fmt(porIngresar.conIva)}</p>
+            <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#4c1d95,#7c3aed)'}}>
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <Wallet size={18} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Por ingresar</p>
+                <p className="text-base font-bold leading-tight truncate">{fmt(porIngresar.neto)}</p>
+                <p className="text-[10px] text-white/60 mt-0.5">c/IVA: {fmt(porIngresar.conIva)}</p>
+              </div>
             </div>
           )}
         </div>

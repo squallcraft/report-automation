@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users, CheckCircle, XCircle, Clock, TrendingUp, Banknote, Wallet, AlertTriangle, CalendarCheck, Hourglass } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import UltimaActividad from '../../components/UltimaActividad'
 
@@ -785,6 +785,7 @@ export default function CPC() {
   const [filterText, setFilterText] = useState('')
   const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [filterEstado, setFilterEstado] = useState('')
+  const [filterSobrepago, setFilterSobrepago] = useState(false)
   const [sortMonto, setSortMonto] = useState(null)
   const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
@@ -802,11 +803,6 @@ export default function CPC() {
         if (id !== reqId.current) return
         setData(tablaRes.data)
         setPagados(pagadosRes.data || {})
-        // #region agent log
-        const pagadosData = pagadosRes.data || {}
-        const totalCartola = Object.values(pagadosData).reduce((t, semMap) => t + Object.values(semMap).reduce((s, v) => s + v, 0), 0)
-        fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'16a0c0'},body:JSON.stringify({sessionId:'16a0c0',location:'CPC.jsx:cargar',message:'data_loaded_v2',data:{nDriversApi:(tablaRes.data?.drivers||[]).length,semanasDisponibles:tablaRes.data?.semanas_disponibles,totalCartolaAllWeeks:totalCartola,samplePagados:Object.entries(pagadosData).slice(0,5).map(([did,smap])=>({did,smap}))},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       })
       .catch(() => { if (id === reqId.current) toast.error('Error cargando CPC') })
       .finally(() => { if (id === reqId.current) setLoading(false) })
@@ -851,6 +847,17 @@ export default function CPC() {
       )
     }
 
+    if (filterSobrepago) {
+      const semanasACheck = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
+      result = result.filter(d =>
+        semanasACheck.some(sem => {
+          const monto = d.semanas[String(sem)]?.monto_neto || 0
+          const cartola = (pagados[String(d.driver_id)] || {})[String(sem)] || 0
+          return cartola > monto
+        })
+      )
+    }
+
     if (sortMonto) {
       const semList = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
       result = [...result].sort((a, b) => {
@@ -861,7 +868,7 @@ export default function CPC() {
     }
 
     return result
-  }, [data, filterText, filterEstado, filterSemanas, sortMonto])
+  }, [data, filterText, filterEstado, filterSemanas, filterSobrepago, sortMonto, pagados])
 
   const updateEstado = async (driverId, semana, estado) => {
     const fechaPago = estado === 'PAGADO' ? new Date().toISOString().split('T')[0] : null
@@ -927,13 +934,10 @@ export default function CPC() {
   }
 
   const totalesGenerales = useMemo(() => {
-    if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0 }
+    if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0, sobrepago: 0 }
     const activas = filterSemanas.size > 0 ? filterSemanas : null
-    // #region agent log
-    const dbgEntries = []
-    // #endregion
     const sums = drivers.reduce((acc, d) => {
-      let neto = 0, pagado = 0, porPagar = 0
+      let neto = 0, pagado = 0, porPagar = 0, sobrepago = 0
       const dPagados = pagados[String(d.driver_id)] || {}
       Object.entries(d.semanas || {}).forEach(([sem, s]) => {
         if (activas && !activas.has(Number(sem))) return
@@ -942,15 +946,10 @@ export default function CPC() {
         neto += monto
         pagado += Math.min(cartola, monto)
         porPagar += Math.max(0, monto - cartola)
-        // #region agent log
-        if (monto > 0) dbgEntries.push({ driver: d.driver_nombre, sem, monto, estado: s.estado, cartola, residual: Math.max(0, monto - cartola), esJefe: !!d.es_jefe_flota })
-        // #endregion
+        sobrepago += Math.max(0, cartola - monto)
       })
-      return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar }
-    }, { neto: 0, pagado: 0, porPagar: 0 })
-    // #region agent log
-    fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'16a0c0'},body:JSON.stringify({sessionId:'16a0c0',runId:'post-fix',location:'CPC.jsx:totalesGenerales',message:'totales_result_v3',data:{filterSemanas:activas?[...activas]:null,nDrivers:drivers.length,neto:sums.neto,pagado:sums.pagado,porPagar:sums.porPagar,check_neto_minus_paid_plus_pending:sums.neto-(sums.pagado+sums.porPagar),topEntries:dbgEntries.sort((a,b)=>b.residual-a.residual).slice(0,15)},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+      return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar, sobrepago: acc.sobrepago + sobrepago }
+    }, { neto: 0, pagado: 0, porPagar: 0, sobrepago: 0 })
     return sums
   }, [drivers, filterSemanas, pagados])
 
@@ -1073,31 +1072,90 @@ export default function CPC() {
       </div>
 
       {drivers.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-          <div className="card bg-blue-50 border-blue-200 text-center">
-            <p className="text-xs text-blue-600 font-medium">Total Egresos</p>
-            <p className="text-lg font-bold text-blue-800">{fmt(totalesGenerales.neto)}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+          {/* Total Egresos */}
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#1e40af,#3b82f6)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <TrendingUp size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total Egresos</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
+            </div>
           </div>
-          <div className="card bg-emerald-50 border-emerald-200 text-center">
-            <p className="text-xs text-emerald-600 font-medium">Total Pagado</p>
-            <p className="text-lg font-bold text-emerald-800">{fmt(totalesGenerales.pagado)}</p>
+
+          {/* Total Pagado */}
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#065f46,#10b981)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Banknote size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total Pagado</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.pagado)}</p>
+            </div>
           </div>
-          <div className="card bg-violet-50 border-violet-200 text-center">
-            <p className="text-xs text-violet-600 font-medium">Por pagar</p>
-            <p className="text-lg font-bold text-violet-800">{fmt(totalesGenerales.porPagar)}</p>
+
+          {/* Por pagar */}
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#4c1d95,#7c3aed)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Wallet size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Por pagar</p>
+              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.porPagar)}</p>
+            </div>
           </div>
-          <div className="card bg-green-50 border-green-200 text-center">
-            <p className="text-xs text-green-600 font-medium">Semanas Pagadas</p>
-            <p className="text-lg font-bold text-green-800">{estadoConteo.PAGADO}</p>
+
+          {/* Semanas Pagadas */}
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#14532d,#22c55e)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <CalendarCheck size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Sem. Pagadas</p>
+              <p className="text-base font-bold leading-tight">{estadoConteo.PAGADO}</p>
+            </div>
           </div>
-          <div className="card bg-amber-50 border-amber-200 text-center">
-            <p className="text-xs text-amber-600 font-medium">Pendientes</p>
-            <p className="text-lg font-bold text-amber-800">{estadoConteo.PENDIENTE}</p>
+
+          {/* Pendientes */}
+          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#78350f,#f59e0b)'}}>
+            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Hourglass size={18} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Pendientes</p>
+              <p className="text-base font-bold leading-tight">{estadoConteo.PENDIENTE}</p>
+            </div>
           </div>
+
+          {/* Sobrepago — clickeable */}
+          {totalesGenerales.sobrepago > 0 && (
+            <button
+              onClick={() => setFilterSobrepago(v => !v)}
+              title="Clic para filtrar conductores con sobrepago"
+              className={`rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white transition-all ${filterSobrepago ? 'ring-2 ring-white ring-offset-2' : ''}`}
+              style={{background:'linear-gradient(135deg,#7f1d1d,#ef4444)'}}
+            >
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-white" />
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Sobrepago</p>
+                <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.sobrepago)}</p>
+              </div>
+            </button>
+          )}
+
+          {/* Facturas por revisar */}
           {estadoConteo.FACTURAS_CARGADAS > 0 && (
-            <div className="card bg-orange-50 border-orange-300 text-center col-span-2 sm:col-span-1">
-              <p className="text-xs text-orange-600 font-medium">Facturas por revisar</p>
-              <p className="text-lg font-bold text-orange-700">{estadoConteo.FACTURAS_CARGADAS}</p>
+            <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#7c2d12,#f97316)'}}>
+              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <FileText size={18} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Fact. Revisar</p>
+                <p className="text-base font-bold leading-tight">{estadoConteo.FACTURAS_CARGADAS}</p>
+              </div>
             </div>
           )}
         </div>
