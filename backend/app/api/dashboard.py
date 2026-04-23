@@ -2558,7 +2558,7 @@ def efectividad_v2_mapa(
             "co": envio.comuna,
         })
 
-    total_periodo = db.query(func.count(AsignacionRuta.id)).filter(
+    total_periodo = db.query(sqlfunc.count(AsignacionRuta.id)).filter(
         AsignacionRuta.withdrawal_date >= inicio,
         AsignacionRuta.withdrawal_date <= fin,
     ).scalar() or 0
