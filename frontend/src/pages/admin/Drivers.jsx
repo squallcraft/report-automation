@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
 import Modal from '../../components/Modal'
 import toast from 'react-hot-toast'
-import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock, Truck, BarChart2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, Upload, FileText, CheckCircle, Clock, Truck, BarChart2, UserCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../../components/PageHeader'
 
@@ -247,6 +247,16 @@ export default function Drivers() {
       .catch(() => toast.error('Error al desactivar'))
   }
 
+  const handleActivar = (e, driver) => {
+    e.stopPropagation()
+    api.patch(`/drivers/${driver.id}/activar`)
+      .then(() => {
+        toast.success(`${driver.nombre} activado`)
+        fetchDrivers()
+      })
+      .catch(() => toast.error('Error al activar driver'))
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     setSaving(true)
@@ -382,13 +392,23 @@ export default function Drivers() {
               >
                 <Pencil size={16} />
               </button>
-              <button
-                onClick={(e) => handleDeleteClick(e, row)}
-                className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                title="Desactivar"
-              >
-                <Trash2 size={16} />
-              </button>
+              {row.activo ? (
+                <button
+                  onClick={(e) => handleDeleteClick(e, row)}
+                  className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                  title="Desactivar"
+                >
+                  <Trash2 size={16} />
+                </button>
+              ) : (
+                <button
+                  onClick={(e) => handleActivar(e, row)}
+                  className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors"
+                  title="Activar"
+                >
+                  <UserCheck size={16} />
+                </button>
+              )}
             </>
           )}
         </div>

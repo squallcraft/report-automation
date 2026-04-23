@@ -655,6 +655,24 @@ def eliminar_driver(driver_id: int, request: Request, db: Session = Depends(get_
     return {"message": "Driver desactivado"}
 
 
+@router.patch("/{driver_id}/activar")
+def activar_driver(driver_id: int, request: Request, db: Session = Depends(get_db), current_user=Depends(require_permission("drivers:editar"))):
+    driver = db.query(Driver).get(driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+    if driver.activo:
+        raise HTTPException(status_code=400, detail="El driver ya está activo")
+    driver.activo = True
+    db.commit()
+    audit(
+        db, "activar_driver",
+        usuario=current_user, request=request,
+        entidad="driver", entidad_id=driver.id,
+        metadata={"nombre": driver.nombre},
+    )
+    return {"message": "Driver activado"}
+
+
 @router.get("/mi-flota/info")
 def obtener_mi_flota(db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Devuelve info de flota para el driver logueado."""
