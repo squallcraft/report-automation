@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '../../api'
 import toast from 'react-hot-toast'
-import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users, CheckCircle, XCircle, Clock, TrendingUp, Banknote, Wallet, AlertTriangle, CalendarCheck, Hourglass } from 'lucide-react'
+import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users, CheckCircle, XCircle, Clock, TrendingUp, Banknote, Wallet, CalendarCheck, Hourglass } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import UltimaActividad from '../../components/UltimaActividad'
 
@@ -785,7 +785,6 @@ export default function CPC() {
   const [filterText, setFilterText] = useState('')
   const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [filterEstado, setFilterEstado] = useState('')
-  const [filterSobrepago, setFilterSobrepago] = useState(false)
   const [sortMonto, setSortMonto] = useState(null)
   const [modalTEF, setModalTEF] = useState(null)
   const [modalCartola, setModalCartola] = useState(false)
@@ -847,17 +846,6 @@ export default function CPC() {
       )
     }
 
-    if (filterSobrepago) {
-      const semanasACheck = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
-      result = result.filter(d =>
-        semanasACheck.some(sem => {
-          const monto = d.semanas[String(sem)]?.monto_neto || 0
-          const cartola = (pagados[String(d.driver_id)] || {})[String(sem)] || 0
-          return cartola > monto
-        })
-      )
-    }
-
     if (sortMonto) {
       const semList = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
       result = [...result].sort((a, b) => {
@@ -868,7 +856,7 @@ export default function CPC() {
     }
 
     return result
-  }, [data, filterText, filterEstado, filterSemanas, filterSobrepago, sortMonto, pagados])
+  }, [data, filterText, filterEstado, filterSemanas, sortMonto, pagados])
 
   const updateEstado = async (driverId, semana, estado) => {
     const fechaPago = estado === 'PAGADO' ? new Date().toISOString().split('T')[0] : null
@@ -934,22 +922,21 @@ export default function CPC() {
   }
 
   const totalesGenerales = useMemo(() => {
-    if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0, sobrepago: 0 }
+    if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0 }
     const activas = filterSemanas.size > 0 ? filterSemanas : null
     const sums = drivers.reduce((acc, d) => {
-      let neto = 0, pagado = 0, porPagar = 0, sobrepago = 0
+      let neto = 0, pagado = 0, porPagar = 0
       const dPagados = pagados[String(d.driver_id)] || {}
       Object.entries(d.semanas || {}).forEach(([sem, s]) => {
         if (activas && !activas.has(Number(sem))) return
         const monto = s.monto_neto || 0
         const cartola = dPagados[sem] || 0
         neto += monto
-        pagado += Math.min(cartola, monto)
+        pagado += cartola
         porPagar += Math.max(0, monto - cartola)
-        sobrepago += Math.max(0, cartola - monto)
       })
-      return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar, sobrepago: acc.sobrepago + sobrepago }
-    }, { neto: 0, pagado: 0, porPagar: 0, sobrepago: 0 })
+      return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar }
+    }, { neto: 0, pagado: 0, porPagar: 0 })
     return sums
   }, [drivers, filterSemanas, pagados])
 
@@ -1127,24 +1114,6 @@ export default function CPC() {
               <p className="text-base font-bold leading-tight">{estadoConteo.PENDIENTE}</p>
             </div>
           </div>
-
-          {/* Sobrepago — clickeable */}
-          {totalesGenerales.sobrepago > 0 && (
-            <button
-              onClick={() => setFilterSobrepago(v => !v)}
-              title="Clic para filtrar conductores con sobrepago"
-              className={`rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white transition-all ${filterSobrepago ? 'ring-2 ring-white ring-offset-2' : ''}`}
-              style={{background:'linear-gradient(135deg,#7f1d1d,#ef4444)'}}
-            >
-              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                <AlertTriangle size={18} className="text-white" />
-              </div>
-              <div className="min-w-0 text-left">
-                <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Sobrepago</p>
-                <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.sobrepago)}</p>
-              </div>
-            </button>
-          )}
 
           {/* Facturas por revisar */}
           {estadoConteo.FACTURAS_CARGADAS > 0 && (
