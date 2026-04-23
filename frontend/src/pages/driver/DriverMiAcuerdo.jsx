@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
-import { FileText, CheckCircle, AlertCircle } from 'lucide-react'
+import { FileText, CheckCircle, AlertCircle, Download, Eye } from 'lucide-react'
 
 function fmtFecha(iso) {
   if (!iso) return '—'
@@ -26,6 +26,7 @@ export default function DriverMiAcuerdo() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [descargando, setDescargando] = useState(false)
 
   if (user?.contratado) return <Navigate to="/driver" replace />
 
@@ -35,6 +36,27 @@ export default function DriverMiAcuerdo() {
       .catch(() => setError('No se pudo cargar la información del acuerdo.'))
       .finally(() => setLoading(false))
   }, [])
+
+  const abrirPDF = async (descargar = false) => {
+    setDescargando(true)
+    try {
+      const resp = await api.get('/drivers/me/acuerdo-pdf', { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }))
+      if (descargar) {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'acuerdo_ecourier.pdf'
+        a.click()
+      } else {
+        window.open(url, '_blank')
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    } catch {
+      alert('No se pudo generar el PDF del acuerdo.')
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -121,6 +143,28 @@ export default function DriverMiAcuerdo() {
           <p className="text-xs text-gray-400 mt-3 text-center leading-snug">
             Esta imagen es el registro oficial de tu firma digital.
           </p>
+        </div>
+      )}
+
+      {/* Botones Ver / Descargar — solo si hay acuerdo firmado */}
+      {vigente && (
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => abrirPDF(false)}
+            disabled={descargando}
+            className="flex items-center justify-center gap-2 py-3 rounded-2xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50"
+          >
+            <Eye size={16} />
+            Ver acuerdo
+          </button>
+          <button
+            onClick={() => abrirPDF(true)}
+            disabled={descargando}
+            className="flex items-center justify-center gap-2 py-3 rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50"
+          >
+            <Download size={16} />
+            {descargando ? 'Generando…' : 'Descargar PDF'}
+          </button>
         </div>
       )}
 

@@ -777,7 +777,212 @@ def mi_acuerdo_info(db: Session = Depends(get_db), user=Depends(get_current_user
     }
 
 
-@router.get("/me/acuerdo-tarifas")
+@router.get("/me/acuerdo-pdf")
+def descargar_acuerdo_pdf(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Genera y descarga el PDF del acuerdo firmado por el driver."""
+    if user["rol"] != RolEnum.DRIVER:
+        raise HTTPException(status_code=403, detail="Solo para drivers")
+    driver = db.get(Driver, user["id"])
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver no encontrado")
+    if not driver.acuerdo_aceptado:
+        raise HTTPException(status_code=404, detail="No hay acuerdo firmado registrado")
+
+    pdf_bytes = _generar_pdf_acuerdo(driver)
+    nombre = (driver.nombre or "driver").replace(" ", "_").lower()
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="acuerdo_ecourier_{nombre}.pdf"'},
+    )
+
+
+def _generar_pdf_acuerdo(driver) -> bytes:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image as RLImage
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import base64, re
+
+    try:
+        import font_roboto, os as _os
+        _fdir = _os.path.join(_os.path.dirname(font_roboto.__file__), "files")
+        pdfmetrics.registerFont(TTFont("Roboto", _os.path.join(_fdir, "Roboto-Regular.ttf")))
+        pdfmetrics.registerFont(TTFont("Roboto-Bold", _os.path.join(_fdir, "Roboto-Bold.ttf")))
+        FONT, FONTB = "Roboto", "Roboto-Bold"
+    except Exception:
+        FONT, FONTB = "Helvetica", "Helvetica-Bold"
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=2.5*cm, rightMargin=2.5*cm,
+        topMargin=2.5*cm, bottomMargin=2.5*cm,
+    )
+
+    AZUL = colors.HexColor("#003c72")
+    GRIS = colors.HexColor("#6b7280")
+    CLARO = colors.HexColor("#f3f4f6")
+
+    styles = getSampleStyleSheet()
+    sNormal = ParagraphStyle("n", fontName=FONT, fontSize=9, leading=14, alignment=TA_JUSTIFY, textColor=colors.HexColor("#111827"))
+    sTitle  = ParagraphStyle("t", fontName=FONTB, fontSize=16, leading=20, alignment=TA_CENTER, textColor=AZUL, spaceAfter=4)
+    sSub    = ParagraphStyle("s", fontName=FONT, fontSize=10, leading=14, alignment=TA_CENTER, textColor=GRIS, spaceAfter=12)
+    sClaus  = ParagraphStyle("c", fontName=FONTB, fontSize=9.5, leading=13, textColor=AZUL, spaceBefore=10, spaceAfter=3)
+    sMeta   = ParagraphStyle("m", fontName=FONT, fontSize=8.5, leading=13, textColor=GRIS)
+    sLegal  = ParagraphStyle("l", fontName=FONT, fontSize=7.5, leading=11, alignment=TA_CENTER, textColor=GRIS)
+
+    fmtCLP = lambda n: f"${n:,.0f}".replace(",", ".")
+
+    clausulas = [
+        ("1", "Naturaleza del Acuerdo",
+         "Las partes declaran expresamente que el presente acuerdo tiene carácter <b>estrictamente civil y comercial</b>, rigiéndose por el Código Civil y demás normativa aplicable. No existe vínculo de subordinación ni dependencia, ni relación laboral en los términos del Código del Trabajo. El Prestador ejecuta sus servicios de manera autónoma, por cuenta propia, bajo su exclusivo riesgo y responsabilidad, y <b>no forma parte de la estructura organizacional</b> de Ecourier."),
+        ("2", "Objeto de los Servicios",
+         "El presente acuerdo tiene por objeto la prestación de servicios de retiro, transporte y entrega de mercancías por parte del Prestador, utilizando sus propios medios materiales (vehículo, combustible, dispositivos tecnológicos, etc.). Cada servicio constituye una prestación independiente que debe ser previamente aceptada por el Prestador de forma libre y voluntaria.<br/><br/>Este Acuerdo es de <b>duración indefinida</b> y puede ser terminado en cualquier momento por cualquiera de las partes conforme a la cláusula de Terminación."),
+        ("3", "Autonomía, Libertad Operativa y Zona Geográfica",
+         "El Prestador gozará de plena autonomía en la organización y ejecución de sus servicios, determinando libremente su disponibilidad, horarios y forma de prestación. Podrá <b>aceptar o rechazar cualquier servicio sin expresión de causa</b>. No existe cláusula de exclusividad; el Prestador puede prestar servicios a terceros sin restricción.<br/><br/>La sugerencia de zonas, rutas o áreas de operación tendrá carácter meramente referencial. El Prestador es responsable de evaluar las condiciones de seguridad, distancia y conveniencia de cada servicio."),
+        ("4", "Uso de la Plataforma Digital — Acceso Personal e Intransferible",
+         "La plataforma digital de Ecourier es una herramienta tecnológica para facilitar la coordinación y trazabilidad de los servicios. Su utilización <b>no implica el ejercicio de facultades de dirección, control laboral o supervisión jerárquica</b>.<br/><br/>Las credenciales de acceso son <b>estrictamente personales e intransferibles</b>. Queda prohibido cederlas, compartirlas o permitir su uso a terceros. El incumplimiento es causal de término inmediato."),
+        ("5", "Coordinación Operativa",
+         "Las comunicaciones tendrán carácter estrictamente colaborativo y naturaleza referencial. Se valora que el Prestador informe con anticipación cuando no esté disponible: ausencias de un día con 12 horas; varios días con 15 días; en períodos de alta demanda con <b>30 días</b>. La falta de aviso no genera penalización, pero puede afectar la asignación futura."),
+        ("6", "Estándares de Calidad del Servicio",
+         "El Prestador ejecutará los servicios con diligencia: manipular la carga con cuidado y verificarla al recibirla; no abrir ni alterar empaques; mantener trato respetuoso con los destinatarios; respetar normas de tránsito; usar canales oficiales de comunicación; y abstenerse de negociaciones paralelas con clientes.<br/><br/>El incumplimiento grave o reiterado puede ser causal de término de la colaboración."),
+        ("7", "Régimen de Incumplimientos",
+         "<b>a) Leves:</b> No afectan sustancialmente la ejecución del servicio. Generan amonestación escrita.<br/><b>b) Graves:</b> Afectan la ejecución del servicio, la experiencia del cliente o la integridad de la carga. Obligan al Prestador a indemnizar el daño acreditado.<br/><b>c) Reiterados:</b> Dos o más en 30 días. Constituyen causal de término.<br/><br/>Previo a medidas económicas o término, Ecourier notificará al Prestador y otorgará 5 días hábiles para descargos."),
+        ("8", "Responsabilidad y Riesgo",
+         "El Prestador responde únicamente por daños consecuencia directa de su dolo o culpa grave debidamente acreditados. No responderá por caso fortuito, fuerza mayor o actos de terceros.<br/><br/>La responsabilidad se limita al daño directo con tope en el valor del servicio o carga involucrada, salvo dolo. <b>Ecourier no será responsable por los actos ejecutados por el Prestador en el ejercicio autónomo de su actividad.</b>"),
+        ("9", "Seguridad Personal y Protocolo de Robo",
+         "El Prestador prioriza en todo momento su <b>integridad física</b> por sobre la carga. Se recomienda el uso de calzado de seguridad y chaleco reflectante.<br/><br/><b>En caso de asalto:</b> no oponer resistencia; comunicar de inmediato a operaciones; realizar denuncia en Carabineros dentro de 24 horas y enviar copia a Ecourier."),
+        ("10", "Responsabilidad por Infracciones de Tránsito",
+         "Toda multa, infracción o sanción de tránsito es de <b>exclusiva responsabilidad del Prestador</b>, incluyendo las derivadas del estado del vehículo, documentación vencida o conducta al volante. Ecourier no asume ninguna responsabilidad en esta materia."),
+        ("11", "Tarifas y Condiciones Económicas",
+         "Los servicios serán remunerados conforme a las tarifas vigentes al momento de la prestación. Ecourier podrá modificarlas con <b>30 días de aviso previo</b>; ante cualquier modificación se generará una nueva versión de este Acuerdo.<br/><br/>No existe remuneración fija ni garantía de ingresos mínimos. El Prestador deberá emitir <b>boleta de honorarios o factura</b> como requisito para el pago."),
+        ("12", "Protección de Datos Personales",
+         "Conforme a la <b>Ley N° 19.628</b>, el Prestador usará los datos personales de destinatarios únicamente para fines de la entrega. El Prestador autoriza a Ecourier para el tratamiento de sus datos personales con la finalidad de gestionar la relación contractual."),
+        ("13", "Trazabilidad y Prueba",
+         "Las partes acuerdan que toda información relativa a la ejecución de los servicios, incluyendo registros en la plataforma y comunicaciones electrónicas, constituirá <b>medio válido de prueba</b> para determinar el cumplimiento de las obligaciones."),
+        ("14", "Confidencialidad",
+         "El Prestador mantiene estricta confidencialidad sobre datos de clientes, rutas, tarifas, procesos operativos y estrategias comerciales durante la colaboración y por <b>24 meses después de su término</b>. El incumplimiento puede derivar en acciones legales."),
+        ("15", "Terminación",
+         "El presente acuerdo podrá ser terminado por cualquiera de las partes en cualquier momento, sin expresión de causa y <b>sin derecho a indemnización</b>, mediante comunicación por correo electrónico o canal oficial.<br/><br/>Son causales de término inmediato: incumplimientos graves o reiterados; faltas graves de conducta con clientes; pérdida de carga por negligencia; falsificación de información; cesión de credenciales a terceros."),
+        ("16", "Ley Aplicable y Resolución de Disputas",
+         "Este Acuerdo se rige por las leyes de la República de Chile. Las controversias serán sometidas a la jurisdicción de los <b>Tribunales Ordinarios de Justicia de Santiago</b>, renunciando las partes a cualquier otro fuero."),
+        ("17", "Modificaciones al Acuerdo",
+         "Ecourier podrá modificar los términos de este Acuerdo con <b>30 días de aviso previo</b>. Cualquier modificación generará una nueva versión del Acuerdo que el Prestador deberá aceptar expresamente para continuar prestando servicios."),
+        ("18", "Aceptación Digital",
+         "Este Acuerdo se acepta de forma electrónica a través de la plataforma de Ecourier, en conformidad con la <b>Ley N° 19.799 sobre Documentos Electrónicos, Firma Electrónica y Servicios de Certificación</b>. La firma digital tiene plena validez legal."),
+    ]
+
+    story = []
+
+    # Encabezado
+    story.append(Paragraph("ACUERDO DE PRESTACIÓN DE SERVICIOS INDEPENDIENTES", sTitle))
+    story.append(Paragraph(f"LOGÍSTICA Y TRANSPORTE E-COURIER SpA · RUT 77.512.163-7 · Moneda 1137 of. 56, Santiago", sSub))
+    story.append(HRFlowable(width="100%", thickness=1, color=AZUL))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph(
+        f"En Santiago, entre <b>LOGÍSTICA Y TRANSPORTE E-COURIER SpA</b>, RUT N° 77.512.163-7, con domicilio en "
+        f"Moneda N°1137, Oficina 56, comuna de Santiago, en adelante \"Ecourier\"; y <b>{driver.nombre}</b>, "
+        f"RUT {driver.rut or '—'}, en adelante el \"Prestador\", se ha convenido el siguiente Acuerdo "
+        f"de Prestación de Servicios Independientes (Versión {driver.acuerdo_version}).",
+        sNormal,
+    ))
+    story.append(Spacer(1, 8))
+
+    for num, titulo, texto in clausulas:
+        story.append(Paragraph(f"Cláusula {num}: {titulo}", sClaus))
+        story.append(Paragraph(texto, sNormal))
+
+        # Insertar tabla de tarifas después de cláusula 11
+        if num == "11":
+            tarifas = _tarifas_driver(driver)
+            if tarifas:
+                story.append(Spacer(1, 6))
+                tabla_data = [["Concepto", "Tarifa (CLP)"]]
+                for concepto, valor in tarifas.items():
+                    tabla_data.append([concepto, fmtCLP(valor)])
+                t = Table(tabla_data, colWidths=[11*cm, 4*cm])
+                t.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), AZUL),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), FONTB),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                    ("FONTNAME", (0, 1), (-1, -1), FONT),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, CLARO]),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ]))
+                story.append(t)
+                story.append(Spacer(1, 4))
+
+    # Bloque de firma
+    story.append(Spacer(1, 14))
+    story.append(HRFlowable(width="100%", thickness=1, color=AZUL))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("REGISTRO DE ACEPTACIÓN DIGITAL", ParagraphStyle("fh", fontName=FONTB, fontSize=10, leading=14, textColor=AZUL, alignment=TA_CENTER)))
+    story.append(Spacer(1, 8))
+
+    fecha_str = driver.acuerdo_fecha.strftime("%d-%m-%Y %H:%M") if driver.acuerdo_fecha else "—"
+    meta_rows = [
+        ["Prestador", driver.nombre or "—"],
+        ["RUT", driver.rut or "—"],
+        ["Versión aceptada", f"v{driver.acuerdo_version}" if driver.acuerdo_version else "—"],
+        ["Fecha y hora de firma", fecha_str],
+        ["Dirección IP", driver.acuerdo_ip or "—"],
+    ]
+    meta_table = Table(meta_rows, colWidths=[5*cm, 10*cm])
+    meta_table.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (0, -1), FONTB),
+        ("FONTNAME", (1, 0), (1, -1), FONT),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("TEXTCOLOR", (0, 0), (0, -1), AZUL),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#e5e7eb")),
+    ]))
+    story.append(meta_table)
+
+    # Imagen de firma
+    if driver.acuerdo_firma:
+        try:
+            raw = driver.acuerdo_firma
+            if "," in raw:
+                raw = raw.split(",", 1)[1]
+            img_bytes = base64.b64decode(raw)
+            img_buf = io.BytesIO(img_bytes)
+            firma_img = RLImage(img_buf, width=6*cm, height=2.5*cm)
+            story.append(Spacer(1, 10))
+            story.append(Paragraph("Firma digital registrada:", sMeta))
+            story.append(Spacer(1, 4))
+            firma_wrap = Table([[firma_img]], colWidths=[7*cm])
+            firma_wrap.setStyle(TableStyle([
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            story.append(firma_wrap)
+        except Exception:
+            pass
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(
+        "El presente registro de aceptación tiene validez legal conforme a la Ley N° 19.799 sobre Documentos "
+        "Electrónicos, Firma Electrónica y Servicios de Certificación de la República de Chile.",
+        sLegal,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
 def mi_acuerdo_tarifas(db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Anexo de tarifas dinámico — siempre refleja la configuración actual."""
     if user["rol"] != RolEnum.DRIVER:
