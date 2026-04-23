@@ -940,7 +940,7 @@ export default function CPC() {
         const monto = s.monto_neto || 0
         const cartola = dPagados[sem] || 0
         neto += monto
-        pagado += cartola
+        pagado += Math.min(cartola, monto)
         porPagar += Math.max(0, monto - cartola)
         // #region agent log
         if (monto > 0) dbgEntries.push({ driver: d.driver_nombre, sem, monto, estado: s.estado, cartola, residual: Math.max(0, monto - cartola), esJefe: !!d.es_jefe_flota })
@@ -949,7 +949,7 @@ export default function CPC() {
       return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar }
     }, { neto: 0, pagado: 0, porPagar: 0 })
     // #region agent log
-    fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'16a0c0'},body:JSON.stringify({sessionId:'16a0c0',location:'CPC.jsx:totalesGenerales',message:'totales_result_v2',data:{filterSemanas:activas?[...activas]:null,nDrivers:drivers.length,neto:sums.neto,pagado:sums.pagado,porPagar:sums.porPagar,topEntries:dbgEntries.sort((a,b)=>b.residual-a.residual).slice(0,15)},timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'16a0c0'},body:JSON.stringify({sessionId:'16a0c0',runId:'post-fix',location:'CPC.jsx:totalesGenerales',message:'totales_result_v3',data:{filterSemanas:activas?[...activas]:null,nDrivers:drivers.length,neto:sums.neto,pagado:sums.pagado,porPagar:sums.porPagar,check_neto_minus_paid_plus_pending:sums.neto-(sums.pagado+sums.porPagar),topEntries:dbgEntries.sort((a,b)=>b.residual-a.residual).slice(0,15)},timestamp:Date.now()})}).catch(()=>{});
     // #endregion
     return sums
   }, [drivers, filterSemanas, pagados])
