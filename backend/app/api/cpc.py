@@ -35,7 +35,7 @@ from app.models import (
     Driver, Envio, Retiro, AjusteLiquidacion,
     PagoSemanaDriver, PagoCartola, CalendarioSemanas,
     CartolaCarga, TipoEntidadEnum, EstadoPagoEnum,
-    FacturaDriver, EstadoFacturaDriverEnum,
+    FacturaDriver, EstadoFacturaDriverEnum, AuditLog,
 )
 from app.services.iva_drivers import recalcular_pago_iva
 
@@ -1263,3 +1263,41 @@ def descargar_factura_driver(
         filename=factura.archivo_nombre or "factura.pdf",
         media_type="application/octet-stream",
     )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: última actividad de pagos del mes (CPC)
+# ---------------------------------------------------------------------------
+
+@router.get("/ultima-actividad")
+def ultima_actividad_cpc(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Retorna las últimas 5 acciones de pago de conductores en el mes/año dado."""
+    acciones = ["pago_manual_driver", "carga_cartola_driver", "importar_bancaria_driver"]
+    logs = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.accion.in_(acciones),
+            AuditLog.metadata_["mes"].as_integer() == mes,
+            AuditLog.metadata_["anio"].as_integer() == anio,
+        )
+        .order_by(AuditLog.timestamp.desc())
+        .limit(5)
+        .all()
+    )
+    return [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "usuario": log.usuario_nombre,
+            "accion": log.accion,
+            "nombre": (log.metadata_ or {}).get("nombre"),
+            "semana": (log.metadata_ or {}).get("semana"),
+            "estado": (log.metadata_ or {}).get("estado"),
+        }
+        for log in logs
+    ]

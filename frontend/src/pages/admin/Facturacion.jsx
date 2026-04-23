@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { FileText, Check, DollarSign, Loader2, AlertTriangle, Upload, AlertCircle, X, RotateCcw } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
+import UltimaActividad from '../../components/UltimaActividad'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const ESTADO_COLORS = {
@@ -867,6 +868,10 @@ export default function Facturacion() {
           </div>
         </div>
       )}
+
+      <div className="px-1">
+        <UltimaActividad endpoint="/facturacion/ultima-actividad" mes={mes} anio={anio} />
+      </div>
 
       {sellers.length > 0 && (
         <div className={`grid gap-4 ${tab === 'pagos' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>

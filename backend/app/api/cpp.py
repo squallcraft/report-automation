@@ -22,7 +22,7 @@ from app.auth import require_admin_or_administracion, require_pickup
 from app.models import (
     Pickup, RecepcionPaquete, Envio, Seller, Driver, Retiro,
     PagoSemanaPickup, PagoCartolaPickup, CalendarioSemanas,
-    CartolaCarga, EstadoPagoEnum, FacturaPickup, EstadoFacturaPickupEnum,
+    CartolaCarga, EstadoPagoEnum, FacturaPickup, EstadoFacturaPickupEnum, AuditLog,
 )
 from app.services.audit import registrar as audit
 from app.services.contabilidad import asiento_pago_pickup
@@ -903,3 +903,41 @@ def pickup_descargar_factura(
         filename=factura.archivo_nombre or "factura.pdf",
         media_type="application/octet-stream",
     )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: última actividad de pagos del mes (CPP)
+# ---------------------------------------------------------------------------
+
+@router.get("/ultima-actividad")
+def ultima_actividad_cpp(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Retorna las últimas 5 acciones de pago de pickups en el mes/año dado."""
+    acciones = ["pago_manual_pickup", "carga_cartola_pickup"]
+    logs = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.accion.in_(acciones),
+            AuditLog.metadata_["mes"].as_integer() == mes,
+            AuditLog.metadata_["anio"].as_integer() == anio,
+        )
+        .order_by(AuditLog.timestamp.desc())
+        .limit(5)
+        .all()
+    )
+    return [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "usuario": log.usuario_nombre,
+            "accion": log.accion,
+            "nombre": (log.metadata_ or {}).get("nombre"),
+            "semana": (log.metadata_ or {}).get("semana"),
+            "estado": (log.metadata_ or {}).get("estado"),
+        }
+        for log in logs
+    ]

@@ -3,6 +3,7 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import { Truck, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, ChevronRight, Users, CheckCircle, XCircle, Clock } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import UltimaActividad from '../../components/UltimaActividad'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const SEMANAS = [1, 2, 3, 4, 5]
@@ -1049,6 +1050,10 @@ export default function CPC() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="px-1">
+        <UltimaActividad endpoint="/cpc/ultima-actividad" mes={mes} anio={anio} />
       </div>
 
       {drivers.length > 0 && (

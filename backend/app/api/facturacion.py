@@ -29,7 +29,7 @@ from app.models import (
     PagoSemanaSeller, FacturaMensualSeller,
     CalendarioSemanas, TipoEntidadEnum,
     EstadoPagoEnum, EstadoFacturaEnum,
-    CartolaCarga, PagoCartolaSeller,
+    CartolaCarga, PagoCartolaSeller, AuditLog,
 )
 from app.services.liquidacion import calcular_liquidacion_sellers
 from app.services.audit import registrar as audit
@@ -1293,3 +1293,41 @@ def fix_is_facturado(
         "anio": anio,
         "semana_desde": semana_desde,
     }
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: última actividad de pagos del mes (CPS)
+# ---------------------------------------------------------------------------
+
+@router.get("/ultima-actividad")
+def ultima_actividad_cps(
+    mes: int = Query(...),
+    anio: int = Query(...),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Retorna las últimas 5 acciones de pago de sellers en el mes/año dado."""
+    acciones = ["pago_manual_seller", "carga_cartola_seller"]
+    logs = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.accion.in_(acciones),
+            AuditLog.metadata_["mes"].as_integer() == mes,
+            AuditLog.metadata_["anio"].as_integer() == anio,
+        )
+        .order_by(AuditLog.timestamp.desc())
+        .limit(5)
+        .all()
+    )
+    return [
+        {
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "usuario": log.usuario_nombre,
+            "accion": log.accion,
+            "nombre": (log.metadata_ or {}).get("nombre"),
+            "semana": (log.metadata_ or {}).get("semana"),
+            "estado": (log.metadata_ or {}).get("estado"),
+        }
+        for log in logs
+    ]

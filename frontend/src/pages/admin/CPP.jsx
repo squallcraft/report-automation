@@ -3,6 +3,7 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import { Store, Download, Upload, FileText, X, Check, AlertCircle, ChevronDown, Eye, CheckCircle, XCircle, Clock } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
+import UltimaActividad from '../../components/UltimaActividad'
 
 const MESES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const SEMANAS = [1, 2, 3, 4, 5]
@@ -840,6 +841,10 @@ export default function CPP() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="px-1">
+        <UltimaActividad endpoint="/cpp/ultima-actividad" mes={mes} anio={anio} />
       </div>
 
       {pickups.length > 0 && (
