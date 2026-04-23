@@ -802,6 +802,11 @@ export default function CPC() {
         if (id !== reqId.current) return
         setData(tablaRes.data)
         setPagados(pagadosRes.data || {})
+        // #region agent log
+        const pagadosData = pagadosRes.data || {}
+        const totalCartola = Object.values(pagadosData).reduce((t, semMap) => t + Object.values(semMap).reduce((s, v) => s + v, 0), 0)
+        fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'16a0c0'},body:JSON.stringify({sessionId:'16a0c0',location:'CPC.jsx:cargar',message:'data_loaded',data:{nDriversApi:(tablaRes.data?.drivers||[]).length,semanasDisponibles:tablaRes.data?.semanas_disponibles,totalCartolaAllWeeks:totalCartola,samplePagados:Object.entries(pagadosData).slice(0,5).map(([did,smap])=>({did,smap}))},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       })
       .catch(() => { if (id === reqId.current) toast.error('Error cargando CPC') })
       .finally(() => { if (id === reqId.current) setLoading(false) })
@@ -924,6 +929,9 @@ export default function CPC() {
   const totalesGenerales = useMemo(() => {
     if (!drivers.length) return { neto: 0, pagado: 0, porPagar: 0 }
     const activas = filterSemanas.size > 0 ? filterSemanas : null
+    // #region agent log
+    const dbgEntries = []
+    // #endregion
     const sums = drivers.reduce((acc, d) => {
       let neto = 0, pagado = 0, porPagar = 0
       const dPagados = pagados[String(d.driver_id)] || {}
@@ -932,9 +940,15 @@ export default function CPC() {
         neto += s.monto_neto || 0
         pagado += dPagados[sem] || 0
         if (s.estado !== 'PAGADO') porPagar += s.monto_neto || 0
+        // #region agent log
+        if ((s.monto_neto || 0) > 0) dbgEntries.push({ driver: d.driver_nombre, sem, monto: s.monto_neto, estado: s.estado, esJefe: !!d.es_jefe_flota })
+        // #endregion
       })
       return { neto: acc.neto + neto, pagado: acc.pagado + pagado, porPagar: acc.porPagar + porPagar }
     }, { neto: 0, pagado: 0, porPagar: 0 })
+    // #region agent log
+    fetch('http://127.0.0.1:7440/ingest/c19a5885-6f1f-48b3-88b9-27818b7778d7',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'16a0c0'},body:JSON.stringify({sessionId:'16a0c0',location:'CPC.jsx:totalesGenerales',message:'totales_result',data:{filterSemanas:activas?[...activas]:null,nDrivers:drivers.length,neto:sums.neto,pagado:sums.pagado,porPagar:sums.porPagar,topEntries:dbgEntries.sort((a,b)=>b.monto-a.monto).slice(0,20)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return sums
   }, [drivers, filterSemanas, pagados])
 
