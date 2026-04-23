@@ -804,6 +804,13 @@ with engine.connect() as conn:
         # lógica deben tener intento_nro=1 (es lo que ya hace el DEFAULT del
         # ALTER, pero lo dejamos explícito por si alguien insertó NULL).
         safe_exec("UPDATE asignacion_ruta SET intento_nro = 1 WHERE intento_nro IS NULL OR intento_nro = 0")
+        # Nuevos campos del endpoint del courier (address_full, address_lat, address_lon)
+        if "address_full" not in ar_cols:
+            safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN address_full TEXT")
+        if "address_lat" not in ar_cols:
+            safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN address_lat VARCHAR(40)")
+        if "address_lon" not in ar_cols:
+            safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN address_lon VARCHAR(40)")
 
     # ── Migración: Grok Memory System (brief + snapshot) ──
     safe_exec("""

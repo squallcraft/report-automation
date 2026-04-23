@@ -2364,6 +2364,10 @@ class AsignacionRuta(Base):
     status_externo = Column(String, nullable=True)
     estado_calculado = Column(String(20), nullable=False, default="sin_entrega")
 
+    address_full = Column(String, nullable=True)
+    address_lat = Column(String, nullable=True)
+    address_lon = Column(String, nullable=True)
+
     raw_payload = Column(JSON, nullable=True)
 
     intentos_reconciliacion = Column(Integer, nullable=False, default=0)

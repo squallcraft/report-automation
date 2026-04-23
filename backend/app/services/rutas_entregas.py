@@ -103,6 +103,9 @@ def fetch_routes_by_date(
             "route_name": r.get("route_name"),
             "driver_id": r.get("driver_id"),
             "driver_name": r.get("driver_name"),
+            "address_full": r.get("address_full"),
+            "address_lat": r.get("address_lat"),
+            "address_lon": r.get("address_lon"),
             "raw": r,
         })
     # Si el endpoint trajo error parcial pero sí hay datos, lo logueamos y seguimos.
@@ -305,6 +308,9 @@ def upsert_asignacion(db: Session, raw: dict) -> tuple[AsignacionRuta, bool]:
     asig.driver_name = raw.get("driver_name") or asig.driver_name
     asig.seller_code = raw.get("seller_code") or asig.seller_code
     asig.status_externo = raw.get("status") or asig.status_externo
+    asig.address_full = raw.get("address_full") or asig.address_full
+    asig.address_lat = raw.get("address_lat") or asig.address_lat
+    asig.address_lon = raw.get("address_lon") or asig.address_lon
     asig.raw_payload = raw.get("raw") or raw
 
     if asig.driver_id is None:
@@ -339,6 +345,14 @@ def reconciliar_asignacion(db: Session, asig: AsignacionRuta) -> bool:
             envio.ruta_id = asig.route_id
         if (envio.ruta_nombre is None or envio.ruta_nombre == "") and asig.route_name:
             envio.ruta_nombre = asig.route_name
+        # Propagar lat/lon del courier si el envío no tiene coords propias
+        if envio.lat is None and asig.address_lat is not None:
+            from app.services.coordenadas import parse_coord, coords_validas
+            lat_v = parse_coord(asig.address_lat)
+            lon_v = parse_coord(asig.address_lon) if asig.address_lon is not None else None
+            if coords_validas(lat_v, lon_v):
+                envio.lat = lat_v
+                envio.lon = lon_v
 
     asig.estado_calculado = _calcular_estado(asig, envio)
     asig.intentos_reconciliacion = (asig.intentos_reconciliacion or 0) + 1

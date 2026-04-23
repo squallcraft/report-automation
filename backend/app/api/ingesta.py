@@ -115,6 +115,8 @@ def descargar_plantilla():
         "Descripción Paquete",
         "Ruta Nombre",
         "Nombre Conductor",
+        "Lat",
+        "Lon",
     ]
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -135,11 +137,11 @@ def descargar_plantilla():
         cell.border = thin_border
 
     ejemplo = [
-        ["Carlos Pérez", "2026-02-24", "2026-02-25", "TRK-00001", "SC-10045", "MercadoLibre Chile", "ML-V-123456", 25990, "Av. Providencia 1234, Providencia, Santiago, Chile", "Providencia", 1, "[MLC1774402962] - Crema Reductora 500ml", "Ruta Santiago Centro", "Carlos Pérez"],
-        ["Miguel López", "2026-02-24", "2026-02-25", "TRK-00002", "SC-10078", "Falabella", "FAL-789012", 45990, "Los Leones 567, Las Condes, Santiago, Chile", "Las Condes", 2, "Zapatillas deportivas talla 42", "Ruta Las Condes", "Miguel López"],
-        ["Fernando Rojas", "2026-02-24", "2026-02-26", "TRK-00003", "SC-20012", "Ferretería Oviedo", "OV-345678", 12500, "Camino La Estrella 890, Padre Hurtado, Santiago, Chile", "Padre Hurtado", 1, "[MLC2220238846] - Taladro percutor 800W", "Ruta Sur", "Fernando Rojas"],
-        ["Augusto Silva", "2026-02-25", "2026-02-26", "TRK-00004", "SC-30099", "Aventura Store", "AS-901234", 89990, "Av. Matta 2345, Santiago, Santiago, Chile", "Santiago", 3, "Carpa camping 4 personas", "Ruta Santiago Sur", "Augusto Silva"],
-        ["Carlos Pérez", "2026-02-25", "2026-02-27", "TRK-00005", "SC-10046", "MercadoLibre Chile", "ML-V-567890", 15990, "Av. Macul 4567, La Florida, Santiago, Chile", "La Florida", 1, "Set de ollas antiadherentes", "Ruta Santiago Centro", "Carlos Pérez"],
+        ["Carlos Pérez", "2026-02-24", "2026-02-25", "TRK-00001", "SC-10045", "MercadoLibre Chile", "ML-V-123456", 25990, "Av. Providencia 1234, Providencia, Santiago, Chile", "Providencia", 1, "[MLC1774402962] - Crema Reductora 500ml", "Ruta Santiago Centro", "Carlos Pérez", -33.4368, -70.6362],
+        ["Miguel López", "2026-02-24", "2026-02-25", "TRK-00002", "SC-10078", "Falabella", "FAL-789012", 45990, "Los Leones 567, Las Condes, Santiago, Chile", "Las Condes", 2, "Zapatillas deportivas talla 42", "Ruta Las Condes", "Miguel López", -33.4161, -70.5996],
+        ["Fernando Rojas", "2026-02-24", "2026-02-26", "TRK-00003", "SC-20012", "Ferretería Oviedo", "OV-345678", 12500, "Camino La Estrella 890, Padre Hurtado, Santiago, Chile", "Padre Hurtado", 1, "[MLC2220238846] - Taladro percutor 800W", "Ruta Sur", "Fernando Rojas", -33.5608, -70.7487],
+        ["Augusto Silva", "2026-02-25", "2026-02-26", "TRK-00004", "SC-30099", "Aventura Store", "AS-901234", 89990, "Av. Matta 2345, Santiago, Santiago, Chile", "Santiago", 3, "Carpa camping 4 personas", "Ruta Santiago Sur", "Augusto Silva", -33.4589, -70.6483],
+        ["Carlos Pérez", "2026-02-25", "2026-02-27", "TRK-00005", "SC-10046", "MercadoLibre Chile", "ML-V-567890", 15990, "Av. Macul 4567, La Florida, Santiago, Chile", "La Florida", 1, "Set de ollas antiadherentes", "Ruta Santiago Centro", "Carlos Pérez", -33.5085, -70.5880],
     ]
 
     data_font = Font(size=10)
@@ -155,11 +157,11 @@ def descargar_plantilla():
             if row_idx % 2 == 0:
                 cell.fill = alt_fill
 
-    anchos = [22, 14, 14, 16, 14, 22, 18, 18, 50, 18, 16, 45, 22, 22]
+    anchos = [22, 14, 14, 16, 14, 22, 18, 18, 50, 18, 16, 45, 22, 22, 12, 12]
     for col_idx, ancho in enumerate(anchos, 1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = ancho
 
-    ws.auto_filter.ref = "A1:N1"
+    ws.auto_filter.ref = "A1:P1"
     ws.freeze_panes = "A2"
 
     ws_instrucciones = wb.create_sheet("Instrucciones")
@@ -181,6 +183,8 @@ def descargar_plantilla():
         ("Descripción Paquete", "Descripción del producto. Si contiene un código [MLCxxxxxxx], se detecta para aplicar extras."),
         ("Ruta Nombre", "Nombre de la ruta asignada al driver."),
         ("Nombre Conductor", "Nombre completo del conductor que realizó la entrega."),
+        ("Lat", "Latitud decimal del destino (ej: -33.4368). Opcional; habilita el mapa geográfico."),
+        ("Lon", "Longitud decimal del destino (ej: -70.6362). Opcional; habilita el mapa geográfico."),
         ("", ""),
         ("Notas importantes:", ""),
         ("", "• La columna 'Fecha Entrega' es OBLIGATORIA. Filas sin esta fecha serán ignoradas."),
