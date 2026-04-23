@@ -104,20 +104,20 @@ def descargar_plantilla():
         "User - Nombre",
         "Pedido Fecha",
         "Fecha Entrega",
+        "Hora Entrega",
         "Tracking ID",
-        "Seller Code",
         "Seller Name",
+        "Seller Code",
         "External ID",
         "External Costo Orden",
         "Dirección",
+        "Lat",
+        "Lon",
         "Comuna",
         "Cantidad de Bultos",
         "Descripción Paquete",
         "Ruta Nombre",
         "Nombre Conductor",
-        "Lat",
-        "Lon",
-        "Hora Entrega",
     ]
 
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -138,11 +138,11 @@ def descargar_plantilla():
         cell.border = thin_border
 
     ejemplo = [
-        ["Carlos Pérez", "2026-02-24", "2026-02-25", "TRK-00001", "SC-10045", "MercadoLibre Chile", "ML-V-123456", 25990, "Av. Providencia 1234, Providencia, Santiago, Chile", "Providencia", 1, "[MLC1774402962] - Crema Reductora 500ml", "Ruta Santiago Centro", "Carlos Pérez", -33.4368, -70.6362, "16:42:00"],
-        ["Miguel López", "2026-02-24", "2026-02-25", "TRK-00002", "SC-10078", "Falabella", "FAL-789012", 45990, "Los Leones 567, Las Condes, Santiago, Chile", "Las Condes", 2, "Zapatillas deportivas talla 42", "Ruta Las Condes", "Miguel López", -33.4161, -70.5996, "18:15:00"],
-        ["Fernando Rojas", "2026-02-24", "2026-02-26", "TRK-00003", "SC-20012", "Ferretería Oviedo", "OV-345678", 12500, "Camino La Estrella 890, Padre Hurtado, Santiago, Chile", "Padre Hurtado", 1, "[MLC2220238846] - Taladro percutor 800W", "Ruta Sur", "Fernando Rojas", -33.5608, -70.7487, "11:30:00"],
-        ["Augusto Silva", "2026-02-25", "2026-02-26", "TRK-00004", "SC-30099", "Aventura Store", "AS-901234", 89990, "Av. Matta 2345, Santiago, Santiago, Chile", "Santiago", 3, "Carpa camping 4 personas", "Ruta Santiago Sur", "Augusto Silva", -33.4589, -70.6483, "21:05:00"],
-        ["Carlos Pérez", "2026-02-25", "2026-02-27", "TRK-00005", "SC-10046", "MercadoLibre Chile", "ML-V-567890", 15990, "Av. Macul 4567, La Florida, Santiago, Chile", "La Florida", 1, "Set de ollas antiadherentes", "Ruta Santiago Centro", "Carlos Pérez", -33.5085, -70.5880, "19:50:00"],
+        ["Carlos Pérez",   "2026-02-24", "2026-02-25", "16:42:00", "TRK-00001", "MercadoLibre Chile", "SC-10045", "ML-V-123456", 25990, "Av. Providencia 1234, Providencia, Santiago, Chile", -33.4368, -70.6362, "Providencia",   1, "[MLC1774402962] - Crema Reductora 500ml",    "Ruta Santiago Centro", "Carlos Pérez"],
+        ["Miguel López",   "2026-02-24", "2026-02-25", "18:15:00", "TRK-00002", "Falabella",          "SC-10078", "FAL-789012",  45990, "Los Leones 567, Las Condes, Santiago, Chile",      -33.4161, -70.5996, "Las Condes",    2, "Zapatillas deportivas talla 42",              "Ruta Las Condes",      "Miguel López"],
+        ["Fernando Rojas", "2026-02-24", "2026-02-26", "11:30:00", "TRK-00003", "Ferretería Oviedo",  "SC-20012", "OV-345678",  12500, "Camino La Estrella 890, Padre Hurtado, Chile",    -33.5608, -70.7487, "Padre Hurtado", 1, "[MLC2220238846] - Taladro percutor 800W",    "Ruta Sur",             "Fernando Rojas"],
+        ["Augusto Silva",  "2026-02-25", "2026-02-26", "21:05:00", "TRK-00004", "Aventura Store",     "SC-30099", "AS-901234",  89990, "Av. Matta 2345, Santiago, Santiago, Chile",        -33.4589, -70.6483, "Santiago",      3, "Carpa camping 4 personas",                   "Ruta Santiago Sur",    "Augusto Silva"],
+        ["Carlos Pérez",   "2026-02-25", "2026-02-27", "19:50:00", "TRK-00005", "MercadoLibre Chile", "SC-10046", "ML-V-567890", 15990, "Av. Macul 4567, La Florida, Santiago, Chile",     -33.5085, -70.5880, "La Florida",    1, "Set de ollas antiadherentes",                "Ruta Santiago Centro", "Carlos Pérez"],
     ]
 
     data_font = Font(size=10)
@@ -158,7 +158,7 @@ def descargar_plantilla():
             if row_idx % 2 == 0:
                 cell.fill = alt_fill
 
-    anchos = [22, 14, 14, 16, 14, 22, 18, 18, 50, 18, 16, 45, 22, 22, 12, 12, 12]
+    anchos = [22, 14, 14, 12, 16, 22, 14, 18, 18, 50, 12, 12, 18, 16, 45, 22, 22]
     for col_idx, ancho in enumerate(anchos, 1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = ancho
 
@@ -173,20 +173,20 @@ def descargar_plantilla():
         ("User - Nombre", "Nombre del driver que realizó la entrega. Debe coincidir con un nombre o alias registrado en el sistema."),
         ("Pedido Fecha", "Fecha en que se cargó el paquete. Formato: AAAA-MM-DD"),
         ("Fecha Entrega", "Fecha efectiva de entrega (OBLIGATORIA). Base para la liquidación. Formato: AAAA-MM-DD"),
+        ("Hora Entrega", "Hora efectiva de entrega en formato HH:MM o HH:MM:SS (ej: 16:42:00). Opcional; habilita análisis de franjas horarias."),
         ("Tracking ID", "Identificador único del envío en el sistema de tracking."),
-        ("Seller Code", "Código del seller para trazabilidad. No se usa en cálculos, pero es visible en el detalle de envíos."),
         ("Seller Name", "Nombre del seller/tienda. Debe coincidir con un nombre o alias registrado en el sistema."),
+        ("Seller Code", "Código del seller para trazabilidad. No se usa en cálculos, pero es visible en el detalle de envíos."),
         ("External ID", "ID de la venta en la plataforma del seller (MercadoLibre, etc.)"),
         ("External Costo Orden", "Valor declarado del producto en CLP (solo número, sin $ ni puntos)."),
         ("Dirección", "Dirección completa de entrega."),
+        ("Lat", "Latitud decimal del destino (ej: -33.4368). Opcional; habilita el mapa geográfico."),
+        ("Lon", "Longitud decimal del destino (ej: -70.6362). Opcional; habilita el mapa geográfico."),
         ("Comuna", "Comuna de destino (OBLIGATORIA para cálculo de tarifa). Se usa para determinar el cobro al seller según su plan tarifario."),
         ("Cantidad de Bultos", "Número de bultos del envío (por defecto 1)."),
         ("Descripción Paquete", "Descripción del producto. Si contiene un código [MLCxxxxxxx], se detecta para aplicar extras."),
         ("Ruta Nombre", "Nombre de la ruta asignada al driver."),
         ("Nombre Conductor", "Nombre completo del conductor que realizó la entrega."),
-        ("Lat", "Latitud decimal del destino (ej: -33.4368). Opcional; habilita el mapa geográfico."),
-        ("Lon", "Longitud decimal del destino (ej: -70.6362). Opcional; habilita el mapa geográfico."),
-        ("Hora Entrega", "Hora efectiva de entrega en formato HH:MM o HH:MM:SS (ej: 16:42:00). Opcional; habilita análisis de franjas horarias."),
         ("", ""),
         ("Notas importantes:", ""),
         ("", "• La columna 'Fecha Entrega' es OBLIGATORIA. Filas sin esta fecha serán ignoradas."),
@@ -194,6 +194,7 @@ def descargar_plantilla():
         ("", "• Si un nombre no se reconoce, el envío queda 'sin homologar' para revisión manual."),
         ("", "• Los códigos MLC en la descripción se extraen con formato [MLCxxxxxxx]."),
         ("", "• Las comunas se normalizan a minúsculas para buscar tarifas especiales."),
+        ("", "• Las columnas Lat, Lon y Hora Entrega son opcionales y pueden omitirse sin afectar el proceso."),
     ]
 
     title_font = Font(bold=True, size=14, color="1A365D")
