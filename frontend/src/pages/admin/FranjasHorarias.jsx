@@ -70,6 +70,23 @@ export default function FranjasHorarias() {
   const fechaInicioIso = useMemo(() => range.inicio ? toIsoLocal(range.inicio) : null, [range.inicio])
   const fechaFinIso = useMemo(() => range.fin ? toIsoLocal(range.fin) : null, [range.fin])
 
+  // Backend devuelve global en formato anidado {n, pct}; normalizar a plano para esta página
+  const normalizeGlobal = (raw) => {
+    if (!raw) return null
+    const flat = { total: raw.total }
+    for (const k of FRANJA_KEYS) {
+      const v = raw[k]
+      if (v && typeof v === 'object') {
+        flat[k] = v.n ?? 0
+        flat[`pct_${k}`] = v.pct ?? 0
+      } else {
+        flat[k] = v ?? 0
+        flat[`pct_${k}`] = raw[`pct_${k}`] ?? 0
+      }
+    }
+    return flat
+  }
+
   const load = useCallback(async () => {
     if (!fechaInicioIso || !fechaFinIso) return
     setLoading(true)
@@ -77,7 +94,7 @@ export default function FranjasHorarias() {
       const { data: d } = await api.get('/dashboard/franjas-horarias', {
         params: { fecha_inicio: fechaInicioIso, fecha_fin: fechaFinIso, agrupacion: agr },
       })
-      setData(d)
+      setData({ ...d, global: normalizeGlobal(d.global) })
     } catch {
       toast.error('Error cargando franjas horarias')
     } finally {
