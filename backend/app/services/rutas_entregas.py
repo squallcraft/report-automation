@@ -101,6 +101,7 @@ def fetch_routes_by_date(
             "pedido_creado_at": _parse_dt(r.get("created_at")),
             "route_id": r.get("route_id"),
             "route_name": r.get("route_name"),
+            "route_date": _parse_date(r.get("route_date")),
             "driver_id": r.get("driver_id"),
             "driver_name": r.get("driver_name"),
             "address_full": r.get("address_full"),
@@ -304,6 +305,7 @@ def upsert_asignacion(db: Session, raw: dict) -> tuple[AsignacionRuta, bool]:
     asig.pedido_creado_at = _parse_dt(raw.get("pedido_creado_at")) or asig.pedido_creado_at
     asig.route_id = raw.get("route_id") if raw.get("route_id") is not None else asig.route_id
     asig.route_name = raw.get("route_name") or asig.route_name
+    asig.route_date = raw.get("route_date") or asig.route_date
     asig.driver_externo_id = raw.get("driver_id") if raw.get("driver_id") is not None else asig.driver_externo_id
     asig.driver_name = raw.get("driver_name") or asig.driver_name
     asig.seller_code = raw.get("seller_code") or asig.seller_code
@@ -353,6 +355,8 @@ def reconciliar_asignacion(db: Session, asig: AsignacionRuta) -> bool:
             if coords_validas(lat_v, lon_v):
                 envio.lat = lat_v
                 envio.lon = lon_v
+        if envio.fecha_ruta is None and asig.route_date is not None:
+            envio.fecha_ruta = asig.route_date
 
     asig.estado_calculado = _calcular_estado(asig, envio)
     asig.intentos_reconciliacion = (asig.intentos_reconciliacion or 0) + 1

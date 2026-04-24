@@ -199,6 +199,19 @@ with engine.connect() as conn:
         """)
         safe_exec("CREATE INDEX IF NOT EXISTS ix_contrato_trab_vigencia ON contrato_trabajador_versiones (trabajador_id, vigente_desde)")
 
+    # Migración: columnas nuevas en contrato_trabajador_versiones
+    ctv_cols = [c["name"] for c in insp.get_columns("contrato_trabajador_versiones")] if "contrato_trabajador_versiones" in insp.get_table_names() else []
+    for col_name, col_def in [
+        ("fecha_inicio_periodo",  "DATE"),
+        ("fecha_termino_periodo", "DATE"),
+        ("duracion_meses",        "INTEGER"),
+        ("numero_renovacion",     "INTEGER NOT NULL DEFAULT 0"),
+        ("version_padre_id",      "INTEGER REFERENCES contrato_trabajador_versiones(id)"),
+        ("origen",                "TEXT NOT NULL DEFAULT 'MANUAL'"),
+    ]:
+        if col_name not in ctv_cols:
+            safe_exec(f"ALTER TABLE contrato_trabajador_versiones ADD COLUMN {col_name} {col_def}")
+
     # ── Tabla anexos_contrato ────────────────────────────────────────────────
     if "anexos_contrato" not in insp.get_table_names():
         safe_exec("""
@@ -231,9 +244,74 @@ with engine.connect() as conn:
             ("contenido_renderizado", "TEXT"),
             ("aprobado_por", "TEXT"),
             ("aprobado_at", "TIMESTAMP"),
+            ("fecha_efectiva", "DATE"),  # para TERMINO_CONTRATO agendado
         ]:
             if col_name not in anexo_cols:
                 safe_exec(f"ALTER TABLE anexos_contrato ADD COLUMN {col_name} {col_def}")
+
+    # ── Tabla eventos_contrato_programados ───────────────────────────────────
+    safe_exec("""
+        CREATE TABLE IF NOT EXISTS eventos_contrato_programados (
+            id SERIAL PRIMARY KEY,
+            trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+            version_id INTEGER NOT NULL REFERENCES contrato_trabajador_versiones(id),
+            tipo TEXT NOT NULL,
+            ejecutar_en DATE NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+            resultado_anexo_id INTEGER REFERENCES anexos_contrato(id),
+            notas TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            CONSTRAINT uq_evento_version_tipo UNIQUE (version_id, tipo)
+        )
+    """)
+    safe_exec("CREATE INDEX IF NOT EXISTS ix_evento_contrato_fecha ON eventos_contrato_programados (ejecutar_en, estado)")
+
+    # ── Tabla certificados_trabajador ────────────────────────────────────────
+    safe_exec("""
+        CREATE TABLE IF NOT EXISTS certificados_trabajador (
+            id SERIAL PRIMARY KEY,
+            trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+            driver_id INTEGER REFERENCES drivers(id),
+            tipo TEXT NOT NULL,
+            archivo_path TEXT,
+            mime_type TEXT,
+            nombre_archivo TEXT,
+            fecha_emision DATE,
+            fecha_vencimiento DATE,
+            estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+            nota_admin TEXT,
+            revisado_por TEXT,
+            revisado_at TIMESTAMP,
+            creado_por TEXT,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    safe_exec("CREATE INDEX IF NOT EXISTS ix_cert_trab_tipo ON certificados_trabajador (trabajador_id, tipo)")
+
+    # ── Tabla costo_despido_snapshots ────────────────────────────────────────
+    safe_exec("""
+        CREATE TABLE IF NOT EXISTS costo_despido_snapshots (
+            id SERIAL PRIMARY KEY,
+            trabajador_id INTEGER NOT NULL REFERENCES trabajadores(id),
+            mes INTEGER NOT NULL,
+            anio INTEGER NOT NULL,
+            fecha_ingreso DATE,
+            meses_trabajados INTEGER NOT NULL DEFAULT 0,
+            anios_servicio_indemnizacion INTEGER NOT NULL DEFAULT 0,
+            ultima_remuneracion_base INTEGER NOT NULL DEFAULT 0,
+            tipo_contrato TEXT,
+            indemnizacion_anos_servicio INTEGER NOT NULL DEFAULT 0,
+            aviso_previo INTEGER NOT NULL DEFAULT 0,
+            feriado_proporcional INTEGER NOT NULL DEFAULT 0,
+            total_estimado INTEGER NOT NULL DEFAULT 0,
+            uf_referencia INTEGER,
+            notas TEXT,
+            calculado_at TIMESTAMP DEFAULT NOW(),
+            CONSTRAINT uq_despido_trab_mes UNIQUE (trabajador_id, mes, anio)
+        )
+    """)
 
     # ── Tabla horas_extras_trabajadores ──────────────────────────────────────
     if "horas_extras_trabajadores" not in insp.get_table_names():
@@ -818,6 +896,10 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN address_lat VARCHAR(40)")
         if "address_lon" not in ar_cols:
             safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN address_lon VARCHAR(40)")
+        # route_date: fecha en que el paquete salió a ruta con el conductor
+        if "route_date" not in ar_cols:
+            safe_exec("ALTER TABLE asignacion_ruta ADD COLUMN route_date DATE")
+            safe_exec("CREATE INDEX IF NOT EXISTS ix_asig_ruta_route_date ON asignacion_ruta (route_date) WHERE route_date IS NOT NULL")
 
     # ── Migración: Grok Memory System (brief + snapshot) ──
     safe_exec("""

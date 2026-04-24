@@ -1641,6 +1641,9 @@ class MotivoVersionContratoEnum(str, enum.Enum):
     REAJUSTE_IMM = "REAJUSTE_IMM"
     CAMBIO_CARGO = "CAMBIO_CARGO"
     CAMBIO_ASIGNACIONES = "CAMBIO_ASIGNACIONES"
+    PASE_INDEFINIDO = "PASE_INDEFINIDO"
+    AJUSTE_CESANTIA = "AJUSTE_CESANTIA"
+    RENOVACION = "RENOVACION"
     OTRO = "OTRO"
 
 
@@ -1678,6 +1681,14 @@ class ContratoTrabajadorVersion(Base):
     cargo = Column(String, nullable=True)
     tipo_contrato = Column(String, nullable=True)  # INDEFINIDO / PLAZO_FIJO / OBRA_FAENA / HONORARIOS
 
+    # ── Plazo fijo: datos de periodo ──────────────────────────────────────────
+    fecha_inicio_periodo = Column(Date, nullable=True)    # inicio del periodo pactado
+    fecha_termino_periodo = Column(Date, nullable=True)   # NULL = indefinido
+    duracion_meses = Column(Integer, nullable=True)       # para renovar por mismo periodo
+    numero_renovacion = Column(Integer, nullable=False, default=0)  # 0=original, 1=1ª renovación, 2=2ª
+    version_padre_id = Column(Integer, ForeignKey("contrato_trabajador_versiones.id"), nullable=True)
+    origen = Column(String, nullable=False, default="MANUAL")  # MANUAL / RENOVACION_AUTOMATICA / CONVERSION_AUTOMATICA_INDEFINIDO
+
     # Trazabilidad
     motivo = Column(String, nullable=False, default=MotivoVersionContratoEnum.CONTRATACION.value)
     notas = Column(Text, nullable=True)
@@ -1685,6 +1696,7 @@ class ContratoTrabajadorVersion(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     trabajador = relationship("Trabajador")
+    version_padre = relationship("ContratoTrabajadorVersion", remote_side="ContratoTrabajadorVersion.id", foreign_keys=[version_padre_id])
     anexos = relationship(
         "AnexoContrato",
         back_populates="version",
@@ -1700,6 +1712,10 @@ class TipoAnexoEnum(str, enum.Enum):
     REAJUSTE_IMM = "REAJUSTE_IMM"
     CAMBIO_CARGO = "CAMBIO_CARGO"
     CAMBIO_ASIGNACIONES = "CAMBIO_ASIGNACIONES"
+    PASE_INDEFINIDO = "PASE_INDEFINIDO"              # Cambio de plazo fijo → indefinido
+    AJUSTE_SEGURO_CESANTIA = "AJUSTE_SEGURO_CESANTIA"  # Alza de base por cotización cesantía
+    RENOVACION_PLAZO_FIJO = "RENOVACION_PLAZO_FIJO"  # Nueva versión por renovación
+    TERMINO_CONTRATO = "TERMINO_CONTRATO"            # Solo para PLAZO_FIJO; con fecha_efectiva
     OTRO = "OTRO"
 
 
@@ -1748,7 +1764,147 @@ class AnexoContrato(Base):
     aprobado_por = Column(String, nullable=True)
     aprobado_at = Column(DateTime, nullable=True)
 
+    # Para TERMINO_CONTRATO: fecha en que surte efecto (puede agendarse antes)
+    fecha_efectiva = Column(Date, nullable=True)
+
     version = relationship("ContratoTrabajadorVersion", back_populates="anexos")
+    trabajador = relationship("Trabajador")
+
+
+# ── Cola de eventos programados (vencimientos, alertas, conversiones) ─────────
+
+class TipoEventoContratoEnum(str, enum.Enum):
+    ALERTA_VENCIMIENTO_30D = "ALERTA_VENCIMIENTO_30D"
+    ALERTA_VENCIMIENTO_15D = "ALERTA_VENCIMIENTO_15D"
+    ALERTA_VENCIMIENTO_7D  = "ALERTA_VENCIMIENTO_7D"
+    EJECUTAR_VENCIMIENTO   = "EJECUTAR_VENCIMIENTO"   # día T0: renovar / convertir / terminar
+
+
+class EstadoEventoContratoEnum(str, enum.Enum):
+    PENDIENTE  = "PENDIENTE"
+    EJECUTADO  = "EJECUTADO"
+    CANCELADO  = "CANCELADO"   # admin tomó acción manual antes del trigger
+
+
+class EventoContratoProgramado(Base):
+    """
+    Cola de tiempo para el job diario de contratos.
+    Cada versión de plazo fijo genera hasta 4 eventos (T-30, T-15, T-7, T0).
+    Idempotente: el job marca EJECUTADO y no reprocesa.
+    """
+    __tablename__ = "eventos_contrato_programados"
+    __table_args__ = (
+        Index("ix_evento_contrato_fecha", "ejecutar_en", "estado"),
+        UniqueConstraint("version_id", "tipo", name="uq_evento_version_tipo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    version_id = Column(Integer, ForeignKey("contrato_trabajador_versiones.id"), nullable=False)
+    tipo = Column(String, nullable=False)   # TipoEventoContratoEnum
+    ejecutar_en = Column(Date, nullable=False)
+    estado = Column(String, nullable=False, default=EstadoEventoContratoEnum.PENDIENTE.value)
+    resultado_anexo_id = Column(Integer, ForeignKey("anexos_contrato.id"), nullable=True)
+    notas = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    trabajador = relationship("Trabajador")
+    version = relationship("ContratoTrabajadorVersion")
+
+
+# ── Certificados del trabajador/driver ────────────────────────────────────────
+
+class TipoCertificadoEnum(str, enum.Enum):
+    AFP              = "AFP"
+    SALUD            = "SALUD"              # FONASA o Isapre
+    CARNET_FRONTAL   = "CARNET_FRONTAL"
+    CARNET_TRASERO   = "CARNET_TRASERO"
+    DOMICILIO        = "DOMICILIO"
+    ANTECEDENTES     = "ANTECEDENTES"       # Renovable 1x/año, no bloquea
+    LICENCIA_CONDUCIR = "LICENCIA_CONDUCIR" # Solo drivers
+
+
+class EstadoCertificadoEnum(str, enum.Enum):
+    PENDIENTE  = "PENDIENTE"   # nunca subido
+    CARGADO    = "CARGADO"     # subido, en revisión
+    APROBADO   = "APROBADO"
+    RECHAZADO  = "RECHAZADO"   # admin rechazó, requiere resubida
+    VENCIDO    = "VENCIDO"     # expiró (calculado, no almacenado directamente)
+
+
+class CertificadoTrabajador(Base):
+    """
+    Certificado subido por un trabajador o driver.
+    Un trabajador puede tener múltiples versiones de un tipo (historial), pero
+    solo uno activo (el más reciente APROBADO o el CARGADO en revisión).
+    """
+    __tablename__ = "certificados_trabajador"
+    __table_args__ = (
+        Index("ix_cert_trab_tipo", "trabajador_id", "tipo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True, index=True)  # si es conductor
+
+    tipo = Column(String, nullable=False)   # TipoCertificadoEnum
+    archivo_path = Column(String, nullable=True)
+    mime_type = Column(String, nullable=True)
+    nombre_archivo = Column(String, nullable=True)
+
+    fecha_emision = Column(Date, nullable=True)       # fecha del documento
+    fecha_vencimiento = Column(Date, nullable=True)   # para antecedentes (90 días), licencia, etc.
+
+    estado = Column(String, nullable=False, default=EstadoCertificadoEnum.PENDIENTE.value)
+    nota_admin = Column(Text, nullable=True)
+    revisado_por = Column(String, nullable=True)
+    revisado_at = Column(DateTime, nullable=True)
+
+    creado_por = Column(String, nullable=True)   # "TRABAJADOR" | nombre admin
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    trabajador = relationship("Trabajador")
+
+
+# ── Snapshot de costo de despido (indemnización acumulada) ────────────────────
+
+class CostoDespidoSnapshot(Base):
+    """
+    Snapshot mensual del costo estimado de despido de un trabajador.
+    Calculado según Arts. 161/163 CT (1 mes por año, tope 330 UF) más
+    feriado proporcional (Art. 73 CT) y mes de aviso (Art. 162 CT).
+    """
+    __tablename__ = "costo_despido_snapshots"
+    __table_args__ = (
+        UniqueConstraint("trabajador_id", "mes", "anio", name="uq_despido_trab_mes"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    trabajador_id = Column(Integer, ForeignKey("trabajadores.id"), nullable=False, index=True)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+
+    # Inputs del cálculo
+    fecha_ingreso = Column(Date, nullable=True)
+    meses_trabajados = Column(Integer, nullable=False, default=0)
+    anios_servicio_indemnizacion = Column(Integer, nullable=False, default=0)  # inc. fracciones > 6 meses
+    ultima_remuneracion_base = Column(Integer, nullable=False, default=0)  # imponible sin extraordinarios
+    tipo_contrato = Column(String, nullable=True)
+
+    # Componentes del costo
+    indemnizacion_anos_servicio = Column(Integer, nullable=False, default=0)   # N × última remun.
+    aviso_previo = Column(Integer, nullable=False, default=0)                  # 1 mes (Art. 162)
+    feriado_proporcional = Column(Integer, nullable=False, default=0)          # días no tomados
+    total_estimado = Column(Integer, nullable=False, default=0)
+
+    # UF de referencia usada para cálculo del tope 330 UF
+    uf_referencia = Column(Integer, nullable=True)   # en pesos, ej: 38200
+
+    notas = Column(Text, nullable=True)
+    calculado_at = Column(DateTime, server_default=func.now())
+
     trabajador = relationship("Trabajador")
 
 
@@ -2354,6 +2510,7 @@ class AsignacionRuta(Base):
 
     route_id = Column(Integer, nullable=True, index=True)
     route_name = Column(String, nullable=True)
+    route_date = Column(Date, nullable=True, index=True)
 
     driver_externo_id = Column(Integer, nullable=True)
     driver_name = Column(String, nullable=True)
