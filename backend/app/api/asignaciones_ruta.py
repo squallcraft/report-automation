@@ -201,15 +201,17 @@ def reconciliar_uno(
 def reresolver_drivers(
     request: Request,
     fecha_desde: Optional[date] = None,
+    forzar_todas: bool = True,
     db: Session = Depends(get_db),
     usuario: dict = Depends(require_admin),
 ):
-    """Re-aplica el matching de driver local a las asignaciones con driver_id NULL.
+    """Re-aplica el matching de driver local a las asignaciones con driver_name.
 
-    Sirve cuando se modificó la lógica de matching o se agregaron aliases a un
-    Driver. No toca otros campos del registro.
+    Con `forzar_todas=True` (default) corrige también filas que ya tienen un
+    driver_id incorrecto (bug histórico donde se guardó el id externo del courier).
+    Con `forzar_todas=False` solo procesa filas con driver_id IS NULL.
     """
-    info = rutas_entregas.reresolver_drivers(db, fecha_desde=fecha_desde)
+    info = rutas_entregas.reresolver_drivers(db, fecha_desde=fecha_desde, forzar_todas=forzar_todas)
     try:
         audit(
             db,

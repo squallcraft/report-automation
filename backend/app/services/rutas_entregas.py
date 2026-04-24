@@ -33,6 +33,11 @@ from app.config import get_settings
 from app.models import AsignacionRuta, Driver, Envio
 from app.services.task_progress import update_task
 from app.services.trackingtech import fetch_packages_withdrawals
+from app.services.homologacion import (
+    build_driver_index,
+    resolver_driver,
+    invalidar_indice_drivers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -182,72 +187,15 @@ def _calcular_estado(asig: AsignacionRuta, envio: Optional[Envio]) -> str:
     return ESTADO_SIN_ENTREGA
 
 
-# Cache de drivers para resolver driver_local sin hacer una query por asignación.
-# Se invalida al inicio de cada ingesta (build_driver_index) o cuando se quiera
-# refrescar. Drivers son ~300 entries.
-_driver_index: Optional[dict] = None
-
-
-def build_driver_index(db: Session) -> dict:
-    """(Re)construye el índice de drivers en memoria. Llamar al inicio de la
-    ingesta y cada vez que se haya editado la tabla `drivers` durante el proceso.
-
-    Estructura:
-      {
-        "exact": {nombre_lower: driver_id},
-        "alias": {alias_lower: driver_id},
-        "prefix": [(nombre_lower_con_espacios, driver_id), ...]  # solo nombres ≥2 palabras
-      }
-    """
-    global _driver_index
-    exact: dict[str, int] = {}
-    alias: dict[str, int] = {}
-    prefix: list[tuple[str, int]] = []
-    for d in db.query(Driver).all():
-        nl = (d.nombre or "").strip().lower()
-        if not nl:
-            continue
-        # El primer driver con ese nombre gana (raro que se repita).
-        exact.setdefault(nl, d.id)
-        if " " in nl:
-            prefix.append((nl, d.id))
-        for a in (d.aliases or []):
-            if isinstance(a, str):
-                al = a.strip().lower()
-                if al:
-                    alias.setdefault(al, d.id)
-    _driver_index = {"exact": exact, "alias": alias, "prefix": prefix}
-    return _driver_index
+# Cache de drivers y resolver delegados al módulo unificado homologacion.py
+# Se mantienen aquí como compatibilidad con código que importe de este módulo.
+_driver_index = None  # gestionado por homologacion.py
 
 
 def _resolver_driver_local(db: Session, driver_externo_id: Optional[int], driver_name: Optional[str]) -> Optional[int]:
-    """Mapea el driver del courier (id externo + nombre) a un driver local.
+    """Delegado al resolver unificado en homologacion.py."""
+    return resolver_driver(db, driver_name, driver_externo_id)
 
-    Estrategia, en orden:
-      1. Match exacto case-insensitive contra `Driver.nombre`.
-      2. Match dentro de `Driver.aliases` (JSON array case-insensitive). Aquí
-         cae la gran mayoría: el courier reporta "Augusto Guerrero" mientras
-         el local guarda "Augusto" + alias "Augusto Guerrero".
-      3. Fallback por prefijo: nombre local con ≥2 palabras es prefijo del
-         nombre del courier (p.ej. "Diego Mendez" prefijo de "Diego Mendez
-         Delgado"). Evita falsos positivos tipo "Diego" → "Diego Santander".
-    """
-    if not driver_name:
-        return None
-    name_low = driver_name.strip().lower()
-    if not name_low:
-        return None
-
-    idx = _driver_index if _driver_index is not None else build_driver_index(db)
-
-    if name_low in idx["exact"]:
-        return idx["exact"][name_low]
-    if name_low in idx["alias"]:
-        return idx["alias"][name_low]
-    for nl, did in idx["prefix"]:
-        if name_low.startswith(nl + " ") or name_low == nl:
-            return did
-    return None
 
 
 # ── Upsert + reconciliación ───────────────────────────────────────────────────
@@ -317,6 +265,13 @@ def upsert_asignacion(db: Session, raw: dict) -> tuple[AsignacionRuta, bool]:
 
     if asig.driver_id is None:
         asig.driver_id = _resolver_driver_local(db, asig.driver_externo_id, asig.driver_name)
+    else:
+        # Re-verificar: si el nombre del driver ya cambió o el id local no corresponde
+        # al driver_name actual, corregir. Esto repara filas donde se guardó el id
+        # externo del courier directamente (bug histórico).
+        resolved = _resolver_driver_local(db, asig.driver_externo_id, asig.driver_name)
+        if resolved is not None and resolved != asig.driver_id:
+            asig.driver_id = resolved
 
     return asig, creada
 
@@ -406,30 +361,38 @@ def reconciliar_pendientes(
 def reresolver_drivers(
     db: Session,
     fecha_desde: Optional[date] = None,
+    forzar_todas: bool = True,
 ) -> dict:
-    """Re-aplica `_resolver_driver_local` a todas las asignaciones cuyo driver_id
-    local quedó NULL pero tienen `driver_name` del courier.
+    """Re-aplica el resolver a asignaciones con driver_name.
 
-    Útil después de ampliar la lógica de matching (p.ej. soporte de aliases) o
-    de agregar nuevos aliases a un Driver.
+    Con `forzar_todas=True` (default) procesa TODAS las filas que tienen
+    driver_name, incluyendo las que ya tienen driver_id — esto corrige filas
+    históricas donde se guardó el id externo del courier en lugar del local.
+    Solo sobreescribe si el nuevo match es diferente al actual.
+
+    Con `forzar_todas=False` solo procesa filas con driver_id IS NULL (comportamiento
+    anterior).
     """
+    import json, time
     build_driver_index(db)
-    q = db.query(AsignacionRuta).filter(
-        AsignacionRuta.driver_id.is_(None),
-        AsignacionRuta.driver_name.isnot(None),
-    )
+    q = db.query(AsignacionRuta).filter(AsignacionRuta.driver_name.isnot(None))
+    if not forzar_todas:
+        q = q.filter(AsignacionRuta.driver_id.is_(None))
     if fecha_desde is not None:
         q = q.filter(AsignacionRuta.withdrawal_date >= fecha_desde)
 
     revisadas = 0
     resueltos = 0
+    corregidos = 0
     sin_match: dict[str, int] = {}
     BATCH = 500
     for asig in q.yield_per(BATCH):
         revisadas += 1
         did = _resolver_driver_local(db, asig.driver_externo_id, asig.driver_name)
         if did:
-            asig.driver_id = did
+            if asig.driver_id != did:
+                asig.driver_id = did
+                corregidos += 1
             resueltos += 1
         else:
             sin_match[asig.driver_name] = sin_match.get(asig.driver_name, 0) + 1
@@ -437,14 +400,27 @@ def reresolver_drivers(
             db.commit()
     db.commit()
 
-    top_sin_match = sorted(sin_match.items(), key=lambda x: -x[1])[:10]
-    return {
+    top_sin_match = sorted(sin_match.items(), key=lambda x: -x[1])[:20]
+    result = {
         "revisadas": revisadas,
         "resueltos": resueltos,
+        "corregidos": corregidos,
         "sin_match": revisadas - resueltos,
         "top_sin_match": [{"driver_name": n, "n": c} for n, c in top_sin_match],
         "fecha_desde": fecha_desde.isoformat() if fecha_desde else None,
     }
+    # #region agent log
+    try:
+        entry = {"sessionId": "cbef42", "timestamp": int(time.time()*1000),
+                 "location": "rutas_entregas.py:reresolver_drivers",
+                 "message": "reresolver_drivers completado", "hypothesisId": "H2", "data": result}
+        log_path = "/app/app/.cursor/debug-cbef42.log"
+        import os; os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a") as f: f.write(json.dumps(entry) + "\n")
+    except Exception: pass
+    # #endregion
+    return result
+
 
 
 # ── Ingesta principal (a invocar desde el cron) ───────────────────────────────

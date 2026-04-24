@@ -23,6 +23,7 @@ from app.models import (
 from app.services.task_progress import update_task
 from app.services.calendario import build_fecha_semana_lookup
 from app.services.tarifas_escalonadas import recalcular_tarifas_escalonadas
+from app.services.homologacion import homologar_nombre
 
 MLC_REGEX = re.compile(r"\[MLC(\d+)\]")
 
@@ -97,26 +98,6 @@ def normalizar_comuna(direccion: Optional[str]) -> Optional[str]:
     return partes[0].lower().strip()
 
 
-def homologar_nombre(nombre_raw: str, entidades: list, cache: Dict[str, int]) -> Optional[int]:
-    if not nombre_raw:
-        return None
-
-    nombre_clean = nombre_raw.strip()
-
-    if nombre_clean in cache:
-        return cache[nombre_clean]
-
-    for entidad in entidades:
-        if entidad.nombre.lower() == nombre_clean.lower():
-            cache[nombre_clean] = entidad.id
-            return entidad.id
-        if entidad.aliases:
-            for alias in entidad.aliases:
-                if alias.lower() == nombre_clean.lower():
-                    cache[nombre_clean] = entidad.id
-                    return entidad.id
-
-    return None
 
 
 def _build_envio_from_row(

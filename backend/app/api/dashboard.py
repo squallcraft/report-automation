@@ -2535,7 +2535,8 @@ def efectividad_v2_driver(
 
     rend_pct = round(100 * rend_entregados / rend_a_ruta, 1) if rend_a_ruta else 0
 
-    # ── No entregados (sin_entrega) detallados ──────────────────────────────    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+    # ── No entregados (sin_entrega) detallados ──────────────────────────────
+    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
     seller_id_by_envio: dict[int, int] = {}
 
     no_entregados = []
