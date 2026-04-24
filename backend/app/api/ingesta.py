@@ -84,6 +84,13 @@ def _run_ingesta_in_background(
             _threading.Thread(target=_reconciliar_post_ingesta, daemon=True).start()
         except Exception as _exc:
             print(f"[INGESTA] no se pudo lanzar reconciliacion post-ingesta: {_exc}", flush=True)
+
+        # Invalidar caché analítica tras ingesta exitosa
+        try:
+            from app.api.dashboard import analytics_cache_clear
+            analytics_cache_clear()
+        except Exception:
+            pass
     except Exception as e:
         import traceback
         print(f"[INGESTA ERROR] task={task_id}: {e}", flush=True)

@@ -23,6 +23,14 @@ from sqlalchemy.orm import Session
 from app.services import rutas_entregas
 from app.services.scheduler import register_handler
 
+# Lazy import to avoid circular dependency — called only at runtime
+def _clear_analytics_cache():
+    try:
+        from app.api.dashboard import analytics_cache_clear
+        analytics_cache_clear()
+    except Exception:
+        pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +71,7 @@ def handler_ingesta_rutas(db: Session, config: dict, ejecucion_id: int) -> dict:
         except Exception:
             logger.exception("Error en reconciliacion_extra del cron de rutas")
 
+    _clear_analytics_cache()
     return resultado
 
 

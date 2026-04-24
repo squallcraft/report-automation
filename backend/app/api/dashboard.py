@@ -1,5 +1,6 @@
 from typing import Optional
 from collections import defaultdict
+import time as _time
 
 from datetime import datetime, date
 
@@ -20,6 +21,36 @@ from app.schemas import DashboardStats
 from app.services.seller_groups import group_seller, get_group_seller_ids, is_in_group
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+
+# ── In-memory analytics cache ────────────────────────────────────────────────
+# Caches expensive read-only analytics responses.
+# TTL: 10 minutes. Invalidated explicitly after each cron ingestion run.
+_ANALYTICS_CACHE: dict[str, tuple] = {}  # key -> (data, monotonic_timestamp)
+_ANALYTICS_TTL = 600  # seconds
+
+
+def _cache_get(key: str):
+    entry = _ANALYTICS_CACHE.get(key)
+    if entry and (_time.monotonic() - entry[1]) < _ANALYTICS_TTL:
+        return entry[0]
+    return None
+
+
+def _cache_set(key: str, data):
+    _ANALYTICS_CACHE[key] = (data, _time.monotonic())
+
+
+def analytics_cache_clear():
+    """Invalidate the entire analytics cache. Call after a data ingestion run."""
+    _ANALYTICS_CACHE.clear()
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/cache/invalidate", status_code=200)
+def invalidate_analytics_cache(_=Depends(require_admin_or_administracion)):
+    """Invalida la caché analítica en memoria. Llamar tras una ingesta manual."""
+    analytics_cache_clear()
+    return {"ok": True, "mensaje": "Caché analítica vaciada"}
 
 
 @router.get("/stats", response_model=DashboardStats)
@@ -2186,6 +2217,11 @@ def efectividad_v2_global(
     """
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
 
+    _ck = f"ev2_global:{inicio}:{fin}"
+    _cached = _cache_get(_ck)
+    if _cached is not None:
+        return _cached
+
     rows = _kpis_v2_base_query(db, inicio, fin).all()
     kpis_global = _calcular_kpis_v2(rows, incluir_buckets=True)
 
@@ -2296,7 +2332,7 @@ def efectividad_v2_global(
         })
     por_driver.sort(key=lambda x: -x["paquetes_a_ruta"])
 
-    return {
+    result = {
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
         "global": kpis_global,
         "serie_temporal": serie_temporal,
@@ -2304,6 +2340,8 @@ def efectividad_v2_global(
         "por_driver": por_driver,
         "benchmark_promesa": 98.0,  # 98% promise (configurable a futuro)
     }
+    _cache_set(_ck, result)
+    return result
 
 
 @router.get("/efectividad-v2/driver/{driver_id}")
@@ -2456,6 +2494,11 @@ def efectividad_v2_driver_comparacion(
     """
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
 
+    _ck = f"ev2_comp:{driver_id}:{inicio}:{fin}"
+    _cached = _cache_get(_ck)
+    if _cached is not None:
+        return _cached
+
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     zona = driver.zona if driver else None
 
@@ -2577,7 +2620,7 @@ def efectividad_v2_driver_comparacion(
     kpis_zona = _kpis_para_driver_ids(zona_driver_ids) if zona_driver_ids else kpis_driver
     kpis_global = _kpis_para_driver_ids(all_driver_ids_q)
 
-    return {
+    result = {
         "driver_id": driver_id,
         "nombre": driver.nombre if driver else f"Driver {driver_id}",
         "zona": zona,
@@ -2587,6 +2630,8 @@ def efectividad_v2_driver_comparacion(
         "zona_kpis": kpis_zona,
         "global": kpis_global,
     }
+    _cache_set(_ck, result)
+    return result
 
 
 @router.get("/efectividad-v2/seller/{seller_id}")
@@ -2912,6 +2957,11 @@ def franjas_horarias_global(
     """
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
 
+    _ck = f"franjas:{inicio}:{fin}:{driver_id}:{seller_id}:{agrupacion}:{franja}"
+    _cached = _cache_get(_ck)
+    if _cached is not None:
+        return _cached
+
     q = db.query(Envio).filter(
         Envio.fecha_entrega >= inicio,
         Envio.fecha_entrega <= fin,
@@ -3064,7 +3114,7 @@ def franjas_horarias_global(
         global_summary[fk] = n
         global_summary[f"pct_{fk}"] = round(100 * n / grand_total, 1) if grand_total else 0.0
 
-    return {
+    result = {
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
         "agrupacion": agrupacion,
         "franjas": [
@@ -3074,4 +3124,6 @@ def franjas_horarias_global(
         "global": global_summary,
         "rows": result_rows,
     }
+    _cache_set(_ck, result)
+    return result
 
