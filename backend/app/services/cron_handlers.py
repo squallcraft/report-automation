@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # ── Job keys (constantes) ─────────────────────────────────────────────────────
 JOB_INGESTA_RUTAS = "ingesta_rutas_courier"
 JOB_RECONCILIAR_PENDIENTES = "reconciliar_asignaciones_pendientes"
+JOB_CICLO_CONTRATOS = "ciclo_contratos_laborales"
 
 
 # ── Handler: ingesta diaria de rutas/asignaciones ─────────────────────────────
@@ -79,10 +80,28 @@ def handler_reconciliar_pendientes(db: Session, config: dict, ejecucion_id: int)
     return rutas_entregas.reconciliar_pendientes(db, fecha_desde=fecha_desde, limite=limite)
 
 
+# ── Handler: ciclo de vida de contratos laborales ─────────────────────────────
+def handler_ciclo_contratos(db: Session, config: dict, ejecucion_id: int) -> dict:
+    """
+    Ejecuta el job diario de contratos laborales:
+      - Envía alertas T-30 / T-15 / T-7 a RRHH sobre contratos próximos a vencer.
+      - En T0 (día del vencimiento): según la situación del contrato,
+        emite término, renueva automáticamente o convierte a indefinido por ley.
+
+    Solo aplica a contratos PLAZO_FIJO con fecha_termino_periodo registrada.
+    Idempotente: cada evento queda marcado EJECUTADO y no se reprocesa.
+    """
+    from app.services.ciclo_contratos import ejecutar_job_contratos
+    resumen = ejecutar_job_contratos(db)
+    logger.info("[ciclo_contratos] resultado: %s", resumen)
+    return resumen
+
+
 # ── Registro central ──────────────────────────────────────────────────────────
 def register_all_handlers() -> None:
     register_handler(JOB_INGESTA_RUTAS, handler_ingesta_rutas)
     register_handler(JOB_RECONCILIAR_PENDIENTES, handler_reconciliar_pendientes)
+    register_handler(JOB_CICLO_CONTRATOS, handler_ciclo_contratos)
 
 
 # ── Seed de cron jobs por defecto ─────────────────────────────────────────────
@@ -108,6 +127,18 @@ DEFAULT_JOBS = [
         "activo": False,
         "hora_ejecucion": "04:00",
         "config": {"dias_atras": 7, "limite": 5000},
+    },
+    {
+        "job_key": JOB_CICLO_CONTRATOS,
+        "nombre": "Ciclo de vida contratos laborales",
+        "descripcion": (
+            "Envía alertas a RRHH cuando un contrato a plazo fijo está próximo a vencer "
+            "(T-30, T-15, T-7) y ejecuta las acciones del día T0 (término, renovación o "
+            "conversión automática a indefinido según la ley)."
+        ),
+        "activo": True,   # activo desde el inicio
+        "hora_ejecucion": "06:00",
+        "config": {},
     },
 ]
 
