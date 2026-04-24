@@ -14,9 +14,16 @@ const ACCION_LABELS = {
 
 function fmt(iso) {
   if (!iso) return '—'
-  const d = new Date(iso)
-  const pad = n => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  // Backend returns timestamps without timezone suffix — treat as UTC
+  const utcIso = iso.includes('Z') || iso.includes('+') ? iso : iso + 'Z'
+  const d = new Date(utcIso)
+  const parts = new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d)
+  const p = Object.fromEntries(parts.map(({ type, value }) => [type, value]))
+  return `${p.day}/${p.month} ${p.hour}:${p.minute}`
 }
 
 export default function UltimaActividad({ endpoint, mes, anio }) {
