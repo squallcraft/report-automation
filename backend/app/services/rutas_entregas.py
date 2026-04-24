@@ -386,7 +386,8 @@ def reresolver_drivers(
     corregidos = 0
     sin_match: dict[str, int] = {}
     BATCH = 500
-    for asig in q.yield_per(BATCH):
+    all_rows = q.all()
+    for i, asig in enumerate(all_rows):
         revisadas += 1
         did = _resolver_driver_local(db, asig.driver_externo_id, asig.driver_name)
         if did:
@@ -396,8 +397,8 @@ def reresolver_drivers(
             resueltos += 1
         else:
             sin_match[asig.driver_name] = sin_match.get(asig.driver_name, 0) + 1
-        if revisadas % BATCH == 0:
-            db.commit()
+        if (i + 1) % BATCH == 0:
+            db.flush()
     db.commit()
 
     top_sin_match = sorted(sin_match.items(), key=lambda x: -x[1])[:20]
