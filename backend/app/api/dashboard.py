@@ -1453,9 +1453,35 @@ def _perfil_data(seller_ids: list, seller_info: dict, mes: int, anio: int, db):
         sqlfunc.sum(_ingreso_expr()).label("ingreso"),
         sqlfunc.sum(_costo_expr()).label("costo"),
     ).filter(*f_cur).group_by(Envio.semana).order_by(Envio.semana).all()
+
+    # Daily breakdown per week for expandable rows
+    _DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    dias_rows = db.query(
+        Envio.semana, Envio.fecha_entrega,
+        sqlfunc.count(Envio.id).label("total"),
+        sqlfunc.sum(_ingreso_expr()).label("ingreso"),
+        sqlfunc.sum(_costo_expr()).label("costo"),
+    ).filter(*f_cur).group_by(Envio.semana, Envio.fecha_entrega).order_by(
+        Envio.semana, Envio.fecha_entrega
+    ).all()
+    dias_by_semana: dict = defaultdict(list)
+    for r in dias_rows:
+        dias_by_semana[r.semana].append({
+            "fecha": r.fecha_entrega.isoformat(),
+            "dia": _DIAS[r.fecha_entrega.weekday()],
+            "total": r.total or 0,
+            "ingreso": int(r.ingreso or 0),
+            "margen": int((r.ingreso or 0) - (r.costo or 0)),
+        })
+
     semanas_detalle = [
-        {"semana": r.semana, "total": r.total or 0, "ingreso": int(r.ingreso or 0),
-         "costo": int(r.costo or 0), "margen": int((r.ingreso or 0) - (r.costo or 0))}
+        {
+            "semana": r.semana, "total": r.total or 0,
+            "ingreso": int(r.ingreso or 0), "costo": int(r.costo or 0),
+            "margen": int((r.ingreso or 0) - (r.costo or 0)),
+            "prom_diario": round((r.total or 0) / max(len(dias_by_semana[r.semana]), 1), 1),
+            "dias": dias_by_semana[r.semana],
+        }
         for r in semanas_rows
     ]
 

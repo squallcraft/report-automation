@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import React from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import toast from 'react-hot-toast'
@@ -124,6 +125,8 @@ export default function SellerPerfil() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const [expandedWeeks, setExpandedWeeks] = useState(new Set())
+
   // Gestión comercial
   const [gestion, setGestion] = useState([])
   const [tagInput, setTagInput] = useState('')
@@ -198,6 +201,7 @@ export default function SellerPerfil() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setExpandedWeeks(new Set())
     try {
       const endpoint = isGrupo
         ? `/dashboard/grupo/${encodeURIComponent(grupoName)}/perfil`
@@ -487,20 +491,50 @@ export default function SellerPerfil() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
               <thead>
                 <tr>
-                  {['Semana', 'Paq.', 'Ingreso', 'Margen'].map(h => (
-                    <th key={h} style={{ padding: '4px 8px', textAlign: 'right', color: C.dimmed, fontSize: 9, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, fontWeight: 600 }}>{h}</th>
+                  {['Semana', 'Paq.', 'Prom./día', 'Ingreso', 'Margen'].map(h => (
+                    <th key={h} style={{ padding: '4px 8px', textAlign: 'right', color: C.dimmed, fontSize: 9, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, fontWeight: 600,
+                      ...(h === 'Semana' ? { textAlign: 'left' } : {}) }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {semanas_detalle.map(s => (
-                  <tr key={s.semana} style={{ borderBottom: `1px solid ${C.border}` }}>
-                    <td style={{ padding: '7px 8px', color: C.muted, textAlign: 'right' }}>S{s.semana}</td>
-                    <td style={{ padding: '7px 8px', color: C.text, textAlign: 'right', fontWeight: 600 }}>{fmtN(s.total)}</td>
-                    <td style={{ padding: '7px 8px', color: C.green, textAlign: 'right' }}>{fmt(s.ingreso)}</td>
-                    <td style={{ padding: '7px 8px', color: s.margen >= 0 ? C.green : C.red, textAlign: 'right' }}>{fmt(s.margen)}</td>
-                  </tr>
-                ))}
+                {semanas_detalle.map(s => {
+                  const isExpanded = expandedWeeks.has(s.semana)
+                  return (
+                    <React.Fragment key={s.semana}>
+                      <tr
+                        key={s.semana}
+                        style={{ borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}
+                        onClick={() => setExpandedWeeks(prev => {
+                          const next = new Set(prev)
+                          next.has(s.semana) ? next.delete(s.semana) : next.add(s.semana)
+                          return next
+                        })}
+                      >
+                        <td style={{ padding: '7px 8px', color: C.muted, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 9, color: C.dimmed, userSelect: 'none', transition: 'transform 0.15s', display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                          S{s.semana}
+                        </td>
+                        <td style={{ padding: '7px 8px', color: C.text, textAlign: 'right', fontWeight: 600 }}>{fmtN(s.total)}</td>
+                        <td style={{ padding: '7px 8px', color: C.blue, textAlign: 'right' }}>{s.prom_diario}</td>
+                        <td style={{ padding: '7px 8px', color: C.green, textAlign: 'right' }}>{fmt(s.ingreso)}</td>
+                        <td style={{ padding: '7px 8px', color: s.margen >= 0 ? C.green : C.red, textAlign: 'right' }}>{fmt(s.margen)}</td>
+                      </tr>
+                      {isExpanded && s.dias?.map(d => (
+                        <tr key={d.fecha} style={{ background: C.surface, borderBottom: `1px solid ${C.border}` }}>
+                          <td style={{ padding: '5px 8px 5px 24px', color: C.muted, textAlign: 'left', fontSize: 10 }}>
+                            <span style={{ color: C.dimmed, marginRight: 6 }}>{d.dia}</span>
+                            {d.fecha}
+                          </td>
+                          <td style={{ padding: '5px 8px', color: C.text, textAlign: 'right', fontSize: 10 }}>{fmtN(d.total)}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right' }}></td>
+                          <td style={{ padding: '5px 8px', color: C.green, textAlign: 'right', fontSize: 10 }}>{fmt(d.ingreso)}</td>
+                          <td style={{ padding: '5px 8px', color: d.margen >= 0 ? C.green : C.red, textAlign: 'right', fontSize: 10 }}>{fmt(d.margen)}</td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  )
+                })}
               </tbody>
             </table>
           ) : (
