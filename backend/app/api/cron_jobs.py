@@ -220,3 +220,19 @@ def historial_ejecuciones(
         .limit(limite)
         .all()
     )
+
+
+# ── Job contratos: alertas + vencimientos ────────────────────────────────────
+
+@router.post("/contratos/ejecutar-hoy")
+def ejecutar_job_contratos_hoy(
+    db: Session = Depends(get_db),
+    user=Depends(require_admin),
+):
+    """
+    Ejecuta manualmente el job de contratos para el día de hoy.
+    En producción, esto mismo corre automáticamente via cron a las 06:00.
+    """
+    from app.services.ciclo_contratos import ejecutar_job_contratos
+    resumen = ejecutar_job_contratos(db)
+    return {"ok": True, "resumen": resumen}

@@ -1208,3 +1208,223 @@ def chequear_homologacion(
         "diferencias": diffs,
         "ameritar_anexo_homologacion": len(diffs) > 0,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NUEVOS ENDPOINTS: Ciclo de vida de plazo fijo + pase a indefinido
+# ══════════════════════════════════════════════════════════════════════════════
+
+from app.services.pase_indefinido import preview_ajuste_cesantia, confirmar_pase_indefinido
+from app.services.ciclo_contratos import (
+    programar_eventos_version,
+    crear_termino_contrato,
+    renovar_plazo_fijo,
+)
+from app.services.indemnizacion import calcular_indemnizacion, guardar_snapshot, UF_DEFAULT
+from app.models import (
+    EventoContratoProgramado,
+    EstadoEventoContratoEnum,
+    CostoDespidoSnapshot,
+)
+
+
+class ConfirmarPaseIndefindoIn(BaseModel):
+    fecha_desde: date
+    sueldo_base_nuevo: int
+    notas: Optional[str] = None
+
+
+class TerminoContratoIn(BaseModel):
+    version_id: int
+    fecha_efectiva: date
+    notas: Optional[str] = None
+
+
+class RenovarPlazoFijoIn(BaseModel):
+    version_id: int
+    duracion_meses: Optional[int] = None
+    notas: Optional[str] = None
+
+
+# ── Pase a indefinido ────────────────────────────────────────────────────────
+
+@router.get("/trabajador/{trabajador_id}/pase-indefinido/preview")
+def pase_indefinido_preview(
+    trabajador_id: int,
+    fecha_desde: date = date.today(),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("contratos:convertir_indefinido")),
+):
+    """Preview del ajuste de cesantía al pasar a indefinido."""
+    trabajador = db.get(Trabajador, trabajador_id)
+    if not trabajador:
+        raise HTTPException(404, "Trabajador no encontrado")
+    try:
+        prev = preview_ajuste_cesantia(db, trabajador, fecha_desde)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "liquido_objetivo": prev.liquido_objetivo,
+        "sueldo_base_actual": prev.sueldo_base_actual,
+        "sueldo_base_sugerido": prev.sueldo_base_sugerido,
+        "diferencia_base": prev.diferencia_base,
+    }
+
+
+@router.post("/trabajador/{trabajador_id}/pase-indefinido")
+def pase_indefinido_confirmar(
+    trabajador_id: int,
+    body: ConfirmarPaseIndefindoIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("contratos:convertir_indefinido")),
+):
+    """Ejecuta el pase a indefinido atómicamente (2 versiones + 2 anexos)."""
+    trabajador = db.get(Trabajador, trabajador_id)
+    if not trabajador:
+        raise HTTPException(404, "Trabajador no encontrado")
+    try:
+        anexo_pase, anexo_ces = confirmar_pase_indefinido(
+            db, trabajador, body.fecha_desde, body.sueldo_base_nuevo,
+            creado_por=current_user.get("nombre") or current_user.get("email", "admin"),
+            notas=body.notas,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "ok": True,
+        "anexo_pase_id": anexo_pase.id,
+        "anexo_cesantia_id": anexo_ces.id,
+        "mensaje": "Se generaron los 2 anexos de pase a indefinido. El trabajador debe firmarlos desde su portal.",
+    }
+
+
+# ── Término de contrato (solo PLAZO_FIJO) ────────────────────────────────────
+
+@router.post("/trabajador/{trabajador_id}/termino-contrato")
+def emitir_termino_contrato(
+    trabajador_id: int,
+    body: TerminoContratoIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("contratos:gestionar_termino")),
+):
+    trabajador = db.get(Trabajador, trabajador_id)
+    if not trabajador:
+        raise HTTPException(404, "Trabajador no encontrado")
+    version = db.get(ContratoTrabajadorVersion, body.version_id)
+    if not version or version.trabajador_id != trabajador_id:
+        raise HTTPException(404, "Versión no encontrada")
+    try:
+        anexo = crear_termino_contrato(
+            db, trabajador, version, body.fecha_efectiva,
+            creado_por=current_user.get("nombre") or current_user.get("email", "admin"),
+            notas=body.notas,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "anexo_id": anexo.id, "fecha_efectiva": body.fecha_efectiva.isoformat()}
+
+
+# ── Renovación manual ─────────────────────────────────────────────────────────
+
+@router.post("/trabajador/{trabajador_id}/renovar-plazo-fijo")
+def renovar_contrato(
+    trabajador_id: int,
+    body: RenovarPlazoFijoIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("contratos:renovar_plazo_fijo")),
+):
+    trabajador = db.get(Trabajador, trabajador_id)
+    if not trabajador:
+        raise HTTPException(404, "Trabajador no encontrado")
+    version = db.get(ContratoTrabajadorVersion, body.version_id)
+    if not version or version.trabajador_id != trabajador_id:
+        raise HTTPException(404, "Versión no encontrada")
+    try:
+        nueva_version, anexo = renovar_plazo_fijo(
+            db, trabajador, version,
+            creado_por=current_user.get("nombre") or current_user.get("email", "admin"),
+            duracion_meses=body.duracion_meses,
+            notas=body.notas,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "ok": True,
+        "nueva_version_id": nueva_version.id,
+        "anexo_id": anexo.id,
+        "fecha_inicio": nueva_version.fecha_inicio_periodo.isoformat() if nueva_version.fecha_inicio_periodo else None,
+        "fecha_termino": nueva_version.fecha_termino_periodo.isoformat() if nueva_version.fecha_termino_periodo else None,
+        "numero_renovacion": nueva_version.numero_renovacion,
+    }
+
+
+# ── Costo de despido ──────────────────────────────────────────────────────────
+
+@router.get("/trabajador/{trabajador_id}/costo-despido")
+def costo_despido(
+    trabajador_id: int,
+    uf_valor: int = UF_DEFAULT,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("contratos:ver_alertas_vencimiento")),
+):
+    """Calcula y retorna el costo estimado de despido del trabajador (en tiempo real)."""
+    trabajador = db.get(Trabajador, trabajador_id)
+    if not trabajador:
+        raise HTTPException(404, "Trabajador no encontrado")
+    from app.services.contratos import obtener_version_vigente
+    version = obtener_version_vigente(db, trabajador_id)
+    resultado = calcular_indemnizacion(db, trabajador, version, uf_valor=uf_valor)
+    # Guardar snapshot del mes actual
+    hoy = date.today()
+    guardar_snapshot(db, resultado, hoy.month, hoy.year)
+    return {
+        "trabajador_id": trabajador_id,
+        "nombre": resultado.nombre,
+        "fecha_ingreso": resultado.fecha_ingreso.isoformat() if resultado.fecha_ingreso else None,
+        "meses_trabajados": resultado.meses_trabajados,
+        "anios_servicio_indemnizacion": resultado.anios_servicio_indemnizacion,
+        "tipo_contrato": resultado.tipo_contrato,
+        "ultima_remuneracion_base": resultado.ultima_remuneracion_base,
+        "aplica_indemnizacion": resultado.aplica_indemnizacion,
+        "indemnizacion_anos_servicio": resultado.indemnizacion_anos_servicio,
+        "aviso_previo": resultado.aviso_previo,
+        "feriado_proporcional": resultado.feriado_proporcional,
+        "total_estimado": resultado.total_estimado,
+        "tope_330uf": resultado.tope_330uf,
+        "fue_topado": resultado.fue_topado,
+        "uf_referencia": resultado.uf_referencia,
+        "notas": resultado.notas,
+    }
+
+
+# ── Alertas de vencimiento pendientes ────────────────────────────────────────
+
+@router.get("/alertas-vencimiento")
+def alertas_vencimiento(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("contratos:ver_alertas_vencimiento")),
+):
+    """Lista contratos con eventos PENDIENTE próximos (≤30 días)."""
+    hoy = date.today()
+    from datetime import timedelta as _td
+    limite = hoy + _td(days=31)
+    eventos = db.query(EventoContratoProgramado).filter(
+        EventoContratoProgramado.estado == EstadoEventoContratoEnum.PENDIENTE.value,
+        EventoContratoProgramado.ejecutar_en <= limite,
+        EventoContratoProgramado.ejecutar_en >= hoy,
+    ).order_by(EventoContratoProgramado.ejecutar_en).all()
+
+    resultado = []
+    for ev in eventos:
+        trab = db.get(Trabajador, ev.trabajador_id)
+        version = db.get(ContratoTrabajadorVersion, ev.version_id)
+        resultado.append({
+            "evento_id": ev.id,
+            "trabajador_id": ev.trabajador_id,
+            "trabajador_nombre": trab.nombre if trab else "—",
+            "tipo": ev.tipo,
+            "ejecutar_en": ev.ejecutar_en.isoformat(),
+            "dias_restantes": (ev.ejecutar_en - hoy).days,
+            "fecha_termino_periodo": version.fecha_termino_periodo.isoformat() if version and version.fecha_termino_periodo else None,
+        })
+    return resultado
