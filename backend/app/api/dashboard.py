@@ -2439,9 +2439,158 @@ def efectividad_v2_driver(
     }
 
 
+@router.get("/efectividad-v2/driver/{driver_id}/comparacion")
+def efectividad_v2_driver_comparacion(
+    driver_id: int,
+    mes: Optional[int] = Query(None),
+    anio: Optional[int] = Query(None),
+    fecha_inicio: Optional[str] = Query(None),
+    fecha_fin: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Métricas comparativas: driver vs su zona vs operación global.
+
+    Calcula pct_efectividad, pct_pm_ideal y entregas_por_hora para los
+    tres niveles. También devuelve la fecha de antigüedad (seniority).
+    """
+    inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
+
+    driver = db.query(Driver).filter(Driver.id == driver_id).first()
+    zona = driver.zona if driver else None
+
+    # IDs de todos los drivers en la misma zona (excluyendo los globalmente excluidos)
+    zona_driver_ids: list[int] = []
+    if zona:
+        zona_driver_ids = [
+            d.id for d in db.query(Driver.id).filter(
+                Driver.zona == zona,
+                ~Driver.id.in_(EFECTIVIDAD_DRIVERS_EXCLUIDOS),
+            ).all()
+        ]
+
+    def _kpis_para_driver_ids(driver_ids: list[int]) -> dict:
+        """Calcula efectividad + pct_pm_ideal para un conjunto de driver_ids."""
+        if not driver_ids:
+            return {"efectividad": None, "pct_pm_ideal": None, "entregas_por_hora": None}
+
+        # ── Efectividad (asignacion_ruta + envio) ─────────────────────────
+        ruta_rows = (
+            db.query(AsignacionRuta, Envio)
+            .outerjoin(Envio, AsignacionRuta.envio_id == Envio.id)
+            .filter(
+                AsignacionRuta.driver_id.in_(driver_ids),
+                AsignacionRuta.withdrawal_date >= inicio,
+                AsignacionRuta.withdrawal_date <= fin,
+            )
+            .all()
+        )
+        kpis = _calcular_kpis_v2(ruta_rows)
+        efectividad = kpis["pct_delivery_success"]
+
+        # ── Franja PM ideal ────────────────────────────────────────────────
+        franja_rows = (
+            db.query(Envio.hora_entrega)
+            .filter(
+                Envio.driver_id.in_(driver_ids),
+                Envio.fecha_entrega >= inicio,
+                Envio.fecha_entrega <= fin,
+                ~Envio.seller_id.in_(EFECTIVIDAD_SELLERS_EXCLUIDOS),
+            )
+            .all()
+        )
+        total_f = len(franja_rows)
+        pm_ideal_n = sum(
+            1 for r in franja_rows
+            if r.hora_entrega is not None
+            and r.hora_entrega.hour * 60 + r.hora_entrega.minute > 15 * 60
+            and r.hora_entrega.hour * 60 + r.hora_entrega.minute <= 21 * 60
+        )
+        pct_pm_ideal = round(100 * pm_ideal_n / total_f, 1) if total_f else None
+
+        # ── Entregas por hora ──────────────────────────────────────────────
+        # Para cada día de ruta: rango = MAX(hora_entrega) - MIN(hora_entrega)
+        # Tasa del día = entregas_ese_dia / horas_rango
+        # Promedio de tasas válidas (rango >= 30 min)
+        from collections import defaultdict as _dd
+        por_dia: dict = _dd(list)
+        for r in franja_rows:
+            if r.hora_entrega is not None:
+                # fecha_entrega como proxy del día de entrega
+                pass
+        # Re-query con fecha_entrega incluida
+        dia_rows = (
+            db.query(Envio.fecha_entrega, Envio.hora_entrega)
+            .filter(
+                Envio.driver_id.in_(driver_ids),
+                Envio.fecha_entrega >= inicio,
+                Envio.fecha_entrega <= fin,
+                Envio.hora_entrega.isnot(None),
+                ~Envio.seller_id.in_(EFECTIVIDAD_SELLERS_EXCLUIDOS),
+            )
+            .all()
+        )
+        dia_horas: dict = _dd(list)
+        for r in dia_rows:
+            mins = r.hora_entrega.hour * 60 + r.hora_entrega.minute
+            dia_horas[r.fecha_entrega].append(mins)
+
+        tasas = []
+        for d, horas_mins in dia_horas.items():
+            if len(horas_mins) < 2:
+                continue
+            rango_min = max(horas_mins) - min(horas_mins)
+            if rango_min < 30:
+                continue
+            rango_h = rango_min / 60
+            tasas.append(len(horas_mins) / rango_h)
+
+        entregas_por_hora = round(sum(tasas) / len(tasas), 1) if tasas else None
+
+        return {
+            "efectividad": efectividad,
+            "pct_pm_ideal": pct_pm_ideal,
+            "entregas_por_hora": entregas_por_hora,
+        }
+
+    # ── Antigüedad del conductor ───────────────────────────────────────────
+    primera = (
+        db.query(AsignacionRuta.withdrawal_date)
+        .filter(
+            AsignacionRuta.driver_id == driver_id,
+            AsignacionRuta.withdrawal_date.isnot(None),
+        )
+        .order_by(AsignacionRuta.withdrawal_date.asc())
+        .first()
+    )
+    seniority = primera.withdrawal_date.isoformat() if primera else None
+
+    # ── Calcular los 3 niveles ─────────────────────────────────────────────
+    # Excluir drivers globalmente excluidos del cálculo de zona/global
+    all_driver_ids_q = [
+        d.id for d in db.query(Driver.id).filter(
+            ~Driver.id.in_(EFECTIVIDAD_DRIVERS_EXCLUIDOS)
+        ).all()
+    ]
+
+    kpis_driver = _kpis_para_driver_ids([driver_id])
+    kpis_zona = _kpis_para_driver_ids(zona_driver_ids) if zona_driver_ids else kpis_driver
+    kpis_global = _kpis_para_driver_ids(all_driver_ids_q)
+
+    return {
+        "driver_id": driver_id,
+        "nombre": driver.nombre if driver else f"Driver {driver_id}",
+        "zona": zona,
+        "seniority_desde": seniority,
+        "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
+        "driver": kpis_driver,
+        "zona_kpis": kpis_zona,
+        "global": kpis_global,
+    }
+
+
 @router.get("/efectividad-v2/seller/{seller_id}")
-def efectividad_v2_seller(
-    seller_id: int,
+def efectividad_v2_seller(    seller_id: int,
     mes: Optional[int] = Query(None),
     anio: Optional[int] = Query(None),
     fecha_inicio: Optional[str] = Query(None),
@@ -2728,7 +2877,7 @@ def franjas_horarias_global(
     fecha_fin: Optional[str] = Query(None),
     driver_id: Optional[int] = Query(None),
     seller_id: Optional[int] = Query(None),
-    agrupacion: str = Query("global", description="global | dia | semana | mes | driver | seller | ruta"),
+    agrupacion: str = Query("global", description="global | dia | semana | mes | driver | seller | ruta | comuna"),
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
@@ -2743,6 +2892,7 @@ def franjas_horarias_global(
     - driver  → una fila por conductor
     - seller  → una fila por seller
     - ruta    → una fila por ruta (ruta_nombre)
+    - comuna  → una fila por comuna de entrega
     """
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
 
@@ -2787,6 +2937,7 @@ def franjas_horarias_global(
         Envio.seller_id,
         Envio.ruta_nombre,
         Envio.hora_entrega,
+        Envio.comuna,
     ]
     rows = q.with_entities(*cols_needed).all()
 
@@ -2807,6 +2958,8 @@ def franjas_horarias_global(
             return str(row.seller_id) if row.seller_id else "sin_seller"
         if agrupacion == "ruta":
             return row.ruta_nombre or "Sin ruta"
+        if agrupacion == "comuna":
+            return row.comuna or "Sin comuna"
         return "global"
 
     from collections import defaultdict
