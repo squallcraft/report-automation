@@ -134,7 +134,7 @@ def fetch_packages_withdrawals(
     password: str,
     start_date: str,
     end_date: str,
-    per_page: int = 200,
+    per_page: int = 100,
 ) -> tuple[list[dict], Optional[str]]:
     """
     Descarga las asignaciones de paquetes a rutas (efectividad de entrega).
