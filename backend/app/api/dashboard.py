@@ -3111,8 +3111,10 @@ def franjas_horarias_global(
     global_summary = {"total": grand_total}
     for fk in franja_keys:
         n = global_counts.get(fk, 0)
-        global_summary[fk] = n
-        global_summary[f"pct_{fk}"] = round(100 * n / grand_total, 1) if grand_total else 0.0
+        global_summary[fk] = {
+            "n": n,
+            "pct": round(100 * n / grand_total, 1) if grand_total else 0.0,
+        }
 
     result = {
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
