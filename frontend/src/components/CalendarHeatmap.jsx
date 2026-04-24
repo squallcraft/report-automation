@@ -22,7 +22,7 @@ const colorClass = (v, isEmpty) => {
   return 'bg-red-400 text-white'
 }
 
-export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en el rango' }) {
+export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en el rango', valueKey = 'pct_same_day' }) {
   const weeks = useMemo(() => {
     if (!data?.length) return []
     const byKey = {}
@@ -92,18 +92,19 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
                   const cell = week[di]
                   if (!cell) return <td key={di} />
                   const isEmpty = !cell.data
-                  const cls = colorClass(cell.data?.pct_same_day, isEmpty)
+                  const cls = colorClass(cell.data?.[valueKey], isEmpty)
                   // Soporta tanto la forma del global (a_ruta, same_day) como
                   // la del driver (label = "X/Y", same_day, a_ruta).
-                  const sd = cell.data?.same_day ?? 0
+                  const sd = cell.data?.same_day ?? cell.data?.entregados ?? 0
                   const ar = cell.data?.a_ruta ?? 0
+                  const pct = cell.data?.[valueKey] ?? 0
                   return (
                     <td key={di} className="p-0">
                       <div
                         className={`h-14 w-full rounded-lg flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-default ${cls}`}
                         title={isEmpty
                           ? `${cell.fecha} · sin actividad`
-                          : `${cell.fecha} · ${sd} same-day de ${ar} a ruta (${cell.data.pct_same_day}%)`
+                          : `${cell.fecha} · ${sd}/${ar} (${pct}%)`
                         }
                       >
                         {!isEmpty ? (
@@ -111,7 +112,7 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
                             <span className="text-[14px] font-black leading-none">
                               {sd}/{ar}
                             </span>
-                            <span className="text-[10px] opacity-90 leading-none mt-1">{cell.data.pct_same_day}%</span>
+                            <span className="text-[10px] opacity-90 leading-none mt-1">{pct}%</span>
                           </>
                         ) : (
                           <span className="text-[10px] text-gray-300">—</span>

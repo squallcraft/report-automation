@@ -2349,8 +2349,47 @@ def efectividad_v2_driver(
         por_ruta.append({"ruta": ruta, **k})
     por_ruta.sort(key=lambda x: -x["paquetes_a_ruta"])
 
-    # ── No entregados (sin_entrega) detallados ──────────────────────────────
-    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+    # ── Rendimiento del conductor (route_date) ─────────────────────────────
+    # Distinto de Same-Day: mide si el driver entregó el mismo día que sacó
+    # el paquete a ruta. No penaliza al conductor por retrasos de bodega.
+    rend_rows = (
+        db.query(AsignacionRuta, Envio)
+        .outerjoin(Envio, AsignacionRuta.envio_id == Envio.id)
+        .filter(
+            AsignacionRuta.driver_id == driver_id,
+            AsignacionRuta.route_date >= inicio,
+            AsignacionRuta.route_date <= fin,
+            AsignacionRuta.route_date.isnot(None),
+        )
+        .all()
+    )
+
+    por_fecha_ruta: dict[date, list] = defaultdict(list)
+    for asig, envio in rend_rows:
+        por_fecha_ruta[asig.route_date].append((asig, envio))
+
+    rend_heatmap = []
+    rend_a_ruta = 0
+    rend_entregados = 0
+    for d in sorted(por_fecha_ruta.keys()):
+        asigs = por_fecha_ruta[d]
+        a = sum(1 for asig, _ in asigs if asig.estado_calculado != ESTADO_CANCELADO)
+        e = sum(1 for asig, envio in asigs if envio is not None and envio.fecha_entrega == d)
+        pct = round(100 * e / a, 1) if a else 0
+        rend_a_ruta += a
+        rend_entregados += e
+        rend_heatmap.append({
+            "fecha": d.isoformat(),
+            "weekday": d.weekday(),
+            "a_ruta": a,
+            "entregados": e,
+            "pct_entrega": pct,
+            "label": f"{e}/{a}",
+        })
+
+    rend_pct = round(100 * rend_entregados / rend_a_ruta, 1) if rend_a_ruta else 0
+
+    # ── No entregados (sin_entrega) detallados ──────────────────────────────    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
     seller_id_by_envio: dict[int, int] = {}
 
     no_entregados = []
@@ -2376,6 +2415,13 @@ def efectividad_v2_driver(
         "kpis": kpis,
         "heatmap": heatmap,
         "por_ruta": por_ruta,
+        "rendimiento": {
+            "paquetes_a_ruta": rend_a_ruta,
+            "paquetes_entregados": rend_entregados,
+            "paquetes_sin_entregar": rend_a_ruta - rend_entregados,
+            "pct_entrega_mismo_dia": rend_pct,
+            "heatmap": rend_heatmap,
+        },
         "no_entregados": no_entregados[:200],
         "no_entregados_total": len(no_entregados),
     }

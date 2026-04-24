@@ -97,6 +97,7 @@ export default function EfectividadDriver() {
   useEffect(() => { load() }, [load])
 
   const k = data?.kpis
+  const r = data?.rendimiento
 
   return (
     <div className="space-y-6 pb-10">
@@ -148,8 +149,41 @@ export default function EfectividadDriver() {
             <CalendarHeatmap data={data.heatmap} />
           </div>
 
-          {/* ── Distribución del ciclo ─────────────────────────────────── */}
-          {k.distribucion && (k.paquetes_a_ruta ?? 0) > 0 && (
+          {/* ── Rendimiento del conductor (route_date) ────────────────── */}
+          {r && (
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Truck size={14} className="text-indigo-500" />
+                    Rendimiento del conductor
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Mide cuántos paquetes entregó el mismo día que salió a ruta · base: fecha_ruta
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <KPICard label="A ruta" value={fmtN(r.paquetes_a_ruta)} sub="paquetes con route_date" accent="indigo" icon={Package} />
+                <KPICard label="Entregados mismo día" value={fmtN(r.paquetes_entregados)} sub={`${r.paquetes_sin_entregar} pendientes/fallidos`} accent="emerald" icon={CheckCircle2} />
+                <KPICard label="% Entrega mismo día" value={fmtPct(r.pct_entrega_mismo_dia)} sub="rendimiento real del conductor" accent={r.pct_entrega_mismo_dia >= 80 ? 'emerald' : r.pct_entrega_mismo_dia >= 60 ? 'amber' : 'red'} icon={TrendingUp} />
+              </div>
+              {r.heatmap?.length > 0 && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-gray-600 flex items-center gap-2">
+                      <Calendar size={12} className="text-slate-400" />
+                      Calendario de rendimiento — entregados / a-ruta por día de ruta
+                    </p>
+                    <p className="text-[10px] text-gray-400">Color = % entregado mismo día</p>
+                  </div>
+                  <CalendarHeatmap data={r.heatmap} valueKey="pct_entrega" />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Distribución del ciclo ─────────────────────────────────── */}          {k.distribucion && (k.paquetes_a_ruta ?? 0) > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm font-semibold text-gray-700">Distribución del ciclo de entrega</p>
