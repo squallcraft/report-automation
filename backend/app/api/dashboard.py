@@ -2385,7 +2385,7 @@ def efectividad_v2_driver(
     rend_entregados = 0
     for d in sorted(por_fecha_ruta.keys()):
         asigs = por_fecha_ruta[d]
-        a = sum(1 for asig, _ in asigs if asig.estado_calculado != ESTADO_CANCELADO)
+        a = sum(1 for asig, _ in asigs if asig.estado_calculado != "cancelado")
         e = sum(1 for asig, envio in asigs if envio is not None and envio.fecha_entrega == d)
         pct = round(100 * e / a, 1) if a else 0
         rend_a_ruta += a
