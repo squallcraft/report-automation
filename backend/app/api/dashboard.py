@@ -1845,6 +1845,8 @@ def _calc_var(current_val: int, compare_val: int):
 @router.get("/ingresos/driver/{driver_id}")
 def ingresos_driver(
     driver_id: int,
+    mes: Optional[int] = Query(None, description="Mes para semanas_detalle (1-12). Por defecto: último mes con actividad."),
+    anio: Optional[int] = Query(None, description="Año para semanas_detalle. Por defecto: año del último mes con actividad."),
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
@@ -1907,10 +1909,78 @@ def ingresos_driver(
         "peor_mes": min(meses, key=lambda x: x["ganancia"]) if meses else None,
     }
 
+    # ── Fecha de primera entrega (seniority) ──────────────────────────────
+    primer_entrega_row = db.query(sqlfunc.min(Envio.fecha_entrega)).filter(
+        Envio.driver_id == driver_id
+    ).scalar()
+    primer_entrega = primer_entrega_row.isoformat() if primer_entrega_row else None
+
+    # ── Desglose semanal del mes solicitado ────────────────────────────────
+    # Usa el mes/año proporcionado, o el último mes con actividad si no se especifica.
+    sel_mes = mes
+    sel_anio = anio
+    if (sel_mes is None or sel_anio is None) and meses:
+        ultimo = meses[-1]
+        sel_mes = sel_mes or ultimo["mes"]
+        sel_anio = sel_anio or ultimo["anio"]
+
+    semanas_detalle = []
+    if sel_mes and sel_anio:
+        _DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+        # Weekly totals (Envio only — retiros don't have semana granularity per driver easily)
+        sem_rows = db.query(
+            Envio.semana,
+            sqlfunc.count(Envio.id).label("entregas"),
+            sqlfunc.sum(Envio.costo_driver + Envio.pago_extra_manual).label("base"),
+            sqlfunc.sum(Envio.extra_producto_driver).label("prod"),
+            sqlfunc.sum(Envio.extra_comuna_driver).label("com"),
+        ).filter(
+            Envio.driver_id == driver_id,
+            Envio.mes == sel_mes, Envio.anio == sel_anio,
+        ).group_by(Envio.semana).order_by(Envio.semana).all()
+
+        dia_rows = db.query(
+            Envio.semana, Envio.fecha_entrega,
+            sqlfunc.count(Envio.id).label("entregas"),
+            sqlfunc.sum(Envio.costo_driver + Envio.pago_extra_manual).label("base"),
+            sqlfunc.sum(Envio.extra_producto_driver).label("prod"),
+            sqlfunc.sum(Envio.extra_comuna_driver).label("com"),
+        ).filter(
+            Envio.driver_id == driver_id,
+            Envio.mes == sel_mes, Envio.anio == sel_anio,
+        ).group_by(Envio.semana, Envio.fecha_entrega).order_by(
+            Envio.semana, Envio.fecha_entrega
+        ).all()
+
+        dias_by_sem: dict = defaultdict(list)
+        for r in dia_rows:
+            g = int((r.base or 0) + (r.prod or 0) + (r.com or 0))
+            dias_by_sem[r.semana].append({
+                "fecha": r.fecha_entrega.isoformat(),
+                "dia": _DIAS[r.fecha_entrega.weekday()],
+                "entregas": r.entregas,
+                "ganancia": g,
+            })
+
+        for r in sem_rows:
+            g = int((r.base or 0) + (r.prod or 0) + (r.com or 0))
+            ds = dias_by_sem[r.semana]
+            semanas_detalle.append({
+                "semana": r.semana,
+                "entregas": r.entregas,
+                "ganancia": g,
+                "prom_diario": round(r.entregas / max(len(ds), 1), 1),
+                "dias": ds,
+            })
+
     return {
         "driver": {"id": driver.id, "nombre": driver.nombre, "zona": driver.zona, "contratado": driver.contratado},
         "meses": meses,
         "stats": stats,
+        "primer_entrega": primer_entrega,
+        "semanas_detalle": semanas_detalle,
+        "periodo_semanas": {"mes": sel_mes, "anio": sel_anio},
     }
 
 

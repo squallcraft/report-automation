@@ -53,6 +53,7 @@ import EfectividadEntregas from './pages/admin/EfectividadEntregas'
 import EfectividadDriver from './pages/admin/EfectividadDriver'
 import EfectividadSeller from './pages/admin/EfectividadSeller'
 import IngresosDrivers from './pages/admin/IngresosDrivers'
+import DriverIngresoPerfil from './pages/admin/DriverIngresoPerfil'
 import Retencion from './pages/admin/Retencion'
 import SellerPerfil from './pages/admin/SellerPerfil'
 import ReportesSellers from './pages/admin/ReportesSellers'
@@ -188,6 +189,7 @@ export default function App() {
         <Route path="coordenadas" element={<BackfillCoordenadas />} />
         <Route path="franjas-horarias" element={<FranjasHorarias />} />
         <Route path="ingresos-drivers" element={<IngresosDrivers />} />
+        <Route path="ingresos-drivers/:driverId/perfil" element={<DriverIngresoPerfil />} />
         <Route path="retencion" element={<Retencion />} />
         <Route path="reportes-sellers" element={<ReportesSellers />} />
         <Route path="bandeja" element={<Bandeja />} />

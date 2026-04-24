@@ -203,7 +203,7 @@ export default function IngresosDrivers() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {ranking.map((r, i) => (
-                    <tr key={r.driver_id} className="hover:bg-gray-50 text-gray-700 cursor-pointer" onClick={() => navigate(`/admin/efectividad/driver/${r.driver_id}?mes=${period.mes}&anio=${period.anio}`)}>
+                    <tr key={r.driver_id} className="hover:bg-gray-50 text-gray-700 cursor-pointer" onClick={() => navigate(`/admin/ingresos-drivers/${r.driver_id}/perfil?mes=${period.mes}&anio=${period.anio}`)}>
                       <td className="px-4 py-2.5 text-center">
                         <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold ${
                           i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-gray-100 text-gray-600' : i === 2 ? 'bg-amber-100 text-amber-700' : 'text-gray-400'
