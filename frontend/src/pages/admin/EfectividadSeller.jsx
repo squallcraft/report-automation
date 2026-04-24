@@ -36,12 +36,14 @@ const ratioBg = v => {
 const DIAS = { Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie', Sat: 'Sáb', Sun: 'Dom' }
 
 const FRANJAS_CONFIG = [
-  { key: 'am',        label: 'AM',        sub: '08:00–15:00', color: 'bg-sky-500' },
-  { key: 'pm_ideal',  label: 'PM Ideal',  sub: '15:01–21:00', color: 'bg-emerald-500' },
-  { key: 'pm_limite', label: 'PM Límite', sub: '21:01–22:00', color: 'bg-amber-400' },
-  { key: 'pm_tarde',  label: 'PM Tarde',  sub: '22:01+',      color: 'bg-red-500' },
-  { key: 'madrugada', label: 'Madrugada', sub: '00:00–07:59', color: 'bg-purple-500' },
-  { key: 'sin_hora',  label: 'Sin hora',  sub: 'Sin registro', color: 'bg-gray-300' },
+  { key: 'am_mañana',  label: 'Mañana',      sub: '08:00–12:00', color: 'bg-sky-300' },
+  { key: 'am_tarde',   label: 'Mediodía',    sub: '12:00–15:00', color: 'bg-blue-500' },
+  { key: 'pm_inicio',  label: '15–16 h',     sub: '15:00–16:00', color: 'bg-indigo-500' },
+  { key: 'pm_ideal',   label: 'PM Ideal ★',  sub: '16:00–21:00', color: 'bg-emerald-500' },
+  { key: 'pm_limite',  label: 'PM Límite',   sub: '21:00–22:00', color: 'bg-amber-400' },
+  { key: 'pm_tarde',   label: 'PM Tarde',    sub: '22:00+',      color: 'bg-red-500' },
+  { key: 'madrugada',  label: 'Madrugada',   sub: '00:00–08:00', color: 'bg-purple-500' },
+  { key: 'sin_hora',   label: 'Sin hora',    sub: 'Sin registro', color: 'bg-gray-300' },
 ]
 
 function KPICard({ label, value, sub, accent = 'blue', icon: Icon, benchmark }) {
@@ -223,7 +225,7 @@ export default function EfectividadSeller() {
                 </p>
                 <p className="text-[10px] text-gray-400">Total: {fmtN(franjasG.total)} entregas</p>
               </div>
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+              <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
                 {FRANJAS_CONFIG.map(f => {
                   const d = franjasG[f.key] ?? { n: 0, pct: 0 }
                   return (

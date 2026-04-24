@@ -2503,8 +2503,8 @@ def efectividad_v2_driver_comparacion(
         pm_ideal_n = sum(
             1 for r in franja_rows
             if r.hora_entrega is not None
-            and r.hora_entrega.hour * 60 + r.hora_entrega.minute > 15 * 60
-            and r.hora_entrega.hour * 60 + r.hora_entrega.minute <= 21 * 60
+            and r.hora_entrega.hour * 60 + r.hora_entrega.minute >= 16 * 60
+            and r.hora_entrega.hour * 60 + r.hora_entrega.minute < 21 * 60
         )
         pct_pm_ideal = round(100 * pm_ideal_n / total_f, 1) if total_f else None
 
@@ -2832,24 +2832,38 @@ def efectividad_v2_mapa(
 #   SIN_HORA  : envíos sin hora registrada
 
 _FRANJAS = [
-    ("am",        "AM (08–15)",       "08:00:00", "15:00:00"),
-    ("pm_ideal",  "PM ideal (15–21)", "15:00:01", "21:00:00"),
-    ("pm_limite", "PM límite (21–22)","21:00:01", "22:00:00"),
-    ("pm_tarde",  "PM tarde (22+)",   "22:00:01", "23:59:59"),
-    ("madrugada", "Madrugada (0–8)",  "00:00:00", "07:59:59"),
+    ("am_mañana",  "Mañana (08–12 h)",        "08:00:00", "11:59:59"),
+    ("am_tarde",   "Mediodía (12–15 h)",       "12:00:00", "14:59:59"),
+    ("pm_inicio",  "Primera tarde (15–16 h)",  "15:00:00", "15:59:59"),
+    ("pm_ideal",   "Tarde ideal (16–21 h)",    "16:00:00", "20:59:59"),
+    ("pm_limite",  "Límite (21–22 h)",         "21:00:00", "21:59:59"),
+    ("pm_tarde",   "Tarde (22+ h)",            "22:00:00", "23:59:59"),
+    ("madrugada",  "Madrugada (0–8 h)",        "00:00:00", "07:59:59"),
 ]
+
+# Hour ranges [lo, hi) for each franja key (used by agrupacion=hora drill-down)
+_FRANJA_HOUR_RANGES: dict = {
+    "am_mañana": (8,  12),
+    "am_tarde":  (12, 15),
+    "pm_inicio": (15, 16),
+    "pm_ideal":  (16, 21),
+    "pm_limite": (21, 22),
+    "pm_tarde":  (22, 24),
+    "madrugada": (0,  8),
+}
+
 
 def _franja_case():
     """CASE WHEN para asignar franja a cada envío según hora_entrega."""
     from sqlalchemy import case
     from app.models import Envio as _Envio
-    from sqlalchemy import cast
-    from sqlalchemy.dialects.postgresql import TIME
     whens = [
-        ((_Envio.hora_entrega >= "08:00:00") & (_Envio.hora_entrega <= "15:00:00"), "am"),
-        ((_Envio.hora_entrega > "15:00:00") & (_Envio.hora_entrega <= "21:00:00"), "pm_ideal"),
-        ((_Envio.hora_entrega > "21:00:00") & (_Envio.hora_entrega <= "22:00:00"), "pm_limite"),
-        ((_Envio.hora_entrega > "22:00:00"), "pm_tarde"),
+        ((_Envio.hora_entrega >= "08:00:00") & (_Envio.hora_entrega < "12:00:00"), "am_mañana"),
+        ((_Envio.hora_entrega >= "12:00:00") & (_Envio.hora_entrega < "15:00:00"), "am_tarde"),
+        ((_Envio.hora_entrega >= "15:00:00") & (_Envio.hora_entrega < "16:00:00"), "pm_inicio"),
+        ((_Envio.hora_entrega >= "16:00:00") & (_Envio.hora_entrega < "21:00:00"), "pm_ideal"),
+        ((_Envio.hora_entrega >= "21:00:00") & (_Envio.hora_entrega < "22:00:00"), "pm_limite"),
+        ((_Envio.hora_entrega >= "22:00:00"), "pm_tarde"),
         (_Envio.hora_entrega.isnot(None), "madrugada"),
     ]
     return case(*[(cond, val) for cond, val in whens], else_="sin_hora")
@@ -2859,7 +2873,6 @@ def _build_franja_stats(rows) -> dict:
     """Agrega una lista de (franja, count) en el dict estándar de franjas."""
     total = sum(n for _, n in rows)
     d = {k: {"n": 0, "pct": 0.0} for k, *_ in _FRANJAS}
-    d["madrugada"] = {"n": 0, "pct": 0.0}
     d["sin_hora"] = {"n": 0, "pct": 0.0}
     for franja, n in rows:
         if franja in d:
@@ -2877,7 +2890,8 @@ def franjas_horarias_global(
     fecha_fin: Optional[str] = Query(None),
     driver_id: Optional[int] = Query(None),
     seller_id: Optional[int] = Query(None),
-    agrupacion: str = Query("global", description="global | dia | semana | mes | driver | seller | ruta | comuna"),
+    agrupacion: str = Query("global", description="global | dia | semana | mes | driver | seller | ruta | comuna | hora"),
+    franja: Optional[str] = Query(None, description="Filtrar a una franja específica (solo relevante cuando agrupacion=hora)"),
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
@@ -2893,6 +2907,8 @@ def franjas_horarias_global(
     - seller  → una fila por seller
     - ruta    → una fila por ruta (ruta_nombre)
     - comuna  → una fila por comuna de entrega
+    - hora    → una fila por hora del día (0–23); si `franja` se especifica,
+                filtra solo las horas dentro de esa ventana horaria
     """
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
 
@@ -2916,15 +2932,13 @@ def franjas_horarias_global(
         if h is None:
             return "sin_hora"
         hm = h.hour * 60 + h.minute
-        if 8 * 60 <= hm <= 15 * 60:
-            return "am"
-        if 15 * 60 < hm <= 21 * 60:
-            return "pm_ideal"
-        if 21 * 60 < hm <= 22 * 60:
-            return "pm_limite"
-        if hm > 22 * 60:
-            return "pm_tarde"
-        return "madrugada"
+        if hm < 8 * 60:   return "madrugada"
+        if hm < 12 * 60:  return "am_mañana"
+        if hm < 15 * 60:  return "am_tarde"
+        if hm < 16 * 60:  return "pm_inicio"
+        if hm < 21 * 60:  return "pm_ideal"
+        if hm < 22 * 60:  return "pm_limite"
+        return "pm_tarde"
 
     # ── Construcción de filas ───────────────────────────────────────────────
     # Cargamos sólo los campos necesarios, sin traer el objeto completo
@@ -2960,7 +2974,16 @@ def franjas_horarias_global(
             return row.ruta_nombre or "Sin ruta"
         if agrupacion == "comuna":
             return row.comuna or "Sin comuna"
+        if agrupacion == "hora":
+            if row.hora_entrega is None:
+                return None
+            return str(row.hora_entrega.hour)
         return "global"
+
+    # Pre-filter rows when drilling down into a specific franja by hour
+    if agrupacion == "hora" and franja and franja in _FRANJA_HOUR_RANGES:
+        lo, hi = _FRANJA_HOUR_RANGES[franja]
+        rows = [r for r in rows if r.hora_entrega is not None and lo <= r.hora_entrega.hour < hi]
 
     from collections import defaultdict
     buckets: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -2968,8 +2991,10 @@ def franjas_horarias_global(
 
     for row in rows:
         key = _agg_key(row)
-        franja = _franja_sql(row.hora_entrega)
-        buckets[key][franja] += 1
+        if key is None:
+            continue
+        franja_slot = _franja_sql(row.hora_entrega)
+        buckets[key][franja_slot] += 1
         # guardar etiqueta legible
         if key not in meta:
             label = key
@@ -2977,28 +3002,44 @@ def franjas_horarias_global(
                 label = drivers_map.get(row.driver_id, key)
             elif agrupacion == "seller" and row.seller_id:
                 label = sellers_map.get(row.seller_id, key)
+            elif agrupacion == "hora":
+                label = f"{key}:00 h"
             meta[key] = {"key": key, "label": label}
 
-    franja_keys = ["am", "pm_ideal", "pm_limite", "pm_tarde", "madrugada", "sin_hora"]
+    franja_keys = ["am_mañana", "am_tarde", "pm_inicio", "pm_ideal", "pm_limite", "pm_tarde", "madrugada", "sin_hora"]
     franja_labels = {
-        "am":        "AM (08–15 h)",
-        "pm_ideal":  "PM ideal (15–21 h)",
-        "pm_limite": "PM límite (21–22 h)",
-        "pm_tarde":  "PM tarde (22+ h)",
-        "madrugada": "Madrugada (0–8 h)",
-        "sin_hora":  "Sin hora registrada",
+        "am_mañana":  "Mañana (08–12 h)",
+        "am_tarde":   "Mediodía (12–15 h)",
+        "pm_inicio":  "Primera tarde (15–16 h)",
+        "pm_ideal":   "Tarde ideal (16–21 h) ★",
+        "pm_limite":  "Límite (21–22 h)",
+        "pm_tarde":   "Tarde (22+ h)",
+        "madrugada":  "Madrugada (0–8 h)",
+        "sin_hora":   "Sin hora registrada",
     }
     franja_colors = {
-        "am":        "#f59e0b",
-        "pm_ideal":  "#10b981",
-        "pm_limite": "#f97316",
-        "pm_tarde":  "#ef4444",
-        "madrugada": "#8b5cf6",
-        "sin_hora":  "#94a3b8",
+        "am_mañana":  "#93c5fd",  # sky-300
+        "am_tarde":   "#3b82f6",  # blue-500
+        "pm_inicio":  "#6366f1",  # indigo-500
+        "pm_ideal":   "#10b981",  # emerald-500 (benchmark)
+        "pm_limite":  "#f97316",  # orange-500
+        "pm_tarde":   "#ef4444",  # red-500
+        "madrugada":  "#8b5cf6",  # purple-500
+        "sin_hora":   "#94a3b8",  # slate-400
     }
 
+    # Sort numerically for hora agrupacion, alphabetically otherwise
+    def _sort_key(item):
+        k = item[0]
+        if agrupacion == "hora":
+            try:
+                return (0, int(k))
+            except ValueError:
+                return (1, k)
+        return (0, k)
+
     result_rows = []
-    for key, counts in sorted(buckets.items()):
+    for key, counts in sorted(buckets.items(), key=_sort_key):
         total = sum(counts.values())
         entry = {
             "key": key,

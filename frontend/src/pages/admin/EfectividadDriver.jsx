@@ -39,12 +39,14 @@ const ratioBg = v => {
 }
 
 const FRANJAS_CONFIG = [
-  { key: 'am',        label: 'AM',        sub: '08:00–15:00', color: 'bg-sky-500' },
-  { key: 'pm_ideal',  label: 'PM Ideal',  sub: '15:01–21:00', color: 'bg-emerald-500' },
-  { key: 'pm_limite', label: 'PM Límite', sub: '21:01–22:00', color: 'bg-amber-400' },
-  { key: 'pm_tarde',  label: 'PM Tarde',  sub: '22:01+',      color: 'bg-red-500' },
-  { key: 'madrugada', label: 'Madrugada', sub: '00:00–07:59', color: 'bg-purple-500' },
-  { key: 'sin_hora',  label: 'Sin hora',  sub: 'Sin registro', color: 'bg-gray-300' },
+  { key: 'am_mañana',  label: 'Mañana',      sub: '08:00–12:00', color: 'bg-sky-300' },
+  { key: 'am_tarde',   label: 'Mediodía',    sub: '12:00–15:00', color: 'bg-blue-500' },
+  { key: 'pm_inicio',  label: '15–16 h',     sub: '15:00–16:00', color: 'bg-indigo-500' },
+  { key: 'pm_ideal',   label: 'PM Ideal ★',  sub: '16:00–21:00', color: 'bg-emerald-500' },
+  { key: 'pm_limite',  label: 'PM Límite',   sub: '21:00–22:00', color: 'bg-amber-400' },
+  { key: 'pm_tarde',   label: 'PM Tarde',    sub: '22:00+',      color: 'bg-red-500' },
+  { key: 'madrugada',  label: 'Madrugada',   sub: '00:00–08:00', color: 'bg-purple-500' },
+  { key: 'sin_hora',   label: 'Sin hora',    sub: 'Sin registro', color: 'bg-gray-300' },
 ]
 
 const AGRUPACIONES = [
@@ -76,17 +78,22 @@ function KPICard({ label, value, sub, accent = 'blue', icon: Icon }) {
   )
 }
 
-function FranjasBlocks({ data }) {
+function FranjasBlocks({ data, onFranjaClick, activeFranja }) {
   if (!data) return null
   const totalConHora = FRANJAS_CONFIG.filter(f => f.key !== 'sin_hora')
     .reduce((s, f) => s + (data[f.key]?.n ?? 0), 0)
   return (
-    <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+    <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
       {FRANJAS_CONFIG.map(f => {
         const d = data[f.key] ?? { n: 0, pct: 0 }
+        const isActive = activeFranja === f.key
+        const isClickable = !!onFranjaClick && f.key !== 'sin_hora'
         return (
-          <div key={f.key} className="text-center">
-            <div className={`${f.color} text-white py-4 rounded-xl`}>
+          <div key={f.key}
+            className={`text-center ${isClickable ? 'cursor-pointer' : ''}`}
+            onClick={isClickable ? () => onFranjaClick(isActive ? null : f.key) : undefined}
+          >
+            <div className={`${f.color} text-white py-4 rounded-xl transition-opacity ${isClickable ? 'hover:opacity-85' : ''} ${isActive ? 'ring-2 ring-offset-1 ring-gray-700' : ''}`}>
               <div className="text-2xl font-black">{d.pct ?? 0}%</div>
               <div className="text-[11px] opacity-90 mt-0.5">{fmtN(d.n)}</div>
             </div>
@@ -154,6 +161,9 @@ export default function EfectividadDriver() {
   const [activeTab, setActiveTab] = useState('dia')
   const [tabLoaded, setTabLoaded] = useState({ dia: false, semana: false, mes: false, ruta: false })
   const [showAllRoutes, setShowAllRoutes] = useState(false)
+  const [selectedFranja, setSelectedFranja] = useState(null)
+  const [horaDetail,     setHoraDetail]     = useState(null)
+  const [horaDetailLoad, setHoraDetailLoad] = useState(false)
 
   const fi = useMemo(() => range.inicio ? toIsoLocal(range.inicio) : null, [range.inicio])
   const ff = useMemo(() => range.fin    ? toIsoLocal(range.fin)    : null, [range.fin])
@@ -210,6 +220,18 @@ export default function EfectividadDriver() {
   }, [driverId, fi, ff, tabLoaded])
 
   useEffect(() => { loadFranjasTab(activeTab) }, [activeTab, loadFranjasTab])
+
+  // Hour drill-down — load per-hour data when a franja is selected
+  useEffect(() => {
+    if (!selectedFranja || !fi || !ff) { setHoraDetail(null); return }
+    setHoraDetailLoad(true)
+    api.get('/dashboard/franjas-horarias', {
+      params: { fecha_inicio: fi, fecha_fin: ff, driver_id: driverId, agrupacion: 'hora', franja: selectedFranja },
+    })
+      .then(r => setHoraDetail(r.data))
+      .catch(() => setHoraDetail(null))
+      .finally(() => setHoraDetailLoad(false))
+  }, [selectedFranja, driverId, fi, ff])
 
   const k = data?.kpis
   const r = data?.rendimiento
@@ -329,8 +351,57 @@ export default function EfectividadDriver() {
               </p>
             </div>
 
-            {/* Bloques globales del conductor */}
-            <FranjasBlocks data={franjasAg._global} />
+            {/* Bloques globales del conductor — clic para ver detalle por hora */}
+            <FranjasBlocks
+              data={franjasAg._global}
+              onFranjaClick={setSelectedFranja}
+              activeFranja={selectedFranja}
+            />
+
+            {/* Hour drill-down panel */}
+            {selectedFranja && (
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                    <Clock size={12} className="text-slate-400" />
+                    Detalle por hora — {FRANJAS_CONFIG.find(f => f.key === selectedFranja)?.label}
+                  </p>
+                  <button
+                    onClick={() => setSelectedFranja(null)}
+                    className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded hover:bg-gray-200 transition"
+                  >
+                    Cerrar ×
+                  </button>
+                </div>
+                {horaDetailLoad ? (
+                  <div className="flex justify-center py-5">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-emerald-500" />
+                  </div>
+                ) : horaDetail?.rows?.length ? (
+                  <div className="flex items-end gap-1.5 h-20">
+                    {(() => {
+                      const maxN = Math.max(...horaDetail.rows.map(r => r.total))
+                      const fc = FRANJAS_CONFIG.find(f => f.key === selectedFranja)
+                      return horaDetail.rows.map(row => {
+                        const barH = maxN > 0 ? Math.max(4, Math.round((row.total / maxN) * 72)) : 4
+                        return (
+                          <div key={row.key} className="flex-1 flex flex-col items-center justify-end">
+                            <span className="text-[9px] text-gray-500 mb-0.5">{row.total}</span>
+                            <div
+                              className={`w-full rounded-t-sm ${fc?.color ?? 'bg-emerald-400'} opacity-80`}
+                              style={{ height: `${barH}px` }}
+                            />
+                            <span className="text-[9px] text-gray-400 mt-0.5">{row.key}h</span>
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 text-center py-4">Sin datos para esta franja</p>
+                )}
+              </div>
+            )}
 
             {/* Tabs detalle */}
             <div>

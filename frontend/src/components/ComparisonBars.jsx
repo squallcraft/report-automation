@@ -17,7 +17,7 @@ const METRICS = [
   },
   {
     key: 'pct_pm_ideal',
-    label: 'PM Ideal (15–21 h)',
+    label: 'PM Ideal (16–21 h)',
     unit: '%',
     max: 100,
     description: '% entregas en franja óptima 15:00–21:00',

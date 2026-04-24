@@ -11,14 +11,16 @@ const _defInicio = new Date(now.getFullYear(), now.getMonth(), 1)
 const _defFin = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
 const FRANJAS_META = {
-  am:        { label: 'AM (08–15 h)',        color: '#f59e0b', bg: 'bg-amber-400',   desc: 'Mañana / 2dos intentos' },
-  pm_ideal:  { label: 'PM ideal (15–21 h)',  color: '#10b981', bg: 'bg-emerald-500', desc: 'Mejor rango horario' },
-  pm_limite: { label: 'PM límite (21–22 h)', color: '#f97316', bg: 'bg-orange-500',  desc: 'Límite aceptable' },
-  pm_tarde:  { label: 'PM tarde (22+ h)',    color: '#ef4444', bg: 'bg-red-500',     desc: 'A mejorar' },
-  madrugada: { label: 'Madrugada (0–8 h)',   color: '#8b5cf6', bg: 'bg-violet-500',  desc: 'Fuera de horario' },
-  sin_hora:  { label: 'Sin hora',            color: '#94a3b8', bg: 'bg-slate-400',   desc: 'Sin dato' },
+  am_mañana: { label: 'Mañana (08–12 h)',        color: '#93c5fd', bg: 'bg-sky-300',     desc: 'Mañana / 2dos intentos' },
+  am_tarde:  { label: 'Mediodía (12–15 h)',       color: '#3b82f6', bg: 'bg-blue-500',    desc: 'Mediodía' },
+  pm_inicio: { label: 'Primera tarde (15–16 h)',  color: '#6366f1', bg: 'bg-indigo-500',  desc: 'Arranque tarde' },
+  pm_ideal:  { label: 'Tarde ideal (16–21 h) ★',  color: '#10b981', bg: 'bg-emerald-500', desc: 'Rango óptimo (benchmark)' },
+  pm_limite: { label: 'Límite (21–22 h)',         color: '#f97316', bg: 'bg-orange-500',  desc: 'Límite aceptable' },
+  pm_tarde:  { label: 'Tarde (22+ h)',            color: '#ef4444', bg: 'bg-red-500',     desc: 'A mejorar' },
+  madrugada: { label: 'Madrugada (0–8 h)',        color: '#8b5cf6', bg: 'bg-violet-500',  desc: 'Fuera de horario' },
+  sin_hora:  { label: 'Sin hora',                 color: '#94a3b8', bg: 'bg-slate-400',   desc: 'Sin dato' },
 }
-const FRANJA_KEYS = ['am', 'pm_ideal', 'pm_limite', 'pm_tarde', 'madrugada', 'sin_hora']
+const FRANJA_KEYS = ['am_mañana', 'am_tarde', 'pm_inicio', 'pm_ideal', 'pm_limite', 'pm_tarde', 'madrugada', 'sin_hora']
 
 const fmtN = (v) => v != null ? v.toLocaleString('es-CL') : '—'
 const fmtPct = (v) => v != null ? `${v}%` : '—'
