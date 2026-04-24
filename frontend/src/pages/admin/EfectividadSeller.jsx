@@ -4,7 +4,7 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Zap, Target, CheckCircle2, AlertCircle, Package,
-  TrendingUp, Truck, Calendar,
+  TrendingUp, Calendar,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import CalendarHeatmap from '../../components/CalendarHeatmap'
@@ -35,6 +35,8 @@ const ratioBg = (v) => {
   if (v >= 40) return 'bg-orange-400 text-white'
   return 'bg-red-400 text-white'
 }
+
+const DIAS = { Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie', Sat: 'Sáb', Sun: 'Dom' }
 
 function KPICard({ label, value, sub, accent = 'blue', icon: Icon, benchmark }) {
   const accentClasses = {
@@ -118,7 +120,7 @@ export default function EfectividadSeller() {
         <div className="flex-1 min-w-[280px]">
           <PageHeader
             title={loading ? 'Cargando…' : (data?.nombre || `Seller #${sellerId}`)}
-            subtitle="Detalle de Same-Day por período"
+            subtitle="Efectividad Same-Day por período"
             icon={Package}
             accent="indigo"
             actions={<DateRangePicker value={range} onChange={setRange} />}
@@ -141,17 +143,6 @@ export default function EfectividadSeller() {
             <KPICard label="First Attempt" value={fmtPct(k.pct_first_attempt)} sub="entregados al 1er intento" accent="fuchsia" icon={TrendingUp} />
             <KPICard label="Cancelados" value={fmtN(k.cancelados)} sub="excluidos del denom." accent="red" icon={AlertCircle} />
           </div>
-
-          {/* ── Calendario diario de Same-Day ──────────────────────────── */}
-          {data.serie_temporal?.length > 0 && (
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <Calendar size={14} className="text-slate-400" />
-                Calendario diario · Same-Day
-              </p>
-              <CalendarHeatmap data={data.serie_temporal} />
-            </div>
-          )}
 
           {/* ── Distribución del ciclo ─────────────────────────────────── */}
           {k.distribucion && (k.paquetes_a_ruta ?? 0) > 0 && (
@@ -181,40 +172,51 @@ export default function EfectividadSeller() {
             </div>
           )}
 
-          {/* ── Por driver que entregó ─────────────────────────────────── */}
-          {data.por_driver?.length > 0 && (
+          {/* ── Calendario Same-Day ────────────────────────────────────── */}
+          {data.serie_temporal?.length > 0 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                <Calendar size={14} className="text-slate-400" />
+                Calendario diario · % Same-Day
+              </p>
+              <CalendarHeatmap data={data.serie_temporal} />
+            </div>
+          )}
+
+          {/* ── Tabla día a día ─────────────────────────────────────────── */}
+          {data.por_dia?.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                <Truck size={14} className="text-slate-400" />
-                <p className="text-sm font-semibold text-gray-700">Conductores que despacharon a este seller</p>
-                <span className="ml-auto text-[10px] text-gray-400">{data.por_driver.length} conductores</span>
+              <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Calendar size={13} className="text-slate-400" />
+                  Detalle día a día
+                </p>
+                <p className="text-[10px] text-gray-400">{data.por_dia.length} días con actividad</p>
               </div>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
                 <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-[10px] text-gray-400 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
-                      <th className="px-4 py-2 text-left font-semibold">Conductor</th>
+                  <thead className="sticky top-0 bg-gray-50 z-10">
+                    <tr className="text-[10px] text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                      <th className="px-4 py-2 text-left font-semibold">Fecha</th>
+                      <th className="px-4 py-2 text-left font-semibold">Día</th>
                       <th className="px-4 py-2 text-center font-semibold">A ruta</th>
                       <th className="px-4 py-2 text-center font-semibold">Entregados</th>
                       <th className="px-4 py-2 text-center font-semibold">Same-Day</th>
-                      <th className="px-4 py-2 text-center font-semibold">%SD</th>
-                      <th className="px-4 py-2 text-center font-semibold">%Success</th>
+                      <th className="px-4 py-2 text-center font-semibold">% Same-Day</th>
+                      <th className="px-4 py-2 text-center font-semibold">% Success</th>
                       <th className="px-4 py-2 text-center font-semibold">Cancel.</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {data.por_driver.map((d) => (
-                      <tr
-                        key={d.driver_id ?? 'sin-driver'}
-                        onClick={() => d.driver_id && navigate(`/admin/efectividad/driver/${d.driver_id}?fecha_inicio=${fechaInicioIso}&fecha_fin=${fechaFinIso}`)}
-                        className={`text-gray-700 ${d.driver_id ? 'hover:bg-blue-50/40 cursor-pointer' : ''} transition-colors`}
-                      >
-                        <td className="px-4 py-2.5 font-medium">{d.nombre}</td>
-                        <td className="px-4 py-2.5 text-center text-gray-500">{fmtN(d.paquetes_a_ruta)}</td>
-                        <td className="px-4 py-2.5 text-center text-gray-500">{fmtN(d.paquetes_entregados)}</td>
+                    {[...data.por_dia].reverse().map((d, i) => (
+                      <tr key={i} className="hover:bg-gray-50 text-gray-700">
+                        <td className="px-4 py-2.5 font-mono text-gray-600 text-[11px]">{d.fecha}</td>
+                        <td className="px-4 py-2.5 text-gray-400">{DIAS[d.weekday] ?? d.weekday}</td>
+                        <td className="px-4 py-2.5 text-center font-semibold">{fmtN(d.a_ruta)}</td>
+                        <td className="px-4 py-2.5 text-center text-gray-500">{fmtN(d.entregados)}</td>
                         <td className="px-4 py-2.5 text-center">
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                            {d.paquetes_entregados}/{d.paquetes_a_ruta}
+                            {d.same_day}/{d.a_ruta}
                           </span>
                         </td>
                         <td className="px-4 py-2.5 text-center">
@@ -222,7 +224,9 @@ export default function EfectividadSeller() {
                             {fmtPct(d.pct_same_day)}
                           </span>
                         </td>
-                        <td className={`px-4 py-2.5 text-center font-bold ${colorPct(d.pct_delivery_success, 90)}`}>{fmtPct(d.pct_delivery_success)}</td>
+                        <td className={`px-4 py-2.5 text-center font-bold ${colorPct(d.pct_delivery_success, 90)}`}>
+                          {fmtPct(d.pct_delivery_success)}
+                        </td>
                         <td className="px-4 py-2.5 text-center">
                           <span className={(d.cancelados ?? 0) > 0 ? 'text-red-500 font-semibold' : 'text-gray-300'}>
                             {d.cancelados ?? 0}
@@ -237,7 +241,7 @@ export default function EfectividadSeller() {
           )}
 
           <p className="text-[10px] text-gray-400 text-center">
-            Rango: {data.rango.inicio} → {data.rango.fin}
+            Rango: {data.rango.inicio} → {data.rango.fin} · Same-Day = 0 días hábiles entre retiro y entrega
             {data.codigos?.length > 0 && <> · seller_codes: {data.codigos.join(', ')}</>}
           </p>
         </>

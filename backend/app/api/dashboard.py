@@ -2213,11 +2213,23 @@ def efectividad_v2_global(
     # cuando creó el Envio (Envio.seller_id). Cubre ~99% de las asignaciones
     # (las que están reconciliadas con un envío).
     #
-    # Asignaciones sin envio enlazado quedan agrupadas en "Sin seller (sin
-    # envío)" para que el operador sepa que existen y pueda actuar.
+    # Construimos un lookup seller_code→seller_id desde Envio para poder
+    # atribuir paquetes NO entregados (sin Envio) a su seller correcto.
+    _sc_to_sid: dict[str, int] = {}
+    for _r in db.query(Envio.seller_code, Envio.seller_id).filter(
+        Envio.seller_code.isnot(None), Envio.seller_id.isnot(None)
+    ).distinct().all():
+        if _r.seller_code and _r.seller_id:
+            _sc_to_sid[_r.seller_code] = _r.seller_id
+
     por_seller_buckets: dict[Optional[int], list] = defaultdict(list)
     for asig, envio in rows:
-        sid = envio.seller_id if envio is not None else None
+        if envio is not None and envio.seller_id is not None:
+            sid = envio.seller_id
+        elif asig.seller_code:
+            sid = _sc_to_sid.get(asig.seller_code)
+        else:
+            sid = None
         por_seller_buckets[sid].append((asig, envio))
 
     # Trae los sellers necesarios en una sola query.
@@ -2444,24 +2456,45 @@ def efectividad_v2_seller(
     if not seller:
         return {"error": "seller_no_encontrado"}
 
-    # Filtramos por `envio.seller_id` que es la fuente homologada por la ingesta
-    # (la tabla `sellers` no tiene un `codigo` que matchee con el seller_code
-    # del courier). Si el drill-down es del propio seller excluido, NO
-    # aplicamos su propia exclusión (queremos ver sus métricas individuales).
+    # Filtramos por `seller_code` (campo en AsignacionRuta que proviene del
+    # courier) usando como lookup los seller_codes que ya vemos en Envio para
+    # este seller. Así incluimos paquetes NO entregados todavía.
+    seller_codes = {
+        r.seller_code for r in
+        db.query(Envio.seller_code).filter(
+            Envio.seller_id == seller_id,
+            Envio.seller_code.isnot(None),
+        ).distinct().all()
+        if r.seller_code
+    }
+
     aplicar_excl = seller_id not in EFECTIVIDAD_SELLERS_EXCLUIDOS
-    q = _kpis_v2_base_query(db, inicio, fin, aplicar_exclusiones=aplicar_excl)
-    q = q.join(Envio, AsignacionRuta.envio_id == Envio.id, isouter=False)\
-         .filter(Envio.seller_id == seller_id)
+    if seller_codes:
+        q = db.query(AsignacionRuta, Envio).outerjoin(
+            Envio, AsignacionRuta.envio_id == Envio.id
+        ).filter(
+            AsignacionRuta.seller_code.in_(seller_codes),
+            AsignacionRuta.withdrawal_date >= inicio,
+            AsignacionRuta.withdrawal_date <= fin,
+        )
+        if aplicar_excl:
+            q = _aplicar_exclusiones(q)
+    else:
+        # Fallback si no hay seller_codes conocidos: inner join por seller_id
+        q = _kpis_v2_base_query(db, inicio, fin, aplicar_exclusiones=aplicar_excl)
+        q = q.join(Envio, AsignacionRuta.envio_id == Envio.id, isouter=False)\
+             .filter(Envio.seller_id == seller_id)
     rows = q.all()
 
     kpis = _calcular_kpis_v2(rows, incluir_buckets=True)
 
-    # ── Serie temporal por día ──────────────────────────────────────────────
+    # ── Serie temporal + por_dia (tabla día a día) ─────────────────────────
     por_dia_buckets: dict[date, list] = defaultdict(list)
     for asig, envio in rows:
         por_dia_buckets[asig.withdrawal_date].append((asig, envio))
 
     serie_temporal = []
+    por_dia = []
     for d in sorted(por_dia_buckets.keys()):
         k = _calcular_kpis_v2(por_dia_buckets[d])
         serie_temporal.append({
@@ -2470,6 +2503,16 @@ def efectividad_v2_seller(
             "entregados": k["paquetes_entregados"],
             "same_day": k["same_day"],
             "pct_same_day": k["pct_same_day"],
+        })
+        por_dia.append({
+            "fecha": d.isoformat(),
+            "weekday": d.strftime("%a"),
+            "a_ruta": k["paquetes_a_ruta"],
+            "entregados": k["paquetes_entregados"],
+            "same_day": k["same_day"],
+            "cancelados": k["cancelados"],
+            "pct_same_day": k["pct_same_day"],
+            "pct_delivery_success": k["pct_delivery_success"],
         })
 
     # ── Por driver que le entregó al seller ─────────────────────────────────
@@ -2498,9 +2541,11 @@ def efectividad_v2_seller(
     return {
         "seller_id": seller_id,
         "nombre": seller.nombre,
+        "codigos": sorted(seller_codes),
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
         "kpis": kpis,
         "serie_temporal": serie_temporal,
+        "por_dia": por_dia,
         "por_driver": por_driver,
     }
 
