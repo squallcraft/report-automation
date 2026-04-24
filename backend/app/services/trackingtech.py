@@ -200,7 +200,8 @@ def fetch_packages_withdrawals(
 
                 # La respuesta puede ser:
                 #  - una lista plana
-                #  - un dict con {"data": [...], "last_page": N, "total": N}
+                #  - un dict con {"meta": {"last_page": N, "total": N}, "data": [...]}
+                #  - un dict con {"data": [...], "last_page": N, "total": N}  (legado)
                 if isinstance(data, list):
                     all_records.extend(data)
                     break
@@ -208,8 +209,10 @@ def fetch_packages_withdrawals(
                 if isinstance(data, dict):
                     records = data.get("data") or []
                     all_records.extend(records)
-                    last_page = int(data.get("last_page", 1) or 1)
-                    total = data.get("total")
+                    # Soportar paginación en "meta" (nuevo) o raíz (legado)
+                    meta = data.get("meta") or {}
+                    last_page = int(meta.get("last_page") or data.get("last_page") or 1)
+                    total = meta.get("total") or data.get("total")
                     logger.info(
                         "TrackingTech withdrawals page %d/%d — %d en pagina, %d acumulado de %s",
                         page, last_page, len(records), len(all_records), total,
