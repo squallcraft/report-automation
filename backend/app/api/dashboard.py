@@ -2492,8 +2492,10 @@ def efectividad_v2_driver(
     por_ruta = []
     for ruta, asigs in por_ruta_buckets.items():
         k = _calcular_kpis_v2(asigs)
-        por_ruta.append({"ruta": ruta, **k})
-    por_ruta.sort(key=lambda x: -x["paquetes_a_ruta"])
+        dates = [a.withdrawal_date for a, _ in asigs if a.withdrawal_date]
+        route_date = min(dates).isoformat() if dates else None
+        por_ruta.append({"ruta": ruta, "route_date": route_date, **k})
+    por_ruta.sort(key=lambda x: x.get("route_date") or "", reverse=True)
 
     # ── Rendimiento del conductor (route_date) ─────────────────────────────
     # Distinto de Same-Day: mide si el driver entregó el mismo día que sacó
@@ -2649,18 +2651,12 @@ def efectividad_v2_driver_comparacion(
         pct_pm_ideal = round(100 * pm_ideal_n / total_f, 1) if total_f else None
 
         # ── Entregas por hora ──────────────────────────────────────────────
-        # Para cada día de ruta: rango = MAX(hora_entrega) - MIN(hora_entrega)
-        # Tasa del día = entregas_ese_dia / horas_rango
-        # Promedio de tasas válidas (rango >= 30 min)
+        # Para cada conductor × día: tasa = entregas / (rango_horas ese día)
+        # Luego promediamos las tasas → promedio por conductor (comparable entre
+        # conductor individual, zona y global sin inflar por número de drivers)
         from collections import defaultdict as _dd
-        por_dia: dict = _dd(list)
-        for r in franja_rows:
-            if r.hora_entrega is not None:
-                # fecha_entrega como proxy del día de entrega
-                pass
-        # Re-query con fecha_entrega incluida
         dia_rows = (
-            db.query(Envio.fecha_entrega, Envio.hora_entrega)
+            db.query(Envio.driver_id, Envio.fecha_entrega, Envio.hora_entrega)
             .filter(
                 Envio.driver_id.in_(driver_ids),
                 Envio.fecha_entrega >= inicio,
@@ -2670,13 +2666,14 @@ def efectividad_v2_driver_comparacion(
             )
             .all()
         )
+        # Group by (driver_id, fecha_entrega) so each entry = one driver one day
         dia_horas: dict = _dd(list)
         for r in dia_rows:
             mins = r.hora_entrega.hour * 60 + r.hora_entrega.minute
-            dia_horas[r.fecha_entrega].append(mins)
+            dia_horas[(r.driver_id, r.fecha_entrega)].append(mins)
 
         tasas = []
-        for d, horas_mins in dia_horas.items():
+        for _, horas_mins in dia_horas.items():
             if len(horas_mins) < 2:
                 continue
             rango_min = max(horas_mins) - min(horas_mins)

@@ -4,12 +4,44 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Target, CheckCircle2, AlertCircle, Package,
-  TrendingUp, Truck, Calendar, Clock, Star,
+  TrendingUp, Truck, Calendar, Clock, Star, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import PageHeader from '../../components/PageHeader'
 import CalendarHeatmap from '../../components/CalendarHeatmap'
 import DateRangePicker, { toIsoLocal } from '../../components/DateRangePicker'
 import ComparisonBars from '../../components/ComparisonBars'
+
+function useSortable(data, defaultKey, defaultDir = 'desc') {
+  const [sort, setSort] = useState({ key: defaultKey, dir: defaultDir })
+  const sorted = useMemo(() => {
+    if (!data?.length || !sort.key) return data ?? []
+    return [...data].sort((a, b) => {
+      const va = a[sort.key] ?? ''
+      const vb = b[sort.key] ?? ''
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      return sort.dir === 'asc' ? cmp : -cmp
+    })
+  }, [data, sort])
+  const toggle = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))
+  return [sorted, sort, toggle]
+}
+
+function SortTh({ label, sortKey, sort, onToggle, className = '' }) {
+  const active = sort.key === sortKey
+  return (
+    <th
+      className={`px-4 py-2 cursor-pointer select-none hover:text-gray-600 transition-colors ${className}`}
+      onClick={() => onToggle(sortKey)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active
+          ? sort.dir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />
+          : <ChevronDown size={10} className="opacity-20" />}
+      </span>
+    </th>
+  )
+}
 
 const now = new Date()
 const parseIso = s => {
@@ -107,19 +139,42 @@ function FranjasBlocks({ data, onFranjaClick, activeFranja }) {
 }
 
 function FranjasTable({ rows, agrupacion }) {
+  const [sort, setSort] = useState({ key: 'label', dir: 'asc' })
+  const sorted = useMemo(() => {
+    if (!rows?.length) return []
+    return [...rows].sort((a, b) => {
+      const va = a[sort.key] ?? ''
+      const vb = b[sort.key] ?? ''
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0
+      return sort.dir === 'asc' ? cmp : -cmp
+    })
+  }, [rows, sort])
+  const toggle = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))
+  const Th = ({ label, sKey, className = '' }) => {
+    const active = sort.key === sKey
+    return (
+      <th className={`px-4 py-2 cursor-pointer select-none hover:text-gray-600 transition-colors ${className}`} onClick={() => toggle(sKey)}>
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {active ? sort.dir === 'asc' ? <ChevronUp size={9} /> : <ChevronDown size={9} /> : <ChevronDown size={9} className="opacity-20" />}
+        </span>
+      </th>
+    )
+  }
   if (!rows?.length) return <p className="text-sm text-gray-400 text-center py-8">Sin datos</p>
+  const labelCol = agrupacion === 'ruta' ? 'Ruta' : agrupacion === 'dia' ? 'Fecha' : agrupacion === 'semana' ? 'Semana' : 'Mes'
   return (
     <div className="overflow-x-auto max-h-72">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-gray-50">
           <tr className="text-[10px] text-gray-400 uppercase border-b border-gray-100">
-            <th className="px-4 py-2 text-left">{agrupacion === 'ruta' ? 'Ruta' : agrupacion === 'dia' ? 'Fecha' : agrupacion === 'semana' ? 'Semana' : 'Mes'}</th>
-            <th className="px-4 py-2 text-center">Total</th>
+            <Th label={labelCol} sKey="label" className="text-left" />
+            <Th label="Total" sKey="total" className="text-center" />
             {FRANJAS_CONFIG.map(f => <th key={f.key} className="px-3 py-2 text-center">{f.label}</th>)}
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
-          {rows.map((row, i) => (
+          {sorted.map((row, i) => (
             <tr key={i} className="hover:bg-gray-50 text-gray-700">
               <td className="px-4 py-2 font-medium max-w-[180px] truncate" title={row.label}>{row.label}</td>
               <td className="px-4 py-2 text-center text-gray-500">{fmtN(row.total)}</td>
@@ -164,6 +219,11 @@ export default function EfectividadDriver() {
   const [selectedFranja, setSelectedFranja] = useState(null)
   const [horaDetail,     setHoraDetail]     = useState(null)
   const [horaDetailLoad, setHoraDetailLoad] = useState(false)
+  const [driversList,    setDriversList]    = useState([])
+
+  useEffect(() => {
+    api.get('/drivers').then(r => setDriversList(r.data.filter(d => d.activo))).catch(() => {})
+  }, [])
 
   const fi = useMemo(() => range.inicio ? toIsoLocal(range.inicio) : null, [range.inicio])
   const ff = useMemo(() => range.fin    ? toIsoLocal(range.fin)    : null, [range.fin])
@@ -236,11 +296,11 @@ export default function EfectividadDriver() {
   const k = data?.kpis
   const r = data?.rendimiento
 
-  // Heatmap con pct_success calculado en cliente
-  const heatmapConSuccess = useMemo(() => (data?.heatmap ?? []).map(h => ({
-    ...h,
-    pct_success: h.a_ruta > 0 ? Math.round(1000 * h.entregados / h.a_ruta) / 10 : null,
-  })), [data?.heatmap])
+  const [rutasSorted, rutasSort, rutasToggle] = useSortable(data?.por_ruta ?? [], 'route_date', 'desc')
+  const [pendSorted,  pendSort,  pendToggle]  = useSortable(data?.no_entregados ?? [], 'fecha_retiro', 'desc')
+
+  // Heatmap para "Calendario de rendimiento por día de ruta" (en la sección rendimiento)
+  // El "Calendario de actividad" fue eliminado — solo se mantiene el de rendimiento (r.heatmap)
 
   return (
     <div className="space-y-6 pb-10">
@@ -270,7 +330,22 @@ export default function EfectividadDriver() {
             }
             icon={Truck}
             accent="emerald"
-            actions={<DateRangePicker value={range} onChange={setRange} />}
+            actions={
+              <div className="flex items-center gap-2 flex-wrap">
+                {driversList.length > 0 && (
+                  <select
+                    value={driverId}
+                    onChange={e => navigate(`/admin/efectividad/driver/${e.target.value}?fecha_inicio=${fi}&fecha_fin=${ff}`)}
+                    className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 max-w-[180px] truncate"
+                  >
+                    {driversList.map(d => (
+                      <option key={d.id} value={String(d.id)}>{d.nombre}</option>
+                    ))}
+                  </select>
+                )}
+                <DateRangePicker value={range} onChange={setRange} />
+              </div>
+            }
           />
         </div>
       </div>
@@ -325,20 +400,6 @@ export default function EfectividadDriver() {
                   <CalendarHeatmap data={r.heatmap} valueKey="pct_entrega" />
                 </>
               )}
-            </div>
-          )}
-
-          {/* ── Calendario de actividad ───────────────────────────────── */}
-          {heatmapConSuccess.length > 0 && (
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Calendar size={14} className="text-slate-400" />
-                  Calendario de actividad
-                </p>
-                <p className="text-[10px] text-gray-400">Color = % efectividad · Texto = entregados / a-ruta</p>
-              </div>
-              <CalendarHeatmap data={heatmapConSuccess} valueKey="pct_success" />
             </div>
           )}
 
@@ -435,17 +496,19 @@ export default function EfectividadDriver() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-[10px] text-gray-400 uppercase bg-gray-50 border-b border-gray-100">
-                      <th className="px-4 py-2 text-left">Ruta</th>
-                      <th className="px-4 py-2 text-center">A ruta</th>
-                      <th className="px-4 py-2 text-center">Entregados</th>
-                      <th className="px-4 py-2 text-center">% Efectividad</th>
-                      <th className="px-4 py-2 text-center">% 1er Intento</th>
+                      <SortTh label="Ruta" sortKey="ruta" sort={rutasSort} onToggle={rutasToggle} className="text-left" />
+                      <SortTh label="Fecha" sortKey="route_date" sort={rutasSort} onToggle={rutasToggle} className="text-center" />
+                      <SortTh label="A ruta" sortKey="paquetes_a_ruta" sort={rutasSort} onToggle={rutasToggle} className="text-center" />
+                      <SortTh label="Entregados" sortKey="paquetes_entregados" sort={rutasSort} onToggle={rutasToggle} className="text-center" />
+                      <SortTh label="% Efectividad" sortKey="pct_delivery_success" sort={rutasSort} onToggle={rutasToggle} className="text-center" />
+                      <SortTh label="% 1er Intento" sortKey="pct_first_attempt" sort={rutasSort} onToggle={rutasToggle} className="text-center" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {(showAllRoutes ? data.por_ruta : data.por_ruta.slice(0, 15)).map((row, i) => (
+                    {(showAllRoutes ? rutasSorted : rutasSorted.slice(0, 15)).map((row, i) => (
                       <tr key={i} className="hover:bg-gray-50 text-gray-700">
                         <td className="px-4 py-2.5 font-medium max-w-xs truncate" title={row.ruta}>{row.ruta}</td>
+                        <td className="px-4 py-2.5 text-center text-gray-400">{row.route_date ? fmtDate(row.route_date) : '—'}</td>
                         <td className="px-4 py-2.5 text-center text-gray-500">{fmtN(row.paquetes_a_ruta)}</td>
                         <td className="px-4 py-2.5 text-center text-gray-500">{fmtN(row.paquetes_entregados)}</td>
                         <td className="px-4 py-2.5 text-center">
@@ -485,16 +548,16 @@ export default function EfectividadDriver() {
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-gray-50">
                     <tr className="text-[10px] text-gray-400 uppercase border-b border-gray-100">
-                      <th className="px-4 py-2 text-left">Tracking</th>
-                      <th className="px-4 py-2 text-left">Fecha retiro</th>
-                      <th className="px-4 py-2 text-center">Intento</th>
-                      <th className="px-4 py-2 text-left">Ruta</th>
-                      <th className="px-4 py-2 text-left">Seller</th>
-                      <th className="px-4 py-2 text-left">Comuna</th>
+                      <SortTh label="Tracking" sortKey="tracking_id" sort={pendSort} onToggle={pendToggle} className="text-left" />
+                      <SortTh label="Fecha retiro" sortKey="fecha_retiro" sort={pendSort} onToggle={pendToggle} className="text-left" />
+                      <SortTh label="Intento" sortKey="intento_nro" sort={pendSort} onToggle={pendToggle} className="text-center" />
+                      <SortTh label="Ruta" sortKey="ruta_nombre" sort={pendSort} onToggle={pendToggle} className="text-left" />
+                      <SortTh label="Seller" sortKey="seller" sort={pendSort} onToggle={pendToggle} className="text-left" />
+                      <SortTh label="Comuna" sortKey="comuna" sort={pendSort} onToggle={pendToggle} className="text-left" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {data.no_entregados.map((n, i) => (
+                    {pendSorted.map((n, i) => (
                       <tr key={i} className="hover:bg-gray-50 text-gray-700">
                         <td className="px-4 py-2.5 font-mono text-blue-600 text-[10px]">{n.tracking_id}</td>
                         <td className="px-4 py-2.5 text-gray-500">{n.fecha_retiro || '—'}</td>
