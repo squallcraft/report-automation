@@ -202,7 +202,7 @@ export default function DateRangePicker({ value, onChange, minDate, maxDate }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 z-30 bg-white rounded-xl shadow-2xl border border-gray-200 flex text-gray-700"
+        <div className="absolute right-0 mt-2 z-50 bg-white rounded-xl shadow-2xl border border-gray-200 flex text-gray-700"
              style={{ width: 'min(720px, 95vw)' }}>
           <div className="border-r border-gray-100 p-2 w-32 flex-shrink-0">
             {presets.map(p => {

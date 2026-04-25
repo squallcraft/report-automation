@@ -5,12 +5,19 @@ const HEADER_STYLES = {
     padding: '22px 32px',
     marginBottom: 20,
     position: 'relative',
-    overflow: 'hidden',
+    overflow: 'visible',
     minHeight: 96,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 28,
+  },
+  decorations: {
+    position: 'absolute',
+    inset: 0,
+    borderRadius: 16,
+    overflow: 'hidden',
+    pointerEvents: 'none',
   },
   meshOverlay: {
     position: 'absolute',
@@ -126,8 +133,10 @@ export default function PageHeader({
 
   return (
     <div style={HEADER_STYLES.wrapper}>
-      <div style={HEADER_STYLES.meshOverlay} />
-      <div style={HEADER_STYLES.diagonalAccent} />
+      <div style={HEADER_STYLES.decorations}>
+        <div style={HEADER_STYLES.meshOverlay} />
+        <div style={HEADER_STYLES.diagonalAccent} />
+      </div>
 
       <div style={HEADER_STYLES.left}>
         {Icon && (
