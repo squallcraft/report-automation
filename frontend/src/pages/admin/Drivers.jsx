@@ -10,6 +10,15 @@ import PageHeader from '../../components/PageHeader'
 
 const fmtClp = (n) => (n ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
+const FILTROS = [
+  { id: 'todos',       label: 'Todos',          test: () => true },
+  { id: 'activos',     label: 'Activos',        test: (d) => d.activo },
+  { id: 'inactivos',   label: 'Inactivos',      test: (d) => !d.activo },
+  { id: 'contratados', label: 'Contratados',    test: (d) => d.activo && d.contratado },
+  { id: 'jefes',       label: 'Jefes de flota', test: (d) => d.activo && d.subordinados_count > 0 },
+  { id: 'sin_acuerdo', label: 'Sin acuerdo',    test: (d) => d.activo && !d.acuerdo_aceptado },
+]
+
 function EstadoBadge({ activo }) {
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${activo ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -423,22 +432,15 @@ export default function Drivers() {
     return <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
   }
 
-  // Filtros disponibles con su predicado
-  const FILTROS = [
-    { id: 'todos',         label: 'Todos',          test: () => true },
-    { id: 'activos',       label: 'Activos',        test: (d) => d.activo },
-    { id: 'inactivos',     label: 'Inactivos',      test: (d) => !d.activo },
-    { id: 'contratados',   label: 'Contratados',    test: (d) => d.activo && d.contratado },
-    { id: 'jefes',         label: 'Jefes de flota', test: (d) => d.activo && d.subordinados_count > 0 },
-    { id: 'sin_acuerdo',   label: 'Sin acuerdo',    test: (d) => d.activo && !d.acuerdo_aceptado },
-  ]
-  const conteo = FILTROS.reduce((acc, f) => {
+  // Filtros disponibles con su predicado — definidos fuera del componente (estables)
+  const conteo = useMemo(() => FILTROS.reduce((acc, f) => {
     acc[f.id] = drivers.filter(f.test).length
     return acc
-  }, {})
-  const driversFiltrados = drivers.filter(
-    (FILTROS.find(f => f.id === filtroEstado) || FILTROS[0]).test
-  )
+  }, {}), [drivers])
+
+  const driversFiltrados = useMemo(() =>
+    drivers.filter((FILTROS.find(f => f.id === filtroEstado) || FILTROS[0]).test)
+  , [drivers, filtroEstado])
 
   const zonaOptions = useMemo(() =>
     [...new Set(drivers.map(d => d.zona).filter(Boolean))].sort()
