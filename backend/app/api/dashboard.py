@@ -2093,16 +2093,31 @@ def ingresos_drivers_ranking(
 #
 #   1. Paquetes a ruta            COUNT(DISTINCT tracking_id) cancelados excluidos
 #   2. Paquetes entregados        DISTINCT trackings con fecha_entrega presente
-#   3. % Same-Day                 entregas con fecha_entrega == withdrawal_date
-#                                 (0 días hábiles entre retiro y entrega)
-#   4. Delivery Success Rate      entregados / a_ruta
+#   3. % Same-Day                 entregas con 0 días hábiles entre RETIRO y ENTREGA
+#   4. Delivery Success Rate      entregados / a_ruta  (efectividad)
 #   5. First-Attempt Delivery Rate entregados con intento_nro=1 / a_ruta
 #   6. Cancelados (informativo)   COUNT trackings cancelados externamente
 #
-# Definición canónica de "Same-Day":
-#   business_days(fecha_retiro, fecha_entrega) == 0
-#   (i.e. fecha_entrega == withdrawal_date para días Lun-Vie; viernes→lunes
-#   NO es same-day porque tiene 1 día hábil de diferencia.)
+# ─── Conceptos clave (NO confundir) ──────────────────────────────────────────
+#   withdrawal_date  → fecha en que el courier RETIRÓ el paquete del seller.
+#                      Se usa SOLO para Same-Day (retiro vs entrega).
+#                      También se usa como filtro base del periodo (universo).
+#
+#   route_date       → fecha en que el paquete SALIÓ a ruta de despacho/entrega.
+#                      Se usa SOLO para Efectividad (a_ruta vs entregados).
+#                      Puede ser el mismo día del retiro o varios días después.
+#
+#   route_id /       → identifican la ruta de despacho/entrega del paquete
+#   route_name         (no la ruta de retiro). Útiles para agrupar intentos.
+#
+# Definición canónica de Same-Day:
+#   business_days(withdrawal_date, fecha_entrega) == 0
+#   (viernes→lunes NO es same-day porque tiene 1 día hábil de diferencia.)
+#
+# Bucketing temporal (calendarios / series):
+#   - Calendario de efectividad → agrupa por route_date (cuándo salió a ruta)
+#   - KPI Same-Day              → independiente del bucket, calculado sobre el
+#                                 conjunto de entregados del día
 # ═════════════════════════════════════════════════════════════════════════════
 
 
@@ -2321,10 +2336,18 @@ def efectividad_v2_global(
     rows = _kpis_v2_base_query(db, inicio, fin).all()
     kpis_global = _calcular_kpis_v2(rows, incluir_buckets=True)
 
-    # ── Serie temporal por día (withdrawal_date) ────────────────────────────
+    # ── Serie temporal por día (route_date = fecha de salida a ruta) ────────
+    # IMPORTANTE: agrupamos por route_date (cuándo el paquete SALIÓ a ruta de
+    # despacho/entrega), NO por withdrawal_date (cuándo se RETIRÓ del seller).
+    # El concepto del calendario es "efectividad operacional del día": de los
+    # paquetes que salieron a entrega ese día, cuántos se entregaron.
+    # Los paquetes sin route_date (retirados pero todavía no despachados) se
+    # excluyen del calendario porque no han generado actividad de entrega aún.
     por_dia_buckets: dict[date, list] = defaultdict(list)
     for asig, envio in rows:
-        por_dia_buckets[asig.withdrawal_date].append((asig, envio))
+        if asig.route_date is None:
+            continue
+        por_dia_buckets[asig.route_date].append((asig, envio))
 
     serie_temporal = []
     for d in sorted(por_dia_buckets.keys()):
@@ -2465,9 +2488,13 @@ def efectividad_v2_driver(
     kpis = _calcular_kpis_v2(rows, incluir_buckets=True)
 
     # ── Heatmap calendario: una celda por día con (a_ruta / entregados) ─────
+    # Agrupado por route_date (cuándo SALIÓ a ruta de despacho/entrega).
+    # Same-day se calcula INTERNO a cada celda con withdrawal_date vs entrega.
     por_dia_buckets: dict[date, list] = defaultdict(list)
     for asig, envio in rows:
-        por_dia_buckets[asig.withdrawal_date].append((asig, envio))
+        if asig.route_date is None:
+            continue
+        por_dia_buckets[asig.route_date].append((asig, envio))
 
     heatmap = []
     for d in sorted(por_dia_buckets.keys()):
@@ -2484,6 +2511,9 @@ def efectividad_v2_driver(
         })
 
     # ── Por ruta (route_name) ───────────────────────────────────────────────
+    # route_date = MIN(asig.route_date) ≡ fecha en que la ruta SALIÓ a entrega.
+    # NO usar withdrawal_date (eso sería la fecha de retiro del paquete del
+    # seller, que puede ser días antes de que efectivamente saliera a ruta).
     por_ruta_buckets: dict[str, list] = defaultdict(list)
     for asig, envio in rows:
         nombre_ruta = asig.route_name or "(sin nombre)"
@@ -2492,7 +2522,7 @@ def efectividad_v2_driver(
     por_ruta = []
     for ruta, asigs in por_ruta_buckets.items():
         k = _calcular_kpis_v2(asigs)
-        dates = [a.withdrawal_date for a, _ in asigs if a.withdrawal_date]
+        dates = [a.route_date for a, _ in asigs if a.route_date]
         route_date = min(dates).isoformat() if dates else None
         por_ruta.append({"ruta": ruta, "route_date": route_date, **k})
     por_ruta.sort(key=lambda x: x.get("route_date") or "", reverse=True)
@@ -2777,9 +2807,12 @@ def efectividad_v2_seller(    seller_id: int,
     kpis = _calcular_kpis_v2(rows, incluir_buckets=True)
 
     # ── Serie temporal + por_dia (tabla día a día) ─────────────────────────
+    # Agrupado por route_date (efectividad operacional). Ver nota global.
     por_dia_buckets: dict[date, list] = defaultdict(list)
     for asig, envio in rows:
-        por_dia_buckets[asig.withdrawal_date].append((asig, envio))
+        if asig.route_date is None:
+            continue
+        por_dia_buckets[asig.route_date].append((asig, envio))
 
     serie_temporal = []
     por_dia = []
