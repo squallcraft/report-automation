@@ -919,7 +919,7 @@ export default function Facturacion() {
               <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">Subtotal Neto</p>
               <p className="text-xl font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
               {tab === 'pagos' && filterTipoPago === null && (
-                <p className="text-[10px] text-white/55 mt-1 leading-tight">
+                <p className="text-[12px] font-bold text-white/70 mt-1 leading-tight">
                   S: {fmt(totalesPorTipo.semanal)} &nbsp;·&nbsp; Q: {fmt(totalesPorTipo.quincenal)} &nbsp;·&nbsp; M: {fmt(totalesPorTipo.mensual)}
                 </p>
               )}
@@ -933,7 +933,7 @@ export default function Facturacion() {
               <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">IVA (19%)</p>
               <p className="text-xl font-bold leading-tight truncate">{fmt(totalesGenerales.iva)}</p>
               {tab === 'pagos' && filterTipoPago === null && (
-                <p className="text-[10px] text-white/55 mt-1 leading-tight">
+                <p className="text-[12px] font-bold text-white/70 mt-1 leading-tight">
                   S: {fmt(Math.round(totalesPorTipo.semanal * 0.19))} &nbsp;·&nbsp; Q: {fmt(Math.round(totalesPorTipo.quincenal * 0.19))} &nbsp;·&nbsp; M: {fmt(Math.round(totalesPorTipo.mensual * 0.19))}
                 </p>
               )}
@@ -947,7 +947,7 @@ export default function Facturacion() {
               <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">Total con IVA</p>
               <p className="text-xl font-bold leading-tight truncate">{fmt(totalesGenerales.total)}</p>
               {tab === 'pagos' && filterTipoPago === null && (
-                <p className="text-[10px] text-white/55 mt-1 leading-tight">
+                <p className="text-[12px] font-bold text-white/70 mt-1 leading-tight">
                   S: {fmt(Math.round(totalesPorTipo.semanal * 1.19))} &nbsp;·&nbsp; Q: {fmt(Math.round(totalesPorTipo.quincenal * 1.19))} &nbsp;·&nbsp; M: {fmt(Math.round(totalesPorTipo.mensual * 1.19))}
                 </p>
               )}
