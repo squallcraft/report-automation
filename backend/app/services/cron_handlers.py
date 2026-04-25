@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 
 # ── Job keys (constantes) ─────────────────────────────────────────────────────
-JOB_INGESTA_RUTAS = "ingesta_rutas_courier"
+JOB_INGESTA_RUTAS       = "ingesta_rutas_courier"      # 03:00 — ventana amplia
+JOB_INGESTA_RUTAS_19H   = "ingesta_rutas_19h"          # 19:00 — snapshot en ruta
+JOB_INGESTA_RUTAS_00H   = "ingesta_rutas_00h"          # 00:00 — cierre del día
 JOB_RECONCILIAR_PENDIENTES = "reconciliar_asignaciones_pendientes"
 JOB_CICLO_CONTRATOS = "ciclo_contratos_laborales"
 
@@ -108,24 +110,61 @@ def handler_ciclo_contratos(db: Session, config: dict, ejecucion_id: int) -> dic
 
 # ── Registro central ──────────────────────────────────────────────────────────
 def register_all_handlers() -> None:
-    register_handler(JOB_INGESTA_RUTAS, handler_ingesta_rutas)
+    # Los tres jobs de ingesta de rutas usan el mismo handler; la config en BD
+    # define qué ventana de fechas consulta cada uno.
+    register_handler(JOB_INGESTA_RUTAS,     handler_ingesta_rutas)
+    register_handler(JOB_INGESTA_RUTAS_19H, handler_ingesta_rutas)
+    register_handler(JOB_INGESTA_RUTAS_00H, handler_ingesta_rutas)
     register_handler(JOB_RECONCILIAR_PENDIENTES, handler_reconciliar_pendientes)
     register_handler(JOB_CICLO_CONTRATOS, handler_ciclo_contratos)
 
 
 # ── Seed de cron jobs por defecto ─────────────────────────────────────────────
 DEFAULT_JOBS = [
+    # ── Ingesta rutas 03:00 — ventana amplia (15 días) ──────────────────────
+    # Corre de madrugada. Consulta los últimos 15 días de created_at para capturar
+    # paquetes creados hace tiempo pero retirados recientemente. Es el cron
+    # "recuperador" que garantiza cobertura completa.
     {
         "job_key": JOB_INGESTA_RUTAS,
-        "nombre": "Ingesta de rutas (courier)",
+        "nombre": "Ingesta rutas — ventana amplia (03:00)",
         "descripcion": (
-            "Descarga del endpoint del courier las asignaciones de ruta del día anterior "
-            "(denominador para efectividad de entregas)."
+            "Ventana de 15 días (created_at). Captura paquetes con withdrawal_date "
+            "tardío y re-reconcilia pendientes. Garantiza cobertura completa."
         ),
-        "activo": False,  # se activa cuando el endpoint del dev esté disponible
+        "activo": True,
         "hora_ejecucion": "03:00",
-        "config": {"dias_atras": 1, "rango_dias": 1, "lookback_extra": 0},
+        "config": {"dias_atras": 1, "rango_dias": 15, "lookback_extra": 5},
     },
+    # ── Ingesta rutas 19:00 — snapshot en ruta ───────────────────────────────
+    # Corre mientras los conductores están activos. Captura el estado actual
+    # de los paquetes en ruta (denominador exacto para efectividad del conductor).
+    {
+        "job_key": JOB_INGESTA_RUTAS_19H,
+        "nombre": "Ingesta rutas — snapshot en ruta (19:00)",
+        "descripcion": (
+            "Captura hoy + ayer mientras los conductores están en ruta. "
+            "Registra qué paquetes lleva cada conductor (denominador de efectividad)."
+        ),
+        "activo": True,
+        "hora_ejecucion": "19:00",
+        "config": {"dias_atras": 0, "rango_dias": 2},
+    },
+    # ── Ingesta rutas 00:00 — cierre del día ────────────────────────────────
+    # Corre a medianoche para capturar el estado final de los paquetes del día
+    # que acaba de terminar (entregados, fallidos, cancelados).
+    {
+        "job_key": JOB_INGESTA_RUTAS_00H,
+        "nombre": "Ingesta rutas — cierre del día (00:00)",
+        "descripcion": (
+            "Captura el estado final del día que acaba de cerrar. "
+            "Actualiza entregados, fallidos y cancelados antes de la madrugada."
+        ),
+        "activo": True,
+        "hora_ejecucion": "00:00",
+        "config": {"dias_atras": 1, "rango_dias": 1},
+    },
+    # ── Reconciliación de pendientes (04:00) ─────────────────────────────────
     {
         "job_key": JOB_RECONCILIAR_PENDIENTES,
         "nombre": "Reconciliar asignaciones pendientes",
@@ -133,10 +172,11 @@ DEFAULT_JOBS = [
             "Vuelve a vincular asignaciones sin envío local (espera a que llegue la ingesta "
             "diaria de envíos) y recalcula su estado."
         ),
-        "activo": False,
+        "activo": True,
         "hora_ejecucion": "04:00",
         "config": {"dias_atras": 7, "limite": 5000},
     },
+    # ── Ciclo contratos (06:00) ───────────────────────────────────────────────
     {
         "job_key": JOB_CICLO_CONTRATOS,
         "nombre": "Ciclo de vida contratos laborales",
@@ -145,7 +185,7 @@ DEFAULT_JOBS = [
             "(T-30, T-15, T-7) y ejecuta las acciones del día T0 (término, renovación o "
             "conversión automática a indefinido según la ley)."
         ),
-        "activo": True,   # activo desde el inicio
+        "activo": True,
         "hora_ejecucion": "06:00",
         "config": {},
     },
@@ -153,19 +193,28 @@ DEFAULT_JOBS = [
 
 
 def seed_default_cron_jobs(db: Session) -> None:
-    """Crea las filas de cron_jobs si no existen. Idempotente."""
+    """Crea o actualiza las filas de cron_jobs según DEFAULT_JOBS. Idempotente."""
     from app.models import CronJob
     for spec in DEFAULT_JOBS:
         existe = db.query(CronJob).filter(CronJob.job_key == spec["job_key"]).first()
         if existe:
-            continue
-        cj = CronJob(
-            job_key=spec["job_key"],
-            nombre=spec["nombre"],
-            descripcion=spec["descripcion"],
-            activo=spec["activo"],
-            hora_ejecucion=spec["hora_ejecucion"],
-            config=spec["config"],
-        )
-        db.add(cj)
+            # Actualizar config y hora si cambiaron (no toca activo para no pisar
+            # cambios manuales hechos desde la UI, salvo que nunca haya sido activado).
+            existe.nombre = spec["nombre"]
+            existe.descripcion = spec["descripcion"]
+            existe.hora_ejecucion = spec["hora_ejecucion"]
+            existe.config = spec["config"]
+            # Activar si el spec lo requiere y el job nunca se activó manualmente
+            if spec.get("activo") and not existe.activo:
+                existe.activo = True
+        else:
+            cj = CronJob(
+                job_key=spec["job_key"],
+                nombre=spec["nombre"],
+                descripcion=spec["descripcion"],
+                activo=spec["activo"],
+                hora_ejecucion=spec["hora_ejecucion"],
+                config=spec["config"],
+            )
+            db.add(cj)
     db.commit()
