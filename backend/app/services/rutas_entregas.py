@@ -430,11 +430,21 @@ def ingestar_rutas(
     fecha_inicio: str,
     fecha_fin: str,
     task_id: Optional[str] = None,
+    route_date_filter: Optional[date] = None,
 ) -> dict:
     """
     Descarga del endpoint y procesa todas las asignaciones para el rango.
     Se llama desde el handler del cron job o desde un thread (con task_id)
     para reportar progreso a la UI.
+
+    route_date_filter (opcional):
+        Si se pasa, solo se hace upsert de los registros cuyo `route_date`
+        coincida con ese día. Útil para los crons de 19:00 y 23:50 que
+        descargan una ventana amplia (15 días de withdrawal_date) pero solo
+        quieren capturar los paquetes que salieron a ruta HOY.
+        El propósito: paquetes con withdrawal_date antiguo que van en la ruta
+        del día no aparecerían en una ventana corta; con la ventana amplia +
+        filtro de route_date se obtiene el denominador exacto del conductor.
     """
     if task_id:
         update_task(task_id, message=f"Conectando con TrackingTech ({fecha_inicio} → {fecha_fin})…")
@@ -464,8 +474,34 @@ def ingestar_rutas(
         "ingestar_rutas: %d registros descargados de TrackingTech para %s -> %s",
         total, fecha_inicio, fecha_fin,
     )
+
+    # Aplicar filtro de route_date si se solicitó (crons 19h y 23:50).
+    # Solo procesamos los paquetes que la API indica que están en la ruta del
+    # día de interés. Los demás ya están en DB desde el cron de madrugada.
+    filtrados_fuera = 0
+    if route_date_filter is not None:
+        registros_filtrados = []
+        for r in registros:
+            rd = r.get("route_date")
+            if rd is None:
+                # Paquete sin ruta asignada aún — no es de la ruta de hoy, omitir.
+                filtrados_fuera += 1
+                continue
+            if isinstance(rd, str):
+                rd = _parse_date(rd)
+            if rd == route_date_filter:
+                registros_filtrados.append(r)
+            else:
+                filtrados_fuera += 1
+        registros = registros_filtrados
+        logger.info(
+            "ingestar_rutas (route_date_filter=%s): %d de %d registros pasan el filtro (%d omitidos)",
+            route_date_filter, len(registros), total, filtrados_fuera,
+        )
+
+    total_filtrado = len(registros)
     if task_id:
-        update_task(task_id, total=total, message=f"Descargados {total} registros del courier. Procesando…")
+        update_task(task_id, total=total_filtrado, message=f"Descargados {total} registros, procesando {total_filtrado} de ruta del día…")
 
     creadas = 0
     actualizadas = 0
@@ -502,14 +538,14 @@ def ingestar_rutas(
                 logger.exception("Commit intermedio fallo en idx=%d", idx)
                 db.rollback()
 
-        if task_id and ((idx + 1) % 25 == 0 or (idx + 1) == total):
+        if task_id and ((idx + 1) % 25 == 0 or (idx + 1) == total_filtrado):
             update_task(
                 task_id,
                 processed=idx + 1,
                 nuevos=creadas,
                 duplicados=actualizadas,
                 errores=errores,
-                message=f"Procesando… {idx + 1}/{total}",
+                message=f"Procesando… {idx + 1}/{total_filtrado}",
             )
 
     db.commit()
@@ -518,13 +554,20 @@ def ingestar_rutas(
     resultado = {
         "ok": True,
         "mensaje": (
+            f"API: {total} descargados (route_date_filter={route_date_filter}, omitidos={filtrados_fuera}) - "
+            f"Procesadas OK: {procesadas_ok} "
+            f"({creadas} nuevas, {actualizadas} actualizadas) - "
+            f"Con envio local: {enlazadas} - Sin envio local: {sin_envio} - Errores: {errores}"
+            if route_date_filter else
             f"API: {total} - Procesadas OK: {procesadas_ok} "
             f"({creadas} nuevas, {actualizadas} actualizadas) - "
             f"Con envio local: {enlazadas} - Sin envio local: {sin_envio} - Errores: {errores}"
         ),
         "fecha_inicio": fecha_inicio,
         "fecha_fin": fecha_fin,
+        "route_date_filter": route_date_filter.isoformat() if route_date_filter else None,
         "total_api": total,
+        "filtrados_fuera": filtrados_fuera,
         "asignaciones_creadas": creadas,
         "asignaciones_actualizadas": actualizadas,
         "enlazadas_a_envio": enlazadas,
@@ -537,7 +580,7 @@ def ingestar_rutas(
         update_task(
             task_id,
             status="done",
-            processed=total,
+            processed=total_filtrado,
             nuevos=creadas,
             duplicados=actualizadas,
             errores=errores,

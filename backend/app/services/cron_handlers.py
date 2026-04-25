@@ -47,22 +47,33 @@ def handler_ingesta_rutas(db: Session, config: dict, ejecucion_id: int) -> dict:
     """Llama al endpoint del courier y persiste asignaciones.
 
     Config esperada:
-      - dias_atras (int, default 1): cuántos días hacia atrás procesar
-        (la corrida de hoy 03:00 procesa los datos del día anterior).
+      - dias_atras (int, default 1): cuántos días hacia atrás retroceder desde hoy
+        para calcular fecha_fin del rango de withdrawal_date.
       - rango_dias (int, default 1): tamaño de la ventana en días.
-        Por ejemplo dias_atras=1, rango_dias=1 → solo el día de ayer.
+        Por ejemplo dias_atras=1, rango_dias=15 → los últimos 15 días hasta ayer.
       - lookback_extra (int, default 0): días adicionales hacia atrás para
         reintentar reconciliación (útil cuando la ingesta de envíos llega tarde).
+      - solo_route_date_hoy (bool, default False): si es True, de todos los
+        registros descargados solo se procesan los que tengan route_date = hoy.
+        Usar para los crons de 19:00 y 23:50: se descarga ventana amplia para
+        capturar paquetes con withdrawal_date antiguo que van en la ruta del día,
+        pero solo se actualiza la data del día operativo activo.
     """
     dias_atras = int(config.get("dias_atras", 1))
     rango_dias = max(1, int(config.get("rango_dias", 1)))
     lookback_extra = max(0, int(config.get("lookback_extra", 0)))
+    solo_route_date_hoy = bool(config.get("solo_route_date_hoy", False))
 
     fecha_fin = date.today() - timedelta(days=dias_atras)
     fecha_inicio = fecha_fin - timedelta(days=rango_dias - 1)
     fmt = lambda d: d.strftime("%Y-%m-%d")
 
-    resultado = rutas_entregas.ingestar_rutas(db, fmt(fecha_inicio), fmt(fecha_fin))
+    route_date_filter = date.today() if solo_route_date_hoy else None
+
+    resultado = rutas_entregas.ingestar_rutas(
+        db, fmt(fecha_inicio), fmt(fecha_fin),
+        route_date_filter=route_date_filter,
+    )
 
     if lookback_extra > 0:
         try:
@@ -137,32 +148,37 @@ DEFAULT_JOBS = [
         "config": {"dias_atras": 1, "rango_dias": 15, "lookback_extra": 5},
     },
     # ── Ingesta rutas 19:00 — snapshot en ruta ───────────────────────────────
-    # Corre mientras los conductores están activos. Captura el estado actual
-    # de los paquetes en ruta (denominador exacto para efectividad del conductor).
+    # Ventana de 15 días pero SOLO procesa paquetes con route_date = hoy.
+    # Garantiza que paquetes con withdrawal_date antiguo (retirados de bodega
+    # días atrás) que van en la ruta de HOY queden correctamente asociados al
+    # conductor del día. Sin este filtro, el denominador del conductor sería
+    # incompleto al hacer el cron con ventana corta.
     {
         "job_key": JOB_INGESTA_RUTAS_19H,
         "nombre": "Ingesta rutas — snapshot en ruta (19:00)",
         "descripcion": (
-            "Captura hoy + ayer mientras los conductores están en ruta. "
-            "Registra qué paquetes lleva cada conductor (denominador de efectividad)."
+            "Ventana amplia (15 días) filtrando solo route_date=hoy. "
+            "Captura paquetes con withdrawal_date antiguo que van en la ruta del día. "
+            "Registra denominador exacto del conductor mientras está activo."
         ),
         "activo": True,
         "hora_ejecucion": "19:00",
-        "config": {"dias_atras": 0, "rango_dias": 2},
+        "config": {"dias_atras": 0, "rango_dias": 15, "solo_route_date_hoy": True},
     },
-    # ── Ingesta rutas 00:00 — cierre del día ────────────────────────────────
-    # Corre a medianoche para capturar el estado final de los paquetes del día
-    # que acaba de terminar (entregados, fallidos, cancelados).
+    # ── Ingesta rutas 23:50 — cierre del día ────────────────────────────────
+    # Igual que el de 19:00 pero captura el estado final antes de medianoche:
+    # entregados, fallidos, cancelados con route_date = hoy.
+    # Se usa 23:50 (no 00:00) para que date.today() siga siendo el día operativo.
     {
         "job_key": JOB_INGESTA_RUTAS_00H,
-        "nombre": "Ingesta rutas — cierre del día (00:00)",
+        "nombre": "Ingesta rutas — cierre del día (23:50)",
         "descripcion": (
-            "Captura el estado final del día que acaba de cerrar. "
-            "Actualiza entregados, fallidos y cancelados antes de la madrugada."
+            "Ventana amplia (15 días) filtrando solo route_date=hoy. "
+            "Captura el estado final (entregado/fallido/cancelado) antes de medianoche."
         ),
         "activo": True,
-        "hora_ejecucion": "00:00",
-        "config": {"dias_atras": 1, "rango_dias": 1},
+        "hora_ejecucion": "23:50",
+        "config": {"dias_atras": 0, "rango_dias": 15, "solo_route_date_hoy": True},
     },
     # ── Reconciliación de pendientes (04:00) ─────────────────────────────────
     {
