@@ -132,11 +132,15 @@ export default function DataTable({
   const totalCols = columns.length + (selectable ? 1 : 0)
 
   if (!data || data.length === 0) {
-    return (
-      <div className="card text-center py-12 text-gray-500">
-        {emptyMessage}
-      </div>
-    )
+    if (!hasFilters) {
+      return (
+        <div className="card text-center py-12 text-gray-500">
+          {emptyMessage}
+        </div>
+      )
+    }
+    // Si hay filtros activos, renderizar la tabla con los inputs visibles
+    // para que el usuario pueda borrar el filtro
   }
 
   return (
@@ -221,7 +225,13 @@ export default function DataTable({
             )}
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {useVirtual ? (
+            {(!displayData || displayData.length === 0) ? (
+              <tr>
+                <td colSpan={totalCols} className="px-4 py-12 text-center text-gray-500 text-sm">
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : useVirtual ? (
               <>
                 {paddingTop > 0 && <tr aria-hidden="true"><td colSpan={totalCols} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>}
                 {virtualItems.map((virtualRow) => {
@@ -304,7 +314,7 @@ export default function DataTable({
                   </tr>
                 )
               })
-            )}
+            ) /* non-virtual */}
           </tbody>
         </table>
       </div>
