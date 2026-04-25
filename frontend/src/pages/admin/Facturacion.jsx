@@ -910,58 +910,58 @@ export default function Facturacion() {
       </div>
 
       {sellers.length > 0 && (
-        <div className={`grid gap-3 ${tab === 'pagos' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
-          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#1e40af,#3b82f6)'}}>
-            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <TrendingUp size={18} className="text-white" />
+        <div className={`grid gap-4 ${tab === 'pagos' ? 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-3'}`}>
+          <div className="rounded-2xl p-6 flex items-center gap-4 shadow-sm text-white" style={{background:'linear-gradient(135deg,#1e40af,#3b82f6)'}}>
+            <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <TrendingUp size={24} className="text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Subtotal Neto</p>
-              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
+              <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">Subtotal Neto</p>
+              <p className="text-xl font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
               {tab === 'pagos' && filterTipoPago === null && (
-                <p className="text-[9px] text-white/55 mt-0.5 leading-tight">
+                <p className="text-[10px] text-white/55 mt-1 leading-tight">
                   S: {fmt(totalesPorTipo.semanal)} &nbsp;·&nbsp; Q: {fmt(totalesPorTipo.quincenal)} &nbsp;·&nbsp; M: {fmt(totalesPorTipo.mensual)}
                 </p>
               )}
             </div>
           </div>
-          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#374151,#6b7280)'}}>
-            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Receipt size={18} className="text-white" />
+          <div className="rounded-2xl p-6 flex items-center gap-4 shadow-sm text-white" style={{background:'linear-gradient(135deg,#374151,#6b7280)'}}>
+            <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Receipt size={24} className="text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">IVA (19%)</p>
-              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.iva)}</p>
+              <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">IVA (19%)</p>
+              <p className="text-xl font-bold leading-tight truncate">{fmt(totalesGenerales.iva)}</p>
               {tab === 'pagos' && filterTipoPago === null && (
-                <p className="text-[9px] text-white/55 mt-0.5 leading-tight">
+                <p className="text-[10px] text-white/55 mt-1 leading-tight">
                   S: {fmt(Math.round(totalesPorTipo.semanal * 0.19))} &nbsp;·&nbsp; Q: {fmt(Math.round(totalesPorTipo.quincenal * 0.19))} &nbsp;·&nbsp; M: {fmt(Math.round(totalesPorTipo.mensual * 0.19))}
                 </p>
               )}
             </div>
           </div>
-          <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#065f46,#10b981)'}}>
-            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Banknote size={18} className="text-white" />
+          <div className="rounded-2xl p-6 flex items-center gap-4 shadow-sm text-white" style={{background:'linear-gradient(135deg,#065f46,#10b981)'}}>
+            <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Banknote size={24} className="text-white" />
             </div>
             <div className="min-w-0">
-              <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total con IVA</p>
-              <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.total)}</p>
+              <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">Total con IVA</p>
+              <p className="text-xl font-bold leading-tight truncate">{fmt(totalesGenerales.total)}</p>
               {tab === 'pagos' && filterTipoPago === null && (
-                <p className="text-[9px] text-white/55 mt-0.5 leading-tight">
+                <p className="text-[10px] text-white/55 mt-1 leading-tight">
                   S: {fmt(Math.round(totalesPorTipo.semanal * 1.19))} &nbsp;·&nbsp; Q: {fmt(Math.round(totalesPorTipo.quincenal * 1.19))} &nbsp;·&nbsp; M: {fmt(Math.round(totalesPorTipo.mensual * 1.19))}
                 </p>
               )}
             </div>
           </div>
           {tab === 'pagos' && (
-            <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#4c1d95,#7c3aed)'}}>
-              <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                <Wallet size={18} className="text-white" />
+            <div className="rounded-2xl p-6 flex items-center gap-4 shadow-sm text-white" style={{background:'linear-gradient(135deg,#4c1d95,#7c3aed)'}}>
+              <div className="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <Wallet size={24} className="text-white" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Por ingresar</p>
-                <p className="text-base font-bold leading-tight truncate">{fmt(porIngresar.neto)}</p>
-                <p className="text-[10px] text-white/60 mt-0.5">c/IVA: {fmt(porIngresar.conIva)}</p>
+                <p className="text-[11px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1.5">Por ingresar</p>
+                <p className="text-xl font-bold leading-tight truncate">{fmt(porIngresar.neto)}</p>
+                <p className="text-[11px] text-white/60 mt-1">c/IVA: {fmt(porIngresar.conIva)}</p>
               </div>
             </div>
           )}

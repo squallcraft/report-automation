@@ -8,6 +8,7 @@ import {
 import { useState, useEffect } from 'react'
 import api from '../api'
 import logoEcourier from '../assets/logo-ecourier.png'
+import NotificationBell, { NotificationBellButton, useNotificationDrawer } from './NotificationBell'
 
 const adminMenu = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
@@ -258,6 +259,8 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   })
   const [tareasCount, setTareasCount] = useState({ total: 0, criticas: 0 })
   const [notifTrabCount, setNotifTrabCount] = useState(0)
+  const isAdminRole = user?.rol === 'ADMIN' || user?.rol === 'ADMINISTRACION'
+  const { open: drawerOpen, setOpen: setDrawerOpen, totalBadge, hasCritical } = useNotificationDrawer()
 
   const toggleGroup = (name) => setOpenGroups(prev => ({ ...prev, [name]: !prev[name] }))
 
@@ -417,14 +420,25 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
         )}
       </nav>
 
-      <div className={`border-t border-primary-800 p-3 sm:p-4 ${collapsed ? 'flex justify-center' : ''}`}>
+      <div className={`border-t border-primary-800 p-3 sm:p-4 space-y-1 ${collapsed ? 'flex flex-col items-center' : ''}`}>
+        {isAdminRole && (
+          <>
+            <NotificationBellButton
+              onClick={() => setDrawerOpen(v => !v)}
+              totalBadge={totalBadge}
+              hasCritical={hasCritical}
+              collapsed={collapsed}
+            />
+            <NotificationBell open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+          </>
+        )}
         {!collapsed && (
-          <p className="text-xs text-primary-300 mb-2 truncate">{user?.nombre}</p>
+          <p className="text-xs text-primary-300 mt-2 mb-1 truncate px-1">{user?.nombre}</p>
         )}
         <button
           onClick={handleLogout}
           title={collapsed ? 'Cerrar sesión' : undefined}
-          className={`flex items-center gap-2 text-sm text-primary-300 hover:text-white transition-colors w-full ${collapsed ? 'justify-center' : ''}`}
+          className={`flex items-center gap-2 text-sm text-primary-300 hover:text-white transition-colors w-full py-2 mx-1.5 sm:mx-2 rounded-lg touch-manipulation ${collapsed ? 'justify-center px-2' : 'px-3 sm:px-4'}`}
         >
           <LogOut size={16} />
           {!collapsed && <span>Cerrar sesión</span>}
