@@ -248,7 +248,7 @@ export default function EfectividadEntregas() {
               {topEfectividad.map((d, i) => (
                 <tr
                   key={d.driver_id}
-                  onClick={() => navigate(`/admin/efectividad/driver/${d.driver_id}?fecha_inicio=${fi}&fecha_fin=${ff}`)}
+                  onClick={() => window.open(`/admin/efectividad/driver/${d.driver_id}?fecha_inicio=${fi}&fecha_fin=${ff}`, '_blank')}
                   className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                 >
                   <td className="px-4 py-2.5 text-gray-400 font-bold">#{i + 1}</td>
@@ -284,7 +284,7 @@ export default function EfectividadEntregas() {
               {topSameDay.map((s, i) => (
                 <tr
                   key={s.seller_id}
-                  onClick={() => navigate(`/admin/efectividad/seller/${s.seller_id}?fecha_inicio=${fi}&fecha_fin=${ff}`)}
+                  onClick={() => window.open(`/admin/efectividad/seller/${s.seller_id}?fecha_inicio=${fi}&fecha_fin=${ff}`, '_blank')}
                   className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                 >
                   <td className="px-4 py-2.5 text-gray-400 font-bold">#{i + 1}</td>
@@ -335,7 +335,7 @@ export default function EfectividadEntregas() {
               {visDrivers.map(d => (
                 <tr
                   key={d.driver_id}
-                  onClick={() => navigate(`/admin/efectividad/driver/${d.driver_id}?fecha_inicio=${fi}&fecha_fin=${ff}`)}
+                  onClick={() => window.open(`/admin/efectividad/driver/${d.driver_id}?fecha_inicio=${fi}&fecha_fin=${ff}`, '_blank')}
                   className="hover:bg-blue-50/40 cursor-pointer transition-colors text-gray-700"
                 >
                   <td className="px-4 py-2.5 font-medium">{d.nombre}</td>
@@ -404,7 +404,7 @@ export default function EfectividadEntregas() {
               {visSellers.map(s => (
                 <tr
                   key={s.seller_id}
-                  onClick={() => navigate(`/admin/efectividad/seller/${s.seller_id}?fecha_inicio=${fi}&fecha_fin=${ff}`)}
+                  onClick={() => window.open(`/admin/efectividad/seller/${s.seller_id}?fecha_inicio=${fi}&fecha_fin=${ff}`, '_blank')}
                   className="hover:bg-blue-50/40 cursor-pointer transition-colors text-gray-700"
                 >
                   <td className="px-4 py-2.5 font-medium">{s.nombre}</td>
