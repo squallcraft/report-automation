@@ -17,11 +17,14 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.services import rutas_entregas
 from app.services.scheduler import register_handler
+
+_TZ_SANTIAGO = ZoneInfo("America/Santiago")
 
 # Lazy import to avoid circular dependency — called only at runtime
 def _clear_analytics_cache():
@@ -64,11 +67,16 @@ def handler_ingesta_rutas(db: Session, config: dict, ejecucion_id: int) -> dict:
     lookback_extra = max(0, int(config.get("lookback_extra", 0)))
     solo_route_date_hoy = bool(config.get("solo_route_date_hoy", False))
 
-    fecha_fin = date.today() - timedelta(days=dias_atras)
+    # Usamos siempre la hora local de Santiago para calcular "hoy operativo".
+    # El servidor corre en UTC: a las 23:50 Santiago (UTC-4) son las 03:50 UTC
+    # del día siguiente. Sin este ajuste, date.today() daría el día incorrecto.
+    hoy_santiago = datetime.now(tz=_TZ_SANTIAGO).date()
+
+    fecha_fin = hoy_santiago - timedelta(days=dias_atras)
     fecha_inicio = fecha_fin - timedelta(days=rango_dias - 1)
     fmt = lambda d: d.strftime("%Y-%m-%d")
 
-    route_date_filter = date.today() if solo_route_date_hoy else None
+    route_date_filter = hoy_santiago if solo_route_date_hoy else None
 
     resultado = rutas_entregas.ingestar_rutas(
         db, fmt(fecha_inicio), fmt(fecha_fin),
