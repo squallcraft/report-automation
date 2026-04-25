@@ -400,6 +400,7 @@ export default function Facturacion() {
   const [filterText, setFilterText] = useState('')
   const [filterSemanas, setFilterSemanas] = useState(new Set())
   const [filterEstado, setFilterEstado] = useState('')
+  const [filterTipoPago, setFilterTipoPago] = useState(null)
   const [sortMonto, setSortMonto] = useState(null)
   const [showFacturar, setShowFacturar] = useState(false)
   const [tab, setTab] = useState('facturacion')
@@ -481,6 +482,10 @@ export default function Facturacion() {
       )
     }
 
+    if (filterTipoPago) {
+      result = result.filter(s => (s.tipo_pago || 'semanal') === filterTipoPago)
+    }
+
     if (sortMonto) {
       const semList = filterSemanas.size > 0 ? [...filterSemanas] : semanasAll
       result = [...result].sort((a, b) => {
@@ -491,7 +496,7 @@ export default function Facturacion() {
     }
 
     return result
-  }, [data, filterText, filterEstado, filterSemanas, sortMonto])
+  }, [data, filterText, filterEstado, filterTipoPago, filterSemanas, sortMonto])
 
   const historialFiltrado = useMemo(() => {
     let items = historialData
@@ -740,6 +745,18 @@ export default function Facturacion() {
     return { neto, conIva }
   }, [totalesGenerales.neto, totalRecibidoCartola])
 
+  const totalesPorTipo = useMemo(() => {
+    const grupos = { semanal: 0, quincenal: 0, mensual: 0 }
+    for (const s of (data?.sellers || [])) {
+      const tipo = s.tipo_pago || 'semanal'
+      const neto = filterSemanas.size > 0
+        ? semanasVisibles.reduce((a, sem) => a + (s.semanas[String(sem)]?.monto_neto || 0), 0)
+        : s.subtotal_neto
+      grupos[tipo] = (grupos[tipo] || 0) + neto
+    }
+    return grupos
+  }, [data, filterSemanas, semanasVisibles])
+
   return (
     <div className="flex flex-col h-full gap-4">
       <PageHeader
@@ -799,6 +816,25 @@ export default function Facturacion() {
               </button>
             ))}
           </div>
+          {tab === 'pagos' && (
+            <div className="flex items-center gap-1">
+              {[
+                { value: null, label: 'Todos' },
+                { value: 'semanal', label: 'Semanal', active: 'bg-blue-100 text-blue-800 border-blue-400 font-semibold' },
+                { value: 'quincenal', label: 'Quincenal', active: 'bg-violet-100 text-violet-800 border-violet-400 font-semibold' },
+                { value: 'mensual', label: 'Mensual', active: 'bg-orange-100 text-orange-800 border-orange-400 font-semibold' },
+              ].map(opt => (
+                <button key={String(opt.value)} onClick={() => setFilterTipoPago(opt.value)}
+                  className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+                    filterTipoPago === opt.value
+                      ? (opt.active || 'bg-primary-100 text-primary-800 border-primary-400 font-semibold')
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                  }`}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
           {semanas.length > 0 && (
             <div className="flex items-center gap-1.5">
               <label className="text-sm font-medium text-gray-700">Semana:</label>
@@ -882,6 +918,11 @@ export default function Facturacion() {
             <div className="min-w-0">
               <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Subtotal Neto</p>
               <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.neto)}</p>
+              {tab === 'pagos' && filterTipoPago === null && (
+                <p className="text-[9px] text-white/55 mt-0.5 leading-tight">
+                  S: {fmt(totalesPorTipo.semanal)} &nbsp;·&nbsp; Q: {fmt(totalesPorTipo.quincenal)} &nbsp;·&nbsp; M: {fmt(totalesPorTipo.mensual)}
+                </p>
+              )}
             </div>
           </div>
           <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#374151,#6b7280)'}}>
@@ -891,6 +932,11 @@ export default function Facturacion() {
             <div className="min-w-0">
               <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">IVA (19%)</p>
               <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.iva)}</p>
+              {tab === 'pagos' && filterTipoPago === null && (
+                <p className="text-[9px] text-white/55 mt-0.5 leading-tight">
+                  S: {fmt(Math.round(totalesPorTipo.semanal * 0.19))} &nbsp;·&nbsp; Q: {fmt(Math.round(totalesPorTipo.quincenal * 0.19))} &nbsp;·&nbsp; M: {fmt(Math.round(totalesPorTipo.mensual * 0.19))}
+                </p>
+              )}
             </div>
           </div>
           <div className="rounded-2xl p-4 flex items-center gap-3 shadow-sm text-white" style={{background:'linear-gradient(135deg,#065f46,#10b981)'}}>
@@ -900,6 +946,11 @@ export default function Facturacion() {
             <div className="min-w-0">
               <p className="text-[10px] text-white/70 uppercase tracking-wider font-medium leading-none mb-1">Total con IVA</p>
               <p className="text-base font-bold leading-tight truncate">{fmt(totalesGenerales.total)}</p>
+              {tab === 'pagos' && filterTipoPago === null && (
+                <p className="text-[9px] text-white/55 mt-0.5 leading-tight">
+                  S: {fmt(Math.round(totalesPorTipo.semanal * 1.19))} &nbsp;·&nbsp; Q: {fmt(Math.round(totalesPorTipo.quincenal * 1.19))} &nbsp;·&nbsp; M: {fmt(Math.round(totalesPorTipo.mensual * 1.19))}
+                </p>
+              )}
             </div>
           </div>
           {tab === 'pagos' && (

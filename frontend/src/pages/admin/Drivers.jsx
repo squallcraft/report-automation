@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import api from '../../api'
 import { useAuth } from '../../context/AuthContext'
 import DataTable from '../../components/DataTable'
@@ -130,6 +130,9 @@ export default function Drivers() {
   const [toDelete, setToDelete] = useState(null)
   const [trabajadores, setTrabajadores] = useState([])
   const [filtroEstado, setFiltroEstado] = useState('activos')
+  const [colFilters, setColFilters] = useState({})
+  const handleColFilterChange = (key, value) =>
+    setColFilters(prev => ({ ...prev, [key]: value }))
 
   const [importingHomolog, setImportingHomolog] = useState(false)
   const [importingTarifas, setImportingTarifas] = useState(false)
@@ -437,6 +440,29 @@ export default function Drivers() {
     (FILTROS.find(f => f.id === filtroEstado) || FILTROS[0]).test
   )
 
+  const zonaOptions = useMemo(() =>
+    [...new Set(drivers.map(d => d.zona).filter(Boolean))].sort()
+      .map(z => ({ value: z, label: z }))
+  , [drivers])
+
+  const jefeOptions = useMemo(() =>
+    [...new Set(drivers.map(d => d.jefe_flota_nombre).filter(Boolean))].sort()
+      .map(j => ({ value: j, label: j }))
+  , [drivers])
+
+  const columnFiltersConfig = useMemo(() => ({
+    nombre:           { type: 'text',   value: colFilters.nombre           || '', placeholder: 'Buscar nombre…' },
+    zona:             { type: 'select', value: colFilters.zona             || '', options: zonaOptions, placeholder: 'Todas' },
+    jefe_flota_nombre:{ type: 'select', value: colFilters.jefe_flota_nombre|| '', options: jefeOptions, placeholder: 'Todos' },
+  }), [colFilters, zonaOptions, jefeOptions])
+
+  const driversConFiltroCol = useMemo(() => driversFiltrados.filter(d => {
+    if (colFilters.nombre && !d.nombre?.toLowerCase().includes(colFilters.nombre.toLowerCase())) return false
+    if (colFilters.zona && d.zona !== colFilters.zona) return false
+    if (colFilters.jefe_flota_nombre && d.jefe_flota_nombre !== colFilters.jefe_flota_nombre) return false
+    return true
+  }), [driversFiltrados, colFilters])
+
   return (
     <div className="flex flex-col h-full gap-4">
       <PageHeader
@@ -499,7 +525,10 @@ export default function Drivers() {
         <div className="flex-1 min-h-0">
           <DataTable
             columns={columns}
-            data={driversFiltrados}
+            sortable
+            columnFilters={columnFiltersConfig}
+            onColumnFilterChange={handleColFilterChange}
+            data={driversConFiltroCol}
             onRowClick={handleRowClick}
             emptyMessage={
               filtroEstado === 'todos'

@@ -204,6 +204,7 @@ def tabla_facturacion(
             "seller_nombre": seller.nombre,
             "rut": seller.rut,
             "giro": seller.giro,
+            "tipo_pago": seller.tipo_pago or "semanal",
             "semanas": {},
         }
 

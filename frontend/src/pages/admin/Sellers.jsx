@@ -81,6 +81,7 @@ const initialForm = {
   empresa: 'ECOURIER',
   precio_base: 0,
   plan_tarifario: '',
+  tipo_pago: 'semanal',
   tiene_retiro: false,
   tarifa_retiro: 0,
   tarifa_retiro_driver: 0,
@@ -129,6 +130,9 @@ export default function Sellers() {
   const [syncAnio, setSyncAnio] = useState(hoy.getFullYear())
   const [syncing, setSyncing] = useState(false)
   const [filterPickup, setFilterPickup] = useState('')
+  const [colFilters, setColFilters] = useState({})
+  const handleColFilterChange = (key, value) =>
+    setColFilters(prev => ({ ...prev, [key]: value }))
 
   // Pickups únicos detectados de los tags activos de sellers
   const pickupsDisponibles = useMemo(() => {
@@ -142,6 +146,28 @@ export default function Sellers() {
     })
     return Array.from(set).sort()
   }, [sellers])
+
+  const zonaOptions = useMemo(() =>
+    [...new Set(sellers.map(s => s.zona).filter(Boolean))].sort()
+      .map(z => ({ value: z, label: z }))
+  , [sellers])
+
+  const empresaOptions = useMemo(() =>
+    [...new Set(sellers.map(s => s.empresa).filter(Boolean))].sort()
+      .map(e => ({ value: e, label: e }))
+  , [sellers])
+
+  const planOptions = useMemo(() =>
+    [...new Set(sellers.map(s => s.plan_tarifario).filter(Boolean))].sort()
+      .map(p => ({ value: p, label: p }))
+  , [sellers])
+
+  const columnFiltersConfig = useMemo(() => ({
+    nombre:         { type: 'text',   value: colFilters.nombre         || '', placeholder: 'Buscar nombre…' },
+    zona:           { type: 'select', value: colFilters.zona           || '', options: zonaOptions, placeholder: 'Todas' },
+    empresa:        { type: 'select', value: colFilters.empresa        || '', options: empresaOptions, placeholder: 'Todas' },
+    plan_tarifario: { type: 'select', value: colFilters.plan_tarifario || '', options: planOptions, placeholder: 'Todos' },
+  }), [colFilters, zonaOptions, empresaOptions, planOptions])
 
   const fetchSellers = () => {
     api.get('/sellers')
@@ -263,6 +289,7 @@ export default function Sellers() {
       empresa: seller.empresa || 'ECOURIER',
       precio_base: seller.precio_base ?? 0,
       plan_tarifario: seller.plan_tarifario || '',
+      tipo_pago: seller.tipo_pago || 'semanal',
       tiene_retiro: seller.tiene_retiro ?? false,
       tarifa_retiro: seller.tarifa_retiro ?? 0,
       tarifa_retiro_driver: seller.tarifa_retiro_driver ?? 0,
@@ -569,14 +596,24 @@ export default function Sellers() {
         {tab === 'activos' && (
           <DataTable
             columns={columns}
+            sortable
+            columnFilters={columnFiltersConfig}
+            onColumnFilterChange={handleColFilterChange}
             data={sellers.filter(s => {
               if (!s.activo) return false
-              if (!filterPickup) return true
-              const tags = s.tags || []
-              if (filterPickup === '__ninguno__') {
-                return !tags.some(t => t.startsWith('auto:pickup:activo:'))
+              if (filterPickup) {
+                const tags = s.tags || []
+                if (filterPickup === '__ninguno__') {
+                  if (tags.some(t => t.startsWith('auto:pickup:activo:'))) return false
+                } else {
+                  if (!tags.includes(`auto:pickup:activo:${filterPickup}`)) return false
+                }
               }
-              return tags.includes(`auto:pickup:activo:${filterPickup}`)
+              if (colFilters.nombre && !s.nombre?.toLowerCase().includes(colFilters.nombre.toLowerCase())) return false
+              if (colFilters.zona && s.zona !== colFilters.zona) return false
+              if (colFilters.empresa && s.empresa !== colFilters.empresa) return false
+              if (colFilters.plan_tarifario && s.plan_tarifario !== colFilters.plan_tarifario) return false
+              return true
             })}
             onRowClick={handleRowClick}
             emptyMessage="No hay sellers activos"
@@ -896,6 +933,19 @@ export default function Sellers() {
                 ))}
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de pago</label>
+            <select
+              className="input-field"
+              value={form.tipo_pago}
+              onChange={(e) => setForm((f) => ({ ...f, tipo_pago: e.target.value }))}
+            >
+              <option value="semanal">Semanal</option>
+              <option value="quincenal">Quincenal</option>
+              <option value="mensual">Mensual</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Frecuencia con la que se liquida y cobra al seller</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
