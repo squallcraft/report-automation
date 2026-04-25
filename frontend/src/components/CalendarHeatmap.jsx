@@ -1,19 +1,29 @@
 /**
- * CalendarHeatmap — visualiza un set de días con KPI de % same-day.
+ * CalendarHeatmap — visualiza un set de días con KPIs.
  *
  * Layout: filas = semanas, columnas = días (Lun-Vie).
- * Cada celda muestra "same_day / a_ruta" y se colorea por % same-day.
  *
  * Props:
- *   - data: array de objetos `{ fecha: 'YYYY-MM-DD', a_ruta, same_day, pct_same_day }`.
- *           Acepta también la forma usada por driver drill-down: `{ fecha, label, a_ruta, same_day, pct_same_day }`.
+ *   - data: array de objetos `{ fecha, a_ruta, entregados, same_day, pct_same_day, pct_delivery_success }`.
+ *   - valueKey: clave del campo numérico que determina el color (default: 'pct_same_day').
+ *   - showSameDayDetail: bool — cuando true, muestra efectividad como métrica principal
+ *     y agrega SD% debajo. Útil para el calendario global de EfectividadEntregas.
  *   - emptyLabel: string a mostrar cuando data está vacío.
  */
 import { useMemo } from 'react'
 
-const colorClass = (v, isEmpty) => {
-  if (isEmpty) return 'bg-gray-100 text-gray-300'
-  if (v == null) return 'bg-gray-100 text-gray-300'
+const colorByEfectividad = (v, isEmpty) => {
+  if (isEmpty || v == null) return 'bg-gray-100 text-gray-300'
+  if (v >= 95) return 'bg-emerald-600 text-white'
+  if (v >= 85) return 'bg-emerald-500 text-white'
+  if (v >= 70) return 'bg-emerald-400 text-white'
+  if (v >= 55) return 'bg-amber-400 text-white'
+  if (v >= 40) return 'bg-orange-400 text-white'
+  return 'bg-red-400 text-white'
+}
+
+const colorBySameDay = (v, isEmpty) => {
+  if (isEmpty || v == null) return 'bg-gray-100 text-gray-300'
   if (v >= 90) return 'bg-emerald-600 text-white'
   if (v >= 75) return 'bg-emerald-500 text-white'
   if (v >= 60) return 'bg-emerald-400 text-white'
@@ -22,7 +32,12 @@ const colorClass = (v, isEmpty) => {
   return 'bg-red-400 text-white'
 }
 
-export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en el rango', valueKey = 'pct_same_day' }) {
+export default function CalendarHeatmap({
+  data = [],
+  emptyLabel = 'Sin datos en el rango',
+  valueKey = 'pct_same_day',
+  showSameDayDetail = false,
+}) {
   const weeks = useMemo(() => {
     if (!data?.length) return []
     const byKey = {}
@@ -32,10 +47,8 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
     const fmin = fechas[0]
     const fmax = fechas[fechas.length - 1]
 
-    // Primer lunes <= fmin
     const start = new Date(fmin)
     while (start.getDay() !== 1) start.setDate(start.getDate() - 1)
-    // Domingo final >= fmax
     const end = new Date(fmax)
     while (end.getDay() !== 0) end.setDate(end.getDate() + 1)
 
@@ -48,11 +61,7 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
         const mm = String(cursor.getMonth() + 1).padStart(2, '0')
         const dd = String(cursor.getDate()).padStart(2, '0')
         const dateStr = `${yyyy}-${mm}-${dd}`
-        week.push({
-          fecha: dateStr,
-          date: new Date(cursor),
-          data: byKey[dateStr] || null,
-        })
+        week.push({ fecha: dateStr, date: new Date(cursor), data: byKey[dateStr] || null })
         cursor.setDate(cursor.getDate() + 1)
       }
       out.push(week)
@@ -64,7 +73,6 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
     return <p className="text-center text-xs text-gray-400 py-8">{emptyLabel}</p>
   }
 
-  // Solo Lun-Vie: índices 0..4 dentro de la semana (start = lunes).
   const workdayIdx = [0, 1, 2, 3, 4]
   const dayLabels = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
 
@@ -76,7 +84,7 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
             <tr>
               <th className="text-[10px] text-gray-400 font-semibold pr-3 text-right" style={{ width: '88px' }} />
               {dayLabels.map(d => (
-                <th key={d} className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide pb-1 text-center min-w-[78px]">
+                <th key={d} className="text-[11px] text-gray-500 font-semibold uppercase tracking-wide pb-1 text-center min-w-[90px]">
                   {d}
                 </th>
               ))}
@@ -92,26 +100,53 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
                   const cell = week[di]
                   if (!cell) return <td key={di} />
                   const isEmpty = !cell.data
-                  const cls = colorClass(cell.data?.[valueKey], isEmpty)
-                  // Soporta tanto la forma del global (a_ruta, same_day) como
-                  // la del driver (label = "X/Y", same_day, a_ruta).
-                  const sd = cell.data?.same_day ?? cell.data?.entregados ?? 0
-                  const ar = cell.data?.a_ruta ?? 0
+
+                  if (showSameDayDetail) {
+                    const ef  = cell.data?.pct_delivery_success ?? null
+                    const sd  = cell.data?.pct_same_day ?? null
+                    const ent = cell.data?.entregados ?? 0
+                    const ar  = cell.data?.a_ruta ?? 0
+                    const cls = colorByEfectividad(ef, isEmpty)
+                    return (
+                      <td key={di} className="p-0">
+                        <div
+                          className={`h-[72px] w-full rounded-lg flex flex-col items-center justify-center gap-0 transition-transform hover:scale-105 cursor-default px-1 ${cls}`}
+                          title={isEmpty ? `${cell.fecha} · sin actividad` : `${cell.fecha} · Efectividad ${ef}% · Same-Day ${sd}%`}
+                        >
+                          {!isEmpty ? (
+                            <>
+                              <span className="text-[13px] font-black leading-tight tracking-tight">
+                                {ent}/{ar}
+                              </span>
+                              <span className="text-[17px] font-black leading-tight">
+                                {ef ?? '—'}%
+                              </span>
+                              <span className="text-[10px] font-semibold leading-tight opacity-75 mt-0.5">
+                                SD&nbsp;{sd ?? '—'}%
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-gray-300">—</span>
+                          )}
+                        </div>
+                      </td>
+                    )
+                  }
+
+                  // Modo estándar (same-day o valueKey genérico)
+                  const cls = colorBySameDay(cell.data?.[valueKey], isEmpty)
+                  const sdN = cell.data?.same_day ?? cell.data?.entregados ?? 0
+                  const ar  = cell.data?.a_ruta ?? 0
                   const pct = cell.data?.[valueKey] ?? 0
                   return (
                     <td key={di} className="p-0">
                       <div
                         className={`h-14 w-full rounded-lg flex flex-col items-center justify-center transition-transform hover:scale-105 cursor-default ${cls}`}
-                        title={isEmpty
-                          ? `${cell.fecha} · sin actividad`
-                          : `${cell.fecha} · ${sd}/${ar} (${pct}%)`
-                        }
+                        title={isEmpty ? `${cell.fecha} · sin actividad` : `${cell.fecha} · ${sdN}/${ar} (${pct}%)`}
                       >
                         {!isEmpty ? (
                           <>
-                            <span className="text-[14px] font-black leading-none">
-                              {sd}/{ar}
-                            </span>
+                            <span className="text-[14px] font-black leading-none">{sdN}/{ar}</span>
                             <span className="text-[10px] opacity-90 leading-none mt-1">{pct}%</span>
                           </>
                         ) : (
@@ -126,6 +161,7 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
           </tbody>
         </table>
       </div>
+
       {/* Leyenda */}
       <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-gray-500 flex-wrap">
         <span>Bajo</span>
@@ -135,7 +171,10 @@ export default function CalendarHeatmap({ data = [], emptyLabel = 'Sin datos en 
         <div className="w-4 h-4 rounded-sm bg-emerald-400" />
         <div className="w-4 h-4 rounded-sm bg-emerald-500" />
         <div className="w-4 h-4 rounded-sm bg-emerald-600" />
-        <span>Alto · Cada celda muestra <b>same-day / a-ruta</b></span>
+        {showSameDayDetail
+          ? <span>Alto · <b>Entregados / A ruta</b> · % efectividad · SD = same-day</span>
+          : <span>Alto · Cada celda muestra <b>same-day / a-ruta</b></span>
+        }
       </div>
     </div>
   )

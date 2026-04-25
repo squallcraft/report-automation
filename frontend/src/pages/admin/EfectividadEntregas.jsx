@@ -192,10 +192,10 @@ export default function EfectividadEntregas() {
       {data?.serie_temporal?.length > 0 && (
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-gray-700">Calendario Same-Day diario</p>
-            <p className="text-[10px] text-gray-400">Color = % Same-Day · Texto = entregados / a-ruta</p>
+            <p className="text-sm font-semibold text-gray-700">Efectividad y Same-Day por día</p>
+            <p className="text-[10px] text-gray-400">Color = % efectividad · Texto = entregados / a-ruta · SD = same-day</p>
           </div>
-          <CalendarHeatmap data={data.serie_temporal} />
+          <CalendarHeatmap data={data.serie_temporal} showSameDayDetail />
         </div>
       )}
 
