@@ -428,11 +428,6 @@ export default function Drivers() {
     },
   ]
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
-  }
-
-  // Filtros disponibles con su predicado — definidos fuera del componente (estables)
   const conteo = useMemo(() => FILTROS.reduce((acc, f) => {
     acc[f.id] = drivers.filter(f.test).length
     return acc
@@ -464,6 +459,10 @@ export default function Drivers() {
     if (colFilters.jefe_flota_nombre && d.jefe_flota_nombre !== colFilters.jefe_flota_nombre) return false
     return true
   }), [driversFiltrados, colFilters])
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-gray-400">Cargando...</div>
+  }
 
   return (
     <div className="flex flex-col h-full gap-4">
