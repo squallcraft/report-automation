@@ -392,7 +392,7 @@ export default function Pickups() {
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('es-CL') : '—'
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    <div className="flex flex-col h-full min-w-0 gap-4">
       <PageHeader
         title="Pickup Points"
         subtitle="Centros de recepción de paquetes — comisión configurable + IVA por paquete"
@@ -469,7 +469,7 @@ export default function Pickups() {
       )}
 
       {mainTab === 'recepciones' && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 min-w-0">
           <div className="card">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap items-end gap-3 sm:gap-4">
               <div>

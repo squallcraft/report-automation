@@ -350,7 +350,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
   return (
     <aside
       className={`
-        fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-primary-900 text-white
+        shrink-0 fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-primary-900 text-white
         transition-all duration-200 ease-out overflow-hidden
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         ${collapsed ? 'lg:w-16' : 'w-64'}
