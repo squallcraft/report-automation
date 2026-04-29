@@ -134,15 +134,18 @@ def _get_monto_semanal_driver(db: Session, driver_id: int, semana: int, mes: int
     if not envios:
         return 0
 
-    total_envios = sum(e.costo_driver + e.pago_extra_manual for e in envios)
-    total_extras_producto = sum(e.extra_producto_driver for e in envios)
-    total_extras_comuna = sum(e.extra_comuna_driver for e in envios)
+    driver = db.get(Driver, driver_id)
+    es_contratado = getattr(driver, 'contratado', False) if driver else False
+
+    # Contratado drivers don't receive bulto-extra or commune extras (mirrors liquidación logic)
+    total_envios = sum(e.costo_driver + (0 if es_contratado else e.pago_extra_manual) for e in envios)
+    total_extras_producto = 0 if es_contratado else sum(e.extra_producto_driver for e in envios)
+    total_extras_comuna = 0 if es_contratado else sum(e.extra_comuna_driver for e in envios)
 
     retiros = db.query(Retiro).filter(
         Retiro.driver_id == driver_id,
         Retiro.semana == semana, Retiro.mes == mes, Retiro.anio == anio,
     ).all()
-    driver = db.get(Driver, driver_id)
     pago = db.query(PagoSemanaDriver).filter(
         PagoSemanaDriver.driver_id == driver_id,
         PagoSemanaDriver.semana == semana,
@@ -182,14 +185,15 @@ def tabla_cpc(
     # --- Bulk queries (reemplaza cientos de queries individuales) ---
     envio_rows = db.query(
         Envio.driver_id, Envio.semana,
-        func.sum(Envio.costo_driver + Envio.pago_extra_manual).label("t_envios"),
+        func.sum(Envio.costo_driver).label("t_costo"),
+        func.sum(Envio.pago_extra_manual).label("t_extra_manual"),
         func.sum(Envio.extra_producto_driver).label("t_extras_prod"),
         func.sum(Envio.extra_comuna_driver).label("t_extras_com"),
     ).filter(Envio.mes == mes, Envio.anio == anio).group_by(Envio.driver_id, Envio.semana).all()
 
     envio_agg = {}
     for r in envio_rows:
-        envio_agg[(r.driver_id, r.semana)] = (r.t_envios or 0, r.t_extras_prod or 0, r.t_extras_com or 0)
+        envio_agg[(r.driver_id, r.semana)] = (r.t_costo or 0, r.t_extra_manual or 0, r.t_extras_prod or 0, r.t_extras_com or 0)
 
     all_retiros = db.query(Retiro).filter(Retiro.mes == mes, Retiro.anio == anio).all()
     retiros_map: dict[tuple, list] = {}
@@ -220,14 +224,19 @@ def tabla_cpc(
     def _monto_semanal(driver_id, semana):
         if (driver_id, semana) not in envio_agg:
             return 0
-        t_env, t_ep, t_ec = envio_agg[(driver_id, semana)]
-        retiros = retiros_map.get((driver_id, semana), [])
+        t_costo, t_extra_manual, t_ep, t_ec = envio_agg[(driver_id, semana)]
         driver = drivers_map.get(driver_id)
+        es_contratado = getattr(driver, 'contratado', False) if driver else False
+        # Contratado drivers don't receive bulto-extra or commune extras (mirrors liquidación)
+        t_env = t_costo + (0 if es_contratado else t_extra_manual)
+        t_extras_prod = 0 if es_contratado else t_ep
+        t_extras_com = 0 if es_contratado else t_ec
+        retiros = retiros_map.get((driver_id, semana), [])
         pago = pagos_map.get((driver_id, semana))
         cerrada = pago is not None and pago.estado == EstadoPagoEnum.PAGADO.value
         t_ret = _calcular_retiro_driver(driver, retiros, semana_cerrada=cerrada) if driver else sum(r.tarifa_driver for r in retiros)
         t_aj = ajuste_agg.get((driver_id, semana), 0)
-        return t_env + t_ep + t_ec + t_ret + t_aj
+        return t_env + t_extras_prod + t_extras_com + t_ret + t_aj
 
     def _monto_consolidado(driver_id, semana):
         monto = _monto_semanal(driver_id, semana)
