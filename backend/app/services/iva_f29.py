@@ -11,6 +11,7 @@ Lee exclusivamente desde tablas ya calculadas y validadas:
 No ejecuta cálculos de liquidación propios.
 """
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.models import (
     PagoSemanaSeller,
