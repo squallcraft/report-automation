@@ -381,16 +381,6 @@ def asiento_movimiento_financiero(db: Session, mov: MovimientoFinanciero, es_bac
     cuenta_gasto_ingreso = cuenta_para_categoria(db, cat)
     fecha = mov.fecha_pago or date(mov.anio, mov.mes, 1)
 
-    # region agent log - hipótesis C/D
-    import json, time as _t
-    _log_path = "/Users/oscarguzman/ecourier/.cursor/debug-866a5b.log"
-    banco_id = _cuenta_id(db, CUENTA_BANCO)
-    try:
-        with open(_log_path, "a") as _f:
-            _f.write(json.dumps({"sessionId":"866a5b","hypothesisId":"C_D","location":"contabilidad.py:asiento_movimiento_financiero","message":"cuentas resueltas","data":{"cat_id":getattr(cat,"id",None),"cat_nombre":getattr(cat,"nombre",None),"cat_tipo":getattr(cat,"tipo",None),"cuenta_cat_id":cuenta_gasto_ingreso,"cuenta_banco_id":banco_id,"fecha":str(fecha)},"timestamp":int(_t.time()*1000)}) + "\n")
-    except Exception: pass
-    # endregion
-
     if cat.tipo == "EGRESO":
         lineas = [
             (cuenta_gasto_ingreso, mov.monto, 0),
