@@ -653,6 +653,7 @@ class MovimientoFinancieroBase(BaseModel):
     recurrente: bool = False
     proveedor: Optional[str] = None
     notas: Optional[str] = None
+    monto_iva: Optional[int] = None
 
 class MovimientoFinancieroCreate(MovimientoFinancieroBase):
     pass
@@ -671,6 +672,7 @@ class MovimientoFinancieroUpdate(BaseModel):
     recurrente: Optional[bool] = None
     proveedor: Optional[str] = None
     notas: Optional[str] = None
+    monto_iva: Optional[int] = None
 
 class MovimientoFinancieroOut(MovimientoFinancieroBase):
     id: int
@@ -678,6 +680,7 @@ class MovimientoFinancieroOut(MovimientoFinancieroBase):
     categoria_tipo: Optional[str] = None
     documento_nombre: Optional[str] = None
     tiene_documento: bool = False
+    monto_iva: Optional[int] = None
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
 

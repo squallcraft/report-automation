@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Building2, FileText, CreditCard, LogOut, ChevronRight } from 'lucide-react'
+import { Building2, FileText, CreditCard, PenLine, LogOut } from 'lucide-react'
 
 export default function InquilinoLayout() {
   const { user, logout } = useAuth()
@@ -15,6 +15,7 @@ export default function InquilinoLayout() {
     { to: '/inquilino', label: 'Inicio', icon: Building2, end: true },
     { to: '/inquilino/contratos', label: 'Contratos', icon: FileText },
     { to: '/inquilino/cobros', label: 'Cobros y Facturas', icon: CreditCard },
+    { to: '/inquilino/firma', label: 'Mi Firma', icon: PenLine },
   ]
 
   return (

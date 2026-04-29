@@ -232,6 +232,61 @@ Santiago, {{fecha.hoy_largo}}
     return anexo
 
 
+def regenerar_pdfs_con_perfil(
+    db: Session,
+    inquilino: Inquilino,
+) -> list[AnexoContratoInquilino]:
+    """
+    Cuando el inquilino completa su perfil, re-renderiza y regenera el PDF de
+    todos sus contratos/anexos en estado BORRADOR que tienen plantilla asociada.
+    Así la fecha de emisión queda fijada desde que el admin emitió, pero el
+    contenido refleja los datos reales del inquilino.
+    """
+    pendientes = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.inquilino_id == inquilino.id,
+        AnexoContratoInquilino.estado == EstadoAnexoInquilinoEnum.BORRADOR.value,
+        AnexoContratoInquilino.plantilla_id.isnot(None),
+    ).all()
+
+    cfg = _obtener_cfg(db)
+    rep_nombre, rep_rut, empresa, empresa_rut = _rep_legal_datos(cfg)
+    contexto = construir_contexto_inquilino(inquilino, cfg)
+
+    actualizados: list[AnexoContratoInquilino] = []
+    for anexo in pendientes:
+        plantilla = db.get(PlantillaContrato, anexo.plantilla_id)
+        if not plantilla:
+            continue
+        rendered = renderizar(plantilla.contenido, contexto)
+        pdf_bytes = generar_pdf_contrato_generico(
+            rendered_md=rendered,
+            titulo=anexo.titulo,
+            firmante_nombre=inquilino.nombre_rep_legal or inquilino.razon_social or inquilino.email,
+            firmante_rut=inquilino.rut_rep_legal,
+            rep_legal_nombre=rep_nombre,
+            rep_legal_rut=rep_rut,
+            empresa_razon_social=empresa,
+            empresa_rut=empresa_rut,
+            firma_firmante_src=None,
+            requiere_firma=True,
+        )
+        anexo.contenido_renderizado = rendered
+        anexo.pdf_generado = _pdf_b64(pdf_bytes)
+        actualizados.append(anexo)
+
+    if actualizados:
+        db.commit()
+        for a in actualizados:
+            db.refresh(a)
+        logger.info(
+            "Regenerados %d contratos/anexos para inquilino %s tras completar perfil",
+            len(actualizados),
+            inquilino.id,
+        )
+
+    return actualizados
+
+
 def puede_firmar_contrato(
     db: Session,
     inquilino: Inquilino,

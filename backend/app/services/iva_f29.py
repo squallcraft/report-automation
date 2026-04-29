@@ -10,8 +10,6 @@ Lee exclusivamente desde tablas ya calculadas y validadas:
 
 No ejecuta cálculos de liquidación propios.
 """
-import math
-from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models import (
@@ -21,6 +19,7 @@ from app.models import (
     MovimientoFinanciero,
     LineaAsiento, AsientoContable, CuentaContable,
     CalendarioSemanas,
+    Seller, Driver,
 )
 from app.services.iva_drivers import calcular_base_iva_mes, calcular_iva as _calcular_iva_driver
 
@@ -54,7 +53,6 @@ def iva_debito_provisional_mes(db: Session, mes: int, anio: int) -> dict:
         PagoSemanaSeller.semana.in_(semanas),
     ).group_by(PagoSemanaSeller.seller_id).all()
 
-    from app.models import Seller
     sellers_map = {
         s.id: s.nombre
         for s in db.query(Seller.id, Seller.nombre).filter(
@@ -93,7 +91,6 @@ def iva_debito_documentado_mes(db: Session, mes: int, anio: int) -> dict:
         FacturaMensualSeller.estado == EstadoFacturaEnum.EMITIDA.value,
     ).all()
 
-    from app.models import Seller
     sellers_map = {
         s.id: s.nombre
         for s in db.query(Seller.id, Seller.nombre).filter(
@@ -157,7 +154,6 @@ def iva_credito_drivers_mes(db: Session, mes: int, anio: int) -> dict:
     pagado, pendiente = 0, 0
     detalle = []
     for r in registros:
-        from app.models import Driver
         driver = db.get(Driver, r.driver_id)
         nombre = driver.nombre if driver else f"Driver {r.driver_id}"
         if r.estado == EstadoPagoIVAEnum.PAGADO.value:

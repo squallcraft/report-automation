@@ -36,7 +36,7 @@ export default function CompletarPerfil() {
     try {
       await api.post('/inquilinos/portal/completar-perfil', form)
       updateUser({ perfil_completado: true })
-      navigate('/inquilino')
+      navigate('/inquilino/contratos')
     } catch (err) {
       setError(err.response?.data?.detail || 'Error al guardar el perfil')
     } finally {

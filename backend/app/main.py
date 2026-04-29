@@ -821,6 +821,8 @@ with engine.connect() as conn:
             safe_exec("ALTER TABLE movimientos_financieros ADD COLUMN documento_nombre TEXT")
         if "documento_path" not in mf_cols:
             safe_exec("ALTER TABLE movimientos_financieros ADD COLUMN documento_path TEXT")
+        if "monto_iva" not in mf_cols:
+            safe_exec("ALTER TABLE movimientos_financieros ADD COLUMN monto_iva INTEGER")
 
     # ── Migración: fecha_pago en pagos_semana_sellers y pagos_semana_drivers ──
     if "pagos_semana_sellers" in insp.get_table_names():

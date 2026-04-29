@@ -261,8 +261,8 @@ def emitir_contrato(
     inq = db.get(Inquilino, inquilino_id)
     if not inq:
         raise HTTPException(status_code=404, detail="Inquilino no encontrado")
-    if not inq.perfil_completado:
-        raise HTTPException(status_code=400, detail="El inquilino no ha completado su perfil")
+    # Nota: se permite emitir aunque el perfil no esté completo.
+    # El PDF se regenerará automáticamente cuando el inquilino complete su perfil.
 
     nombre_admin = current_user.get("nombre", "admin")
     anexo = svc_contrato.emitir_contrato(
@@ -387,6 +387,13 @@ def completar_perfil(
     inq.perfil_completado = True
     db.commit()
     db.refresh(inq)
+
+    # Regenerar PDFs de contratos pendientes con los datos del perfil recién completado
+    try:
+        svc_contrato.regenerar_pdfs_con_perfil(db, inq)
+    except Exception as exc:
+        logger.warning("Error regenerando contratos tras completar perfil inquilino %s: %s", inq.id, exc)
+
     return inq
 
 
@@ -417,38 +424,69 @@ def descargar_pdf_portal(
     db: Session = Depends(get_db),
     current_user=Depends(require_inquilino),
 ):
+    import base64 as _b64
+    from fastapi.responses import Response as _Resp
     anexo = db.query(AnexoContratoInquilino).filter(
         AnexoContratoInquilino.id == anexo_id,
         AnexoContratoInquilino.inquilino_id == current_user["id"],
     ).first()
     if not anexo or not anexo.pdf_generado:
         raise HTTPException(status_code=404, detail="PDF no encontrado")
-    return {"pdf_base64": anexo.pdf_generado, "titulo": anexo.titulo}
+    pdf_bytes = _b64.b64decode(anexo.pdf_generado)
+    return _Resp(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{anexo.titulo or "contrato"}.pdf"'},
+    )
 
 
 @router.post("/portal/contratos/{anexo_id}/firmar", response_model=AnexoContratoInquilinoOut)
 def firmar_contrato_portal(
     anexo_id: int,
-    data: FirmarAnexoInquilinoIn,
     request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(require_inquilino),
 ):
     inq = db.get(Inquilino, current_user["id"])
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    if not inq.firma_base64:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes registrar tu firma electrónica antes de firmar documentos",
+        )
     anexo = db.query(AnexoContratoInquilino).filter(
         AnexoContratoInquilino.id == anexo_id,
         AnexoContratoInquilino.inquilino_id == current_user["id"],
     ).first()
-    if not inq or not anexo:
+    if not anexo:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
         request.client.host if request.client else "unknown"
     )
-    anexo = svc_contrato.firmar_anexo(db, inq, anexo, data.firma_base64, ip=ip)
+    anexo = svc_contrato.firmar_anexo(db, inq, anexo, inq.firma_base64, ip=ip)
     db.commit()
     db.refresh(anexo)
     return anexo
+
+
+@router.put("/portal/firma")
+def registrar_firma_portal(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino_raw),
+):
+    """Guarda o actualiza la firma digital del inquilino."""
+    inq = db.get(Inquilino, current_user["id"])
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    firma = data.get("firma_base64")
+    if not firma:
+        raise HTTPException(status_code=422, detail="firma_base64 es requerido")
+    inq.firma_base64 = firma
+    db.commit()
+    return {"ok": True, "tiene_firma": True}
 
 
 @router.post("/portal/contratos/{anexo_id}/subir-comprobante-reserva", response_model=AnexoContratoInquilinoOut)

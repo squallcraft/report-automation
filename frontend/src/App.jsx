@@ -86,6 +86,7 @@ import CompletarPerfil from './pages/inquilino/CompletarPerfil'
 import InquilinoDashboard from './pages/inquilino/InquilinoDashboard'
 import InquilinoContratos from './pages/inquilino/InquilinoContratos'
 import InquilinoCobros from './pages/inquilino/InquilinoCobros'
+import InquilinoFirma from './pages/inquilino/InquilinoFirma'
 
 import Inquilinos from './pages/admin/Inquilinos'
 import InquilinoDetalle from './pages/admin/InquilinoDetalle'
@@ -254,6 +255,7 @@ export default function App() {
         <Route index element={<InquilinoDashboard />} />
         <Route path="contratos" element={<InquilinoContratos />} />
         <Route path="cobros" element={<InquilinoCobros />} />
+        <Route path="firma" element={<InquilinoFirma />} />
       </Route>
 
       {/* Rutas admin inquilinos */}

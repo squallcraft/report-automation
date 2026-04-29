@@ -2603,6 +2603,8 @@ class Inquilino(Base):
     fecha_inicio_despliegue = Column(Date, nullable=True)
     mes_gratis_confirmado = Column(Boolean, nullable=True)
     fecha_inicio_facturacion = Column(Date, nullable=True)
+    # Firma digital (guardada en perfil, se usa para firmar contratos)
+    firma_base64 = Column(Text, nullable=True)
     # Estado general
     contrato_firmado = Column(Boolean, default=False)
     primer_cobro_generado = Column(Boolean, default=False)

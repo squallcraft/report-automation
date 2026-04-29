@@ -1,152 +1,141 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../api'
-import { FileText, Download, PenTool, Upload, CheckCircle, Clock, AlertCircle, X } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { FileText, PenLine, CheckCircle, Clock, AlertCircle, Download, ShieldCheck } from 'lucide-react'
 
-const ESTADOS = {
-  BORRADOR: { label: 'Pendiente de firma', color: 'bg-amber-100 text-amber-700', icon: Clock },
-  EMITIDO: { label: 'Emitido', color: 'bg-blue-100 text-blue-700', icon: Clock },
-  FIRMADO: { label: 'Firmado', color: 'bg-green-100 text-green-700', icon: CheckCircle },
+const fmtDate = (s) => {
+  if (!s) return '—'
+  return new Date(s).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-function FirmaModal({ anexo, onClose, onSigned }) {
-  const canvasRef = useRef(null)
-  const [drawing, setDrawing] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+const ESTADO_LABELS = {
+  BORRADOR: { label: 'Pendiente de firma', color: 'bg-amber-100 text-amber-700', icon: Clock },
+  EMITIDO:  { label: 'Pendiente de firma', color: 'bg-amber-100 text-amber-700', icon: Clock },
+  FIRMADO:  { label: 'Firmado',            color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle },
+}
 
-  const startDraw = (e) => {
-    setDrawing(true)
-    const ctx = canvasRef.current.getContext('2d')
-    const rect = canvasRef.current.getBoundingClientRect()
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-  }
-
-  const draw = (e) => {
-    if (!drawing) return
-    const ctx = canvasRef.current.getContext('2d')
-    const rect = canvasRef.current.getBoundingClientRect()
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top
-    ctx.lineWidth = 2
-    ctx.lineCap = 'round'
-    ctx.strokeStyle = '#1e3a5f'
-    ctx.lineTo(x, y)
-    ctx.stroke()
-  }
-
-  const stopDraw = () => setDrawing(false)
-
-  const clearCanvas = () => {
-    const ctx = canvasRef.current.getContext('2d')
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-  }
-
-  const handleSign = async () => {
-    const firma = canvasRef.current.toDataURL('image/png')
-    setLoading(true)
-    setError(null)
-    try {
-      const { data } = await api.post(`/inquilinos/portal/contratos/${anexo.id}/firmar`, { firma_base64: firma })
-      onSigned(data)
-      onClose()
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Error al firmar')
-    } finally {
-      setLoading(false)
-    }
-  }
+function AnexoCard({ anexo, tieneFirma, signing, onVer, onFirmar }) {
+  const meta = ESTADO_LABELS[anexo.estado] || { label: anexo.estado, color: 'bg-gray-100 text-gray-700', icon: FileText }
+  const Icon = meta.icon
+  const puedeF = anexo.requiere_firma_inquilino && anexo.estado !== 'FIRMADO'
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-        <div className="flex items-center justify-between p-5 border-b">
-          <div>
-            <h3 className="font-semibold text-gray-900">Firma digital</h3>
-            <p className="text-sm text-gray-500">{anexo.titulo}</p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          <p className="text-sm text-gray-600">
-            Dibuja tu firma en el recuadro de abajo. Al firmar, aceptas los términos y condiciones del contrato.
+    <div className="border border-gray-200 rounded-lg p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-gray-900 truncate">{anexo.titulo}</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {anexo.tipo === 'RESERVA' ? 'Anexo de Reserva' : 'Contrato Principal'}
           </p>
-          <div className="border-2 border-gray-200 rounded-xl overflow-hidden bg-gray-50">
-            <canvas
-              ref={canvasRef}
-              width={480}
-              height={160}
-              className="w-full cursor-crosshair touch-none"
-              onMouseDown={startDraw}
-              onMouseMove={draw}
-              onMouseUp={stopDraw}
-              onMouseLeave={stopDraw}
-              onTouchStart={startDraw}
-              onTouchMove={draw}
-              onTouchEnd={stopDraw}
-            />
-          </div>
-          {error && (
-            <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg text-sm text-red-700">
-              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              {error}
-            </div>
+          {anexo.firmado_at && (
+            <p className="text-[11px] text-emerald-600 mt-1">Firmado el {fmtDate(anexo.firmado_at)}</p>
           )}
-          <div className="flex gap-3">
-            <button onClick={clearCanvas} className="flex-1 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-              Limpiar
-            </button>
-            <button onClick={handleSign} disabled={loading}
-              className="flex-1 py-2 text-sm font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 disabled:opacity-60 flex items-center justify-center gap-2">
-              {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              <PenTool className="w-4 h-4" />
-              Firmar documento
-            </button>
-          </div>
+          {anexo.tipo === 'RESERVA' && anexo.estado !== 'FIRMADO' && !anexo.comprobante_reserva_aprobado && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              {anexo.comprobante_reserva_path
+                ? 'Comprobante de reserva en revisión'
+                : 'Debes subir el comprobante de la transferencia de reserva'}
+            </p>
+          )}
         </div>
+        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium flex-shrink-0 ${meta.color}`}>
+          <Icon size={12} />
+          {meta.label}
+        </span>
       </div>
+
+      <div className="flex flex-wrap gap-2 mt-3">
+        <button
+          onClick={onVer}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
+        >
+          <Download size={12} /> Ver documento
+        </button>
+        {puedeF && (
+          <button
+            onClick={onFirmar}
+            disabled={signing || !tieneFirma}
+            title={!tieneFirma ? 'Registra tu firma en "Mi Firma" antes de firmar' : ''}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-900 hover:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+          >
+            <PenLine size={12} />
+            {signing ? 'Firmando…' : 'Firmar'}
+          </button>
+        )}
+      </div>
+
+      {puedeF && !tieneFirma && (
+        <p className="text-[11px] text-amber-700 mt-2">
+          Primero registra tu firma electrónica en "Mi Firma" para poder firmar este documento.
+        </p>
+      )}
     </div>
   )
 }
 
 export default function InquilinoContratos() {
+  const navigate = useNavigate()
   const [contratos, setContratos] = useState([])
+  const [perfil, setPerfil] = useState(null)
   const [loading, setLoading] = useState(true)
   const [signing, setSigning] = useState(null)
 
-  const fetchContratos = () => {
-    api.get('/inquilinos/portal/contratos')
-      .then(r => setContratos(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => { fetchContratos() }, [])
-
-  const handleDownload = async (id, titulo) => {
+  const cargar = async () => {
+    setLoading(true)
     try {
-      const { data } = await api.get(`/inquilinos/portal/contratos/${id}/pdf`)
-      const link = document.createElement('a')
-      link.href = `data:application/pdf;base64,${data.pdf_base64}`
-      link.download = `${titulo || 'contrato'}.pdf`
-      link.click()
-    } catch {}
+      const [ct, pf] = await Promise.all([
+        api.get('/inquilinos/portal/contratos'),
+        api.get('/inquilinos/portal/perfil'),
+      ])
+      setContratos(ct.data)
+      setPerfil(pf.data)
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al cargar contratos')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleSigned = (updated) => {
-    setContratos(prev => prev.map(c => c.id === updated.id ? updated : c))
-    fetchContratos()
+  useEffect(() => { cargar() }, [])
+
+  const verPdf = async (c) => {
+    try {
+      const { data: blob } = await api.get(`/inquilinos/portal/contratos/${c.id}/pdf`, { responseType: 'blob' })
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+      window.open(url, '_blank')
+    } catch {
+      toast.error('Error al abrir el documento')
+    }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin w-8 h-8 border-2 border-blue-900 border-t-transparent rounded-full" />
-    </div>
-  )
+  const firmar = async (c) => {
+    if (!perfil?.firma_base64) {
+      toast.error('Primero registra tu firma electrónica en "Mi Firma"')
+      navigate('/inquilino/firma')
+      return
+    }
+    setSigning(c.id)
+    try {
+      await api.post(`/inquilinos/portal/contratos/${c.id}/firmar`)
+      toast.success('Documento firmado correctamente')
+      await cargar()
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al firmar el documento')
+    } finally {
+      setSigning(null)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin w-8 h-8 border-2 border-blue-900 border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  const tieneFirma = !!perfil?.firma_base64
 
   return (
     <div className="space-y-6">
@@ -155,6 +144,23 @@ export default function InquilinoContratos() {
         <p className="text-gray-500 mt-1">Tus contratos y documentos del servicio Tracking Tech</p>
       </div>
 
+      {/* Aviso si no tiene firma registrada */}
+      {!tieneFirma && contratos.some(c => c.estado !== 'FIRMADO' && c.requiere_firma_inquilino) && (
+        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+          <AlertCircle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-amber-800">
+            Tienes documentos pendientes de firma.{' '}
+            <button
+              onClick={() => navigate('/inquilino/firma')}
+              className="font-semibold underline hover:no-underline"
+            >
+              Registra tu firma electrónica
+            </button>{' '}
+            para poder firmarlos.
+          </div>
+        </div>
+      )}
+
       {contratos.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -162,69 +168,24 @@ export default function InquilinoContratos() {
           <p className="text-sm text-gray-400 mt-1">Tu ejecutivo de cuenta emitirá los documentos pronto</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {contratos.map(c => {
-            const estado = ESTADOS[c.estado] || ESTADOS.BORRADOR
-            const EIcon = estado.icon
-            return (
-              <div key={c.id} className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-5 h-5 text-blue-900" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{c.titulo}</h3>
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        Tipo: {c.tipo === 'RESERVA' ? 'Anexo de Reserva' : 'Contrato Principal'}
-                        {c.firmado_at && ` · Firmado ${new Date(c.firmado_at).toLocaleDateString('es-CL')}`}
-                      </p>
-                      {c.tipo === 'RESERVA' && c.estado === 'BORRADOR' && !c.comprobante_reserva_aprobado && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <div className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full flex items-center gap-1">
-                            <Upload className="w-3 h-3" />
-                            Comprobante pendiente
-                          </div>
-                          {!c.comprobante_reserva_path && (
-                            <span className="text-xs text-gray-400">Sube el comprobante de la transferencia de reserva</span>
-                          )}
-                          {c.comprobante_reserva_path && !c.comprobante_reserva_aprobado && (
-                            <span className="text-xs text-amber-600">En revisión por el administrador</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${estado.color}`}>
-                      <EIcon className="w-3 h-3" />
-                      {estado.label}
-                    </span>
-                    <button onClick={() => handleDownload(c.id, c.titulo)}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Descargar PDF">
-                      <Download className="w-4 h-4 text-gray-500" />
-                    </button>
-                    {c.estado === 'BORRADOR' && c.requiere_firma_inquilino && (
-                      <button onClick={() => setSigning(c)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 transition-colors">
-                        <PenTool className="w-3 h-3" />
-                        Firmar
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldCheck size={16} className="text-gray-400" />
+            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Documentos</h2>
+          </div>
+          <div className="space-y-3">
+            {contratos.map(c => (
+              <AnexoCard
+                key={c.id}
+                anexo={c}
+                tieneFirma={tieneFirma}
+                signing={signing === c.id}
+                onVer={() => verPdf(c)}
+                onFirmar={() => firmar(c)}
+              />
+            ))}
+          </div>
         </div>
-      )}
-
-      {signing && (
-        <FirmaModal
-          anexo={signing}
-          onClose={() => setSigning(null)}
-          onSigned={handleSigned}
-        />
       )}
     </div>
   )
