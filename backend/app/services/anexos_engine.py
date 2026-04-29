@@ -518,23 +518,25 @@ def crear_anexo_para_version(
 # ─────────────────────────────────────────────────────────────────────────────
 # Camino B: PDF de contrato inicial digital (a partir de plantilla renderizada)
 # ─────────────────────────────────────────────────────────────────────────────
-def generar_pdf_contrato_caminob(
+# ─────────────────────────────────────────────────────────────────────────────
+# Camino B: PDF de contrato inicial digital (a partir de plantilla renderizada)
+# ─────────────────────────────────────────────────────────────────────────────
+def generar_pdf_contrato_generico(
     rendered_md: str,
     titulo: str,
-    trabajador: Trabajador,
-    version_nueva: ContratoTrabajadorVersion,
+    firmante_nombre: str,
+    firmante_rut: Optional[str],
     rep_legal_nombre: str = "Adriana Colina Aguilar",
     rep_legal_rut: str = "25.936.753-0",
     empresa_razon_social: str = "E-Courier SPA",
     empresa_rut: str = "—",
-    firma_trabajador_src: Optional[str] = None,
-    requiere_firma_trabajador: bool = True,
+    firma_firmante_src: Optional[str] = None,
+    requiere_firma: bool = True,
 ) -> bytes:
     """
-    Genera el PDF de un contrato inicial Camino B usando el contenido
-    markdown ya renderizado de la plantilla. El render se trata como párrafos
-    separados por líneas en blanco; los encabezados que comiencen con `# `,
-    `## `, `### ` se estilizan.
+    Genera el PDF de un contrato a partir de markdown renderizado.
+    Función genérica: acepta cualquier tipo de firmante (trabajador, inquilino, etc.).
+    El bloque de firmas usa `firmante_nombre` y `firmante_rut` como firma derecha.
     """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -562,7 +564,6 @@ def generar_pdf_contrato_caminob(
     story.append(Paragraph(f"Santiago, {date.today().strftime('%d/%m/%Y')}", st_meta_r))
     story.append(Spacer(1, 10))
 
-    # Render del markdown como bloques: headings y párrafos
     bloques = (rendered_md or "").split("\n\n")
     for bloque in bloques:
         bloque = bloque.strip()
@@ -578,21 +579,18 @@ def generar_pdf_contrato_caminob(
             story.append(Spacer(1, 8))
             story.append(Paragraph(bloque[2:].strip(), st_h1))
         elif bloque.startswith("<!--"):
-            # Comentarios markdown se ignoran
             continue
         else:
-            # Convertir saltos simples a <br/> para Reportlab
             html_friendly = bloque.replace("\n", "<br/>")
             story.append(Paragraph(html_friendly, st_p))
             story.append(Spacer(1, 4))
 
-    # Bloque de firmas
     story.append(Spacer(1, 18))
     story.append(_bloque_firmas(
         rep_legal_nombre, rep_legal_rut,
-        trabajador.nombre, trabajador.rut,
-        firma_trabajador_src=firma_trabajador_src,
-        requiere_firma_trabajador=requiere_firma_trabajador,
+        firmante_nombre, firmante_rut,
+        firma_trabajador_src=firma_firmante_src,
+        requiere_firma_trabajador=requiere_firma,
     ))
 
     story.append(Spacer(1, 10))
@@ -605,3 +603,30 @@ def generar_pdf_contrato_caminob(
 
     doc.build(story)
     return buffer.getvalue()
+
+
+def generar_pdf_contrato_caminob(
+    rendered_md: str,
+    titulo: str,
+    trabajador: Trabajador,
+    version_nueva: ContratoTrabajadorVersion,
+    rep_legal_nombre: str = "Adriana Colina Aguilar",
+    rep_legal_rut: str = "25.936.753-0",
+    empresa_razon_social: str = "E-Courier SPA",
+    empresa_rut: str = "—",
+    firma_trabajador_src: Optional[str] = None,
+    requiere_firma_trabajador: bool = True,
+) -> bytes:
+    """Wrapper sobre generar_pdf_contrato_generico para el flujo de trabajadores (Camino B)."""
+    return generar_pdf_contrato_generico(
+        rendered_md=rendered_md,
+        titulo=titulo,
+        firmante_nombre=trabajador.nombre,
+        firmante_rut=trabajador.rut,
+        rep_legal_nombre=rep_legal_nombre,
+        rep_legal_rut=rep_legal_rut,
+        empresa_razon_social=empresa_razon_social,
+        empresa_rut=empresa_rut,
+        firma_firmante_src=firma_trabajador_src,
+        requiere_firma=requiere_firma_trabajador,
+    )

@@ -57,6 +57,9 @@ def _calcular_retiro_driver(driver, retiros: list, semana_cerrada: bool = False)
     tarifa; los demás deberían tener tarifa_driver = 0. Esta función es defensiva y
     deduplica por día aunque los datos tuvieran la tarifa repetida.
 
+    Si semana_cerrada es True y no hay montos en tarifa_driver (filas sin snapshot),
+    NO se aplica la tarifa_retiro_fija vigente del perfil (evita mutar liquidaciones pagadas).
+
     Para drivers sin tarifa_retiro_fija: se suma directamente r.tarifa_driver.
     """
     if not retiros:
@@ -72,7 +75,10 @@ def _calcular_retiro_driver(driver, retiros: list, semana_cerrada: bool = False)
                 total += r.tarifa_driver or 0
         if total > 0:
             return total
-        # Fallback para retiros muy antiguos sin snapshot: tarifa_retiro_fija × días.
+        # Semana ya pagada: no aplicar tarifa vigente del perfil sobre filas sin snapshot.
+        if semana_cerrada:
+            return 0
+        # Semana abierta: fallback para retiros sin tarifa_driver guardada (tarifa actual × días).
         return driver.tarifa_retiro_fija * len(dia_visto)
 
     return sum(r.tarifa_driver or 0 for r in retiros)

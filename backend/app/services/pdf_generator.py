@@ -21,7 +21,7 @@ from reportlab.platypus import (
 from reportlab.graphics.shapes import Drawing, Rect, String as GString
 from sqlalchemy.orm import Session
 
-from app.models import Envio, Seller, Driver, Retiro
+from app.models import Envio, Seller, Driver, Retiro, PagoSemanaDriver, EstadoPagoEnum
 
 # Registrar Roboto (usa font-roboto si está instalado)
 try:
@@ -547,11 +547,19 @@ def generar_pdf_driver(
             Retiro.driver_id == driver_id, Retiro.semana == semana,
             Retiro.mes == mes, Retiro.anio == anio,
         ).all()
+        pago_sem = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == semana,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+        ).first()
+        semana_cerrada_pdf = pago_sem is not None and pago_sem.estado == EstadoPagoEnum.PAGADO.value
         daily_data = _daily_breakdown(
             envios_semana, retiros_semana,
             "extra_producto_driver", "extra_comuna_driver",
             semana, mes, anio, is_seller=False, db=db,
             contratado=es_contratado, driver=driver,
+            semana_cerrada=semana_cerrada_pdf,
         )
 
     if daily_data:

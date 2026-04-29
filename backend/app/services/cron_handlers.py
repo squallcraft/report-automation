@@ -43,6 +43,7 @@ JOB_INGESTA_RUTAS_19H   = "ingesta_rutas_19h"          # 19:00 — snapshot en r
 JOB_INGESTA_RUTAS_00H   = "ingesta_rutas_00h"          # 00:00 — cierre del día
 JOB_RECONCILIAR_PENDIENTES = "reconciliar_asignaciones_pendientes"
 JOB_CICLO_CONTRATOS = "ciclo_contratos_laborales"
+JOB_COBROS_INQUILINOS_VENCIDOS = "cobros_inquilinos_vencidos"  # 09:00 — alerta cobros vencidos
 
 
 # ── Handler: ingesta diaria de rutas/asignaciones ─────────────────────────────
@@ -127,15 +128,47 @@ def handler_ciclo_contratos(db: Session, config: dict, ejecucion_id: int) -> dic
     return resumen
 
 
+def handler_cobros_inquilinos_vencidos(db: Session, config: dict, ejecucion_id: int) -> dict:
+    """
+    Revisa cobros de inquilinos con estado PENDIENTE cuyo fecha_vencimiento ya pasó.
+    Los marca como VENCIDO y genera alerta para el admin (permiso inquilinos:ver).
+    """
+    from app.models import CobrosInquilino, EstadoCobrosInquilinoEnum
+    from app.services.notificaciones_inquilino import alerta_cobro_vencido
+
+    hoy = date.today()
+    cobros_pendientes = db.query(CobrosInquilino).filter(
+        CobrosInquilino.estado == EstadoCobrosInquilinoEnum.PENDIENTE.value,
+        CobrosInquilino.fecha_vencimiento < hoy,
+    ).all()
+
+    marcados = 0
+    notificados = 0
+    for cobro in cobros_pendientes:
+        cobro.estado = EstadoCobrosInquilinoEnum.VENCIDO.value
+        marcados += 1
+        try:
+            alerta_cobro_vencido(db, cobro)
+            notificados += 1
+        except Exception as exc:
+            logger.warning("Error notificando cobro vencido %s: %s", cobro.id, exc)
+
+    if marcados:
+        db.commit()
+
+    resumen = {"cobros_vencidos_marcados": marcados, "alertas_enviadas": notificados}
+    logger.info("[cobros_inquilinos_vencidos] %s", resumen)
+    return resumen
+
+
 # ── Registro central ──────────────────────────────────────────────────────────
 def register_all_handlers() -> None:
-    # Los tres jobs de ingesta de rutas usan el mismo handler; la config en BD
-    # define qué ventana de fechas consulta cada uno.
     register_handler(JOB_INGESTA_RUTAS,     handler_ingesta_rutas)
     register_handler(JOB_INGESTA_RUTAS_19H, handler_ingesta_rutas)
     register_handler(JOB_INGESTA_RUTAS_00H, handler_ingesta_rutas)
     register_handler(JOB_RECONCILIAR_PENDIENTES, handler_reconciliar_pendientes)
     register_handler(JOB_CICLO_CONTRATOS, handler_ciclo_contratos)
+    register_handler(JOB_COBROS_INQUILINOS_VENCIDOS, handler_cobros_inquilinos_vencidos)
 
 
 # ── Seed de cron jobs por defecto ─────────────────────────────────────────────
@@ -211,6 +244,19 @@ DEFAULT_JOBS = [
         ),
         "activo": True,
         "hora_ejecucion": "06:00",
+        "config": {},
+    },
+    # ── Cobros inquilinos vencidos (09:00) ────────────────────────────────────
+    {
+        "job_key": JOB_COBROS_INQUILINOS_VENCIDOS,
+        "nombre": "Alertas cobros inquilinos vencidos",
+        "descripcion": (
+            "Revisa diariamente los cobros de inquilinos (arriendo Tracking Tech) con "
+            "estado PENDIENTE cuya fecha de vencimiento ya pasó (10 días desde emisión). "
+            "Los marca VENCIDO y notifica al admin."
+        ),
+        "activo": True,
+        "hora_ejecucion": "09:00",
         "config": {},
     },
 ]

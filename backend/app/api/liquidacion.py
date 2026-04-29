@@ -345,11 +345,19 @@ def descargar_pdf_driver(
             Retiro.driver_id == driver_id, Retiro.semana == semana,
             Retiro.mes == mes, Retiro.anio == anio,
         ).all()
+        pago_sem_pdf = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == semana,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+        ).first()
+        semana_cerrada_pdf = pago_sem_pdf is not None and pago_sem_pdf.estado == EstadoPagoEnum.PAGADO.value
         daily = _daily_breakdown(
             envios_semana, retiros_semana,
             "extra_producto_driver", "extra_comuna_driver",
             semana, mes, anio, is_seller=False, db=db,
             contratado=es_contratado, driver=driver,
+            semana_cerrada=semana_cerrada_pdf,
         )
         pdf_bytes = generar_pdf_driver(
             db, driver_id, semana, mes, anio,
@@ -539,8 +547,13 @@ def _daily_breakdown(envios_list, retiros_list, field_extra, field_comuna, seman
                     by_day[r.fecha] = r.tarifa_driver or 0
             for fecha, tarifa in by_day.items():
                 if fecha in daily_map:
-                    # Si el snapshot existe usarlo; si no (retiro antiguo sin snapshot) usar tarifa actual.
-                    daily_map[fecha]["retiros"] = tarifa if tarifa > 0 else driver.tarifa_retiro_fija
+                    # Snapshot en fila; si no hay y la semana sigue abierta, usar tarifa actual del perfil.
+                    if tarifa > 0:
+                        daily_map[fecha]["retiros"] = tarifa
+                    elif not semana_cerrada:
+                        daily_map[fecha]["retiros"] = driver.tarifa_retiro_fija
+                    else:
+                        daily_map[fecha]["retiros"] = 0
         else:
             for r in retiros_list:
                 if r.fecha in daily_map:
@@ -898,11 +911,21 @@ def descargar_zip_drivers(
                     Retiro.driver_id == did, Retiro.semana == semana,
                     Retiro.mes == mes, Retiro.anio == anio,
                 ).all()
+                pago_sem_zip = db.query(PagoSemanaDriver).filter(
+                    PagoSemanaDriver.driver_id == did,
+                    PagoSemanaDriver.semana == semana,
+                    PagoSemanaDriver.mes == mes,
+                    PagoSemanaDriver.anio == anio,
+                ).first()
+                semana_cerr_zip = (
+                    pago_sem_zip is not None and pago_sem_zip.estado == EstadoPagoEnum.PAGADO.value
+                )
                 daily = _daily_breakdown(
                     ev, rv,
                     "extra_producto_driver", "extra_comuna_driver",
                     semana, mes, anio, is_seller=False, db=db,
                     contratado=es_c, driver=driver,
+                    semana_cerrada=semana_cerr_zip,
                 )
                 pdf = generar_pdf_driver(
                     db, did, semana, mes, anio,
@@ -1052,11 +1075,21 @@ def descargar_mi_pdf_driver(
             Retiro.driver_id == driver_id, Retiro.semana == semana,
             Retiro.mes == mes, Retiro.anio == anio,
         ).all()
+        pago_sem_mi = db.query(PagoSemanaDriver).filter(
+            PagoSemanaDriver.driver_id == driver_id,
+            PagoSemanaDriver.semana == semana,
+            PagoSemanaDriver.mes == mes,
+            PagoSemanaDriver.anio == anio,
+        ).first()
+        semana_cerrada_mi = (
+            pago_sem_mi is not None and pago_sem_mi.estado == EstadoPagoEnum.PAGADO.value
+        )
         daily = _daily_breakdown(
             envios_semana, retiros_semana,
             "extra_producto_driver", "extra_comuna_driver",
             semana, mes, anio, is_seller=False, db=db,
             contratado=es_contratado, driver=driver,
+            semana_cerrada=semana_cerrada_mi,
         )
         pdf_bytes = generar_pdf_driver(
             db, driver_id, semana, mes, anio,

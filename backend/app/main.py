@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta, envios_coordenadas, envios_hora, certificados
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta, envios_coordenadas, envios_hora, certificados, inquilinos
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -1644,6 +1644,7 @@ app.include_router(snapshots.router, prefix="/api")
 app.include_router(whatsapp.router, prefix="/api")
 app.include_router(leads.router, prefix="/api")
 app.include_router(colaboradores.router, prefix="/api")
+app.include_router(inquilinos.router, prefix="/api")
 app.include_router(parametros_remuneracion.router, prefix="/api")
 app.include_router(remuneraciones.router, prefix="/api")
 app.include_router(iva_drivers.router, prefix="/api")
@@ -1682,13 +1683,21 @@ async def _startup_parametros():
 
 @app.on_event("startup")
 async def _startup_scheduler():
-    """Inicia APScheduler, registra handlers y siembra los cron jobs por defecto.
+    """Inicia APScheduler en este proceso si está habilitado.
 
-    Cada worker uvicorn corre su propio scheduler. La duplicación se evita
-    con advisory locks de Postgres dentro del job (ver services/scheduler.py).
+    Con varios workers de uvicorn, cada uno intentaba cargar APScheduler y los jobs
+    competían por advisory locks — frágil en producción.
+
+    Si DISABLE_EMBEDDED_SCHEDULER=1 (recomendado en prod), usar el proceso dedicado
+    `python run_scheduler.py` y no iniciar scheduler aquí.
     """
     import logging
+    import os
+
     logger = logging.getLogger(__name__)
+    if os.getenv("DISABLE_EMBEDDED_SCHEDULER", "").strip().lower() in ("1", "true", "yes", "on"):
+        logger.info("Scheduler embebido desactivado (DISABLE_EMBEDDED_SCHEDULER); usar proceso dedicado run_scheduler.py")
+        return
     try:
         from app.database import SessionLocal
         from app.services.cron_handlers import register_all_handlers, seed_default_cron_jobs

@@ -449,10 +449,20 @@ def driver_liquidacion(
         Retiro.driver_id == target_id, Retiro.semana == semana,
         Retiro.mes == mes, Retiro.anio == anio,
     ).all()
+    pago_sem_portal = db.query(PagoSemanaDriver).filter(
+        PagoSemanaDriver.driver_id == target_id,
+        PagoSemanaDriver.semana == semana,
+        PagoSemanaDriver.mes == mes,
+        PagoSemanaDriver.anio == anio,
+    ).first()
+    semana_cerrada_drv = (
+        pago_sem_portal is not None and pago_sem_portal.estado == EstadoPagoEnum.PAGADO.value
+    )
     detail["daily"] = _daily_breakdown(
         envios_semana, retiros_semana,
         "extra_producto_driver", "extra_comuna_driver",
         semana, mes, anio, is_seller=False, db=db, contratado=es_contratado, driver=driver,
+        semana_cerrada=semana_cerrada_drv,
     )
     detail["productos"] = [] if es_contratado else _productos_envios(db, envios_semana)
 

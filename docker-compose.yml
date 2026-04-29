@@ -1,3 +1,24 @@
+# Variables compartidas API / scheduler (cron jobs necesitan mismas credenciales que el backend).
+x-shared-backend-env: &shared-backend-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-ecourier}:${POSTGRES_PASSWORD:-ecourier}@db:5432/${POSTGRES_DB:-ecourier}
+  SECRET_KEY: ${SECRET_KEY:-cambiar-en-produccion}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+  CORS_ORIGINS: '["https://facturacion.e-courier.cl", "http://facturacion.e-courier.cl"]'
+  HAULMER_API_KEY: ${HAULMER_API_KEY:-}
+  HAULMER_EMISOR_RUT: ${HAULMER_EMISOR_RUT:-}
+  HAULMER_EMISOR_RAZON: ${HAULMER_EMISOR_RAZON:-}
+  HAULMER_EMISOR_GIRO: ${HAULMER_EMISOR_GIRO:-Servicios de transporte y logística}
+  HAULMER_EMISOR_DIR: ${HAULMER_EMISOR_DIR:-MONEDA 1137 56}
+  HAULMER_EMISOR_CMNA: ${HAULMER_EMISOR_CMNA:-SANTIAGO}
+  HAULMER_EMISOR_ACTECO: ${HAULMER_EMISOR_ACTECO:-532000}
+  TRACKINGTECH_API_URL: ${TRACKINGTECH_API_URL:-https://api-app.trackingtech.cl/api}
+  TRACKINGTECH_EMAIL: ${TRACKINGTECH_EMAIL:-}
+  TRACKINGTECH_PASSWORD: ${TRACKINGTECH_PASSWORD:-}
+  XAI_API_KEY: ${XAI_API_KEY:-}
+  WA_PHONE_NUMBER_ID: ${WA_PHONE_NUMBER_ID:-}
+  WA_ACCESS_TOKEN: ${WA_ACCESS_TOKEN:-}
+  WA_VERIFY_TOKEN: ${WA_VERIFY_TOKEN:-ecourier_webhook_verify}
+
 services:
   db:
     image: postgres:16-alpine
@@ -14,6 +35,7 @@ services:
       timeout: 5s
       retries: 10
 
+  # API: sin scheduler embebido; los cron los ejecuta el servicio `scheduler` (un solo proceso).
   backend:
     build: ./backend
     restart: unless-stopped
@@ -21,24 +43,21 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ecourier}:${POSTGRES_PASSWORD:-ecourier}@db:5432/${POSTGRES_DB:-ecourier}
-      SECRET_KEY: ${SECRET_KEY:-cambiar-en-produccion}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
-      CORS_ORIGINS: '["https://facturacion.e-courier.cl", "http://facturacion.e-courier.cl"]'
-      HAULMER_API_KEY: ${HAULMER_API_KEY:-}
-      HAULMER_EMISOR_RUT: ${HAULMER_EMISOR_RUT:-}
-      HAULMER_EMISOR_RAZON: ${HAULMER_EMISOR_RAZON:-}
-      HAULMER_EMISOR_GIRO: ${HAULMER_EMISOR_GIRO:-Servicios de transporte y logística}
-      HAULMER_EMISOR_DIR: ${HAULMER_EMISOR_DIR:-MONEDA 1137 56}
-      HAULMER_EMISOR_CMNA: ${HAULMER_EMISOR_CMNA:-SANTIAGO}
-      HAULMER_EMISOR_ACTECO: ${HAULMER_EMISOR_ACTECO:-532000}
-      TRACKINGTECH_API_URL: ${TRACKINGTECH_API_URL:-https://api-app.trackingtech.cl/api}
-      TRACKINGTECH_EMAIL: ${TRACKINGTECH_EMAIL:-}
-      TRACKINGTECH_PASSWORD: ${TRACKINGTECH_PASSWORD:-}
-      XAI_API_KEY: ${XAI_API_KEY:-}
-      WA_PHONE_NUMBER_ID: ${WA_PHONE_NUMBER_ID:-}
-      WA_ACCESS_TOKEN: ${WA_ACCESS_TOKEN:-}
-      WA_VERIFY_TOKEN: ${WA_VERIFY_TOKEN:-ecourier_webhook_verify}
+      <<: *shared-backend-env
+      DISABLE_EMBEDDED_SCHEDULER: "1"
+    volumes:
+      - uploads:/app/uploads
+
+  # Un solo proceso APScheduler — evita locks entre workers y pierde corridas silenciosamente.
+  scheduler:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *shared-backend-env
+    command: ["python", "run_scheduler.py"]
     volumes:
       - uploads:/app/uploads
 

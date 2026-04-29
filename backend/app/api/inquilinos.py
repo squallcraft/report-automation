@@ -1,0 +1,500 @@
+"""
+API de inquilinos — arriendo del sistema Tracking Tech.
+
+Secciones:
+  /api/inquilinos/admin/...  → Rutas para administradores (require_permission)
+  /api/inquilinos/portal/... → Rutas para el portal del inquilino (require_inquilino)
+"""
+import base64
+import logging
+from datetime import date, timedelta
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+
+from app.auth import require_admin_or_administracion, require_inquilino, require_inquilino_raw, require_permission
+from app.database import get_db
+from app.models import (
+    Inquilino,
+    CobrosInquilino,
+    DescuentoInquilino,
+    AnexoContratoInquilino,
+    EstadoCobrosInquilinoEnum,
+    EstadoAnexoInquilinoEnum,
+    TipoAnexoInquilinoEnum,
+)
+from app.auth import hash_password
+from app.schemas import (
+    InquilinoCreate,
+    InquilinoOut,
+    InquilinoUpdate,
+    CompletarPerfilIn,
+    RegistrarDespliegueIn,
+    DescuentoInquilinoCreate,
+    DescuentoInquilinoOut,
+    GenerarCobrosIn,
+    CobrosInquilinoOut,
+    AnexoContratoInquilinoOut,
+    EmitirContratoInquilinoIn,
+    FirmarAnexoInquilinoIn,
+)
+from app.services import contrato_inquilino as svc_contrato
+from app.services import cobros_inquilino as svc_cobros
+from app.services.notificaciones_inquilino import notificar_inicio_despliegue
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/inquilinos", tags=["Inquilinos"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rutas ADMIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/admin", response_model=InquilinoOut, status_code=201)
+def crear_inquilino(
+    data: InquilinoCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    """Crea un inquilino nuevo. No completa el perfil — el inquilino lo hace al ingresar."""
+    existente = db.query(Inquilino).filter(Inquilino.email == data.email).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Ya existe un inquilino con ese email")
+
+    password_hash = hash_password(data.password) if data.password else None
+
+    inq = Inquilino(
+        email=data.email,
+        password_hash=password_hash,
+        plan=data.plan,
+        tiene_reserva=data.tiene_reserva,
+        monto_reserva=data.monto_reserva if data.tiene_reserva else None,
+        mes_gratis=data.mes_gratis,
+        activo=True,
+    )
+    db.add(inq)
+    db.commit()
+    db.refresh(inq)
+    return inq
+
+
+@router.get("/admin", response_model=List[InquilinoOut])
+def listar_inquilinos(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    return db.query(Inquilino).order_by(Inquilino.created_at.desc()).all()
+
+
+@router.get("/admin/{inquilino_id}", response_model=InquilinoOut)
+def obtener_inquilino(
+    inquilino_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    return inq
+
+
+@router.put("/admin/{inquilino_id}", response_model=InquilinoOut)
+def editar_inquilino(
+    inquilino_id: int,
+    data: InquilinoUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+
+    for field, value in data.model_dump(exclude_none=True).items():
+        if field == "password":
+            inq.password_hash = hash_password(value)
+        else:
+            setattr(inq, field, value)
+
+    db.commit()
+    db.refresh(inq)
+    return inq
+
+
+@router.post("/admin/{inquilino_id}/descuento", response_model=DescuentoInquilinoOut, status_code=201)
+def agregar_descuento(
+    inquilino_id: int,
+    data: DescuentoInquilinoCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+
+    desc = DescuentoInquilino(
+        inquilino_id=inquilino_id,
+        monto=data.monto,
+        motivo=data.motivo,
+    )
+    db.add(desc)
+    db.commit()
+    db.refresh(desc)
+    return desc
+
+
+@router.get("/admin/{inquilino_id}/descuentos", response_model=List[DescuentoInquilinoOut])
+def listar_descuentos(
+    inquilino_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    return db.query(DescuentoInquilino).filter(
+        DescuentoInquilino.inquilino_id == inquilino_id
+    ).order_by(DescuentoInquilino.created_at.desc()).all()
+
+
+# ── Cobros admin ──────────────────────────────────────────────────────────────
+
+@router.post("/admin/{inquilino_id}/preview-cobro")
+def preview_cobro(
+    inquilino_id: int,
+    data: GenerarCobrosIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    """Calcula el desglose de un cobro sin generarlo ni persistirlo."""
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    if not inq.plan:
+        raise HTTPException(status_code=400, detail="El inquilino no tiene un plan asignado")
+    return svc_cobros.calcular_monto(db, inq, data.variable_valor)
+
+
+@router.post("/admin/{inquilino_id}/generar-cobro", response_model=CobrosInquilinoOut, status_code=201)
+def generar_cobro(
+    inquilino_id: int,
+    data: GenerarCobrosIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    if not inq.plan:
+        raise HTTPException(status_code=400, detail="El inquilino no tiene un plan asignado")
+    if not inq.perfil_completado:
+        raise HTTPException(status_code=400, detail="El inquilino no ha completado su perfil")
+
+    cobro = svc_cobros.generar_cobro(
+        db=db,
+        inquilino=inq,
+        variable_valor=data.variable_valor,
+        archivo_adjunto_b64=data.archivo_adjunto_b64,
+        archivo_adjunto_nombre=data.archivo_adjunto_nombre,
+    )
+    return cobro
+
+
+@router.get("/admin/{inquilino_id}/cobros", response_model=List[CobrosInquilinoOut])
+def listar_cobros_admin(
+    inquilino_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    return db.query(CobrosInquilino).filter(
+        CobrosInquilino.inquilino_id == inquilino_id
+    ).order_by(CobrosInquilino.created_at.desc()).all()
+
+
+@router.post("/admin/{inquilino_id}/cobros/{cobro_id}/aprobar-pago", response_model=CobrosInquilinoOut)
+def aprobar_pago(
+    inquilino_id: int,
+    cobro_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    cobro = db.query(CobrosInquilino).filter(
+        CobrosInquilino.id == cobro_id,
+        CobrosInquilino.inquilino_id == inquilino_id,
+    ).first()
+    if not cobro:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    if cobro.estado == EstadoCobrosInquilinoEnum.PAGADO.value:
+        raise HTTPException(status_code=400, detail="El cobro ya fue aprobado")
+
+    nombre_admin = current_user.get("nombre", "admin")
+    cobro = svc_cobros.aprobar_pago(db, cobro, aprobado_por=nombre_admin)
+    db.commit()
+    db.refresh(cobro)
+    return cobro
+
+
+# ── Contratos admin ───────────────────────────────────────────────────────────
+
+@router.post("/admin/{inquilino_id}/contratos/preview")
+def preview_contrato(
+    inquilino_id: int,
+    data: EmitirContratoInquilinoIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    return svc_contrato.preview_contrato(db, inq, data.plantilla_id)
+
+
+@router.post("/admin/{inquilino_id}/contratos/emitir", response_model=AnexoContratoInquilinoOut, status_code=201)
+def emitir_contrato(
+    inquilino_id: int,
+    data: EmitirContratoInquilinoIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    if not inq.perfil_completado:
+        raise HTTPException(status_code=400, detail="El inquilino no ha completado su perfil")
+
+    nombre_admin = current_user.get("nombre", "admin")
+    anexo = svc_contrato.emitir_contrato(
+        db=db,
+        inquilino=inq,
+        plantilla_id=data.plantilla_id,
+        titulo=data.titulo,
+        creado_por=nombre_admin,
+    )
+    return anexo
+
+
+@router.get("/admin/{inquilino_id}/contratos", response_model=List[AnexoContratoInquilinoOut])
+def listar_contratos_admin(
+    inquilino_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    return db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.inquilino_id == inquilino_id
+    ).order_by(AnexoContratoInquilino.created_at.desc()).all()
+
+
+@router.get("/admin/{inquilino_id}/contratos/{anexo_id}/pdf")
+def descargar_pdf_admin(
+    inquilino_id: int,
+    anexo_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:ver")),
+):
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.id == anexo_id,
+        AnexoContratoInquilino.inquilino_id == inquilino_id,
+    ).first()
+    if not anexo or not anexo.pdf_generado:
+        raise HTTPException(status_code=404, detail="PDF no encontrado")
+    return {"pdf_base64": anexo.pdf_generado, "titulo": anexo.titulo}
+
+
+@router.post("/admin/{inquilino_id}/contratos/{anexo_id}/aprobar-reserva", response_model=AnexoContratoInquilinoOut)
+def aprobar_comprobante_reserva(
+    inquilino_id: int,
+    anexo_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    """Aprueba el comprobante de reserva subido por el inquilino, desbloqueando la firma del contrato."""
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.id == anexo_id,
+        AnexoContratoInquilino.inquilino_id == inquilino_id,
+        AnexoContratoInquilino.tipo == TipoAnexoInquilinoEnum.RESERVA.value,
+    ).first()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Anexo de reserva no encontrado")
+    if not anexo.comprobante_reserva_path:
+        raise HTTPException(status_code=400, detail="El inquilino no ha subido el comprobante")
+
+    from datetime import datetime
+    anexo.comprobante_reserva_aprobado = True
+    anexo.aprobado_por = current_user.get("nombre", "admin")
+    anexo.aprobado_at = datetime.utcnow()
+    db.commit()
+    db.refresh(anexo)
+    return anexo
+
+
+# ── Despliegue admin ──────────────────────────────────────────────────────────
+
+@router.post("/admin/{inquilino_id}/registrar-despliegue", response_model=InquilinoOut)
+def registrar_despliegue(
+    inquilino_id: int,
+    data: RegistrarDespliegueIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("inquilinos:editar")),
+):
+    inq = db.get(Inquilino, inquilino_id)
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    if not inq.contrato_firmado:
+        raise HTTPException(status_code=400, detail="El contrato no ha sido firmado aún")
+
+    inq.fecha_inicio_despliegue = data.fecha_inicio_despliegue
+    inq.mes_gratis_confirmado = data.mes_gratis_confirmado
+
+    if data.mes_gratis_confirmado:
+        # Facturación comienza un mes después
+        d = data.fecha_inicio_despliegue
+        mes_sig = d.month + 1 if d.month < 12 else 1
+        anio_sig = d.year if d.month < 12 else d.year + 1
+        inq.fecha_inicio_facturacion = date(anio_sig, mes_sig, d.day)
+    else:
+        inq.fecha_inicio_facturacion = data.fecha_inicio_despliegue
+
+    db.commit()
+    db.refresh(inq)
+
+    try:
+        notificar_inicio_despliegue(db, inq)
+    except Exception as exc:
+        logger.warning("Error notificando despliegue inquilino %s: %s", inquilino_id, exc)
+
+    return inq
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rutas PORTAL (inquilino autenticado)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/portal/completar-perfil", response_model=InquilinoOut)
+def completar_perfil(
+    data: CompletarPerfilIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino_raw),
+):
+    inq = db.get(Inquilino, current_user["id"])
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+
+    for field, value in data.model_dump(exclude_none=True).items():
+        setattr(inq, field, value)
+
+    inq.perfil_completado = True
+    db.commit()
+    db.refresh(inq)
+    return inq
+
+
+@router.get("/portal/perfil", response_model=InquilinoOut)
+def ver_perfil(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino_raw),
+):
+    inq = db.get(Inquilino, current_user["id"])
+    if not inq:
+        raise HTTPException(status_code=404, detail="Inquilino no encontrado")
+    return inq
+
+
+@router.get("/portal/contratos", response_model=List[AnexoContratoInquilinoOut])
+def listar_contratos_portal(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    return db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.inquilino_id == current_user["id"]
+    ).order_by(AnexoContratoInquilino.created_at.desc()).all()
+
+
+@router.get("/portal/contratos/{anexo_id}/pdf")
+def descargar_pdf_portal(
+    anexo_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.id == anexo_id,
+        AnexoContratoInquilino.inquilino_id == current_user["id"],
+    ).first()
+    if not anexo or not anexo.pdf_generado:
+        raise HTTPException(status_code=404, detail="PDF no encontrado")
+    return {"pdf_base64": anexo.pdf_generado, "titulo": anexo.titulo}
+
+
+@router.post("/portal/contratos/{anexo_id}/firmar", response_model=AnexoContratoInquilinoOut)
+def firmar_contrato_portal(
+    anexo_id: int,
+    data: FirmarAnexoInquilinoIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    inq = db.get(Inquilino, current_user["id"])
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.id == anexo_id,
+        AnexoContratoInquilino.inquilino_id == current_user["id"],
+    ).first()
+    if not inq or not anexo:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown"
+    )
+    anexo = svc_contrato.firmar_anexo(db, inq, anexo, data.firma_base64, ip=ip)
+    db.commit()
+    db.refresh(anexo)
+    return anexo
+
+
+@router.post("/portal/contratos/{anexo_id}/subir-comprobante-reserva", response_model=AnexoContratoInquilinoOut)
+def subir_comprobante_reserva(
+    anexo_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    """El inquilino adjunta el comprobante de transferencia de reserva."""
+    raise HTTPException(
+        status_code=501,
+        detail="Endpoint para subir archivos — implementar con multipart/form-data según stack de archivos del proyecto"
+    )
+
+
+@router.get("/portal/cobros", response_model=List[CobrosInquilinoOut])
+def listar_cobros_portal(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    return db.query(CobrosInquilino).filter(
+        CobrosInquilino.inquilino_id == current_user["id"]
+    ).order_by(CobrosInquilino.created_at.desc()).all()
+
+
+@router.post("/portal/cobros/{cobro_id}/subir-comprobante")
+def subir_comprobante_pago(
+    cobro_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    """El inquilino adjunta el comprobante del pago mensual."""
+    raise HTTPException(
+        status_code=501,
+        detail="Endpoint para subir archivos — implementar con multipart/form-data según stack de archivos del proyecto"
+    )
+
+
+@router.get("/portal/cobros/{cobro_id}/factura")
+def descargar_factura_portal(
+    cobro_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    cobro = db.query(CobrosInquilino).filter(
+        CobrosInquilino.id == cobro_id,
+        CobrosInquilino.inquilino_id == current_user["id"],
+    ).first()
+    if not cobro:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    if not cobro.pdf_factura_b64:
+        raise HTTPException(status_code=404, detail="Factura no disponible aún")
+    return {"pdf_base64": cobro.pdf_factura_b64, "folio": cobro.folio_haulmer}

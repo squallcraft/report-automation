@@ -45,6 +45,7 @@ class TokenResponse(BaseModel):
     contratado: Optional[bool] = None
     es_jefe: Optional[bool] = None
     contrato_trabajo_aceptado: Optional[bool] = None
+    perfil_completado: Optional[bool] = None
 
 
 class AcuerdoAceptarRequest(BaseModel):
@@ -887,3 +888,160 @@ class ColaboradorOut(ColaboradorBase):
     categoria_financiera_nombre: Optional[str] = None
     created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
+
+
+# ── Inquilinos ──
+
+class InquilinoCreate(BaseModel):
+    email: str
+    plan: str
+    tiene_reserva: bool = False
+    monto_reserva: Optional[int] = None
+    mes_gratis: bool = False
+    password: Optional[str] = None
+
+
+class CompletarPerfilIn(BaseModel):
+    razon_social: str
+    nombre_fantasia: Optional[str] = None
+    rut_empresa: str
+    direccion_empresa: str
+    correo_empresa: str
+    giro_empresa: Optional[str] = None
+    nombre_rep_legal: str
+    rut_rep_legal: str
+    direccion_rep_legal: str
+    correo_rep_legal: str
+    correo_contacto: Optional[str] = None
+    whatsapp: Optional[str] = None
+
+
+class InquilinoUpdate(BaseModel):
+    email: Optional[str] = None
+    plan: Optional[str] = None
+    tiene_reserva: Optional[bool] = None
+    monto_reserva: Optional[int] = None
+    mes_gratis: Optional[bool] = None
+    activo: Optional[bool] = None
+    razon_social: Optional[str] = None
+    nombre_fantasia: Optional[str] = None
+    rut_empresa: Optional[str] = None
+    direccion_empresa: Optional[str] = None
+    correo_empresa: Optional[str] = None
+    giro_empresa: Optional[str] = None
+    nombre_rep_legal: Optional[str] = None
+    rut_rep_legal: Optional[str] = None
+    direccion_rep_legal: Optional[str] = None
+    correo_rep_legal: Optional[str] = None
+    correo_contacto: Optional[str] = None
+    whatsapp: Optional[str] = None
+    password: Optional[str] = None
+
+
+class InquilinoOut(BaseModel):
+    id: int
+    email: str
+    plan: Optional[str] = None
+    perfil_completado: bool
+    activo: bool
+    razon_social: Optional[str] = None
+    nombre_fantasia: Optional[str] = None
+    rut_empresa: Optional[str] = None
+    direccion_empresa: Optional[str] = None
+    correo_empresa: Optional[str] = None
+    giro_empresa: Optional[str] = None
+    nombre_rep_legal: Optional[str] = None
+    rut_rep_legal: Optional[str] = None
+    direccion_rep_legal: Optional[str] = None
+    correo_rep_legal: Optional[str] = None
+    correo_contacto: Optional[str] = None
+    whatsapp: Optional[str] = None
+    tiene_reserva: bool
+    monto_reserva: Optional[int] = None
+    mes_gratis: bool
+    fecha_inicio_despliegue: Optional[date] = None
+    mes_gratis_confirmado: Optional[bool] = None
+    fecha_inicio_facturacion: Optional[date] = None
+    contrato_firmado: bool
+    primer_cobro_generado: bool
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class RegistrarDespliegueIn(BaseModel):
+    fecha_inicio_despliegue: date
+    mes_gratis_confirmado: bool
+
+
+class DescuentoInquilinoCreate(BaseModel):
+    monto: int
+    motivo: str
+
+
+class DescuentoInquilinoOut(BaseModel):
+    id: int
+    inquilino_id: int
+    monto: int
+    motivo: str
+    aplicado: bool
+    fecha_aplicacion: Optional[date] = None
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class GenerarCobrosIn(BaseModel):
+    variable_valor: int
+    archivo_adjunto_b64: Optional[str] = None
+    archivo_adjunto_nombre: Optional[str] = None
+
+
+class CobrosInquilinoOut(BaseModel):
+    id: int
+    inquilino_id: int
+    mes: int
+    anio: int
+    variable_nombre: str
+    variable_valor: int
+    monto_neto: int
+    iva: int
+    total: int
+    descuento_aplicado: int
+    reserva_descontada: bool
+    estado: str
+    fecha_emision: Optional[date] = None
+    fecha_vencimiento: Optional[date] = None
+    folio_haulmer: Optional[str] = None
+    pdf_factura_path: Optional[str] = None
+    comprobante_pago_path: Optional[str] = None
+    archivo_adjunto_path: Optional[str] = None
+    movimiento_financiero_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class AnexoContratoInquilinoOut(BaseModel):
+    id: int
+    inquilino_id: int
+    tipo: str
+    titulo: str
+    requiere_firma_inquilino: bool
+    estado: str
+    firmado_at: Optional[datetime] = None
+    plantilla_id: Optional[int] = None
+    contenido_renderizado: Optional[str] = None
+    comprobante_reserva_path: Optional[str] = None
+    comprobante_reserva_aprobado: bool
+    aprobado_por: Optional[str] = None
+    aprobado_at: Optional[datetime] = None
+    creado_por: Optional[str] = None
+    created_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class EmitirContratoInquilinoIn(BaseModel):
+    plantilla_id: int
+    titulo: Optional[str] = None
+
+
+class FirmarAnexoInquilinoIn(BaseModel):
+    firma_base64: str

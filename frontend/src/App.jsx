@@ -80,6 +80,15 @@ import ColaboradorDashboard from './pages/colaborador/ColaboradorDashboard'
 import ColaboradorBoletas from './pages/colaborador/ColaboradorBoletas'
 import ColaboradorPerfil from './pages/colaborador/ColaboradorPerfil'
 
+import InquilinoLayout from './pages/inquilino/InquilinoLayout'
+import CompletarPerfil from './pages/inquilino/CompletarPerfil'
+import InquilinoDashboard from './pages/inquilino/InquilinoDashboard'
+import InquilinoContratos from './pages/inquilino/InquilinoContratos'
+import InquilinoCobros from './pages/inquilino/InquilinoCobros'
+
+import Inquilinos from './pages/admin/Inquilinos'
+import InquilinoDetalle from './pages/admin/InquilinoDetalle'
+
 import TrabajadorDashboard from './pages/trabajador/TrabajadorDashboard'
 import TrabajadorLiquidaciones from './pages/trabajador/TrabajadorLiquidaciones'
 import TrabajadorPagos from './pages/trabajador/TrabajadorPagos'
@@ -125,6 +134,7 @@ function getDefaultRoute(rol) {
   if (rol === 'PICKUP') return '/pickup'
   if (rol === 'COLABORADOR') return '/colaborador'
   if (rol === 'TRABAJADOR') return '/trabajador'
+  if (rol === 'INQUILINO') return '/inquilino'
   return '/login'
 }
 
@@ -202,6 +212,8 @@ export default function App() {
         <Route path="leads/kb" element={<LeadsKB />} />
         <Route path="colaboradores" element={<Colaboradores />} />
         <Route path="iva-drivers" element={<IVADrivers />} />
+        <Route path="inquilinos" element={<Inquilinos />} />
+        <Route path="inquilinos/:inquilinoId" element={<InquilinoDetalle />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>
@@ -230,6 +242,20 @@ export default function App() {
         <Route index element={<ColaboradorDashboard />} />
         <Route path="boletas" element={<ColaboradorBoletas />} />
         <Route path="perfil" element={<ColaboradorPerfil />} />
+      </Route>
+
+      {/* Portal Inquilinos */}
+      <Route path="/inquilino/completar-perfil" element={<ProtectedRoute roles={['INQUILINO']}><CompletarPerfil /></ProtectedRoute>} />
+      <Route path="/inquilino" element={<ProtectedRoute roles={['INQUILINO']}><InquilinoLayout /></ProtectedRoute>}>
+        <Route index element={<InquilinoDashboard />} />
+        <Route path="contratos" element={<InquilinoContratos />} />
+        <Route path="cobros" element={<InquilinoCobros />} />
+      </Route>
+
+      {/* Rutas admin inquilinos */}
+      <Route path="/admin/inquilinos" element={<ProtectedRoute roles={['ADMIN', 'ADMINISTRACION']}><Layout /></ProtectedRoute>}>
+        <Route index element={<Inquilinos />} />
+        <Route path=":inquilinoId" element={<InquilinoDetalle />} />
       </Route>
 
       <Route path="/trabajador" element={<TrabajadorRoute><Layout /></TrabajadorRoute>}>

@@ -86,6 +86,21 @@ VARIABLES_DISPONIBLES: list[dict] = [
     # Fecha
     {"key": "fecha.hoy", "label": "Fecha hoy (DD/MM/YYYY)", "grupo": "Fecha"},
     {"key": "fecha.hoy_largo", "label": "Fecha hoy en palabras", "grupo": "Fecha"},
+    # Inquilino (contratos de arriendo Tracking Tech)
+    {"key": "inquilino.razon_social", "label": "Razón social", "grupo": "Inquilino"},
+    {"key": "inquilino.nombre_fantasia", "label": "Nombre de fantasía", "grupo": "Inquilino"},
+    {"key": "inquilino.rut_empresa", "label": "RUT empresa", "grupo": "Inquilino"},
+    {"key": "inquilino.direccion_empresa", "label": "Dirección empresa", "grupo": "Inquilino"},
+    {"key": "inquilino.correo_empresa", "label": "Correo empresa", "grupo": "Inquilino"},
+    {"key": "inquilino.giro_empresa", "label": "Giro empresa", "grupo": "Inquilino"},
+    {"key": "inquilino.nombre_rep_legal", "label": "Nombre representante legal", "grupo": "Inquilino"},
+    {"key": "inquilino.rut_rep_legal", "label": "RUT representante legal", "grupo": "Inquilino"},
+    {"key": "inquilino.direccion_rep_legal", "label": "Dirección representante legal", "grupo": "Inquilino"},
+    {"key": "inquilino.correo_rep_legal", "label": "Correo representante legal", "grupo": "Inquilino"},
+    {"key": "inquilino.plan", "label": "Plan contratado (A/B/C)", "grupo": "Inquilino"},
+    {"key": "inquilino.descripcion_precio", "label": "Descripción del precio según plan", "grupo": "Inquilino"},
+    {"key": "reserva.monto", "label": "Monto de reserva", "grupo": "Reserva"},
+    {"key": "reserva.monto_formato", "label": "Monto de reserva formateado ($)", "grupo": "Reserva"},
 ]
 
 

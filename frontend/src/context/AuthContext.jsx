@@ -32,6 +32,7 @@ export function AuthProvider({ children }) {
       contratado: data.contratado ?? false,
       contrato_trabajo_aceptado: data.contrato_trabajo_aceptado ?? null,
       es_jefe: data.es_jefe ?? false,
+      perfil_completado: data.perfil_completado ?? null,
     }
     localStorage.setItem('user', JSON.stringify(userData))
     setUser(userData)

@@ -45,6 +45,30 @@ class RolEnum(str, enum.Enum):
     PICKUP = "PICKUP"
     COLABORADOR = "COLABORADOR"
     TRABAJADOR = "TRABAJADOR"
+    INQUILINO = "INQUILINO"
+
+
+class PlanInquilinoEnum(str, enum.Enum):
+    TARIFA_A = "TARIFA_A"
+    TARIFA_B = "TARIFA_B"
+    TARIFA_C = "TARIFA_C"
+
+
+class EstadoCobrosInquilinoEnum(str, enum.Enum):
+    PENDIENTE = "PENDIENTE"
+    PAGADO = "PAGADO"
+    VENCIDO = "VENCIDO"
+
+
+class EstadoAnexoInquilinoEnum(str, enum.Enum):
+    BORRADOR = "BORRADOR"
+    EMITIDO = "EMITIDO"
+    FIRMADO = "FIRMADO"
+
+
+class TipoAnexoInquilinoEnum(str, enum.Enum):
+    CONTRATO = "CONTRATO"
+    RESERVA = "RESERVA"
 
 
 class Seller(Base):
@@ -2537,3 +2561,121 @@ class AsignacionRuta(Base):
 
     driver = relationship("Driver")
     envio = relationship("Envio")
+
+
+# ── Módulo Inquilinos (arriendo Tracking Tech) ────────────────────────────────
+
+class Inquilino(Base):
+    __tablename__ = "inquilinos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Login
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=True)
+    activo = Column(Boolean, default=True)
+    # Datos empresa (contrato)
+    razon_social = Column(String, nullable=True)
+    nombre_fantasia = Column(String, nullable=True)
+    rut_empresa = Column(String, nullable=True)
+    direccion_empresa = Column(String, nullable=True)
+    correo_empresa = Column(String, nullable=True)
+    giro_empresa = Column(String, nullable=True)
+    # Rep. legal
+    nombre_rep_legal = Column(String, nullable=True)
+    rut_rep_legal = Column(String, nullable=True)
+    direccion_rep_legal = Column(String, nullable=True)
+    correo_rep_legal = Column(String, nullable=True)
+    # Contacto (comunicaciones)
+    correo_contacto = Column(String, nullable=True)
+    whatsapp = Column(String, nullable=True)
+    # Plan de arriendo
+    plan = Column(String, nullable=True)
+    perfil_completado = Column(Boolean, default=False)
+    # Reserva
+    tiene_reserva = Column(Boolean, default=False)
+    monto_reserva = Column(Integer, nullable=True)
+    # Condiciones preconfiguradas
+    mes_gratis = Column(Boolean, default=False)
+    # Despliegue (post-firma, ingresado por admin)
+    fecha_inicio_despliegue = Column(Date, nullable=True)
+    mes_gratis_confirmado = Column(Boolean, nullable=True)
+    fecha_inicio_facturacion = Column(Date, nullable=True)
+    # Estado general
+    contrato_firmado = Column(Boolean, default=False)
+    primer_cobro_generado = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    cobros = relationship("CobrosInquilino", back_populates="inquilino", cascade="all, delete-orphan")
+    descuentos = relationship("DescuentoInquilino", back_populates="inquilino", cascade="all, delete-orphan")
+    anexos = relationship("AnexoContratoInquilino", back_populates="inquilino", cascade="all, delete-orphan")
+
+
+class DescuentoInquilino(Base):
+    __tablename__ = "descuentos_inquilino"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inquilino_id = Column(Integer, ForeignKey("inquilinos.id"), nullable=False, index=True)
+    monto = Column(Integer, nullable=False)
+    motivo = Column(String, nullable=False)
+    aplicado = Column(Boolean, default=False)
+    fecha_aplicacion = Column(Date, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    inquilino = relationship("Inquilino", back_populates="descuentos")
+
+
+class CobrosInquilino(Base):
+    __tablename__ = "cobros_inquilino"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inquilino_id = Column(Integer, ForeignKey("inquilinos.id"), nullable=False, index=True)
+    mes = Column(Integer, nullable=False)
+    anio = Column(Integer, nullable=False)
+    variable_nombre = Column(String, nullable=False)
+    variable_valor = Column(Integer, nullable=False, default=0)
+    monto_neto = Column(Integer, nullable=False, default=0)
+    iva = Column(Integer, nullable=False, default=0)
+    total = Column(Integer, nullable=False, default=0)
+    descuento_aplicado = Column(Integer, default=0)
+    reserva_descontada = Column(Boolean, default=False)
+    estado = Column(String, nullable=False, default=EstadoCobrosInquilinoEnum.PENDIENTE.value)
+    fecha_emision = Column(Date, nullable=True)
+    fecha_vencimiento = Column(Date, nullable=True)
+    folio_haulmer = Column(String, nullable=True)
+    pdf_factura_path = Column(String, nullable=True)
+    pdf_factura_b64 = Column(Text, nullable=True)
+    comprobante_pago_path = Column(String, nullable=True)
+    archivo_adjunto_path = Column(String, nullable=True)
+    movimiento_financiero_id = Column(Integer, ForeignKey("movimientos_financieros.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    inquilino = relationship("Inquilino", back_populates="cobros")
+
+
+class AnexoContratoInquilino(Base):
+    __tablename__ = "anexos_contrato_inquilino"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inquilino_id = Column(Integer, ForeignKey("inquilinos.id"), nullable=False, index=True)
+    tipo = Column(String, nullable=False, default=TipoAnexoInquilinoEnum.CONTRATO.value)
+    titulo = Column(String, nullable=False)
+    pdf_generado = Column(Text, nullable=True)
+    requiere_firma_inquilino = Column(Boolean, default=True)
+    estado = Column(String, nullable=False, default=EstadoAnexoInquilinoEnum.BORRADOR.value)
+    firma_inquilino_snapshot = Column(Text, nullable=True)
+    firmado_at = Column(DateTime, nullable=True)
+    firmado_ip = Column(String, nullable=True)
+    plantilla_id = Column(Integer, ForeignKey("plantillas_contrato.id"), nullable=True)
+    plantilla_version = Column(Integer, nullable=True)
+    contenido_renderizado = Column(Text, nullable=True)
+    comprobante_reserva_path = Column(String, nullable=True)
+    comprobante_reserva_aprobado = Column(Boolean, default=False)
+    aprobado_por = Column(String, nullable=True)
+    aprobado_at = Column(DateTime, nullable=True)
+    creado_por = Column(String, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    inquilino = relationship("Inquilino", back_populates="anexos")

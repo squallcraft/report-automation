@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup, Colaborador, Trabajador
+from app.models import AdminUser, AuditLog, PasswordResetToken, RolEnum, Seller, Driver, Pickup, Colaborador, Trabajador, Inquilino
 from app.schemas import LoginRequest, TokenResponse
 from app.auth import verify_password, create_access_token, hash_password
 from app.config import get_settings
@@ -114,6 +114,10 @@ def _find_entity_by_email(db: Session, email: str):
     if colab:
         return "colaborador", colab
 
+    inquilino = db.query(Inquilino).filter(Inquilino.email == email, Inquilino.activo == True).first()
+    if inquilino:
+        return "inquilino", inquilino
+
     admin = db.query(AdminUser).filter(AdminUser.username == email, AdminUser.activo == True).first()
     if admin:
         return "admin", admin
@@ -209,6 +213,18 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
             entidad_id=trabajador.id,
         )
 
+    inquilino = db.query(Inquilino).filter(Inquilino.email == data.username, Inquilino.activo == True).first()
+    if inquilino and inquilino.password_hash and verify_password(data.password, inquilino.password_hash):
+        token = create_access_token({"sub": str(inquilino.id), "rol": RolEnum.INQUILINO})
+        _audit(db, "LOGIN_SUCCESS", inquilino.email, ip)
+        return TokenResponse(
+            access_token=token,
+            rol=RolEnum.INQUILINO,
+            nombre=inquilino.razon_social or inquilino.nombre_fantasia or inquilino.email,
+            entidad_id=inquilino.id,
+            perfil_completado=inquilino.perfil_completado,
+        )
+
     _audit(db, "LOGIN_FAIL", data.username, ip)
     raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
@@ -283,6 +299,8 @@ def reset_password(body: ResetPasswordBody, request: Request, db: Session = Depe
         entity = db.query(Pickup).filter(Pickup.id == record.entity_id).first()
     elif record.entity_type == "colaborador":
         entity = db.query(Colaborador).filter(Colaborador.id == record.entity_id).first()
+    elif record.entity_type == "inquilino":
+        entity = db.query(Inquilino).filter(Inquilino.id == record.entity_id).first()
     else:
         entity = db.query(AdminUser).filter(AdminUser.id == record.entity_id).first()
 
