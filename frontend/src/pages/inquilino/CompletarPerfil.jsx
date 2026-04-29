@@ -117,10 +117,19 @@ export default function CompletarPerfil() {
                   <Phone className="w-5 h-5 text-blue-900" />
                   <h2 className="font-semibold text-gray-900">Datos de contacto y comunicaciones</h2>
                 </div>
-                <p className="text-sm text-gray-500">Estos datos se usan para notificaciones de cobros y comunicaciones. No se incluyen en contratos.</p>
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <Input label="Correo de contacto" name="correo_contacto" value={form.correo_contacto} onChange={handleChange} type="email" placeholder="cobros@empresa.cl" />
-                  <Input label="WhatsApp" name="whatsapp" value={form.whatsapp} onChange={handleChange} placeholder="+56912345678" />
+
+                <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800">
+                  <span className="mt-0.5 text-blue-400 flex-shrink-0">🔒</span>
+                  <p>
+                    Usaremos estos datos <strong>únicamente</strong> para notificarte sobre cobros, cambios y
+                    actualizaciones de tu contrato — netamente comercial e informativo.
+                    No los compartiremos con terceros ni los utilizaremos para ningún otro propósito.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-1">
+                  <Input label="Correo de contacto *" name="correo_contacto" value={form.correo_contacto} onChange={handleChange} type="email" required placeholder="cobros@empresa.cl" />
+                  <Input label="WhatsApp *" name="whatsapp" value={form.whatsapp} onChange={handleChange} required placeholder="+56912345678" />
                 </div>
               </div>
             )}
