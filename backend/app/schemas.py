@@ -1045,3 +1045,18 @@ class EmitirContratoInquilinoIn(BaseModel):
 
 class FirmarAnexoInquilinoIn(BaseModel):
     firma_base64: str
+
+
+# ── Configuración de planes Tracking Tech ─────────────────────────────────────
+
+class ConfigPlanInquilinoOut(BaseModel):
+    plan: str
+    params: dict
+    descripcion_contrato: Optional[str] = None
+    updated_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class ConfigPlanInquilinoUpdate(BaseModel):
+    params: dict
+    descripcion_contrato: Optional[str] = None

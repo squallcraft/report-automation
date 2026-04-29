@@ -90,6 +90,7 @@ const adminMenu = [
   {
     group: 'Tracking Tech', icon: Building2, children: [
       { to: '/admin/inquilinos', icon: Building2, label: 'Inquilinos', permiso: 'inquilinos' },
+      { to: '/admin/tracking-tech/planes', icon: Layers, label: 'Planes y tarifas', permiso: 'inquilinos' },
     ],
   },
 

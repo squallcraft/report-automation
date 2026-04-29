@@ -88,6 +88,7 @@ import InquilinoCobros from './pages/inquilino/InquilinoCobros'
 
 import Inquilinos from './pages/admin/Inquilinos'
 import InquilinoDetalle from './pages/admin/InquilinoDetalle'
+import PlanesTrackingTech from './pages/admin/PlanesTrackingTech'
 
 import TrabajadorDashboard from './pages/trabajador/TrabajadorDashboard'
 import TrabajadorLiquidaciones from './pages/trabajador/TrabajadorLiquidaciones'
@@ -214,6 +215,7 @@ export default function App() {
         <Route path="iva-drivers" element={<IVADrivers />} />
         <Route path="inquilinos" element={<Inquilinos />} />
         <Route path="inquilinos/:inquilinoId" element={<InquilinoDetalle />} />
+        <Route path="tracking-tech/planes" element={<PlanesTrackingTech />} />
       </Route>
 
       <Route path="/seller" element={<ProtectedRoute roles={['SELLER']}><Layout /></ProtectedRoute>}>

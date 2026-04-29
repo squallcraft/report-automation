@@ -2679,3 +2679,14 @@ class AnexoContratoInquilino(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     inquilino = relationship("Inquilino", back_populates="anexos")
+
+
+class ConfigPlanInquilino(Base):
+    """Configuración editable de cada tarifa de arriendo Tracking Tech."""
+    __tablename__ = "config_planes_inquilino"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan = Column(String, unique=True, nullable=False)   # "TARIFA_A" | "TARIFA_B" | "TARIFA_C"
+    params = Column(JSON, nullable=False)                 # dict con valores numéricos del plan
+    descripcion_contrato = Column(Text, nullable=True)    # texto narrativo para el contrato
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

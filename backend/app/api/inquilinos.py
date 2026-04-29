@@ -23,6 +23,7 @@ from app.models import (
     EstadoCobrosInquilinoEnum,
     EstadoAnexoInquilinoEnum,
     TipoAnexoInquilinoEnum,
+    ConfigPlanInquilino,
 )
 from app.auth import hash_password
 from app.schemas import (
@@ -38,6 +39,8 @@ from app.schemas import (
     AnexoContratoInquilinoOut,
     EmitirContratoInquilinoIn,
     FirmarAnexoInquilinoIn,
+    ConfigPlanInquilinoOut,
+    ConfigPlanInquilinoUpdate,
 )
 from app.services import contrato_inquilino as svc_contrato
 from app.services import cobros_inquilino as svc_cobros
@@ -498,3 +501,117 @@ def descargar_factura_portal(
     if not cobro.pdf_factura_b64:
         raise HTTPException(status_code=404, detail="Factura no disponible aún")
     return {"pdf_base64": cobro.pdf_factura_b64, "folio": cobro.folio_haulmer}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rutas ADMIN — Configuración de planes
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DEFAULTS_PLANES = {
+    "TARIFA_A": {
+        "params": {
+            "base": 300_000,
+            "max_incluidos": 24,
+            "extra_por": 12_500,
+            "variable": "conductores",
+        },
+        "descripcion_contrato": (
+            "Cargo Fijo Base: $300.000 (trescientos mil pesos) neto mensual por hasta 24 conductores activos. "
+            "Por cada conductor activo sobre los 24, $12.500 (doce mil quinientos pesos) neto mensual adicional. "
+            "A todos los valores indicados se agrega el Impuesto al Valor Agregado (IVA) vigente."
+        ),
+    },
+    "TARIFA_B": {
+        "params": {
+            "base": 1_000_000,
+            "max_incluidos": 25_000,
+            "extra_por": 250_000,
+            "bloque": 5_000,
+            "variable": "envíos",
+        },
+        "descripcion_contrato": (
+            "Cargo Fijo Base: $1.000.000 (un millón de pesos) neto mensual por hasta 25.000 envíos mensuales. "
+            "Por cada 5.000 envíos adicionales sobre los 25.000, $250.000 (doscientos cincuenta mil pesos) neto mensual adicional. "
+            "A todos los valores indicados se agrega el Impuesto al Valor Agregado (IVA) vigente."
+        ),
+    },
+    "TARIFA_C": {
+        "params": {
+            "base_uf": 2.0,
+            "extra_por": 10_000,
+            "variable": "conductores",
+        },
+        "descripcion_contrato": (
+            "Cargo Fijo Base: 2 UF (dos Unidades de Fomento) neto mensual, calculadas al valor de la UF "
+            "del último día del mes de facturación. "
+            "Más $10.000 (diez mil pesos) neto mensual por cada conductor activo registrado en la plataforma. "
+            "A todos los valores indicados se agrega el Impuesto al Valor Agregado (IVA) vigente."
+        ),
+    },
+}
+
+
+def _seed_planes_si_faltan(db: Session) -> None:
+    """Crea los registros de planes con valores por defecto si no existen."""
+    for plan_key, data in _DEFAULTS_PLANES.items():
+        exists = db.query(ConfigPlanInquilino).filter_by(plan=plan_key).first()
+        if not exists:
+            db.add(ConfigPlanInquilino(
+                plan=plan_key,
+                params=data["params"],
+                descripcion_contrato=data["descripcion_contrato"],
+            ))
+    db.commit()
+
+
+@router.get("/admin/planes", response_model=List[ConfigPlanInquilinoOut])
+def listar_planes(
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("inquilinos")),
+):
+    """Lista la configuración actual de los 3 planes Tracking Tech."""
+    _seed_planes_si_faltan(db)
+    planes = db.query(ConfigPlanInquilino).order_by(ConfigPlanInquilino.plan).all()
+    return planes
+
+
+@router.put("/admin/planes/{plan}", response_model=ConfigPlanInquilinoOut)
+def actualizar_plan(
+    plan: str,
+    body: ConfigPlanInquilinoUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("inquilinos")),
+):
+    """Actualiza los parámetros y/o descripción de contrato de un plan."""
+    plan = plan.upper()
+    if plan not in _DEFAULTS_PLANES:
+        raise HTTPException(status_code=404, detail=f"Plan '{plan}' no existe. Opciones: TARIFA_A, TARIFA_B, TARIFA_C")
+
+    _seed_planes_si_faltan(db)
+    cfg = db.query(ConfigPlanInquilino).filter_by(plan=plan).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Config no encontrada")
+
+    cfg.params = body.params
+    if body.descripcion_contrato is not None:
+        cfg.descripcion_contrato = body.descripcion_contrato
+    db.commit()
+    db.refresh(cfg)
+    return cfg
+
+
+@router.post("/admin/planes/reset", response_model=List[ConfigPlanInquilinoOut])
+def resetear_planes(
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("inquilinos")),
+):
+    """Restaura todos los planes a los valores por defecto."""
+    for plan_key, data in _DEFAULTS_PLANES.items():
+        cfg = db.query(ConfigPlanInquilino).filter_by(plan=plan_key).first()
+        if cfg:
+            cfg.params = data["params"]
+            cfg.descripcion_contrato = data["descripcion_contrato"]
+        else:
+            db.add(ConfigPlanInquilino(plan=plan_key, **data))
+    db.commit()
+    return db.query(ConfigPlanInquilino).order_by(ConfigPlanInquilino.plan).all()

@@ -23,6 +23,7 @@ from app.models import (
     DescuentoInquilino,
     MovimientoFinanciero,
     CategoriaFinanciera,
+    ConfigPlanInquilino,
     PlanInquilinoEnum,
     EstadoCobrosInquilinoEnum,
     EstadoMovimientoEnum,
@@ -53,29 +54,63 @@ TARIFA_C_BASE_UF = 2.0           # base en UF (se convierte a CLP al momento del
 TARIFA_C_EXTRA_POR = 10_000      # por cada conductor (CLP neto)
 
 
-def _calcular_neto(plan: str, variable_valor: int, valor_uf: float = 0.0) -> tuple[int, str]:
+def _obtener_params_plan(db: Session, plan: str) -> dict:
     """
-    Calcula el monto neto (sin IVA) según el plan y el valor de la variable.
-    Retorna (neto: int, variable_nombre: str).
+    Lee la configuración del plan desde DB (tabla config_planes_inquilino).
+    Si no existe aún, usa los valores hardcoded como fallback.
+    """
+    cfg = db.query(ConfigPlanInquilino).filter_by(plan=plan).first()
+    if cfg and cfg.params:
+        return cfg.params
 
-    Tarifa C usa base en UF (valor_uf debe ser > 0 para reflejar el valor real del mes).
+    # Fallback a constantes si la tabla aún no tiene datos
+    fallbacks = {
+        PlanInquilinoEnum.TARIFA_A.value: {
+            "base": TARIFA_A_BASE, "max_incluidos": TARIFA_A_MAX_INCL,
+            "extra_por": TARIFA_A_EXTRA_POR, "variable": "conductores",
+        },
+        PlanInquilinoEnum.TARIFA_B.value: {
+            "base": TARIFA_B_BASE, "max_incluidos": TARIFA_B_MAX_INCL,
+            "extra_por": TARIFA_B_EXTRA_POR, "bloque": TARIFA_B_BLOQUE_ENVIOS,
+            "variable": "envíos",
+        },
+        PlanInquilinoEnum.TARIFA_C.value: {
+            "base_uf": TARIFA_C_BASE_UF, "extra_por": TARIFA_C_EXTRA_POR,
+            "variable": "conductores",
+        },
+    }
+    return fallbacks.get(plan, {})
+
+
+def _calcular_neto(plan: str, variable_valor: int, params: dict, valor_uf: float = 0.0) -> tuple[int, str]:
     """
-    plan = plan or ""
+    Calcula el monto neto (sin IVA) usando los parámetros del plan leídos desde DB.
+    Tarifa C usa valor_uf para convertir la base en UF a pesos.
+    """
+    variable = params.get("variable", "conductores")
+
     if plan == PlanInquilinoEnum.TARIFA_A.value:
-        base = TARIFA_A_BASE
-        extra = max(0, variable_valor - TARIFA_A_MAX_INCL) * TARIFA_A_EXTRA_POR
-        return base + extra, "conductores"
+        base = int(params.get("base", TARIFA_A_BASE))
+        max_incl = int(params.get("max_incluidos", TARIFA_A_MAX_INCL))
+        extra_por = int(params.get("extra_por", TARIFA_A_EXTRA_POR))
+        extra = max(0, variable_valor - max_incl) * extra_por
+        return base + extra, variable
 
     if plan == PlanInquilinoEnum.TARIFA_B.value:
-        base = TARIFA_B_BASE
-        extra_envios = max(0, variable_valor - TARIFA_B_MAX_INCL)
-        bloques = math.ceil(extra_envios / TARIFA_B_BLOQUE_ENVIOS) if extra_envios > 0 else 0
-        extra = bloques * TARIFA_B_EXTRA_POR
-        return base + extra, "envíos"
+        base = int(params.get("base", TARIFA_B_BASE))
+        max_incl = int(params.get("max_incluidos", TARIFA_B_MAX_INCL))
+        extra_por = int(params.get("extra_por", TARIFA_B_EXTRA_POR))
+        bloque = int(params.get("bloque", TARIFA_B_BLOQUE_ENVIOS))
+        extra_envios = max(0, variable_valor - max_incl)
+        bloques = math.ceil(extra_envios / bloque) if extra_envios > 0 else 0
+        return base + bloques * extra_por, variable
 
     if plan == PlanInquilinoEnum.TARIFA_C.value:
-        base_clp = round(TARIFA_C_BASE_UF * valor_uf) if valor_uf > 0 else round(TARIFA_C_BASE_UF * 39_842)
-        return base_clp + variable_valor * TARIFA_C_EXTRA_POR, "conductores"
+        base_uf = float(params.get("base_uf", TARIFA_C_BASE_UF))
+        extra_por = int(params.get("extra_por", TARIFA_C_EXTRA_POR))
+        uf = valor_uf if valor_uf > 0 else 39_842.0
+        base_clp = round(base_uf * uf)
+        return base_clp + variable_valor * extra_por, variable
 
     raise ValueError(f"Plan desconocido: {plan!r}")
 
@@ -100,7 +135,9 @@ def calcular_monto(
     # UF del último día publicado del mes → misma lógica que remuneraciones
     valor_uf: float = obtener_uf_fin_de_mes(hoy.year, hoy.month)
 
-    neto_base, variable_nombre = _calcular_neto(inquilino.plan or "", variable_valor, valor_uf)
+    plan = inquilino.plan or ""
+    params = _obtener_params_plan(db, plan)
+    neto_base, variable_nombre = _calcular_neto(plan, variable_valor, params, valor_uf)
 
     # Descuentos pendientes
     descuentos = db.query(DescuentoInquilino).filter(
