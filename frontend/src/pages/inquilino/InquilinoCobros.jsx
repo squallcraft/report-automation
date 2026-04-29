@@ -3,7 +3,7 @@ import api from '../../api'
 import toast from 'react-hot-toast'
 import {
   CreditCard, CheckCircle, Clock, AlertCircle, FileText,
-  Upload, ChevronRight, ChevronLeft, RefreshCw, XCircle, Receipt,
+  Upload, ChevronRight, ChevronLeft, RefreshCw, XCircle, Receipt, ShieldCheck,
 } from 'lucide-react'
 
 const MESES = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -47,6 +47,157 @@ function PasoIndicador({ paso }) {
   )
 }
 
+// ── Tarjeta especial de Reserva ───────────────────────────────────────────────
+function ReservaCard({ reserva, onRecargar }) {
+  const [file, setFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef()
+
+  const handleFile = (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    e.target.value = ''
+    const ext = f.name.split('.').pop()?.toLowerCase()
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+      toast.error('Formato no permitido. Usa PDF, JPG o PNG')
+      return
+    }
+    setFile(f)
+  }
+
+  const handleSubir = async () => {
+    if (!file || !reserva.anexo_id) return
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('archivo', file)
+      await api.post(`/inquilinos/portal/contratos/${reserva.anexo_id}/subir-comprobante-reserva`, fd)
+      toast.success('Comprobante de reserva enviado')
+      setFile(null)
+      onRecargar()
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error al subir el comprobante')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  if (reserva.aprobado) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="h-1 bg-emerald-400" />
+        <div className="p-4 sm:p-5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <ShieldCheck size={18} className="text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-gray-900">Reserva</p>
+            <p className="text-xs text-gray-400 mt-0.5">Pago confirmado por E-Courier</p>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-base font-bold text-gray-900">{fmt(reserva.total)}</p>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
+              <CheckCircle size={11} /> Aprobado
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+      <div className="h-1 bg-amber-400" />
+      <div className="p-4 sm:p-5 space-y-3">
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={18} className="text-amber-500" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-900">Reserva de Garantía</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Neto {fmt(reserva.monto_neto)} · IVA {fmt(reserva.iva)}
+              </p>
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <p className="text-base font-bold text-gray-900">{fmt(reserva.total)}</p>
+            {reserva.comprobante_path ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-amber-50 text-amber-700 border-amber-200">
+                <Clock size={11} /> En revisión
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-amber-50 text-amber-700 border-amber-200">
+                <Clock size={11} /> Pendiente
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Aviso */}
+        {reserva.comprobante_path ? (
+          <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl">
+            <Clock size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-amber-800">
+              <p className="font-medium">Comprobante recibido — pendiente de revisión</p>
+              <p className="text-amber-600 mt-0.5">El equipo de E-Courier confirmará el pago pronto.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl">
+            <AlertCircle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-amber-800">
+              Debes transferir {fmt(reserva.total)} a la cuenta de E-Courier y subir el comprobante para continuar.
+            </p>
+          </div>
+        )}
+
+        {/* Upload */}
+        <div className="pt-1 border-t border-gray-50">
+          <input ref={inputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleFile} />
+          {file ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FileText size={14} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-emerald-800 truncate">{file.name}</p>
+                  <p className="text-[10px] text-emerald-600">{(file.size/1024).toFixed(0)} KB</p>
+                </div>
+                <button onClick={() => setFile(null)} className="text-emerald-400 hover:text-red-500 p-1 flex-shrink-0">
+                  <XCircle size={16} />
+                </button>
+              </div>
+              <button onClick={handleSubir} disabled={uploading}
+                className="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold text-white rounded-xl transition-colors disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg,#1e3a5f,#1d4ed8)' }}>
+                {uploading
+                  ? <><RefreshCw size={14} className="animate-spin" /> Subiendo…</>
+                  : <><CheckCircle size={14} /> Confirmar y enviar</>}
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => inputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold rounded-xl border-2 border-dashed transition-colors"
+              style={reserva.comprobante_path
+                ? { borderColor: '#d97706', color: '#92400e', background: '#fffbeb' }
+                : { borderColor: '#1d4ed8', color: '#1e3a5f', background: '#eff6ff' }}>
+              <Upload size={14} />
+              {reserva.comprobante_path ? 'Reemplazar comprobante' : 'Subir comprobante de reserva'}
+            </button>
+          )}
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
+// ── Wizard comprobante mensual ─────────────────────────────────────────────────
 function Paso1Cobro({ cobros, cobroId, onChange, onNext }) {
   const pendientes = cobros.filter(c => c.estado !== 'PAGADO')
   return (
@@ -56,7 +207,6 @@ function Paso1Cobro({ cobros, cobroId, onChange, onNext }) {
         {pendientes.length === 0 ? (
           <div className="text-center py-6 text-sm text-gray-400">No hay cobros pendientes</div>
         ) : pendientes.map(c => {
-          const meta = ESTADO_META[c.estado] || ESTADO_META.PENDIENTE
           const selected = cobroId === c.id
           return (
             <button key={c.id} type="button" onClick={() => onChange(c.id)}
@@ -126,7 +276,6 @@ function Paso2Archivo({ cobro, onBack, onSuccess }) {
     <div className="space-y-4">
       <p className="text-gray-500 text-sm text-center">Sube el comprobante de tu transferencia</p>
 
-      {/* Resumen del cobro */}
       <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
         <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Cobro seleccionado</p>
         <div className="grid grid-cols-2 gap-2 text-sm">
@@ -255,10 +404,7 @@ function CobroCard({ cobro, onSubir }) {
                 <span className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
                   <Clock size={12} /> Comprobante en revisión
                 </span>
-                <button onClick={onSubir}
-                  className="text-xs text-gray-400 hover:text-gray-600 underline">
-                  Reemplazar
-                </button>
+                <button onClick={onSubir} className="text-xs text-gray-400 hover:text-gray-600 underline">Reemplazar</button>
               </div>
             ) : (
               <button onClick={onSubir}
@@ -276,17 +422,26 @@ function CobroCard({ cobro, onSubir }) {
 
 export default function InquilinoCobros() {
   const [cobros, setCobros] = useState([])
+  const [reserva, setReserva] = useState(null)
   const [loading, setLoading] = useState(true)
   const [wizard, setWizard] = useState(false)
   const [paso, setPaso] = useState(1)
   const [cobroId, setCobroId] = useState(null)
 
-  const cargar = () => {
+  const cargar = async () => {
     setLoading(true)
-    api.get('/inquilinos/portal/cobros')
-      .then(r => setCobros(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    try {
+      const [rc, rr] = await Promise.all([
+        api.get('/inquilinos/portal/cobros'),
+        api.get('/inquilinos/portal/reserva'),
+      ])
+      setCobros(rc.data)
+      setReserva(rr.data?.tiene_reserva ? rr.data : null)
+    } catch {
+      // silencioso
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { cargar() }, [])
@@ -298,12 +453,15 @@ export default function InquilinoCobros() {
   }
 
   const cerrarWizard = () => { setWizard(false); setPaso(1); setCobroId(null) }
-
   const onSuccess = () => { cerrarWizard(); cargar() }
 
   const cobroSeleccionado = cobros.find(c => c.id === cobroId)
   const pendientes = cobros.filter(c => c.estado !== 'PAGADO')
   const totalPendiente = pendientes.reduce((s, c) => s + (c.total || 0), 0)
+
+  const reservaPendiente = reserva && !reserva.aprobado
+  const totalConReserva = totalPendiente + (reservaPendiente ? (reserva?.total || 0) : 0)
+  const cantPendientes = pendientes.length + (reservaPendiente ? 1 : 0)
 
   if (loading) return (
     <div className="flex items-center justify-center h-48">
@@ -324,10 +482,10 @@ export default function InquilinoCobros() {
             <p className="text-blue-200 text-xs font-medium uppercase tracking-wider">Portal</p>
             <h1 className="text-xl font-bold mt-0.5">Cobros y Facturas</h1>
             <p className="text-blue-200 text-xs mt-1">
-              {cobros.length === 0 ? 'Sin cobros aún'
-                : pendientes.length > 0
-                  ? `${pendientes.length} pendiente${pendientes.length > 1 ? 's' : ''} · ${fmt(totalPendiente)}`
-                  : `${cobros.length} cobro${cobros.length > 1 ? 's' : ''} · Al día`}
+              {cantPendientes > 0
+                ? `${cantPendientes} pendiente${cantPendientes > 1 ? 's' : ''} · ${fmt(totalConReserva)}`
+                : cobros.length > 0 ? `${cobros.length} cobro${cobros.length > 1 ? 's' : ''} · Al día`
+                : 'Sin cobros aún'}
             </p>
           </div>
           <div className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
@@ -336,16 +494,19 @@ export default function InquilinoCobros() {
         </div>
       </div>
 
-      {/* Botón subir comprobante */}
+      {/* Tarjeta Reserva (siempre visible si tiene reserva) */}
+      {reserva && <ReservaCard reserva={reserva} onRecargar={cargar} />}
+
+      {/* Botón subir comprobante mensual */}
       {!wizard && pendientes.length > 0 && (
         <button onClick={() => abrirWizard()}
           className="w-full flex items-center justify-center gap-2 text-white font-semibold text-sm py-4 rounded-2xl shadow-md transition-colors"
           style={{ background: 'linear-gradient(135deg,#1e3a5f,#1d4ed8)', boxShadow: '0 4px 14px rgba(29,78,216,.35)' }}>
-          <Upload size={16} /> Subir comprobante de pago
+          <Upload size={16} /> Subir comprobante de pago mensual
         </button>
       )}
 
-      {/* Wizard */}
+      {/* Wizard cobro mensual */}
       {wizard && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
@@ -365,23 +526,25 @@ export default function InquilinoCobros() {
         </div>
       )}
 
-      {/* Historial */}
-      {cobros.length === 0 ? (
+      {/* Historial cobros mensuales */}
+      {cobros.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1 pt-1">Cobros mensuales</p>
+          <div className="space-y-2 pt-1">
+            {cobros.map(c => (
+              <CobroCard key={c.id} cobro={c} onSubir={() => abrirWizard(c.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {cobros.length === 0 && !reserva && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
           <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
             <CreditCard size={28} className="text-gray-300" />
           </div>
           <p className="text-gray-600 font-medium">Sin cobros registrados</p>
           <p className="text-sm text-gray-400 mt-1">Aquí aparecerán tus cobros mensuales</p>
-        </div>
-      ) : (
-        <div className="space-y-1">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-1 pt-1">Historial</p>
-          <div className="space-y-2 pt-1">
-            {cobros.map(c => (
-              <CobroCard key={c.id} cobro={c} onSubir={() => abrirWizard(c.id)} />
-            ))}
-          </div>
         </div>
       )}
     </div>

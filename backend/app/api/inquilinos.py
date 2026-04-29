@@ -577,6 +577,35 @@ async def subir_comprobante_reserva(
     return anexo
 
 
+@router.get("/portal/reserva")
+def estado_reserva_portal(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    """Devuelve el estado del pago de reserva del inquilino."""
+    inq = db.get(Inquilino, current_user["id"])
+    if not inq or not inq.tiene_reserva or not inq.monto_reserva:
+        return {"tiene_reserva": False}
+
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.inquilino_id == inq.id,
+        AnexoContratoInquilino.tipo == TipoAnexoInquilinoEnum.RESERVA.value,
+    ).first()
+
+    iva = int((inq.monto_reserva or 0) * 0.19)
+    total = int((inq.monto_reserva or 0) + iva)
+
+    return {
+        "tiene_reserva": True,
+        "monto_neto": inq.monto_reserva,
+        "iva": iva,
+        "total": total,
+        "anexo_id": anexo.id if anexo else None,
+        "comprobante_path": anexo.comprobante_reserva_path if anexo else None,
+        "aprobado": bool(anexo.comprobante_reserva_aprobado) if anexo else False,
+    }
+
+
 @router.get("/portal/cobros", response_model=List[CobrosInquilinoOut])
 def listar_cobros_portal(
     db: Session = Depends(get_db),
