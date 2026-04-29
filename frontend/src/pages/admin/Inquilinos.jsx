@@ -3,16 +3,37 @@ import { useNavigate } from 'react-router-dom'
 import api from '../../api'
 import { Building2, Plus, Search, ChevronRight, CheckCircle, Clock, AlertCircle, X, Loader2 } from 'lucide-react'
 
-const PLANES = {
-  TARIFA_A: 'Tarifa A',
-  TARIFA_B: 'Tarifa B',
-  TARIFA_C: 'Tarifa C',
+function labelDePlan(config) {
+  if (!config) return '—'
+  const p = config.params || {}
+  const tipo = p.tipo_calculo
+  const fmt = n => n != null ? `$${Number(n).toLocaleString('es-CL')}` : '?'
+  const variable = p.variable || 'unidades'
+  if (tipo === 'UMBRAL_FIJO')
+    return `${config.plan} — Base ${Number(p.max_incluidos).toLocaleString('es-CL')} ${variable} (${fmt(p.base)} + IVA)`
+  if (tipo === 'BLOQUES')
+    return `${config.plan} — Base ${Number(p.max_incluidos).toLocaleString('es-CL')} ${variable} (${fmt(p.base)} + IVA)`
+  if (tipo === 'BASE_UF')
+    return `${config.plan} — ${p.base_uf} UF base + ${fmt(p.extra_por)}/${variable} + IVA`
+  if (tipo === 'PLANA')
+    return `${config.plan} — ${fmt(p.base)} plana + IVA`
+  return config.plan
 }
 
 function NuevoInquilinoModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ email: '', plan: 'TARIFA_A', tiene_reserva: false, monto_reserva: '', mes_gratis: false, password: '' })
+  const [planes, setPlanes] = useState([])
+  const [form, setForm] = useState({ email: '', plan: '', tiene_reserva: false, monto_reserva: '', mes_gratis: false, password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    api.get('/inquilinos/config/planes')
+      .then(r => {
+        setPlanes(r.data)
+        if (r.data.length > 0) setForm(f => ({ ...f, plan: r.data[0].plan }))
+      })
+      .catch(() => setPlanes([]))
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -57,9 +78,9 @@ function NuevoInquilinoModal({ onClose, onCreated }) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Plan *</label>
             <select value={form.plan} onChange={e => setForm(p => ({...p, plan: e.target.value}))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="TARIFA_A">Tarifa A — Base 24 conductores ($300.000 + IVA)</option>
-              <option value="TARIFA_B">Tarifa B — Base 25.000 envíos ($1.000.000 + IVA)</option>
-              <option value="TARIFA_C">Tarifa C — Base $100.000 + por conductor</option>
+              {planes.map(cfg => (
+                <option key={cfg.plan} value={cfg.plan}>{labelDePlan(cfg)}</option>
+              ))}
             </select>
           </div>
           <div className="flex items-center gap-3">
@@ -100,15 +121,21 @@ function NuevoInquilinoModal({ onClose, onCreated }) {
 export default function Inquilinos() {
   const navigate = useNavigate()
   const [inquilinos, setInquilinos] = useState([])
+  const [planesMap, setPlanesMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
 
   useEffect(() => {
-    api.get('/inquilinos/admin')
-      .then(r => setInquilinos(r.data))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    Promise.all([
+      api.get('/inquilinos/admin'),
+      api.get('/inquilinos/config/planes'),
+    ]).then(([rInq, rPlanes]) => {
+      setInquilinos(rInq.data)
+      const map = {}
+      rPlanes.data.forEach(cfg => { map[cfg.plan] = cfg.plan })
+      setPlanesMap(map)
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
   const filtered = inquilinos.filter(i =>
@@ -170,7 +197,7 @@ export default function Inquilinos() {
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full">
-                      {PLANES[inq.plan] || inq.plan || '—'}
+                      {inq.plan || '—'}
                     </span>
                   </td>
                   <td className="px-5 py-3.5">

@@ -7,27 +7,48 @@ import {
   Calendar, Percent, Play
 } from 'lucide-react'
 
-const PLANES = {
-  TARIFA_A: 'Tarifa A — Base 24 conductores',
-  TARIFA_B: 'Tarifa B — Base 25.000 envíos',
-  TARIFA_C: 'Tarifa C — Base + por conductor',
-}
-const VARIABLE_LABELS = {
-  TARIFA_A: 'Número de conductores',
-  TARIFA_B: 'Número de envíos',
-  TARIFA_C: 'Número de conductores',
-}
 const fmt = (n) => '$' + (n || 0).toLocaleString('es-CL')
 
+// Carga planes una sola vez y los expone como hook liviano
+let _planesCache = null
+async function fetchPlanesMap() {
+  if (_planesCache) return _planesCache
+  try {
+    const { data } = await api.get('/inquilinos/config/planes')
+    _planesCache = Object.fromEntries(data.map(c => [c.plan, c]))
+    return _planesCache
+  } catch { return {} }
+}
+
+function labelDePlan(config) {
+  if (!config) return '—'
+  const p = config.params || {}
+  const tipo = p.tipo_calculo
+  const fmtN = n => n != null ? `$${Number(n).toLocaleString('es-CL')}` : '?'
+  const variable = p.variable || 'unidades'
+  if (tipo === 'UMBRAL_FIJO')
+    return `${config.plan} — Base ${Number(p.max_incluidos).toLocaleString('es-CL')} ${variable} (${fmtN(p.base)} + IVA)`
+  if (tipo === 'BLOQUES')
+    return `${config.plan} — Base ${Number(p.max_incluidos).toLocaleString('es-CL')} ${variable} (${fmtN(p.base)} + IVA)`
+  if (tipo === 'BASE_UF')
+    return `${config.plan} — ${p.base_uf} UF base + ${fmtN(p.extra_por)}/${variable} + IVA`
+  if (tipo === 'PLANA')
+    return `${config.plan} — ${fmtN(p.base)} plana + IVA`
+  return config.plan
+}
+
 // ── Modal Generar Cobro ──────────────────────────────────────────────────────
-function GenerarCobroModal({ inquilino, onClose, onCreated }) {
+function GenerarCobroModal({ inquilino, planesMap, onClose, onCreated }) {
   const [variableValor, setVariableValor] = useState('')
   const [preview, setPreview] = useState(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const label = VARIABLE_LABELS[inquilino.plan] || 'Variable'
+  const planConfig = planesMap[inquilino.plan]
+  const label = planConfig?.params?.variable
+    ? `Número de ${planConfig.params.variable}`
+    : 'Variable'
 
   const handlePreview = async () => {
     if (!variableValor) return
@@ -324,8 +345,9 @@ export default function InquilinoDetalle() {
   const [cobros, setCobros] = useState([])
   const [contratos, setContratos] = useState([])
   const [descuentos, setDescuentos] = useState([])
+  const [planesMap, setPlanesMap] = useState({})
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState(null) // 'cobro' | 'contrato' | 'despliegue' | 'descuento'
+  const [modal, setModal] = useState(null)
   const [tab, setTab] = useState('contratos')
 
   const fetchAll = () => {
@@ -334,11 +356,13 @@ export default function InquilinoDetalle() {
       api.get(`/inquilinos/admin/${inquilinoId}/cobros`),
       api.get(`/inquilinos/admin/${inquilinoId}/contratos`),
       api.get(`/inquilinos/admin/${inquilinoId}/descuentos`),
-    ]).then(([i, c, ct, d]) => {
+      fetchPlanesMap(),
+    ]).then(([i, c, ct, d, pm]) => {
       setInq(i.data)
       setCobros(c.data)
       setContratos(ct.data)
       setDescuentos(d.data)
+      setPlanesMap(pm)
     }).catch(() => {}).finally(() => setLoading(false))
   }
 
@@ -393,7 +417,7 @@ export default function InquilinoDetalle() {
             <h1 className="text-2xl font-bold text-gray-900">
               {inq.razon_social || inq.nombre_fantasia || inq.email}
             </h1>
-            <p className="text-gray-500 text-sm mt-0.5">{inq.email} · {PLANES[inq.plan] || inq.plan}</p>
+            <p className="text-gray-500 text-sm mt-0.5">{inq.email} · {labelDePlan(planesMap[inq.plan]) || inq.plan}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -606,7 +630,7 @@ export default function InquilinoDetalle() {
 
       {/* Modales */}
       {modal === 'cobro' && (
-        <GenerarCobroModal inquilino={inq} onClose={() => setModal(null)}
+        <GenerarCobroModal inquilino={inq} planesMap={planesMap} onClose={() => setModal(null)}
           onCreated={() => { fetchAll(); setModal(null) }} />
       )}
       {modal === 'contrato' && (
