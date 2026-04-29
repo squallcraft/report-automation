@@ -67,6 +67,7 @@ import LeadsPipeline from './pages/admin/LeadsPipeline'
 import LeadsKB from './pages/admin/LeadsKB'
 import Colaboradores from './pages/admin/Colaboradores'
 import IVADrivers from './pages/admin/IVADrivers'
+import IVAF29 from './pages/admin/IVAF29'
 import ConfiguracionLegal from './pages/admin/ConfiguracionLegal'
 import PickupDashboard from './pages/pickup/PickupDashboard'
 import PickupRecepciones from './pages/pickup/PickupRecepciones'
@@ -213,6 +214,7 @@ export default function App() {
         <Route path="leads/kb" element={<LeadsKB />} />
         <Route path="colaboradores" element={<Colaboradores />} />
         <Route path="iva-drivers" element={<IVADrivers />} />
+        <Route path="iva-f29" element={<IVAF29 />} />
         <Route path="inquilinos" element={<Inquilinos />} />
         <Route path="inquilinos/:inquilinoId" element={<InquilinoDetalle />} />
         <Route path="tracking-tech/planes" element={<PlanesTrackingTech />} />

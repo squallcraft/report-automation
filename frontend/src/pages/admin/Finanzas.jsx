@@ -50,6 +50,7 @@ const initialForm = {
   recurrente: false,
   proveedor: '',
   notas: '',
+  monto_iva: '',
 }
 
 // ── Summary Card ──
@@ -257,6 +258,7 @@ export default function Finanzas() {
       recurrente: mov.recurrente,
       proveedor: mov.proveedor || '',
       notas: mov.notas || '',
+      monto_iva: mov.monto_iva ?? '',
     })
     setDocFile(null)
     setShowModal(true)
@@ -277,6 +279,7 @@ export default function Finanzas() {
     const payload = {
       ...form,
       monto: Number(form.monto),
+      monto_iva: form.monto_iva !== '' && form.monto_iva !== null ? Number(form.monto_iva) : null,
       mes: mesTarget,
       anio: anioTarget,
       categoria_id: Number(form.categoria_id),
@@ -436,6 +439,27 @@ export default function Finanzas() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
               <input value={form.proveedor} onChange={e => setForm(f => ({ ...f, proveedor: e.target.value }))} className="input-field" placeholder="Opcional" />
+            </div>
+            <div className="flex items-end gap-4 pb-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.recurrente} onChange={e => setForm(f => ({ ...f, recurrente: e.target.checked }))} className="rounded border-gray-300" />
+                <span className="text-sm text-gray-700">Recurrente (mensual)</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">IVA crédito fiscal</label>
+              <input
+                type="number"
+                value={form.monto_iva}
+                onChange={e => setForm(f => ({ ...f, monto_iva: e.target.value }))}
+                className="input-field"
+                min="0"
+                placeholder="Solo si tiene factura afecta"
+              />
+              <p className="text-xs text-gray-400 mt-1">Dejar vacío si es boleta o exento.</p>
             </div>
             <div className="flex items-end gap-4 pb-1">
               <label className="flex items-center gap-2 cursor-pointer">

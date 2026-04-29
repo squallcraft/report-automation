@@ -1060,3 +1060,9 @@ class ConfigPlanInquilinoOut(BaseModel):
 class ConfigPlanInquilinoUpdate(BaseModel):
     params: dict
     descripcion_contrato: Optional[str] = None
+
+
+class ConfigPlanInquilinoCreate(BaseModel):
+    plan: str
+    params: dict
+    descripcion_contrato: Optional[str] = None

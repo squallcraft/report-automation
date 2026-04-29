@@ -59,6 +59,7 @@ const adminMenu = [
   {
     group: 'Finanzas', icon: Wallet, children: [
       { to: '/admin/finanzas', icon: Wallet, label: 'Estado ECourier', permiso: 'finanzas' },
+      { to: '/admin/iva-f29', icon: FileText, label: 'F29 IVA', permiso: ['finanzas', 'iva-drivers'] },
       { to: '/admin/liquidacion', icon: Calculator, label: 'Liquidación', permiso: 'liquidacion' },
       { to: '/admin/ajustes', icon: CircleDollarSign, label: 'Ajustes / Préstamos', permiso: 'ajustes' },
     ],

@@ -59,6 +59,7 @@ CUENTA_OTROS_GASTOS = "5.9"
 CUENTA_INTERESES = "5.10"
 CUENTA_REMUNERACIONES_POR_PAGAR = "2.5"  # Pasivo: retenciones previsionales y aportes empleador
 CUENTA_IVA_CREDITO_FISCAL = "1.3"        # Activo: IVA soportado en facturas de proveedores (drivers)
+CUENTA_IVA_DEBITO_FISCAL  = "2.4"        # Pasivo: IVA devengado en ventas a sellers
 
 # Mapeo CategoriaFinanciera.nombre → código cuenta contable
 _CAT_TO_CUENTA = {
@@ -204,19 +205,45 @@ def asiento_pago_driver(db: Session, pago: PagoSemanaDriver, es_backfill=False):
 
 
 def asiento_cobro_seller(db: Session, pago: PagoCartolaSeller, es_backfill=False):
-    """Cartola seller → Debe: Banco / Haber: Ingreso Operacional"""
+    """
+    Cartola seller → Debe: Banco (total) / Haber: Ingreso Operacional (neto) + Haber: IVA Débito Fiscal
+
+    El monto de la cartola es total con IVA (seller paga neto + 19%).
+    Se retrotrae el neto con fórmula SII: neto = floor(total / 1.19), iva = total - neto.
+    Esto pobla cuenta 2.4 para el F29.
+    """
+    import math
     if not pago.monto or pago.monto <= 0:
         return None
     fecha = _parse_fecha(pago.fecha_pago) if pago.fecha_pago else date.today()
     from app.models import Seller
     seller = db.get(Seller, pago.seller_id)
     nombre = seller.nombre if seller else f"Seller {pago.seller_id}"
+
+    neto = math.floor(pago.monto / 1.19)
+    iva  = pago.monto - neto
+
+    if iva <= 0:
+        return crear_asiento(db, fecha,
+            f"Cobro seller S{pago.semana} — {nombre}",
+            "PagoCartolaSeller", pago.id,
+            [
+                (_cuenta_id(db, CUENTA_BANCO), pago.monto, 0, f"Total recibido {nombre}"),
+                (_cuenta_id(db, CUENTA_INGRESO_OP), 0, pago.monto, f"Ingreso operacional {nombre}"),
+            ],
+            es_backfill=es_backfill,
+        )
+
     return crear_asiento(db, fecha,
         f"Cobro seller S{pago.semana} — {nombre}",
         "PagoCartolaSeller", pago.id,
         [
-            (_cuenta_id(db, CUENTA_BANCO), pago.monto, 0),
-            (_cuenta_id(db, CUENTA_INGRESO_OP), 0, pago.monto),
+            (_cuenta_id(db, CUENTA_BANCO), pago.monto, 0,
+             f"Total recibido {nombre}"),
+            (_cuenta_id(db, CUENTA_INGRESO_OP), 0, neto,
+             f"Ingreso operacional neto {nombre}"),
+            (_cuenta_id(db, CUENTA_IVA_DEBITO_FISCAL), 0, iva,
+             f"IVA débito fiscal S{pago.semana} {nombre}"),
         ],
         es_backfill=es_backfill,
     )

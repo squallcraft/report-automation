@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from sqlalchemy import text, inspect
 from app.database import engine, Base
-from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta, envios_coordenadas, envios_hora, certificados, inquilinos
+from app.api import auth, sellers, drivers, envios, ingesta, liquidacion, productos, comunas, ajustes, consultas, dashboard, retiros, calendario, facturacion, cpc, cpp, usuarios, tarifas_escalonadas, diagnostics, portal, chat, pickups, auditoria, planes_tarifarios, finanzas, trabajadores, prestamos, pagos_trabajadores, bi, tareas, snapshots, whatsapp, leads, colaboradores, parametros_remuneracion, remuneraciones, iva_drivers, iva_f29, contratos, horas_extras, plantillas_contrato, notificaciones_trabajador, vacaciones, asistencia, email_campaigns, flota, rentabilidad, jornadas_horarias, cron_jobs, asignaciones_ruta, envios_coordenadas, envios_hora, certificados, inquilinos
 from app.middleware.timing import TimingMiddleware
 
 for _attempt in range(3):
@@ -1648,6 +1648,7 @@ app.include_router(inquilinos.router, prefix="/api")
 app.include_router(parametros_remuneracion.router, prefix="/api")
 app.include_router(remuneraciones.router, prefix="/api")
 app.include_router(iva_drivers.router, prefix="/api")
+app.include_router(iva_f29.router, prefix="/api")
 app.include_router(contratos.router, prefix="/api")
 app.include_router(jornadas_horarias.router, prefix="/api")
 app.include_router(horas_extras.router, prefix="/api")

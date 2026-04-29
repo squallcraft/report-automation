@@ -85,34 +85,63 @@ def _obtener_params_plan(db: Session, plan: str) -> dict:
 def _calcular_neto(plan: str, variable_valor: int, params: dict, valor_uf: float = 0.0) -> tuple[int, str]:
     """
     Calcula el monto neto (sin IVA) usando los parámetros del plan leídos desde DB.
-    Tarifa C usa valor_uf para convertir la base en UF a pesos.
+    El campo `tipo_calculo` en params determina la fórmula a aplicar:
+      - UMBRAL_FIJO : base + extra_por × max(0, variable - max_incluidos)
+      - BLOQUES     : base + extra_por × ceil((variable - max_incluidos) / bloque)
+      - BASE_UF     : round(base_uf × uf) + extra_por × variable
+      - PLANA       : base fija, sin variable
     """
     variable = params.get("variable", "conductores")
+    tipo = params.get("tipo_calculo", "UMBRAL_FIJO")
 
-    if plan == PlanInquilinoEnum.TARIFA_A.value:
+    if tipo == "UMBRAL_FIJO":
         base = int(params.get("base", TARIFA_A_BASE))
         max_incl = int(params.get("max_incluidos", TARIFA_A_MAX_INCL))
         extra_por = int(params.get("extra_por", TARIFA_A_EXTRA_POR))
         extra = max(0, variable_valor - max_incl) * extra_por
         return base + extra, variable
 
-    if plan == PlanInquilinoEnum.TARIFA_B.value:
+    if tipo == "BLOQUES":
         base = int(params.get("base", TARIFA_B_BASE))
         max_incl = int(params.get("max_incluidos", TARIFA_B_MAX_INCL))
         extra_por = int(params.get("extra_por", TARIFA_B_EXTRA_POR))
         bloque = int(params.get("bloque", TARIFA_B_BLOQUE_ENVIOS))
-        extra_envios = max(0, variable_valor - max_incl)
-        bloques = math.ceil(extra_envios / bloque) if extra_envios > 0 else 0
+        excedente = max(0, variable_valor - max_incl)
+        bloques = math.ceil(excedente / bloque) if excedente > 0 else 0
         return base + bloques * extra_por, variable
 
-    if plan == PlanInquilinoEnum.TARIFA_C.value:
+    if tipo == "BASE_UF":
         base_uf = float(params.get("base_uf", TARIFA_C_BASE_UF))
         extra_por = int(params.get("extra_por", TARIFA_C_EXTRA_POR))
         uf = valor_uf if valor_uf > 0 else 39_842.0
         base_clp = round(base_uf * uf)
         return base_clp + variable_valor * extra_por, variable
 
-    raise ValueError(f"Plan desconocido: {plan!r}")
+    if tipo == "PLANA":
+        base = int(params.get("base", 0))
+        return base, variable or "—"
+
+    # Fallback: intentar compatibilidad con planes viejos sin tipo_calculo
+    if "base_uf" in params:
+        base_uf = float(params["base_uf"])
+        extra_por = int(params.get("extra_por", 0))
+        uf = valor_uf if valor_uf > 0 else 39_842.0
+        return round(base_uf * uf) + variable_valor * extra_por, variable
+    if "max_incluidos" in params and "bloque" in params:
+        base = int(params.get("base", 0))
+        max_incl = int(params["max_incluidos"])
+        extra_por = int(params.get("extra_por", 0))
+        bloque = int(params["bloque"])
+        excedente = max(0, variable_valor - max_incl)
+        bloques = math.ceil(excedente / bloque) if excedente > 0 else 0
+        return base + bloques * extra_por, variable
+    if "max_incluidos" in params:
+        base = int(params.get("base", 0))
+        max_incl = int(params["max_incluidos"])
+        extra_por = int(params.get("extra_por", 0))
+        return base + max(0, variable_valor - max_incl) * extra_por, variable
+
+    raise ValueError(f"No se puede calcular neto para plan '{plan}' con params: {params}")
 
 
 def calcular_monto(

@@ -41,6 +41,7 @@ from app.schemas import (
     FirmarAnexoInquilinoIn,
     ConfigPlanInquilinoOut,
     ConfigPlanInquilinoUpdate,
+    ConfigPlanInquilinoCreate,
 )
 from app.services import contrato_inquilino as svc_contrato
 from app.services import cobros_inquilino as svc_cobros
@@ -510,6 +511,7 @@ def descargar_factura_portal(
 _DEFAULTS_PLANES = {
     "TARIFA_A": {
         "params": {
+            "tipo_calculo": "UMBRAL_FIJO",
             "base": 300_000,
             "max_incluidos": 24,
             "extra_por": 12_500,
@@ -523,6 +525,7 @@ _DEFAULTS_PLANES = {
     },
     "TARIFA_B": {
         "params": {
+            "tipo_calculo": "BLOQUES",
             "base": 1_000_000,
             "max_incluidos": 25_000,
             "extra_por": 250_000,
@@ -537,6 +540,7 @@ _DEFAULTS_PLANES = {
     },
     "TARIFA_C": {
         "params": {
+            "tipo_calculo": "BASE_UF",
             "base_uf": 2.0,
             "extra_por": 10_000,
             "variable": "conductores",
@@ -615,3 +619,48 @@ def resetear_planes(
             db.add(ConfigPlanInquilino(plan=plan_key, **data))
     db.commit()
     return db.query(ConfigPlanInquilino).order_by(ConfigPlanInquilino.plan).all()
+
+
+@router.post("/config/planes", response_model=ConfigPlanInquilinoOut, status_code=201)
+def crear_plan(
+    body: ConfigPlanInquilinoCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("inquilinos")),
+):
+    """Crea un nuevo plan de arriendo personalizado."""
+    clave = body.plan.upper().replace(" ", "_")
+    if db.query(ConfigPlanInquilino).filter_by(plan=clave).first():
+        raise HTTPException(status_code=409, detail=f"Ya existe un plan con el nombre '{clave}'")
+    if "tipo_calculo" not in body.params:
+        raise HTTPException(status_code=422, detail="El campo 'tipo_calculo' es obligatorio en params (UMBRAL_FIJO | BLOQUES | BASE_UF | PLANA)")
+    cfg = ConfigPlanInquilino(
+        plan=clave,
+        params=body.params,
+        descripcion_contrato=body.descripcion_contrato,
+    )
+    db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return cfg
+
+
+@router.delete("/config/planes/{plan}", status_code=204)
+def eliminar_plan(
+    plan: str,
+    db: Session = Depends(get_db),
+    _=Depends(require_permission("inquilinos")),
+):
+    """Elimina un plan. No se puede eliminar si hay inquilinos activos con ese plan."""
+    plan = plan.upper()
+    cfg = db.query(ConfigPlanInquilino).filter_by(plan=plan).first()
+    if not cfg:
+        raise HTTPException(status_code=404, detail="Plan no encontrado")
+    # Verificar que no haya inquilinos con este plan
+    en_uso = db.query(Inquilino).filter(Inquilino.plan == plan, Inquilino.activo == True).count()
+    if en_uso:
+        raise HTTPException(
+            status_code=409,
+            detail=f"No se puede eliminar: {en_uso} inquilino(s) activo(s) usan este plan"
+        )
+    db.delete(cfg)
+    db.commit()

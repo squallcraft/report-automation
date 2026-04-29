@@ -848,6 +848,9 @@ class MovimientoFinanciero(Base):
     notas = Column(Text, nullable=True)
     documento_nombre = Column(String, nullable=True)
     documento_path = Column(String, nullable=True)
+    # IVA crédito fiscal de esta compra (solo para facturas afectas).
+    # NULL = sin IVA (boletas, exentos). Valor positivo = monto IVA a recuperar en F29.
+    monto_iva = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     categoria = relationship("CategoriaFinanciera", back_populates="movimientos")
