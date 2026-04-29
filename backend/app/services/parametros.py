@@ -97,6 +97,53 @@ def _fetch_uf_utm_historico(anio: int, mes: int) -> dict[str, float | int] | Non
         return None
 
 
+def obtener_uf_fin_de_mes(anio: int, mes: int) -> float:
+    """
+    Retorna el ÚLTIMO valor de UF publicado para el mes dado.
+
+    - Mes cerrado (pasado): busca en la serie anual de mindicador el último día
+      disponible dentro de ese mes (ordenando por fecha descendente).
+    - Mes en curso: retorna el valor vigente de hoy (el más reciente publicado),
+      ya que el mes aún no ha terminado.
+    - Fallback: constante FALLBACK["uf"] si la API no responde.
+
+    No persiste en DB (valor puntual para cobros).
+    """
+    hoy = date.today()
+    target_prefix = f"{anio}-{mes:02d}"
+
+    try:
+        with httpx.Client(timeout=TIMEOUT) as client:
+            if (anio, mes) >= (hoy.year, hoy.month):
+                # Mes en curso o futuro → valor vigente (último publicado)
+                r = client.get(f"{MINDICADOR_BASE}/uf")
+                r.raise_for_status()
+                data = r.json()
+                valor = float(data["uf"]["valor"])
+                logger.info("UF fin-de-mes (mes en curso) %d-%02d: %.2f", anio, mes, valor)
+                return valor
+            else:
+                # Mes cerrado → serie anual, tomar el último día del mes
+                r = client.get(f"{MINDICADOR_BASE}/uf/{anio}")
+                r.raise_for_status()
+                serie = r.json().get("serie", [])
+                # Filtrar solo entradas de este mes y ordenar por fecha descendente
+                del_mes = sorted(
+                    [e for e in serie if e.get("fecha", "").startswith(target_prefix)],
+                    key=lambda e: e["fecha"],
+                    reverse=True,
+                )
+                if del_mes:
+                    valor = float(del_mes[0]["valor"])
+                    logger.info("UF último día del mes %d-%02d: %.2f", anio, mes, valor)
+                    return valor
+    except Exception as exc:
+        logger.warning("No se pudo obtener UF fin-de-mes %d-%02d: %s", anio, mes, exc)
+
+    logger.warning("UF fin-de-mes: usando fallback hardcoded %.2f", FALLBACK["uf"])
+    return FALLBACK["uf"]
+
+
 def _imm_para_anio(anio: int) -> int:
     """
     IMM histórico por año. Solo cambia por ley (normalmente en enero).

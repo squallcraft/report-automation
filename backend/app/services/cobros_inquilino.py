@@ -16,7 +16,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.services.parametros import obtener_parametros
+from app.services.parametros import obtener_uf_fin_de_mes
 from app.models import (
     Inquilino,
     CobrosInquilino,
@@ -97,8 +97,8 @@ def calcular_monto(
       valor_uf (float, solo relevante para Tarifa C)
     """
     hoy = date.today()
-    params = obtener_parametros(db, hoy.year, hoy.month)
-    valor_uf: float = params["uf"]
+    # UF del último día publicado del mes → misma lógica que remuneraciones
+    valor_uf: float = obtener_uf_fin_de_mes(hoy.year, hoy.month)
 
     neto_base, variable_nombre = _calcular_neto(inquilino.plan or "", variable_valor, valor_uf)
 
@@ -270,7 +270,10 @@ def generar_cobro(
         anio=hoy.year,
         fecha_vencimiento=cobro.fecha_vencimiento,
         estado=EstadoMovimientoEnum.PENDIENTE.value,
-        notas=f"IVA: ${desglose['iva']:,} | Neto: ${desglose['neto_final']:,}",
+        notas=(
+            f"IVA: ${desglose['iva']:,} | Neto: ${desglose['neto_final']:,}"
+            + (f" | UF: ${desglose['valor_uf']:,.2f}" if desglose.get("valor_uf") else "")
+        ),
     )
     db.add(mov)
     db.flush()
