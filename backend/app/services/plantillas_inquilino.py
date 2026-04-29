@@ -45,7 +45,7 @@ _PLANES_DESCRIPCION_PRECIO = {
         "A todos los valores indicados se agrega el Impuesto al Valor Agregado (IVA) vigente."
     ),
     PlanInquilinoEnum.TARIFA_C.value: (
-        "Cargo Fijo Base: $100.000 (cien mil pesos) neto mensual, "
+        "Cargo Fijo Base: 2 UF (dos Unidades de Fomento) neto mensual, calculadas al valor de la UF del día de emisión del cobro, "
         "más $10.000 (diez mil pesos) neto mensual por cada conductor activo registrado en la plataforma. "
         "A todos los valores indicados se agrega el Impuesto al Valor Agregado (IVA) vigente."
     ),

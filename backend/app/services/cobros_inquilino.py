@@ -16,6 +16,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.services.parametros import obtener_parametros
 from app.models import (
     Inquilino,
     CobrosInquilino,
@@ -48,14 +49,16 @@ TARIFA_B_MAX_INCL = 25_000
 TARIFA_B_EXTRA_POR = 250_000     # por cada 5.000 envíos sobre 25.000
 TARIFA_B_BLOQUE_ENVIOS = 5_000
 
-TARIFA_C_BASE = 100_000          # sin conductores incluidos
-TARIFA_C_EXTRA_POR = 10_000      # por cada conductor
+TARIFA_C_BASE_UF = 2.0           # base en UF (se convierte a CLP al momento del cobro)
+TARIFA_C_EXTRA_POR = 10_000      # por cada conductor (CLP neto)
 
 
-def _calcular_neto(plan: str, variable_valor: int) -> tuple[int, str]:
+def _calcular_neto(plan: str, variable_valor: int, valor_uf: float = 0.0) -> tuple[int, str]:
     """
     Calcula el monto neto (sin IVA) según el plan y el valor de la variable.
     Retorna (neto: int, variable_nombre: str).
+
+    Tarifa C usa base en UF (valor_uf debe ser > 0 para reflejar el valor real del mes).
     """
     plan = plan or ""
     if plan == PlanInquilinoEnum.TARIFA_A.value:
@@ -71,7 +74,8 @@ def _calcular_neto(plan: str, variable_valor: int) -> tuple[int, str]:
         return base + extra, "envíos"
 
     if plan == PlanInquilinoEnum.TARIFA_C.value:
-        return TARIFA_C_BASE + variable_valor * TARIFA_C_EXTRA_POR, "conductores"
+        base_clp = round(TARIFA_C_BASE_UF * valor_uf) if valor_uf > 0 else round(TARIFA_C_BASE_UF * 39_842)
+        return base_clp + variable_valor * TARIFA_C_EXTRA_POR, "conductores"
 
     raise ValueError(f"Plan desconocido: {plan!r}")
 
@@ -84,11 +88,19 @@ def calcular_monto(
     """
     Calcula el desglose completo del cobro (sin persistir nada).
 
+    Para Tarifa C la base se calcula en UF usando el valor vigente del mes
+    (misma fuente que las liquidaciones de sueldo: mindicador.cl / ParametrosMensuales).
+
     Retorna dict con:
       variable_nombre, variable_valor, monto_neto_base, descuento_aplicado,
-      neto_con_descuento, reserva_a_descontar, neto_final, iva, total
+      neto_con_descuento, reserva_a_descontar, neto_final, iva, total,
+      valor_uf (float, solo relevante para Tarifa C)
     """
-    neto_base, variable_nombre = _calcular_neto(inquilino.plan or "", variable_valor)
+    hoy = date.today()
+    params = obtener_parametros(db, hoy.year, hoy.month)
+    valor_uf: float = params["uf"]
+
+    neto_base, variable_nombre = _calcular_neto(inquilino.plan or "", variable_valor, valor_uf)
 
     # Descuentos pendientes
     descuentos = db.query(DescuentoInquilino).filter(
@@ -128,6 +140,7 @@ def calcular_monto(
         "neto_final": neto_final,
         "iva": iva,
         "total": total,
+        "valor_uf": valor_uf,
     }
 
 
