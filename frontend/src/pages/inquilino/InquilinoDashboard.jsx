@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api'
-import { Building2, FileText, CreditCard, CheckCircle, Clock, AlertCircle, Calendar } from 'lucide-react'
+import {
+  Building2, FileText, CreditCard, CheckCircle,
+  AlertCircle, Calendar, ChevronRight, PenLine,
+} from 'lucide-react'
+
+const fmt = (n) => '$' + (n || 0).toLocaleString('es-CL')
+const fmtDate = (s) => s ? new Date(s).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
 export default function InquilinoDashboard() {
   const { user } = useAuth()
@@ -29,114 +35,138 @@ export default function InquilinoDashboard() {
   }, [user])
 
   if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin w-8 h-8 border-2 border-blue-900 border-t-transparent rounded-full" />
+    <div className="flex items-center justify-center h-48">
+      <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full" />
     </div>
   )
 
   const cobro_pendiente = cobros.find(c => c.estado === 'PENDIENTE' || c.estado === 'VENCIDO')
-  const contrato_pendiente = contratos.find(c => c.estado === 'BORRADOR' && c.requiere_firma_inquilino)
+  const contrato_pendiente = contratos.find(c => c.estado !== 'FIRMADO' && c.requiere_firma_inquilino)
   const contratos_firmados = contratos.filter(c => c.estado === 'FIRMADO').length
-
-  const fmt = (n) => '$' + (n || 0).toLocaleString('es-CL')
-  const PLANES = { TARIFA_A: 'Tarifa A — Base Conductores', TARIFA_B: 'Tarifa B — Base Envíos', TARIFA_C: 'Tarifa C — Por Conductor' }
+  const tieneFirma = !!perfil?.firma_base64
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {perfil?.razon_social || perfil?.nombre_fantasia || 'Mi empresa'}
-        </h1>
-        <p className="text-gray-500 mt-1">Portal de cliente — Software Tracking Tech</p>
+    <div className="max-w-2xl mx-auto space-y-4">
+
+      {/* Hero */}
+      <div className="rounded-2xl text-white p-5 relative overflow-hidden"
+           style={{ background: 'linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%)' }}>
+        <div className="absolute -top-8 -right-8 w-36 h-36 bg-white/5 rounded-full" />
+        <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-white/5 rounded-full" />
+        <div className="relative">
+          <p className="text-blue-200 text-xs font-medium uppercase tracking-wider">Portal cliente</p>
+          <h1 className="text-xl font-bold mt-0.5 leading-tight">
+            {perfil?.razon_social || perfil?.nombre_fantasia || user?.nombre}
+          </h1>
+          <p className="text-blue-200 text-xs mt-1">Software Tracking Tech · {perfil?.plan || '—'}</p>
+        </div>
       </div>
 
       {/* Alertas */}
-      {cobro_pendiente && cobro_pendiente.estado === 'VENCIDO' && (
-        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
-          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-red-700">Cobro vencido</p>
-            <p className="text-sm text-red-600">Tienes un cobro vencido de {fmt(cobro_pendiente.total)}. Por favor sube tu comprobante de pago.</p>
+      {cobro_pendiente?.estado === 'VENCIDO' && (
+        <button onClick={() => navigate('/inquilino/cobros')}
+          className="w-full flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl text-left">
+          <AlertCircle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-700">Cobro vencido — {fmt(cobro_pendiente.total)}</p>
+            <p className="text-xs text-red-500 mt-0.5">Sube tu comprobante de pago para regularizar</p>
           </div>
-        </div>
+          <ChevronRight size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+        </button>
       )}
 
       {contrato_pendiente && (
-        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-          <FileText className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
+        <button onClick={() => navigate('/inquilino/contratos')}
+          className="w-full flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-left">
+          <FileText size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-amber-700">Contrato pendiente de firma</p>
-            <p className="text-sm text-amber-600">Tienes un contrato pendiente de firma: <strong>{contrato_pendiente.titulo}</strong></p>
+            <p className="text-xs text-amber-500 mt-0.5 truncate">{contrato_pendiente.titulo}</p>
           </div>
-        </div>
+          <ChevronRight size={16} className="text-amber-400 flex-shrink-0 mt-0.5" />
+        </button>
+      )}
+
+      {!tieneFirma && (
+        <button onClick={() => navigate('/inquilino/firma')}
+          className="w-full flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-2xl text-left">
+          <PenLine size={18} className="text-blue-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-blue-700">Registra tu firma electrónica</p>
+            <p className="text-xs text-blue-400 mt-0.5">La necesitas para firmar contratos y documentos</p>
+          </div>
+          <ChevronRight size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
+        </button>
       )}
 
       {/* Cards resumen */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center">
-              <Building2 className="w-5 h-5 text-blue-900" />
-            </div>
-            <span className="text-sm font-medium text-gray-500">Plan actual</span>
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={() => navigate('/inquilino/contratos')}
+          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-left hover:border-blue-200 transition-colors">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${
+            perfil?.contrato_firmado ? 'bg-emerald-50' : 'bg-amber-50'
+          }`}>
+            <FileText size={18} className={perfil?.contrato_firmado ? 'text-emerald-600' : 'text-amber-600'} />
           </div>
-          <p className="text-lg font-semibold text-gray-900">{PLANES[perfil?.plan] || perfil?.plan || '—'}</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${perfil?.contrato_firmado ? 'bg-green-50' : 'bg-amber-50'}`}>
-              <FileText className={`w-5 h-5 ${perfil?.contrato_firmado ? 'text-green-600' : 'text-amber-600'}`} />
-            </div>
-            <span className="text-sm font-medium text-gray-500">Estado contrato</span>
-          </div>
-          <p className="text-lg font-semibold text-gray-900">
-            {perfil?.contrato_firmado ? `${contratos_firmados} firmado(s)` : 'Pendiente de firma'}
+          <p className="text-xs text-gray-400 mb-0.5">Contratos</p>
+          <p className="text-sm font-bold text-gray-900">
+            {perfil?.contrato_firmado ? `${contratos_firmados} firmado${contratos_firmados !== 1 ? 's' : ''}` : 'Sin firmar'}
           </p>
-        </div>
+        </button>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${cobro_pendiente ? 'bg-amber-50' : 'bg-green-50'}`}>
-              <CreditCard className={`w-5 h-5 ${cobro_pendiente ? 'text-amber-600' : 'text-green-600'}`} />
-            </div>
-            <span className="text-sm font-medium text-gray-500">Próximo cobro</span>
+        <button onClick={() => navigate('/inquilino/cobros')}
+          className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-left hover:border-blue-200 transition-colors">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${
+            cobro_pendiente ? (cobro_pendiente.estado === 'VENCIDO' ? 'bg-red-50' : 'bg-amber-50') : 'bg-emerald-50'
+          }`}>
+            <CreditCard size={18} className={
+              cobro_pendiente
+                ? (cobro_pendiente.estado === 'VENCIDO' ? 'text-red-500' : 'text-amber-500')
+                : 'text-emerald-600'
+            } />
           </div>
-          {cobro_pendiente ? (
-            <p className="text-lg font-semibold text-gray-900">{fmt(cobro_pendiente.total)}</p>
-          ) : (
-            <p className="text-lg font-semibold text-gray-900">Al día</p>
-          )}
-        </div>
+          <p className="text-xs text-gray-400 mb-0.5">Cobros</p>
+          <p className="text-sm font-bold text-gray-900">
+            {cobro_pendiente ? fmt(cobro_pendiente.total) : 'Al día'}
+          </p>
+        </button>
       </div>
 
-      {/* Inicio servicio */}
-      {perfil?.fecha_inicio_despliegue && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+      {/* Información del servicio */}
+      {perfil?.fecha_inicio_despliegue ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-4">
-            <Calendar className="w-5 h-5 text-blue-900" />
-            <h2 className="font-semibold text-gray-900">Información del servicio</h2>
+            <Calendar size={16} className="text-blue-600" />
+            <p className="text-sm font-semibold text-gray-900">Información del servicio</p>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-gray-500">Inicio del servicio</p>
-              <p className="font-medium text-gray-900">{new Date(perfil.fecha_inicio_despliegue).toLocaleDateString('es-CL')}</p>
-            </div>
-            {perfil.fecha_inicio_facturacion && (
-              <div>
-                <p className="text-gray-500">Inicio facturación</p>
-                <p className="font-medium text-gray-900">{new Date(perfil.fecha_inicio_facturacion).toLocaleDateString('es-CL')}</p>
+          <div className="space-y-3">
+            {[
+              ['Inicio del servicio', fmtDate(perfil.fecha_inicio_despliegue)],
+              perfil.fecha_inicio_facturacion ? ['Inicio facturación', fmtDate(perfil.fecha_inicio_facturacion)] : null,
+            ].filter(Boolean).map(([label, val]) => (
+              <div key={label} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <span className="text-xs text-gray-400 uppercase tracking-wide">{label}</span>
+                <span className="text-sm font-medium text-gray-900">{val}</span>
               </div>
-            )}
+            ))}
             {perfil.mes_gratis_confirmado && (
-              <div>
-                <p className="text-gray-500">Cortesía</p>
-                <p className="font-medium text-green-600 flex items-center gap-1">
-                  <CheckCircle className="w-4 h-4" /> Mes gratis incluido
-                </p>
+              <div className="flex items-center gap-2 pt-1">
+                <CheckCircle size={14} className="text-emerald-500" />
+                <span className="text-xs text-emerald-600 font-medium">Mes de cortesía incluido</span>
               </div>
             )}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center">
+              <Building2 size={18} className="text-gray-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Servicio en configuración</p>
+              <p className="text-xs text-gray-400 mt-0.5">Tu ejecutivo activará el servicio una vez firmado el contrato</p>
+            </div>
           </div>
         </div>
       )}
