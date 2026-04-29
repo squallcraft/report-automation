@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '../../api'
 import {
-  Building2, FileText, CreditCard, ArrowLeft, ChevronDown, ChevronUp,
+  Building2, FileText, CreditCard, ArrowLeft,
   Plus, CheckCircle, Clock, AlertCircle, X, Loader2, Eye, Download,
-  Calendar, Percent, Play
+  Calendar, Percent, Play, Pencil
 } from 'lucide-react'
 
 const fmt = (n) => '$' + (n || 0).toLocaleString('es-CL')
@@ -337,6 +337,122 @@ function DescuentoModal({ inquilino, onClose, onCreated }) {
   )
 }
 
+// ── Modal Editar Perfil ───────────────────────────────────────────────────────
+function EditarPerfilModal({ inquilino, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    razon_social:       inquilino.razon_social       || '',
+    nombre_fantasia:    inquilino.nombre_fantasia    || '',
+    rut_empresa:        inquilino.rut_empresa        || '',
+    direccion_empresa:  inquilino.direccion_empresa  || '',
+    correo_empresa:     inquilino.correo_empresa     || '',
+    giro_empresa:       inquilino.giro_empresa       || '',
+    nombre_rep_legal:   inquilino.nombre_rep_legal   || '',
+    rut_rep_legal:      inquilino.rut_rep_legal      || '',
+    correo_rep_legal:   inquilino.correo_rep_legal   || '',
+    direccion_rep_legal:inquilino.direccion_rep_legal|| '',
+    correo_contacto:    inquilino.correo_contacto    || '',
+    whatsapp:           inquilino.whatsapp           || '',
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState(null)
+
+  const handleChange = (e) => setForm(p => ({ ...p, [e.target.name]: e.target.value }))
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      const { data } = await api.put(`/inquilinos/admin/${inquilino.id}`, form)
+      onSaved(data)
+      onClose()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Error guardando los datos')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const Field = ({ label, name, type = 'text', ...rest }) => (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
+      <input
+        name={name} value={form[name]} onChange={handleChange} type={type}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {...rest}
+      />
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-4">
+        <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white rounded-t-2xl">
+          <div>
+            <h3 className="font-semibold text-gray-900">Editar perfil</h3>
+            <p className="text-sm text-gray-500">{inquilino.razon_social || inquilino.email}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-4 h-4" /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-5">
+          {/* Empresa */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Datos de la empresa</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Razón Social" name="razon_social" />
+              <Field label="Nombre Fantasía" name="nombre_fantasia" />
+              <Field label="RUT Empresa" name="rut_empresa" />
+              <Field label="Correo Empresa" name="correo_empresa" type="email" />
+              <div className="col-span-2">
+                <Field label="Dirección Empresa" name="direccion_empresa" />
+              </div>
+              <div className="col-span-2">
+                <Field label="Giro" name="giro_empresa" />
+              </div>
+            </div>
+          </div>
+
+          {/* Rep. Legal */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Representante Legal</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Nombre completo" name="nombre_rep_legal" />
+              <Field label="RUT" name="rut_rep_legal" />
+              <Field label="Correo" name="correo_rep_legal" type="email" />
+              <div className="col-span-2">
+                <Field label="Dirección" name="direccion_rep_legal" />
+              </div>
+            </div>
+          </div>
+
+          {/* Contacto */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contacto y comunicaciones</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Correo de contacto" name="correo_contacto" type="email" />
+              <Field label="WhatsApp" name="whatsapp" placeholder="+56912345678" />
+            </div>
+          </div>
+
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+              Cancelar
+            </button>
+            <button type="submit" disabled={loading}
+              className="flex-1 py-2.5 text-sm font-semibold text-white bg-blue-900 rounded-lg hover:bg-blue-800 disabled:opacity-60 flex items-center justify-center gap-2">
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              Guardar cambios
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function InquilinoDetalle() {
   const { inquilinoId } = useParams()
@@ -602,6 +718,14 @@ export default function InquilinoDetalle() {
       {/* Tab: Perfil */}
       {tab === 'perfil' && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-5">
+            <p className="text-sm font-semibold text-gray-700">Datos del inquilino</p>
+            <button onClick={() => setModal('perfil')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-900 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors">
+              <Pencil className="w-3.5 h-3.5" />
+              Editar
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
             {[
               ['Razón Social', inq.razon_social],
@@ -621,7 +745,7 @@ export default function InquilinoDetalle() {
             ].map(([label, value]) => (
               <div key={label}>
                 <p className="text-gray-400 text-xs">{label}</p>
-                <p className="font-medium text-gray-900">{value || '—'}</p>
+                <p className={`font-medium ${value ? 'text-gray-900' : 'text-red-400'}`}>{value || '—'}</p>
               </div>
             ))}
           </div>
@@ -644,6 +768,10 @@ export default function InquilinoDetalle() {
       {modal === 'descuento' && (
         <DescuentoModal inquilino={inq} onClose={() => setModal(null)}
           onCreated={() => { fetchAll(); setModal(null) }} />
+      )}
+      {modal === 'perfil' && (
+        <EditarPerfilModal inquilino={inq} onClose={() => setModal(null)}
+          onSaved={(updated) => { setInq(updated); setModal(null) }} />
       )}
     </div>
   )
