@@ -564,7 +564,7 @@ def _seed_planes_si_faltan(db: Session) -> None:
     db.commit()
 
 
-@router.get("/admin/planes", response_model=List[ConfigPlanInquilinoOut])
+@router.get("/config/planes", response_model=List[ConfigPlanInquilinoOut])
 def listar_planes(
     db: Session = Depends(get_db),
     _=Depends(require_permission("inquilinos")),
@@ -575,7 +575,7 @@ def listar_planes(
     return planes
 
 
-@router.put("/admin/planes/{plan}", response_model=ConfigPlanInquilinoOut)
+@router.put("/config/planes/{plan}", response_model=ConfigPlanInquilinoOut)
 def actualizar_plan(
     plan: str,
     body: ConfigPlanInquilinoUpdate,
@@ -600,7 +600,7 @@ def actualizar_plan(
     return cfg
 
 
-@router.post("/admin/planes/reset", response_model=List[ConfigPlanInquilinoOut])
+@router.post("/config/planes/reset", response_model=List[ConfigPlanInquilinoOut])
 def resetear_planes(
     db: Session = Depends(get_db),
     _=Depends(require_permission("inquilinos")),

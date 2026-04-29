@@ -84,7 +84,7 @@ function PlanCard({ planKey, config, onSaved }) {
       if (config.params.variable) params.variable = config.params.variable
       if (config.params.bloque && !params.bloque) params.bloque = config.params.bloque
 
-      await api.put(`/inquilinos/admin/planes/${planKey}`, { params, descripcion_contrato: desc })
+      await api.put(`/inquilinos/config/planes/${planKey}`, { params, descripcion_contrato: desc })
       setEditing(false)
       onSaved()
     } catch (e) {
@@ -196,7 +196,7 @@ export default function PlanesTrackingTech() {
     setLoading(true)
     setError(null)
     try {
-      const { data } = await api.get('/inquilinos/admin/planes')
+      const { data } = await api.get('/inquilinos/config/planes')
       setPlanes(data)
     } catch (e) {
       setError(e.response?.data?.detail || 'Error al cargar planes')
@@ -211,7 +211,7 @@ export default function PlanesTrackingTech() {
     if (!confirm('¿Restaurar todos los planes a los valores por defecto?')) return
     setResetting(true)
     try {
-      const { data } = await api.post('/inquilinos/admin/planes/reset')
+      const { data } = await api.post('/inquilinos/config/planes/reset')
       setPlanes(data)
     } catch (e) {
       alert(e.response?.data?.detail || 'Error al restaurar')
