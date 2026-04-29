@@ -13,6 +13,8 @@ from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import Response as _Resp
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin_or_administracion, require_inquilino, require_inquilino_raw, require_permission
@@ -430,7 +432,6 @@ def descargar_pdf_portal(
     current_user=Depends(require_inquilino),
 ):
     import base64 as _b64
-    from fastapi.responses import Response as _Resp
     anexo = db.query(AnexoContratoInquilino).filter(
         AnexoContratoInquilino.id == anexo_id,
         AnexoContratoInquilino.inquilino_id == current_user["id"],
@@ -438,28 +439,71 @@ def descargar_pdf_portal(
     if not anexo or not anexo.pdf_generado:
         raise HTTPException(status_code=404, detail="PDF no encontrado")
     pdf_bytes = _b64.b64decode(anexo.pdf_generado)
+    # Sanitize filename para header HTTP (solo ASCII)
+    safe_name = (anexo.titulo or "contrato").encode("ascii", "ignore").decode("ascii").replace('"', '') or "contrato"
     return _Resp(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{anexo.titulo or "contrato"}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="{safe_name}.pdf"'},
     )
+
+
+@router.get("/portal/contratos/{anexo_id}/contenido")
+def ver_contenido_portal(
+    anexo_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_inquilino),
+):
+    """Devuelve el contenido renderizado del contrato para mostrarlo en el navegador."""
+    inq = db.get(Inquilino, current_user["id"])
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.id == anexo_id,
+        AnexoContratoInquilino.inquilino_id == current_user["id"],
+    ).first()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {
+        "id": anexo.id,
+        "titulo": anexo.titulo,
+        "tipo": anexo.tipo,
+        "estado": anexo.estado,
+        "contenido_renderizado": anexo.contenido_renderizado or "",
+        "requiere_firma_inquilino": anexo.requiere_firma_inquilino,
+        "firmado_at": anexo.firmado_at,
+        "inquilino": {
+            "nombre_rep_legal": inq.nombre_rep_legal or "",
+            "rut_rep_legal": inq.rut_rep_legal or "",
+        },
+    }
+
+
+class FirmarContratoBody(BaseModel):
+    firma_base64: Optional[str] = None
 
 
 @router.post("/portal/contratos/{anexo_id}/firmar", response_model=AnexoContratoInquilinoOut)
 def firmar_contrato_portal(
     anexo_id: int,
     request: Request,
+    body: FirmarContratoBody = None,
     db: Session = Depends(get_db),
     current_user=Depends(require_inquilino),
 ):
     inq = db.get(Inquilino, current_user["id"])
     if not inq:
         raise HTTPException(status_code=404, detail="Inquilino no encontrado")
-    if not inq.firma_base64:
+
+    # Acepta firma del body (firma inline) o del perfil guardado
+    firma = (body.firma_base64 if body else None) or inq.firma_base64
+    if not firma:
         raise HTTPException(
             status_code=400,
             detail="Debes registrar tu firma electrónica antes de firmar documentos",
         )
+    # Si viene firma nueva en el body, guardarla también en el perfil
+    if body and body.firma_base64:
+        inq.firma_base64 = body.firma_base64
+
     anexo = db.query(AnexoContratoInquilino).filter(
         AnexoContratoInquilino.id == anexo_id,
         AnexoContratoInquilino.inquilino_id == current_user["id"],
@@ -470,7 +514,7 @@ def firmar_contrato_portal(
     ip = request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or (
         request.client.host if request.client else "unknown"
     )
-    anexo = svc_contrato.firmar_anexo(db, inq, anexo, inq.firma_base64, ip=ip)
+    anexo = svc_contrato.firmar_anexo(db, inq, anexo, firma, ip=ip)
     db.commit()
     db.refresh(anexo)
     return anexo

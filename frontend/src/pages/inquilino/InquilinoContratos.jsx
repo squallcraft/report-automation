@@ -10,31 +10,26 @@ const fmtDate = (s) => {
 }
 
 const ESTADO_META = {
-  BORRADOR: { label: 'Pendiente de firma', cls: 'bg-amber-50 text-amber-700',   icon: Clock },
-  EMITIDO:  { label: 'Pendiente de firma', cls: 'bg-amber-50 text-amber-700',   icon: Clock },
-  FIRMADO:  { label: 'Firmado',            cls: 'bg-emerald-50 text-emerald-700',icon: CheckCircle },
+  BORRADOR: { label: 'Pendiente de firma', cls: 'bg-amber-50 text-amber-700',    icon: Clock },
+  EMITIDO:  { label: 'Pendiente de firma', cls: 'bg-amber-50 text-amber-700',    icon: Clock },
+  FIRMADO:  { label: 'Firmado',            cls: 'bg-emerald-50 text-emerald-700', icon: CheckCircle },
 }
 
-function openPdf(blob, filename) {
+function openPdf(blob) {
   const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
   const a = document.createElement('a')
-  a.href = url
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+  a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'
+  document.body.appendChild(a); a.click(); document.body.removeChild(a)
   setTimeout(() => URL.revokeObjectURL(url), 30000)
 }
 
-function AnexoCard({ anexo, tieneFirma, signing, onVer, onFirmar }) {
+function AnexoCard({ anexo, onVerPdf, onVerFirmar }) {
   const meta = ESTADO_META[anexo.estado] || ESTADO_META.BORRADOR
   const Icon = meta.icon
-  const pendienteFirma = anexo.requiere_firma_inquilino && anexo.estado !== 'FIRMADO'
+  const pendiente = anexo.requiere_firma_inquilino && anexo.estado !== 'FIRMADO'
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {/* Color bar */}
       <div className={`h-1 ${anexo.estado === 'FIRMADO' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
 
       <div className="p-4 sm:p-5">
@@ -48,7 +43,7 @@ function AnexoCard({ anexo, tieneFirma, signing, onVer, onFirmar }) {
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 leading-tight">{anexo.titulo}</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                {anexo.tipo === 'RESERVA' ? 'Anexo de Reserva' : 'Contrato Principal'}
+                {anexo.tipo === 'RESERVA' ? 'Anexo de Reserva' : 'Contrato de Licencia de Software'}
               </p>
               {anexo.firmado_at && (
                 <p className="text-[11px] text-emerald-600 mt-1 font-medium">
@@ -58,12 +53,11 @@ function AnexoCard({ anexo, tieneFirma, signing, onVer, onFirmar }) {
             </div>
           </div>
           <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold flex-shrink-0 ${meta.cls}`}>
-            <Icon size={11} />
-            {meta.label}
+            <Icon size={11} /> {meta.label}
           </span>
         </div>
 
-        {anexo.tipo === 'RESERVA' && anexo.estado !== 'FIRMADO' && (
+        {anexo.tipo === 'RESERVA' && pendiente && (
           <div className="mt-3 flex items-start gap-2 p-3 bg-amber-50 rounded-xl">
             <AlertCircle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-amber-700">
@@ -75,26 +69,20 @@ function AnexoCard({ anexo, tieneFirma, signing, onVer, onFirmar }) {
         )}
 
         <div className="flex gap-2 mt-4">
-          <button onClick={onVer}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors">
-            <Eye size={13} /> Ver documento
-          </button>
-          {pendienteFirma && (
-            <button onClick={onFirmar} disabled={signing || !tieneFirma}
-              title={!tieneFirma ? 'Registra tu firma en "Mi Firma" primero' : ''}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: !tieneFirma ? undefined : 'linear-gradient(135deg,#1e3a5f,#1d4ed8)' }}>
+          {anexo.estado === 'FIRMADO' ? (
+            <button onClick={onVerPdf}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors">
+              <Eye size={13} /> Ver PDF
+            </button>
+          ) : (
+            <button onClick={onVerFirmar}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold text-white rounded-xl transition-colors active:scale-95"
+              style={{ background: 'linear-gradient(135deg,#1e3a5f,#1d4ed8)' }}>
               <PenLine size={13} />
-              {signing ? 'Firmando…' : 'Firmar'}
+              {pendiente ? 'Ver y firmar documento' : 'Ver documento'}
             </button>
           )}
         </div>
-
-        {pendienteFirma && !tieneFirma && (
-          <p className="text-[11px] text-amber-600 mt-2 text-center">
-            Ve a <strong>Mi Firma</strong> para registrar tu firma antes de firmar
-          </p>
-        )}
       </div>
     </div>
   )
@@ -103,19 +91,13 @@ function AnexoCard({ anexo, tieneFirma, signing, onVer, onFirmar }) {
 export default function InquilinoContratos() {
   const navigate = useNavigate()
   const [contratos, setContratos] = useState([])
-  const [perfil, setPerfil] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [signing, setSigning] = useState(null)
 
   const cargar = async () => {
     setLoading(true)
     try {
-      const [ct, pf] = await Promise.all([
-        api.get('/inquilinos/portal/contratos'),
-        api.get('/inquilinos/portal/perfil'),
-      ])
-      setContratos(ct.data)
-      setPerfil(pf.data)
+      const r = await api.get('/inquilinos/portal/contratos')
+      setContratos(r.data)
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error al cargar contratos')
     } finally {
@@ -128,27 +110,9 @@ export default function InquilinoContratos() {
   const verPdf = async (c) => {
     try {
       const resp = await api.get(`/inquilinos/portal/contratos/${c.id}/pdf`, { responseType: 'blob' })
-      openPdf(resp.data, c.titulo || 'contrato')
+      openPdf(resp.data)
     } catch {
-      toast.error('Error al abrir el documento')
-    }
-  }
-
-  const firmar = async (c) => {
-    if (!perfil?.firma_base64) {
-      toast.error('Primero registra tu firma en "Mi Firma"')
-      navigate('/inquilino/firma')
-      return
-    }
-    setSigning(c.id)
-    try {
-      await api.post(`/inquilinos/portal/contratos/${c.id}/firmar`)
-      toast.success('Documento firmado correctamente')
-      await cargar()
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Error al firmar el documento')
-    } finally {
-      setSigning(null)
+      toast.error('Error al abrir el documento PDF')
     }
   }
 
@@ -158,7 +122,6 @@ export default function InquilinoContratos() {
     </div>
   )
 
-  const tieneFirma = !!perfil?.firma_base64
   const hayPendientes = contratos.some(c => c.estado !== 'FIRMADO' && c.requiere_firma_inquilino)
 
   return (
@@ -185,17 +148,12 @@ export default function InquilinoContratos() {
         </div>
       </div>
 
-      {/* Aviso firma pendiente */}
-      {!tieneFirma && hayPendientes && (
+      {hayPendientes && (
         <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
           <AlertCircle size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-amber-800">
-            Tienes documentos pendientes de firma.{' '}
-            <button onClick={() => navigate('/inquilino/firma')}
-              className="font-semibold underline hover:no-underline">
-              Registra tu firma electrónica
-            </button>{' '}para poder firmarlos.
-          </div>
+          <p className="text-sm text-amber-800">
+            Tienes documentos pendientes de firma. Haz clic en <strong>"Ver y firmar documento"</strong> para leer y firmar.
+          </p>
         </div>
       )}
 
@@ -213,10 +171,8 @@ export default function InquilinoContratos() {
             <AnexoCard
               key={c.id}
               anexo={c}
-              tieneFirma={tieneFirma}
-              signing={signing === c.id}
-              onVer={() => verPdf(c)}
-              onFirmar={() => firmar(c)}
+              onVerPdf={() => verPdf(c)}
+              onVerFirmar={() => navigate(`/inquilino/contratos/${c.id}`)}
             />
           ))}
         </div>
