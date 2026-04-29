@@ -278,6 +278,15 @@ def generar_cobro(
     db.add(cobro)
     db.flush()
 
+    # region agent log - hipótesis A
+    import json, time as _t
+    _log_path = "/Users/oscarguzman/ecourier/.cursor/debug-866a5b.log"
+    try:
+        with open(_log_path, "a") as _f:
+            _f.write(json.dumps({"sessionId":"866a5b","hypothesisId":"A","location":"cobros_inquilino.py:generar_cobro","message":"cobro flush OK","data":{"cobro_id":cobro.id,"total":cobro.total,"neto":cobro.monto_neto,"iva":cobro.iva},"timestamp":int(_t.time()*1000)}) + "\n")
+    except Exception: pass
+    # endregion
+
     # Marcar descuentos como aplicados
     for d_info in desglose["descuentos_detalle"]:
         desc = db.get(DescuentoInquilino, d_info["id"])
@@ -345,6 +354,15 @@ def generar_cobro(
     db.flush()
     cobro.movimiento_financiero_id = mov.id
 
+    # region agent log - hipótesis A (movimiento creado)
+    import json, time as _t
+    _log_path = "/Users/oscarguzman/ecourier/.cursor/debug-866a5b.log"
+    try:
+        with open(_log_path, "a") as _f:
+            _f.write(json.dumps({"sessionId":"866a5b","hypothesisId":"A","location":"cobros_inquilino.py:generar_cobro_mov","message":"MovimientoFinanciero creado","data":{"mov_id":mov.id,"cobro_id":cobro.id,"cobro_mov_id":cobro.movimiento_financiero_id,"cat_id":cat.id,"cat_nombre":cat.nombre,"estado":mov.estado},"timestamp":int(_t.time()*1000)}) + "\n")
+    except Exception: pass
+    # endregion
+
     # Marcar primer cobro generado
     if not inquilino.primer_cobro_generado:
         inquilino.primer_cobro_generado = True
@@ -382,9 +400,29 @@ def aprobar_pago(
             mov.estado = EstadoMovimientoEnum.PAGADO.value
             mov.fecha_pago = hoy
             db.flush()
+            # region agent log - hipótesis B
+            import json, time as _t
+            _log_path = "/Users/oscarguzman/ecourier/.cursor/debug-866a5b.log"
             try:
-                asiento_movimiento_financiero(db, mov)
+                with open(_log_path, "a") as _f:
+                    _f.write(json.dumps({"sessionId":"866a5b","hypothesisId":"B","location":"cobros_inquilino.py:aprobar_pago_pre_asiento","message":"antes de asiento_movimiento_financiero","data":{"mov_id":mov.id,"mov_estado":mov.estado,"cat_id":mov.categoria_id},"timestamp":int(_t.time()*1000)}) + "\n")
+            except Exception: pass
+            # endregion
+            try:
+                asiento = asiento_movimiento_financiero(db, mov)
+                # region agent log - hipótesis B/C/D
+                try:
+                    with open(_log_path, "a") as _f:
+                        _f.write(json.dumps({"sessionId":"866a5b","hypothesisId":"B","location":"cobros_inquilino.py:aprobar_pago_post_asiento","message":"asiento_movimiento_financiero resultado","data":{"asiento":str(asiento),"asiento_id":getattr(asiento,"id",None) if asiento else None},"timestamp":int(_t.time()*1000)}) + "\n")
+                except Exception: pass
+                # endregion
             except Exception as exc:
+                # region agent log - hipótesis B
+                try:
+                    with open(_log_path, "a") as _f:
+                        _f.write(json.dumps({"sessionId":"866a5b","hypothesisId":"B","location":"cobros_inquilino.py:aprobar_pago_asiento_exc","message":"EXCEPCION en asiento_movimiento_financiero","data":{"error":str(exc)},"timestamp":int(_t.time()*1000)}) + "\n")
+                except Exception: pass
+                # endregion
                 logger.warning("Error creando asiento contable para cobro %s: %s", cobro.id, exc)
 
     db.flush()
