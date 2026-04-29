@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Users, Truck, Upload, Calculator, Package,
   MapPin, Settings, MessageSquare, LogOut, FileText, ChevronLeft,
-  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User, PenLine, FileSignature, Bell, Calendar, Clock, Mail,
+  ChevronRight, ChevronDown, DollarSign, ClipboardList, CalendarDays, Receipt, CreditCard, UserCog, Bot, X, TrendingUp, Store, Shield, ShieldCheck, Layers, Wallet, Briefcase, HandCoins, CircleDollarSign, BarChart3, Inbox, BookOpen, Kanban, User, PenLine, FileSignature, Bell, Calendar, Clock, Mail, Building2,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import api from '../api'
@@ -83,6 +83,13 @@ const adminMenu = [
       { to: '/admin/leads', icon: Inbox, label: 'Leads WhatsApp', permiso: 'leads' },
       { to: '/admin/leads/pipeline', icon: Kanban, label: 'Pipeline CRM', permiso: 'crm' },
       { to: '/admin/leads/kb', icon: BookOpen, label: 'Base de conocimiento', permiso: 'kb' },
+    ],
+  },
+
+  // ── Tracking Tech ────────────────────────────────────────────────────────
+  {
+    group: 'Tracking Tech', icon: Building2, children: [
+      { to: '/admin/inquilinos', icon: Building2, label: 'Inquilinos', permiso: 'inquilinos' },
     ],
   },
 
@@ -253,6 +260,7 @@ export default function Sidebar({ mobileOpen = false, onClose }) {
     Finanzas: false,
     'RR.HH.': false,
     Comercial: false,
+    'Tracking Tech': false,
     Comunicaciones: false,
     'Análisis': false,
     Sistema: false,
