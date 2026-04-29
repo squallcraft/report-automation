@@ -70,7 +70,7 @@ def preview_contrato(
         raise HTTPException(status_code=404, detail="Plantilla no encontrada o inactiva")
 
     cfg = _obtener_cfg(db)
-    contexto = construir_contexto_inquilino(inquilino, cfg)
+    contexto = construir_contexto_inquilino(inquilino, cfg, db=db)
     rendered = renderizar(plantilla.contenido, contexto)
     faltantes = detectar_faltantes(rendered)
 
@@ -98,7 +98,7 @@ def emitir_contrato(
         raise HTTPException(status_code=404, detail="Plantilla no encontrada o inactiva")
 
     cfg = _obtener_cfg(db)
-    contexto = construir_contexto_inquilino(inquilino, cfg)
+    contexto = construir_contexto_inquilino(inquilino, cfg, db=db)
     rendered = renderizar(plantilla.contenido, contexto)
     rep_nombre, rep_rut, empresa, empresa_rut = _rep_legal_datos(cfg)
 
@@ -164,42 +164,39 @@ def emitir_anexo_reserva(
     monto_fmt = "$" + f"{int(inquilino.monto_reserva or 0):,}".replace(",", ".")
 
     if plantilla:
-        contexto = construir_contexto_inquilino(inquilino, cfg)
+        contexto = construir_contexto_inquilino(inquilino, cfg, db=db)
         rendered = renderizar(plantilla.contenido, contexto)
         titulo = plantilla.nombre or "Anexo de Reserva"
     else:
-        # Contenido predeterminado cuando no existe la plantilla
+        # Contenido predeterminado cuando no existe la plantilla en BD.
+        # Usar str normal (NO f-string) para que los {{placeholders}} no sean procesados
+        # por Python antes de pasarlos a renderizar().
         titulo = "Anexo de Reserva — Software Tracking Tech"
-        rendered = f"""# {titulo}
-
-## Antecedentes
-
-El presente anexo forma parte integral del contrato de arriendo de software suscrito entre
-**E-Courier SPA** y **{{inquilino.razon_social}}** (en adelante «el Inquilino»).
-
-## Condiciones de la Reserva
-
-El Inquilino, previo al inicio del servicio, deberá efectuar una transferencia de reserva por
-el monto de **{monto_fmt} (más IVA)** a la cuenta bancaria de E-Courier SPA.
-
-Esta reserva tiene carácter de garantía de fiel cumplimiento del contrato y será descontada
-del primer cobro mensual generado por el servicio, o bien, del primer cobro posterior al
-período de mes sin costo (si aplica).
-
-## Devolución de Reserva
-
-La reserva será devuelta al Inquilino dentro de los 30 días siguientes a la terminación del
-contrato, siempre que no existan deudas pendientes ni daños atribuibles al Inquilino.
-
-## Aceptación
-
-Las partes declaran haber leído y comprendido el contenido del presente anexo, aceptando
-todas sus cláusulas.
-
-Santiago, {{fecha.hoy_largo}}
-"""
-        contexto = construir_contexto_inquilino(inquilino, cfg)
-        rendered = renderizar(rendered, contexto)
+        monto_fmt = "$" + f"{int(inquilino.monto_reserva or 0):,}".replace(",", ".")
+        template_raw = (
+            "# " + titulo + "\n\n"
+            "## Antecedentes\n\n"
+            "El presente anexo forma parte integral del contrato de arriendo de software suscrito entre\n"
+            "**E-Courier SPA** y **{{inquilino.razon_social}}** (en adelante «el Inquilino»).\n\n"
+            "## Condiciones de la Reserva\n\n"
+            "El Inquilino, previo al inicio del servicio, deberá efectuar una transferencia de reserva por\n"
+            "el monto de **" + monto_fmt + " (más IVA)** a la cuenta bancaria de E-Courier SPA.\n\n"
+            "## Naturaleza No Reembolsable de la Reserva\n\n"
+            "La reserva tiene carácter de garantía de fiel cumplimiento del contrato y **no es reembolsable** en ningún caso. "
+            "En particular:\n\n"
+            "1. Si el Inquilino decide no continuar utilizando el sistema una vez transcurrido el período de mes sin costo (mes gratis), "
+            "la reserva no será devuelta.\n\n"
+            "2. Si el Inquilino nunca hace uso del sistema o no inicia operaciones, la reserva tampoco será devuelta.\n\n"
+            "3. Si el Inquilino continúa utilizando el sistema tras el período de mes sin costo (si aplica), "
+            "la reserva será descontada íntegramente de la primera factura mensual generada posterior a dicho período. "
+            "En este caso la reserva opera como abono al primer cobro y no como devolución monetaria.\n\n"
+            "## Aceptación\n\n"
+            "Las partes declaran haber leído y comprendido el contenido del presente anexo, aceptando\n"
+            "todas sus cláusulas.\n\n"
+            "Santiago, {{fecha.hoy_largo}}\n"
+        )
+        contexto = construir_contexto_inquilino(inquilino, cfg, db=db)
+        rendered = renderizar(template_raw, contexto)
 
     rep_nombre, rep_rut, empresa, empresa_rut = _rep_legal_datos(cfg)
     pdf_bytes = generar_pdf_contrato_generico(
@@ -250,7 +247,7 @@ def regenerar_pdfs_con_perfil(
 
     cfg = _obtener_cfg(db)
     rep_nombre, rep_rut, empresa, empresa_rut = _rep_legal_datos(cfg)
-    contexto = construir_contexto_inquilino(inquilino, cfg)
+    contexto = construir_contexto_inquilino(inquilino, cfg, db=db)
 
     actualizados: list[AnexoContratoInquilino] = []
     for anexo in pendientes:

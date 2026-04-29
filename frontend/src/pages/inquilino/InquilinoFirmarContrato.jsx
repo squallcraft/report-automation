@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../../api'
-import { ChevronDown, CheckCircle } from 'lucide-react'
+import { ChevronDown, CheckCircle, Upload, AlertCircle, Clock } from 'lucide-react'
 
 // ── Renderizador simple de markdown ──────────────────────────────────────────
 function renderMd(text) {
@@ -168,9 +168,18 @@ export default function InquilinoFirmarContrato() {
   const [error, setError] = useState(null)
   const scrollRef = useRef(null)
 
+  // Upload comprobante de reserva
+  const [archivoReserva, setArchivoReserva] = useState(null)
+  const [uploadingReserva, setUploadingReserva] = useState(false)
+  const [uploadReservaOk, setUploadReservaOk] = useState(false)
+
   useEffect(() => {
     api.get(`/inquilinos/portal/contratos/${anexoId}/contenido`)
-      .then(r => setContrato(r.data))
+      .then(r => {
+        setContrato(r.data)
+        // Si ya subió el comprobante (pendiente de aprobación o aprobado)
+        if (r.data.comprobante_reserva_path) setUploadReservaOk(true)
+      })
       .catch(err => setErrorData(err?.response?.data?.detail || 'No se pudo cargar el documento'))
       .finally(() => setLoadingData(false))
   }, [anexoId])
@@ -190,8 +199,27 @@ export default function InquilinoFirmarContrato() {
   const yaFirmado = contrato?.estado === 'FIRMADO'
   const canSubmit = !yaFirmado && leido && coincideNombre && coincideRut && !!firma && !loading
 
-  const handleFirmar = async () => {
-    if (!canSubmit) return
+  const handleSubirReserva = async () => {
+    if (!archivoReserva) return
+    setUploadingReserva(true)
+    try {
+      const fd = new FormData()
+      fd.append('archivo', archivoReserva)
+      await api.post(`/inquilinos/portal/contratos/${anexoId}/subir-comprobante-reserva`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setUploadReservaOk(true)
+      // Recargar para tener el estado actualizado
+      const r = await api.get(`/inquilinos/portal/contratos/${anexoId}/contenido`)
+      setContrato(r.data)
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Error al subir el comprobante')
+    } finally {
+      setUploadingReserva(false)
+    }
+  }
+
+  const handleFirmar = async () => {    if (!canSubmit) return
     setLoading(true)
     setError(null)
     try {
@@ -260,6 +288,65 @@ export default function InquilinoFirmarContrato() {
         {/* Formulario de firma */}
         {!yaFirmado ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
+
+            {/* Sección comprobante de reserva (solo para anexos RESERVA) */}
+            {contrato?.tipo === 'RESERVA' && (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-gray-900">Comprobante de transferencia</p>
+                <p className="text-xs text-gray-500">
+                  Antes de firmar este anexo debes adjuntar el comprobante de la transferencia de reserva.
+                  El equipo de E-Courier lo revisará antes de confirmar.
+                </p>
+
+                {contrato.comprobante_reserva_aprobado ? (
+                  <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" />
+                    <p className="text-xs text-emerald-700 font-medium">Comprobante aprobado por E-Courier</p>
+                  </div>
+                ) : uploadReservaOk || contrato.comprobante_reserva_path ? (
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <Clock size={16} className="text-amber-500 flex-shrink-0" />
+                    <div className="text-xs text-amber-800">
+                      <p className="font-medium">Comprobante recibido — pendiente de revisión</p>
+                      <p className="mt-0.5 text-amber-600">Puedes firmar el anexo ahora. El equipo revisará el comprobante.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label
+                      className={`flex flex-col items-center justify-center gap-2 p-5 rounded-xl border-2 border-dashed cursor-pointer transition-colors ${
+                        archivoReserva ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        className="hidden"
+                        onChange={e => setArchivoReserva(e.target.files[0] || null)}
+                      />
+                      <Upload size={20} className={archivoReserva ? 'text-blue-500' : 'text-gray-400'} />
+                      <span className="text-xs text-center text-gray-500">
+                        {archivoReserva
+                          ? archivoReserva.name
+                          : 'Toca para seleccionar el comprobante (PDF, JPG, PNG)'}
+                      </span>
+                    </label>
+                    {archivoReserva && (
+                      <button
+                        type="button"
+                        onClick={handleSubirReserva}
+                        disabled={uploadingReserva}
+                        className="w-full py-2.5 text-sm font-semibold text-white rounded-xl disabled:opacity-50"
+                        style={{ background: 'linear-gradient(135deg,#1e3a5f,#1d4ed8)' }}
+                      >
+                        {uploadingReserva ? 'Subiendo…' : 'Subir comprobante'}
+                      </button>
+                    )}
+                  </div>
+                )}
+                <hr className="border-gray-100" />
+              </div>
+            )}
 
             <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" checked={leido} onChange={e => setLeido(e.target.checked)}

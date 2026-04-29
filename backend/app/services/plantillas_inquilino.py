@@ -73,12 +73,27 @@ def _fmt_clp(n: Optional[int]) -> str:
 def construir_contexto_inquilino(
     inquilino: Inquilino,
     cfg: Optional[ConfiguracionLegal] = None,
+    db=None,
 ) -> dict[str, str]:
     """
     Devuelve un dict plano `namespace.clave` → string formateado, listo para
     pasarse a `renderizar(contenido, contexto)`.
     """
+    from app.models import ConfigPlanInquilino  # import local para evitar circular
     hoy = date.today()
+
+    # Descripción de precio: primero desde ConfigPlanInquilino, luego hardcoded
+    descripcion_precio = ""
+    if db is not None and inquilino.plan:
+        plan_cfg = db.query(ConfigPlanInquilino).filter(
+            ConfigPlanInquilino.plan == inquilino.plan
+        ).first()
+        if plan_cfg and plan_cfg.descripcion_contrato:
+            descripcion_precio = plan_cfg.descripcion_contrato
+
+    if not descripcion_precio:
+        descripcion_precio = _PLANES_DESCRIPCION_PRECIO.get(inquilino.plan or "", "")
+
     ctx: dict[str, str] = {
         "fecha.hoy": _fmt_fecha(hoy),
         "fecha.hoy_largo": _fmt_fecha_larga(hoy),
@@ -96,7 +111,7 @@ def construir_contexto_inquilino(
         "inquilino.correo_rep_legal": inquilino.correo_rep_legal or "",
         # Plan
         "inquilino.plan": _PLANES_LABEL.get(inquilino.plan or "", inquilino.plan or ""),
-        "inquilino.descripcion_precio": _PLANES_DESCRIPCION_PRECIO.get(inquilino.plan or "", ""),
+        "inquilino.descripcion_precio": descripcion_precio,
         # Reserva
         "reserva.monto": str(inquilino.monto_reserva or 0),
         "reserva.monto_formato": _fmt_clp(inquilino.monto_reserva),

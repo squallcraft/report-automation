@@ -470,9 +470,12 @@ def ver_contenido_portal(
         "contenido_renderizado": anexo.contenido_renderizado or "",
         "requiere_firma_inquilino": anexo.requiere_firma_inquilino,
         "firmado_at": anexo.firmado_at,
+        "comprobante_reserva_path": anexo.comprobante_reserva_path,
+        "comprobante_reserva_aprobado": anexo.comprobante_reserva_aprobado,
         "inquilino": {
             "nombre_rep_legal": inq.nombre_rep_legal or "",
             "rut_rep_legal": inq.rut_rep_legal or "",
+            "tiene_reserva": inq.tiene_reserva,
         },
     }
 
@@ -539,16 +542,39 @@ def registrar_firma_portal(
 
 
 @router.post("/portal/contratos/{anexo_id}/subir-comprobante-reserva", response_model=AnexoContratoInquilinoOut)
-def subir_comprobante_reserva(
+async def subir_comprobante_reserva(
     anexo_id: int,
+    archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(require_inquilino),
 ):
     """El inquilino adjunta el comprobante de transferencia de reserva."""
-    raise HTTPException(
-        status_code=501,
-        detail="Endpoint para subir archivos — implementar con multipart/form-data según stack de archivos del proyecto"
-    )
+    anexo = db.query(AnexoContratoInquilino).filter(
+        AnexoContratoInquilino.id == anexo_id,
+        AnexoContratoInquilino.inquilino_id == current_user["id"],
+        AnexoContratoInquilino.tipo == TipoAnexoInquilinoEnum.RESERVA.value,
+    ).first()
+    if not anexo:
+        raise HTTPException(status_code=404, detail="Anexo de reserva no encontrado")
+
+    UPLOADS_DIR_RESERVA = "uploads/comprobantes_reserva"
+    os.makedirs(UPLOADS_DIR_RESERVA, exist_ok=True)
+
+    ext = os.path.splitext(archivo.filename or "")[1].lower() or ".pdf"
+    allowed = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail="Formato no permitido. Usa PDF, JPG, PNG o WebP")
+
+    nombre_archivo = f"reserva_{anexo_id}_{uuid.uuid4().hex[:8]}{ext}"
+    ruta = os.path.join(UPLOADS_DIR_RESERVA, nombre_archivo)
+    with open(ruta, "wb") as f:
+        f.write(await archivo.read())
+
+    anexo.comprobante_reserva_path = ruta
+    anexo.comprobante_reserva_aprobado = False  # requiere aprobación admin
+    db.commit()
+    db.refresh(anexo)
+    return anexo
 
 
 @router.get("/portal/cobros", response_model=List[CobrosInquilinoOut])
