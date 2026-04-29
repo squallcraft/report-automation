@@ -69,7 +69,12 @@ const adminMenu = [
   {
     group: 'RR.HH.', icon: Briefcase, children: [
       { to: '/admin/trabajadores', icon: Users, label: 'Trabajadores', permiso: 'trabajadores' },
-      { to: '/admin/contratos', icon: FileSignature, label: 'Contratos', permiso: 'contratos' },
+      {
+        subgroup: 'Contratos', icon: FileSignature, children: [
+          { to: '/admin/contratos', icon: FileSignature, label: 'Listado', permiso: 'contratos' },
+          { to: '/admin/certificados', icon: ShieldCheck, label: 'Certificados', permiso: 'certificados' },
+        ],
+      },
       { to: '/admin/pagos-trabajadores', icon: HandCoins, label: 'Pagos nómina', permiso: 'pagos-trabajadores' },
       { to: '/admin/vacaciones', icon: Calendar, label: 'Vacaciones', permiso: 'rrhh-vacaciones' },
       { to: '/admin/asistencia', icon: Clock, label: 'Control horario', permiso: 'asistencia' },
@@ -167,7 +172,15 @@ function tieneAcceso(permisos, slugs) {
 function filterMenu(menu, permisos) {
   return menu.reduce((acc, item) => {
     if (item.group) {
-      const filtered = item.children.filter(c => !c.permiso || tieneAcceso(permisos, c.permiso))
+      const filtered = item.children.reduce((childAcc, c) => {
+        if (c.subgroup) {
+          const filteredSub = c.children.filter(sc => !sc.permiso || tieneAcceso(permisos, sc.permiso))
+          if (filteredSub.length > 0) childAcc.push({ ...c, children: filteredSub })
+        } else if (!c.permiso || tieneAcceso(permisos, c.permiso)) {
+          childAcc.push(c)
+        }
+        return childAcc
+      }, [])
       if (filtered.length > 0) acc.push({ ...item, children: filtered })
     } else {
       if (!item.permiso || tieneAcceso(permisos, item.permiso)) acc.push(item)
@@ -218,7 +231,10 @@ function SidebarLink({ to, icon: Icon, label, collapsed, end = false, badge = 0,
 function SidebarGroup({ group, icon: Icon, children, collapsed, openGroups, toggleGroup }) {
   const isOpen = openGroups[group] !== false
   const location = useLocation()
-  const hasActive = children.some(c => location.pathname === c.to)
+  const hasActive = children.some(c => {
+    if (c.subgroup) return c.children.some(sc => location.pathname === sc.to)
+    return location.pathname === c.to
+  })
 
   return (
     <div>
@@ -239,9 +255,42 @@ function SidebarGroup({ group, icon: Icon, children, collapsed, openGroups, togg
       </button>
       {isOpen && !collapsed && (
         <div className="ml-3 border-l border-primary-700 pl-1 mt-0.5 mb-1">
-          {children.map(child => (
-            <SidebarLink key={child.to} {...child} collapsed={collapsed} />
-          ))}
+          {children.map(child =>
+            child.subgroup
+              ? <SidebarSubGroup key={child.subgroup} {...child} collapsed={collapsed} />
+              : <SidebarLink key={child.to} {...child} collapsed={collapsed} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SidebarSubGroup({ subgroup, icon: Icon, children, collapsed }) {
+  const location = useLocation()
+  const hasActive = children.some(c => location.pathname === c.to)
+  const [open, setOpen] = useState(hasActive)
+
+  useEffect(() => {
+    if (hasActive) setOpen(true)
+  }, [hasActive])
+
+  if (collapsed) return null
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-3 py-2 mx-1.5 sm:mx-2 rounded-lg text-sm font-medium transition-colors w-full text-left px-3 sm:px-4 touch-manipulation
+          ${hasActive ? 'text-white' : 'text-primary-300 hover:bg-primary-800 hover:text-white'}`}
+      >
+        <Icon size={16} className="shrink-0" />
+        <span className="flex-1">{subgroup}</span>
+        <ChevronDown size={12} className={`transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
+      </button>
+      {open && (
+        <div className="ml-3 border-l border-primary-700 pl-1">
+          {children.map(c => <SidebarLink key={c.to} {...c} collapsed={collapsed} />)}
         </div>
       )}
     </div>

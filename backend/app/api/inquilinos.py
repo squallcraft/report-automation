@@ -7,10 +7,12 @@ Secciones:
 """
 import base64
 import logging
+import os
+import uuid
 from datetime import date, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin_or_administracion, require_inquilino, require_inquilino_raw, require_permission
@@ -51,7 +53,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/inquilinos", tags=["Inquilinos"])
 
-
+UPLOADS_DIR_COMPROBANTES = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "uploads", "comprobantes_inquilinos",
+)
 # ─────────────────────────────────────────────────────────────────────────────
 # Rutas ADMIN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -513,16 +518,47 @@ def listar_cobros_portal(
 
 
 @router.post("/portal/cobros/{cobro_id}/subir-comprobante")
-def subir_comprobante_pago(
+async def subir_comprobante_pago(
     cobro_id: int,
+    archivo: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(require_inquilino),
 ):
     """El inquilino adjunta el comprobante del pago mensual."""
-    raise HTTPException(
-        status_code=501,
-        detail="Endpoint para subir archivos — implementar con multipart/form-data según stack de archivos del proyecto"
-    )
+    inq_id = current_user["id"]
+    cobro = db.query(CobrosInquilino).filter(
+        CobrosInquilino.id == cobro_id,
+        CobrosInquilino.inquilino_id == inq_id,
+    ).first()
+    if not cobro:
+        raise HTTPException(status_code=404, detail="Cobro no encontrado")
+    if cobro.estado == "PAGADO":
+        raise HTTPException(status_code=400, detail="Este cobro ya fue marcado como pagado")
+
+    allowed_ext = (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+    ext = os.path.splitext(archivo.filename or "")[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(status_code=400, detail=f"Formato no permitido. Usa: {', '.join(allowed_ext)}")
+
+    os.makedirs(UPLOADS_DIR_COMPROBANTES, exist_ok=True)
+    unique_name = f"inq{inq_id}_cobro{cobro_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = os.path.join(UPLOADS_DIR_COMPROBANTES, unique_name)
+
+    # Eliminar archivo anterior si existe
+    if cobro.comprobante_pago_path and os.path.exists(cobro.comprobante_pago_path):
+        try:
+            os.remove(cobro.comprobante_pago_path)
+        except OSError:
+            pass
+
+    content = await archivo.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    cobro.comprobante_pago_path = file_path
+    cobro.comprobante_pago_nombre = archivo.filename
+    db.commit()
+    return {"ok": True, "nombre": archivo.filename}
 
 
 @router.get("/portal/cobros/{cobro_id}/factura")

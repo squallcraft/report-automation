@@ -45,6 +45,7 @@ import SellerGanancias from './pages/seller/SellerGanancias'
 
 import Trabajadores from './pages/admin/Trabajadores'
 import ContratosListado from './pages/admin/ContratosListado'
+import AdminCertificados from './pages/admin/Certificados'
 import Prestamos from './pages/admin/Prestamos'
 import PagosTrabajadores from './pages/admin/PagosTrabajadores'
 import Auditoria from './pages/admin/Auditoria'
@@ -190,6 +191,7 @@ export default function App() {
         <Route path="cpp" element={<CPP />} />
         <Route path="trabajadores" element={<Trabajadores />} />
         <Route path="contratos" element={<ContratosListado />} />
+        <Route path="certificados" element={<AdminCertificados />} />
         <Route path="prestamos" element={<Prestamos />} />
         <Route path="pagos-trabajadores" element={<PagosTrabajadores />} />
         <Route path="auditoria" element={<Auditoria />} />

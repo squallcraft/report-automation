@@ -2651,6 +2651,7 @@ class CobrosInquilino(Base):
     pdf_factura_path = Column(String, nullable=True)
     pdf_factura_b64 = Column(Text, nullable=True)
     comprobante_pago_path = Column(String, nullable=True)
+    comprobante_pago_nombre = Column(String, nullable=True)
     archivo_adjunto_path = Column(String, nullable=True)
     movimiento_financiero_id = Column(Integer, ForeignKey("movimientos_financieros.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
