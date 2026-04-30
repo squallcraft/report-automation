@@ -132,38 +132,10 @@ def main():
                 )
             print()
 
-        # ── Diff vs lógica vieja (solo a nivel global) ──────────────────────
-        try:
-            from app.api.dashboard import _kpis_v2_base_query, _calcular_kpis_v2
-            old_rows = _kpis_v2_base_query(db, inicio, fin,
-                                           driver_id=args.driver,
-                                           seller_code=None).all()
-            old = _calcular_kpis_v2(old_rows, incluir_buckets=True)
-            print("COMPARACIÓN vs lógica vieja (V2 actual de dashboard.py)")
-            print(f"  {'KPI':<30} {'CANÓNICO':>12} {'VIEJO':>12} {'DELTA':>10}")
-            campos = [
-                ("paquetes_a_ruta", "Paquetes a ruta"),
-                ("paquetes_entregados", "Entregados mismo día"),
-                ("same_day", "Same-Day"),
-                ("cancelados", "Cancelados"),
-                ("pct_delivery_success", "% Efectividad"),
-                ("pct_same_day", "% Same-Day"),
-                ("pct_first_attempt", "% First-Attempt"),
-            ]
-            for key, label in campos:
-                v_new = g.get(key, 0)
-                v_old = old.get(key, 0)
-                delta = round(v_new - v_old, 2) if isinstance(v_new, (int, float)) else "—"
-                marker = " ⚠" if isinstance(delta, (int, float)) and abs(delta) > 5 else ""
-                print(f"  {label:<30} {v_new:>12} {v_old:>12} {delta:>10}{marker}")
-            print()
-            print("  NOTA: La lógica vieja sobrecuenta entregados (cualquier fecha de entrega")
-            print("        cuenta como 'entregado'). Lo correcto es mismo día que route_date.")
-            print("        El delta esperado en % Efectividad es NEGATIVO (los nuevos números")
-            print("        son más bajos pero correctos).")
-        except Exception as e:
-            print(f"  (no se pudo comparar contra lógica vieja: {e})")
-        print()
+        # NOTA: la lógica vieja (_calcular_kpis_v2 / _kpis_v2_base_query) ya
+        # fue eliminada de dashboard.py en el switch v3-canónica. Si necesitas
+        # comparar contra ella, usa este script en una rev anterior al commit
+        # del refactor de endpoints.
 
     finally:
         db.close()
