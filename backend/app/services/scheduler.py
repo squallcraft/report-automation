@@ -122,6 +122,12 @@ def _release_advisory_lock(conn_obj) -> None:
     try:
         if not engine.url.get_backend_name().startswith("postgres"):
             return
+        # Explicitly release the advisory lock before returning connection to pool.
+        # conn.close() only returns the connection to the pool (session stays alive),
+        # so the advisory lock would persist indefinitely in the pooled connection.
+        cur = conn_obj.cursor()
+        cur.execute("SELECT pg_advisory_unlock_all()")
+        cur.close()
         conn_obj.close()
     except Exception:
         pass
