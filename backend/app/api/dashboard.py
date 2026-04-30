@@ -336,7 +336,7 @@ def resumen_anual(
     return {"meses": meses, "total": total}
 
 
-@router.get("/same-day")
+@router.get("/same-day", deprecated=True)
 def same_day_stats(
     mes: int = Query(...),
     anio: int = Query(...),
@@ -344,9 +344,13 @@ def same_day_stats(
     _=Depends(require_admin_or_administracion),
 ):
     """
-    Calcula la efectividad de entregas same-day:
-    envíos donde fecha_entrega == fecha_carga, solo cuando ambas están presentes.
-    Devuelve métrica global + desglose por seller + tendencia diaria.
+    DEPRECATED — usar `/efectividad-v2`.
+
+    Implementación legacy: definía Same-Day como `Envio.fecha_entrega ==
+    Envio.fecha_carga` (fecha de subida del seller, no de retiro del courier).
+    No se ajusta a la definición canónica vigente. El endpoint sigue
+    respondiendo para retrocompatibilidad con scripts externos pero ningún
+    pantalla del producto lo consume.
     """
     base_filter = [
         Envio.mes == mes,
@@ -492,7 +496,7 @@ def _efectividad_row(dias_ciclo):
     }
 
 
-@router.get("/efectividad")
+@router.get("/efectividad", deprecated=True)
 def efectividad_entregas(
     mes: int = Query(...),
     anio: int = Query(...),
@@ -500,11 +504,12 @@ def efectividad_entregas(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Ciclo de entrega: fecha_retiro → fecha_entrega por seller y driver.
+    """DEPRECATED — usar `/efectividad-v2`.
 
-    - Denominador del ciclo: envíos con fecha_retiro Y fecha_entrega presentes.
-    - Cancelados externos (TrackingTech) se reportan aparte y NO entran al
-      cómputo del ciclo ni al cómputo de la tasa.
+    Implementación legacy: medía ciclo retiro→entrega en buckets de días.
+    No es la métrica de efectividad operacional acordada con producto.
+    Las pantallas del producto consumen `/efectividad-v2` que sirve la
+    definición canónica (route_date == fecha_entrega).
     """
     base = [Envio.mes == mes, Envio.anio == anio]
     if semana:
@@ -759,7 +764,7 @@ def _efectividad_prev(mes: int, anio: int, db):
     }
 
 
-@router.get("/efectividad/driver/{driver_id}")
+@router.get("/efectividad/driver/{driver_id}", deprecated=True)
 def efectividad_driver_detalle(
     driver_id: int,
     mes: int = Query(...),
@@ -767,7 +772,7 @@ def efectividad_driver_detalle(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Detalle de ciclo de entrega para un driver específico."""
+    """DEPRECATED — usar `/efectividad-v2/driver/{driver_id}`."""
     cancel_subq = _cancelado_externo_subq()
     base = [Envio.mes == mes, Envio.anio == anio,
             Envio.driver_id == driver_id,
