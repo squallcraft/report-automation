@@ -85,6 +85,35 @@ def _run_ingesta_in_background(
         except Exception as _exc:
             print(f"[INGESTA] no se pudo lanzar reconciliacion post-ingesta: {_exc}", flush=True)
 
+        # Hook: recompute de KPIs materializados para las fechas afectadas por
+        # esta ingesta. La INGESTA cambia el numerador de efectividad y same-day
+        # (porque rellena Envio.fecha_entrega), así que hay que refrescar
+        # kpi_dia/kpi_no_entregado para esos días. Va en otro hilo para no
+        # bloquear la respuesta del endpoint.
+        try:
+            import threading as _threading2
+            from app.database import SessionLocal as _SL2
+            from app.services import materializar_kpis as _mkpi
+            from datetime import date as _date2, timedelta as _td2
+
+            def _recompute_kpis_post_ingesta():
+                _db2 = _SL2()
+                try:
+                    # Conservador: refresca los últimos 60 días. Es barato
+                    # (~60 inserts por día * 60 días) y nos asegura cobertura
+                    # incluso si la ingesta trae fechas viejas.
+                    hoy = _date2.today()
+                    info = _mkpi.recomputar_rango(_db2, hoy - _td2(days=60), hoy)
+                    print(f"[INGESTA] recompute kpis post-ingesta: {info}", flush=True)
+                except Exception as _exc:
+                    print(f"[INGESTA] recompute kpis fallo: {_exc}", flush=True)
+                finally:
+                    _db2.close()
+
+            _threading2.Thread(target=_recompute_kpis_post_ingesta, daemon=True).start()
+        except Exception as _exc:
+            print(f"[INGESTA] no se pudo lanzar recompute kpis: {_exc}", flush=True)
+
         # Invalidar caché analítica tras ingesta exitosa
         try:
             from app.api.dashboard import analytics_cache_clear

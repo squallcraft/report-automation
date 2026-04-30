@@ -2696,3 +2696,95 @@ class ConfigPlanInquilino(Base):
     params = Column(JSON, nullable=False)                 # dict con valores numéricos del plan
     descripcion_contrato = Column(Text, nullable=True)    # texto narrativo para el contrato
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ── Materialización de KPIs de efectividad ───────────────────────────────────
+# Tabla cacheada que persiste el resultado de los cálculos canónicos hechos por
+# `app.services.metricas_efectividad`. Se recomputa por día tras cada ingesta
+# (rutas o CSV) para que los endpoints sirvan instantáneamente sin recalcular.
+
+class KpiDia(Base):
+    """Una fila por (fecha, dimension, driver_id, seller_id).
+
+    `dimension` indica qué fecha se usó para el bucketing:
+      - 'route_date'      → métricas de efectividad operacional (a_ruta, etc.)
+      - 'withdrawal_date' → métricas de same-day (retirados, same_day)
+
+    Filas con driver_id IS NULL Y seller_id IS NULL = total del día.
+    Filas con driver_id = X AND seller_id IS NULL    = total del driver ese día.
+    Filas con driver_id IS NULL AND seller_id = Y    = total del seller ese día.
+    Filas con driver_id = X AND seller_id = Y        = combinación específica.
+
+    Se borra y reinserta entera por (fecha, dimension) en cada recompute.
+    """
+    __tablename__ = "kpi_dia"
+    __table_args__ = (
+        UniqueConstraint("fecha", "dimension", "driver_id", "seller_id", name="ux_kpi_dia_grilla"),
+        Index("ix_kpi_dia_fecha_dim", "fecha", "dimension"),
+        Index("ix_kpi_dia_driver", "driver_id", "fecha"),
+        Index("ix_kpi_dia_seller", "seller_id", "fecha"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    fecha = Column(Date, nullable=False)
+    dimension = Column(String(20), nullable=False)  # 'route_date' | 'withdrawal_date'
+    driver_id = Column(Integer, nullable=True)       # NULL = "todos los drivers"
+    seller_id = Column(Integer, nullable=True)       # NULL = "todos los sellers"
+
+    # Conteos (todos enteros, calculados por _agregar en metricas_efectividad)
+    a_ruta = Column(Integer, nullable=False, default=0)
+    retirados = Column(Integer, nullable=False, default=0)
+    entregados_mismo_dia = Column(Integer, nullable=False, default=0)
+    same_day = Column(Integer, nullable=False, default=0)
+    cancelados = Column(Integer, nullable=False, default=0)
+
+    primer_intento_ok = Column(Integer, nullable=False, default=0)
+    entregados_intento_1 = Column(Integer, nullable=False, default=0)
+    entregados_intento_2 = Column(Integer, nullable=False, default=0)
+    entregados_intento_3plus = Column(Integer, nullable=False, default=0)
+
+    n_0d = Column(Integer, nullable=False, default=0)
+    n_1d = Column(Integer, nullable=False, default=0)
+    n_2d = Column(Integer, nullable=False, default=0)
+    n_3d = Column(Integer, nullable=False, default=0)
+    n_4plus = Column(Integer, nullable=False, default=0)
+
+    computed_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class KpiNoEntregado(Base):
+    """Drill-down operativo: paquetes que NO se entregaron el día que salieron a ruta.
+
+    Se reconstruye por (route_date) en cada recompute. Permite que la UI muestre
+    listas de no-entregados sin recalcular y sin pegarle a `asignacion_ruta`
+    para responder cada filtro.
+    """
+    __tablename__ = "kpi_no_entregado"
+    __table_args__ = (
+        Index("ix_kpi_no_entregado_route", "route_date"),
+        Index("ix_kpi_no_entregado_driver", "driver_id", "route_date"),
+        Index("ix_kpi_no_entregado_seller", "seller_id", "route_date"),
+        Index("ix_kpi_no_entregado_tracking", "tracking_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    tracking_id = Column(String, nullable=False)
+    route_date = Column(Date, nullable=False)
+    withdrawal_date = Column(Date, nullable=True)
+    fecha_entrega = Column(Date, nullable=True)  # null si nunca se entregó
+
+    driver_id = Column(Integer, nullable=True)
+    driver_name = Column(String, nullable=True)
+    route_name = Column(String, nullable=True)
+    seller_id = Column(Integer, nullable=True)
+    seller_code = Column(String, nullable=True)
+
+    status_externo = Column(String, nullable=True)
+    motivo = Column(String(20), nullable=False)  # 'sin_entrega' | 'cancelado' | 'fuera_de_dia'
+    intento_nro = Column(Integer, nullable=False, default=1)
+
+    address_full = Column(String, nullable=True)
+    address_lat = Column(String, nullable=True)
+    address_lon = Column(String, nullable=True)
+
+    computed_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

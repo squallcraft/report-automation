@@ -53,6 +53,26 @@ def invalidate_analytics_cache(_=Depends(require_admin_or_administracion)):
     return {"ok": True, "mensaje": "Caché analítica vaciada"}
 
 
+@router.post("/kpi/recompute", status_code=200)
+def recompute_kpis_endpoint(
+    fecha_inicio: str = Query(..., description="YYYY-MM-DD"),
+    fecha_fin: str = Query(..., description="YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    _=Depends(require_admin_or_administracion),
+):
+    """Fuerza recompute de las tablas materializadas kpi_dia/kpi_no_entregado.
+
+    Útil cuando se hizo una corrección manual sobre asignacion_ruta o envios y
+    se quiere refrescar inmediatamente sin esperar al cron de las 04:30.
+    """
+    from app.services import materializar_kpis
+    inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+    fin = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+    info = materializar_kpis.recomputar_rango(db, inicio, fin)
+    analytics_cache_clear()
+    return {"ok": True, **info}
+
+
 @router.get("/stats", response_model=DashboardStats)
 def obtener_stats(
     semana: Optional[int] = None,

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.services import rutas_entregas
 from app.services.scheduler import register_handler
+from app.services import materializar_kpis
 
 _TZ_SANTIAGO = ZoneInfo("America/Santiago")
 
@@ -42,6 +43,7 @@ JOB_INGESTA_RUTAS       = "ingesta_rutas_courier"      # 03:00 — ventana ampli
 JOB_INGESTA_RUTAS_19H   = "ingesta_rutas_19h"          # 19:00 — snapshot en ruta
 JOB_INGESTA_RUTAS_00H   = "ingesta_rutas_00h"          # 00:00 — cierre del día
 JOB_RECONCILIAR_PENDIENTES = "reconciliar_asignaciones_pendientes"
+JOB_RECOMPUTE_KPIS = "recompute_kpis_efectividad"      # 04:30 — seguridad
 JOB_CICLO_CONTRATOS = "ciclo_contratos_laborales"
 JOB_COBROS_INQUILINOS_VENCIDOS = "cobros_inquilinos_vencidos"  # 09:00 — alerta cobros vencidos
 
@@ -93,6 +95,22 @@ def handler_ingesta_rutas(db: Session, config: dict, ejecucion_id: int) -> dict:
         except Exception:
             logger.exception("Error en reconciliacion_extra del cron de rutas")
 
+    # ── Recompute de KPIs materializados para los días afectados ────────────
+    # Tras cada cron de ingesta, recalculamos kpi_dia/kpi_no_entregado de las
+    # fechas que tocó la ingesta. Si falla, no rompemos el cron principal.
+    try:
+        fechas_afectadas = materializar_kpis.fechas_afectadas_post_ingesta_rutas(
+            db, fecha_inicio, fecha_fin
+        )
+        if fechas_afectadas:
+            kpi_inicio = min(fechas_afectadas)
+            kpi_fin = max(fechas_afectadas)
+            kpi_resultado = materializar_kpis.recomputar_rango(db, kpi_inicio, kpi_fin)
+            resultado["kpis_recomputados"] = kpi_resultado
+            logger.info("[cron rutas] KPIs recomputados: %s", kpi_resultado)
+    except Exception:
+        logger.exception("Error recomputando KPIs tras ingesta de rutas")
+
     _clear_analytics_cache()
     return resultado
 
@@ -109,6 +127,25 @@ def handler_reconciliar_pendientes(db: Session, config: dict, ejecucion_id: int)
     limite = int(config.get("limite", 5000))
     fecha_desde = date.today() - timedelta(days=dias)
     return rutas_entregas.reconciliar_pendientes(db, fecha_desde=fecha_desde, limite=limite)
+
+
+# ── Handler: recompute de KPIs materializados (cron de seguridad) ────────────
+def handler_recompute_kpis(db: Session, config: dict, ejecucion_id: int) -> dict:
+    """Recompute defensivo de kpi_dia/kpi_no_entregado para los últimos N días.
+
+    Corre cada noche aunque ningún cron de ingesta haya disparado los hooks
+    explícitos. Es la red de seguridad: si por algún motivo la materialización
+    quedó desfasada (deploy, reinicio, falla parcial), este job la repara.
+
+    Config:
+      - dias_atras (int, default 7): días hacia atrás para recomputar
+    """
+    dias = int(config.get("dias_atras", 7))
+    fin = datetime.now(tz=_TZ_SANTIAGO).date()
+    inicio = fin - timedelta(days=dias)
+    info = materializar_kpis.recomputar_rango(db, inicio, fin)
+    _clear_analytics_cache()
+    return info
 
 
 # ── Handler: ciclo de vida de contratos laborales ─────────────────────────────
@@ -167,6 +204,7 @@ def register_all_handlers() -> None:
     register_handler(JOB_INGESTA_RUTAS_19H, handler_ingesta_rutas)
     register_handler(JOB_INGESTA_RUTAS_00H, handler_ingesta_rutas)
     register_handler(JOB_RECONCILIAR_PENDIENTES, handler_reconciliar_pendientes)
+    register_handler(JOB_RECOMPUTE_KPIS, handler_recompute_kpis)
     register_handler(JOB_CICLO_CONTRATOS, handler_ciclo_contratos)
     register_handler(JOB_COBROS_INQUILINOS_VENCIDOS, handler_cobros_inquilinos_vencidos)
 
@@ -231,6 +269,22 @@ DEFAULT_JOBS = [
         "activo": True,
         "hora_ejecucion": "04:00",
         "config": {"dias_atras": 7, "limite": 5000},
+    },
+    # ── Recompute KPIs efectividad (04:30) ──────────────────────────────────
+    # Red de seguridad: aunque los hooks post-ingesta refrescan los KPIs en
+    # tiempo casi-real, este cron garantiza que kpi_dia/kpi_no_entregado estén
+    # siempre consistentes con asignacion_ruta + envios para los últimos 7 días.
+    {
+        "job_key": JOB_RECOMPUTE_KPIS,
+        "nombre": "Recompute KPIs de efectividad (red de seguridad)",
+        "descripcion": (
+            "Recalcula las tablas materializadas kpi_dia y kpi_no_entregado para los "
+            "últimos 7 días. Defensivo: corre incluso si los hooks post-ingesta ya "
+            "lo hicieron, para garantizar consistencia."
+        ),
+        "activo": True,
+        "hora_ejecucion": "04:30",
+        "config": {"dias_atras": 7},
     },
     # ── Ciclo contratos (06:00) ───────────────────────────────────────────────
     {
