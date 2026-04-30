@@ -2234,6 +2234,33 @@ def _calcular_kpis_v2(asignaciones: list, *, incluir_buckets: bool = False) -> d
             else:
                 entry["entregado_intento_nro"] = min(entry["entregado_intento_nro"], asig.intento_nro)
 
+            # region agent log - hipótesis A/B/C (muestra solo primeros 20 casos)
+            import json as _json, time as _t, os as _os
+            _lp = "/Users/oscarguzman/ecourier/.cursor/debug-866a5b.log"
+            try:
+                _sz = _os.path.getsize(_lp) if _os.path.exists(_lp) else 0
+                if _sz < 8000:  # límite ~20 registros
+                    with open(_lp, "a") as _f:
+                        _f.write(_json.dumps({
+                            "sessionId": "866a5b", "hypothesisId": "A_B_C",
+                            "location": "dashboard.py:_calcular_kpis_v2",
+                            "message": "fecha comparison",
+                            "data": {
+                                "tid": tid,
+                                "withdrawal_date": str(asig.withdrawal_date),
+                                "fecha_retiro_envio": str(envio.fecha_retiro),
+                                "fecha_entrega": str(envio.fecha_entrega),
+                                "retiro_is_null": envio.fecha_retiro is None,
+                                "wd_eq_entrega": asig.withdrawal_date == envio.fecha_entrega,
+                                "retiro_eq_entrega": envio.fecha_retiro == envio.fecha_entrega if envio.fecha_retiro else None,
+                                "retiro_eq_wd": envio.fecha_retiro == asig.withdrawal_date if envio.fecha_retiro else None,
+                            },
+                            "timestamp": int(_t.time() * 1000)
+                        }) + "\n")
+            except Exception:
+                pass
+            # endregion
+
             if envio.fecha_retiro is not None:
                 ciclo = _business_days_between(envio.fecha_retiro, envio.fecha_entrega)
                 if entry["ciclo_dias"] is None or (ciclo is not None and ciclo < entry["ciclo_dias"]):
