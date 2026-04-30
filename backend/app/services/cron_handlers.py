@@ -174,52 +174,51 @@ def register_all_handlers() -> None:
 # ── Seed de cron jobs por defecto ─────────────────────────────────────────────
 DEFAULT_JOBS = [
     # ── Ingesta rutas 03:00 — ventana amplia (15 días) ──────────────────────
-    # Corre de madrugada. Consulta los últimos 15 días de created_at para capturar
-    # paquetes creados hace tiempo pero retirados recientemente. Es el cron
-    # "recuperador" que garantiza cobertura completa.
+    # Corre de madrugada. Consulta los últimos 15 días de withdrawal_date para
+    # capturar paquetes creados hace tiempo pero retirados recientemente.
+    # dias_atras=0 + rango_dias=16 → el API recibe end_date=hoy+1 (exclusivo),
+    # lo que equivale a capturar hasta ayer (hoy-1) como día más reciente,
+    # con un lookback de 15 días desde ayer.
     {
         "job_key": JOB_INGESTA_RUTAS,
         "nombre": "Ingesta rutas — ventana amplia (03:00)",
         "descripcion": (
-            "Ventana de 15 días (created_at). Captura paquetes con withdrawal_date "
+            "Ventana de 15 días (withdrawal_date). Captura paquetes con withdrawal_date "
             "tardío y re-reconcilia pendientes. Garantiza cobertura completa."
         ),
         "activo": True,
         "hora_ejecucion": "03:00",
-        "config": {"dias_atras": 1, "rango_dias": 15, "lookback_extra": 5},
+        "config": {"dias_atras": 0, "rango_dias": 16, "lookback_extra": 5},
     },
     # ── Ingesta rutas 19:00 — snapshot en ruta ───────────────────────────────
-    # Ventana de 15 días pero SOLO procesa paquetes con route_date = hoy.
-    # Garantiza que paquetes con withdrawal_date antiguo (retirados de bodega
-    # días atrás) que van en la ruta de HOY queden correctamente asociados al
-    # conductor del día. Sin este filtro, el denominador del conductor sería
-    # incompleto al hacer el cron con ventana corta.
+    # Ventana de 15 días (inclusive hoy) filtrando solo route_date=hoy.
+    # dias_atras=-1 → fecha_fin=hoy+1; la API (end_date exclusivo) retorna
+    # hasta withdrawal_date=hoy. rango_dias=16 mantiene el mismo inicio.
     {
         "job_key": JOB_INGESTA_RUTAS_19H,
         "nombre": "Ingesta rutas — snapshot en ruta (19:00)",
         "descripcion": (
-            "Ventana amplia (15 días) filtrando solo route_date=hoy. "
-            "Captura paquetes con withdrawal_date antiguo que van en la ruta del día. "
+            "Ventana amplia (15 días incl. hoy) filtrando solo route_date=hoy. "
+            "Captura paquetes con withdrawal_date antiguo o de hoy que van en la ruta del día. "
             "Registra denominador exacto del conductor mientras está activo."
         ),
         "activo": True,
         "hora_ejecucion": "19:00",
-        "config": {"dias_atras": 0, "rango_dias": 15, "solo_route_date_hoy": True},
+        "config": {"dias_atras": -1, "rango_dias": 16, "solo_route_date_hoy": True},
     },
     # ── Ingesta rutas 23:50 — cierre del día ────────────────────────────────
-    # Igual que el de 19:00 pero captura el estado final antes de medianoche:
-    # entregados, fallidos, cancelados con route_date = hoy.
-    # Se usa 23:50 (no 00:00) para que date.today() siga siendo el día operativo.
+    # Igual que el de 19:00: ventana amplia inclusive hoy, route_date=hoy.
+    # Captura el estado final (entregado/fallido/cancelado) antes de medianoche.
     {
         "job_key": JOB_INGESTA_RUTAS_00H,
         "nombre": "Ingesta rutas — cierre del día (23:50)",
         "descripcion": (
-            "Ventana amplia (15 días) filtrando solo route_date=hoy. "
+            "Ventana amplia (15 días incl. hoy) filtrando solo route_date=hoy. "
             "Captura el estado final (entregado/fallido/cancelado) antes de medianoche."
         ),
         "activo": True,
         "hora_ejecucion": "23:50",
-        "config": {"dias_atras": 0, "rango_dias": 15, "solo_route_date_hoy": True},
+        "config": {"dias_atras": -1, "rango_dias": 16, "solo_route_date_hoy": True},
     },
     # ── Reconciliación de pendientes (04:00) ─────────────────────────────────
     {

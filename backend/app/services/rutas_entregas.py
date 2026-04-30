@@ -373,7 +373,6 @@ def reresolver_drivers(
     Con `forzar_todas=False` solo procesa filas con driver_id IS NULL (comportamiento
     anterior).
     """
-    import json, time
     build_driver_index(db)
     q = db.query(AsignacionRuta).filter(AsignacionRuta.driver_name.isnot(None))
     if not forzar_todas:
@@ -410,16 +409,6 @@ def reresolver_drivers(
         "top_sin_match": [{"driver_name": n, "n": c} for n, c in top_sin_match],
         "fecha_desde": fecha_desde.isoformat() if fecha_desde else None,
     }
-    # #region agent log
-    try:
-        entry = {"sessionId": "cbef42", "timestamp": int(time.time()*1000),
-                 "location": "rutas_entregas.py:reresolver_drivers",
-                 "message": "reresolver_drivers completado", "hypothesisId": "H2", "data": result}
-        log_path = "/app/app/.cursor/debug-cbef42.log"
-        import os; os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, "a") as f: f.write(json.dumps(entry) + "\n")
-    except Exception: pass
-    # #endregion
     return result
 
 
