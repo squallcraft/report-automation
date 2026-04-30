@@ -2212,38 +2212,44 @@ def efectividad_v2_global(
 ):
     """Dashboard global de efectividad operacional + Same-Day.
 
-    Devuelve KPIs principales, serie temporal por día, sellers y drivers para
-    el rango pedido. Calcula con la capa canónica `metricas_efectividad`:
-      - Efectividad: trackings con route_date = D y fecha_entrega = D
-      - Same-Day:    trackings con business_days(withdrawal, entrega) = 0
+    Lee directamente de `kpi_dia` (materializada). Si no hay datos para el
+    rango (p.ej. antes del primer cron), cae al cálculo canónico.
     """
+    from app.services import leer_kpis as _lk
     from app.services import metricas_efectividad as _me
 
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
 
-    _ck = f"ev2_global_v3:{inicio}:{fin}"
+    _ck = f"ev2_global_v4:{inicio}:{fin}"
     _cached = _cache_get(_ck)
     if _cached is not None:
         return _cached
 
-    kpis_global = _me.kpis_globales(db, inicio, fin)
-    serie_temporal = _me.kpis_por_dia(db, inicio, fin)
-    por_seller = _me.kpis_por_seller(db, inicio, fin)
-    por_driver_raw = _me.kpis_por_driver(db, inicio, fin)
-
-    # Mini-sparkline de % same-day (últimos 7 días del rango) por driver.
-    # Se calcula leyendo los días directamente desde la serie por-driver.
-    por_driver = []
-    for d_kpi in por_driver_raw:
-        spark = []
-        if d_kpi.get("driver_id") is not None:
-            serie_d = _me.kpis_por_dia(db, inicio, fin, driver_id=d_kpi["driver_id"])
-            spark = [row["pct_same_day"] for row in serie_d[-7:]]
-        por_driver.append({**d_kpi, "spark": spark})
+    if _lk._tiene_datos(db, inicio, fin):
+        kpis_global   = _lk.kpis_globales(db, inicio, fin)
+        serie_temporal = _lk.kpis_por_dia(db, inicio, fin)
+        por_seller     = _lk.kpis_por_seller(db, inicio, fin)
+        por_driver     = _lk.kpis_por_driver(db, inicio, fin)  # ya incluye spark
+        source = "kpi_dia"
+    else:
+        # Fallback canónico (más lento pero siempre correcto)
+        kpis_global    = _me.kpis_globales(db, inicio, fin)
+        serie_temporal = _me.kpis_por_dia(db, inicio, fin)
+        por_seller     = _me.kpis_por_seller(db, inicio, fin)
+        por_driver_raw = _me.kpis_por_driver(db, inicio, fin)
+        por_driver = []
+        for d_kpi in por_driver_raw:
+            spark = []
+            if d_kpi.get("driver_id") is not None:
+                serie_d = _me.kpis_por_dia(db, inicio, fin, driver_id=d_kpi["driver_id"])
+                spark = [row["pct_same_day"] for row in serie_d[-7:]]
+            por_driver.append({**d_kpi, "spark": spark})
+        source = "canonical"
 
     result = {
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
-        "version": "v3-canonica",
+        "version": "v4-kpi_dia",
+        "source": source,
         "global": kpis_global,
         "serie_temporal": serie_temporal,
         "por_seller": por_seller,
@@ -2266,9 +2272,10 @@ def efectividad_v2_driver(
 ):
     """Drill-down por conductor con heatmap calendario y detalle de no-entregados.
 
-    Calcula con la capa canónica. Mantiene shape exacto del response previo
-    para no romper el frontend.
+    Lee KPIs y no-entregados directamente de `kpi_dia` / `kpi_no_entregado`.
+    `por_ruta` se sigue calculando on-demand (no se materializa por route_id).
     """
+    from app.services import leer_kpis as _lk
     from app.services import metricas_efectividad as _me
 
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
@@ -2277,90 +2284,68 @@ def efectividad_v2_driver(
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     nombre = driver.nombre if driver else f"Driver {driver_id}"
 
-    # KPIs agregados del driver (combina universos route_date + withdrawal_date)
-    kpis = _me.kpis_globales(
-        db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl
-    )
-
-    # Heatmap calendario: una celda por día con (a_ruta / entregados / same_day)
-    serie = _me.kpis_por_dia(
-        db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl
-    )
-    heatmap = [
-        {
-            "fecha": row["fecha"],
-            "weekday": row["weekday"],
-            "a_ruta": row["a_ruta"],
-            "entregados": row["entregados"],
-            "same_day": row["same_day"],
-            "cancelados": row["cancelados"],
-            "pct_same_day": row["pct_same_day"],
-            "label": row["label"],
+    if _lk._tiene_datos(db, inicio, fin, driver_id=driver_id):
+        detalle = _lk.kpis_driver_detalle(db, driver_id, inicio, fin)
+        kpis          = detalle["kpis"]
+        heatmap       = detalle["heatmap"]
+        rendimiento   = detalle["rendimiento"]
+        no_entregados = detalle["no_entregados"]
+        ne_total      = detalle["no_entregados_total"]
+        source = "kpi_dia"
+    else:
+        # Fallback canónico
+        kpis = _me.kpis_globales(db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl)
+        serie = _me.kpis_por_dia(db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl)
+        heatmap = [
+            {"fecha": row["fecha"], "weekday": row["weekday"], "a_ruta": row["a_ruta"],
+             "entregados": row["entregados"], "same_day": row["same_day"],
+             "cancelados": row["cancelados"], "pct_same_day": row["pct_same_day"],
+             "label": row["label"]}
+            for row in serie
+        ]
+        rend_a_ruta    = sum(r["a_ruta"] for r in serie)
+        rend_entregados = sum(r["entregados"] for r in serie)
+        rend_pct = round(100 * rend_entregados / rend_a_ruta, 1) if rend_a_ruta else 0
+        rendimiento = {
+            "paquetes_a_ruta": rend_a_ruta, "paquetes_entregados": rend_entregados,
+            "paquetes_sin_entregar": rend_a_ruta - rend_entregados,
+            "pct_entrega_mismo_dia": rend_pct,
+            "heatmap": [
+                {"fecha": r["fecha"], "weekday": r["weekday"], "a_ruta": r["a_ruta"],
+                 "entregados": r["entregados"], "pct_entrega": r["pct_delivery_success"],
+                 "label": r["label"]}
+                for r in serie
+            ],
         }
-        for row in serie
-    ]
+        ne_raw = _me.detalle_no_entregados(db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl)
+        seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
+        no_entregados = [
+            {"tracking_id": ne["tracking_id"], "fecha_retiro": ne["withdrawal_date"],
+             "intento_nro": ne["intento_nro"], "ruta_nombre": ne["route_name"],
+             "seller_code": ne["seller_code"], "envio_id": None,
+             "seller": seller_nombres.get(ne["seller_id"]) if ne["seller_id"] else None,
+             "comuna": None, "motivo": ne["motivo"]}
+            for ne in ne_raw
+        ]
+        no_entregados.sort(key=lambda x: x["fecha_retiro"] or "", reverse=True)
+        ne_total = len(no_entregados)
+        source = "canonical"
 
-    # Por ruta (route_name) — siempre on-demand, no se materializa
-    por_ruta = _me.kpis_por_ruta(
-        db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl
-    )
-
-    # ── Rendimiento del conductor ─────────────────────────────────────────
-    # Mide si el driver entregó el mismo día que el paquete salió a ruta.
-    # Ya es la métrica principal (no un sub-bloque): coincide con `kpis`.
-    rend_a_ruta = sum(row["a_ruta"] for row in serie)
-    rend_entregados = sum(row["entregados"] for row in serie)
-    rend_pct = round(100 * rend_entregados / rend_a_ruta, 1) if rend_a_ruta else 0
-    rend_heatmap = [
-        {
-            "fecha": row["fecha"],
-            "weekday": row["weekday"],
-            "a_ruta": row["a_ruta"],
-            "entregados": row["entregados"],
-            "pct_entrega": row["pct_delivery_success"],
-            "label": row["label"],
-        }
-        for row in serie
-    ]
-
-    # ── No entregados detallados ──────────────────────────────────────────
-    no_entregados_raw = _me.detalle_no_entregados(
-        db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl
-    )
-    seller_nombres = {s.id: s.nombre for s in db.query(Seller.id, Seller.nombre).all()}
-    no_entregados = [
-        {
-            "tracking_id": ne["tracking_id"],
-            "fecha_retiro": ne["withdrawal_date"],
-            "intento_nro": ne["intento_nro"],
-            "ruta_nombre": ne["route_name"],
-            "seller_code": ne["seller_code"],
-            "envio_id": None,  # ya no se necesita (legacy)
-            "seller": seller_nombres.get(ne["seller_id"]) if ne["seller_id"] else None,
-            "comuna": None,  # ya no se devuelve (campo eliminado del payload)
-            "motivo": ne["motivo"],  # nuevo: 'sin_entrega' | 'cancelado' | 'fuera_de_dia'
-        }
-        for ne in no_entregados_raw
-    ]
-    no_entregados.sort(key=lambda x: x["fecha_retiro"] or "", reverse=True)
+    # Por ruta (route_name) — siempre on-demand, no se materializa en kpi_dia
+    por_ruta = _me.kpis_por_ruta(db, inicio, fin, driver_id=driver_id, aplicar_exclusiones=aplicar_excl)
 
     return {
         "driver_id": driver_id,
         "nombre": nombre,
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
-        "version": "v3-canonica",
+        "version": "v4-kpi_dia",
+        "source": source,
         "kpis": kpis,
         "heatmap": heatmap,
         "por_ruta": por_ruta,
-        "rendimiento": {
-            "paquetes_a_ruta": rend_a_ruta,
-            "paquetes_entregados": rend_entregados,
-            "paquetes_sin_entregar": rend_a_ruta - rend_entregados,
-            "pct_entrega_mismo_dia": rend_pct,
-            "heatmap": rend_heatmap,
-        },
+        "rendimiento": rendimiento,
         "no_entregados": no_entregados[:200],
-        "no_entregados_total": len(no_entregados),
+        "no_entregados_total": ne_total,
     }
 
 
@@ -2402,20 +2387,37 @@ def efectividad_v2_driver_comparacion(
     def _kpis_para_driver_ids(driver_ids: list[int]) -> dict:
         """Calcula efectividad + pct_pm_ideal para un conjunto de driver_ids.
 
-        Efectividad usa la capa canónica (route_date == fecha_entrega).
+        Efectividad lee de `kpi_dia` (una query bulk) o cae a canónica.
         """
         if not driver_ids:
             return {"efectividad": None, "pct_pm_ideal": None, "entregas_por_hora": None}
 
-        # ── Efectividad (capa canónica, agrega múltiples drivers manualmente) ─
-        from app.services import metricas_efectividad as _me_local
-        total_a_ruta = 0
-        total_entregados = 0
-        for did in driver_ids:
-            k = _me_local.kpis_globales(db, inicio, fin, driver_id=did,
-                                        aplicar_exclusiones=False)
-            total_a_ruta += k["paquetes_a_ruta"]
-            total_entregados += k["paquetes_entregados"]
+        # ── Efectividad: una sola query sobre kpi_dia en vez de N queries ─────
+        from app.models import KpiDia as _KpiDia
+        from app.services.metricas_efectividad import DIMENSION_ROUTE_DATE as _DRD
+        agg = db.query(
+            sqlfunc.coalesce(sqlfunc.sum(_KpiDia.a_ruta), 0),
+            sqlfunc.coalesce(sqlfunc.sum(_KpiDia.entregados_mismo_dia), 0),
+        ).filter(
+            _KpiDia.dimension == _DRD,
+            _KpiDia.driver_id.in_(driver_ids),
+            _KpiDia.seller_id.is_(None),
+            _KpiDia.fecha >= inicio,
+            _KpiDia.fecha <= fin,
+        ).first()
+
+        if agg and (agg[0] or 0) > 0:
+            total_a_ruta, total_entregados = int(agg[0]), int(agg[1])
+        else:
+            # Fallback canónico si kpi_dia no tiene datos
+            from app.services import metricas_efectividad as _me_local
+            total_a_ruta = 0
+            total_entregados = 0
+            for did in driver_ids:
+                k = _me_local.kpis_globales(db, inicio, fin, driver_id=did,
+                                            aplicar_exclusiones=False)
+                total_a_ruta += k["paquetes_a_ruta"]
+                total_entregados += k["paquetes_entregados"]
         efectividad = round(100 * total_entregados / total_a_ruta, 1) if total_a_ruta else 0.0
 
         # ── Franja PM ideal ────────────────────────────────────────────────
@@ -2526,7 +2528,8 @@ def efectividad_v2_seller(
     db: Session = Depends(get_db),
     _=Depends(require_admin_or_administracion),
 ):
-    """Drill-down por seller. Calcula con la capa canónica."""
+    """Drill-down por seller. Lee de kpi_dia con fallback a capa canónica."""
+    from app.services import leer_kpis as _lk
     from app.services import metricas_efectividad as _me
 
     inicio, fin = _rango_default(mes, anio, fecha_inicio, fecha_fin)
@@ -2537,8 +2540,6 @@ def efectividad_v2_seller(
 
     aplicar_excl = seller_id not in EFECTIVIDAD_SELLERS_EXCLUIDOS
 
-    # Lookup de seller_codes asociados (informativo, ya no se usa para filtrar:
-    # la capa canónica ya hace el match seller_id↔seller_code internamente).
     seller_codes = {
         r.seller_code for r in
         db.query(Envio.seller_code).filter(
@@ -2548,82 +2549,51 @@ def efectividad_v2_seller(
         if r.seller_code
     }
 
-    kpis = _me.kpis_globales(
-        db, inicio, fin, seller_id=seller_id, aplicar_exclusiones=aplicar_excl
-    )
-    serie = _me.kpis_por_dia(
-        db, inicio, fin, seller_id=seller_id, aplicar_exclusiones=aplicar_excl
-    )
-
-    # serie_temporal: shape compacto que usa el frontend para mini-gráficos
-    serie_temporal = [
-        {
-            "fecha": row["fecha"],
-            "a_ruta": row["a_ruta"],
-            "entregados": row["entregados"],
-            "same_day": row["same_day"],
-            "pct_same_day": row["pct_same_day"],
+    if _lk._tiene_datos(db, inicio, fin, seller_id=seller_id):
+        detalle = _lk.kpis_seller_detalle(db, seller_id, inicio, fin)
+        source = "kpi_dia"
+    else:
+        # Fallback canónico
+        kpis = _me.kpis_globales(db, inicio, fin, seller_id=seller_id, aplicar_exclusiones=aplicar_excl)
+        serie = _me.kpis_por_dia(db, inicio, fin, seller_id=seller_id, aplicar_exclusiones=aplicar_excl)
+        from datetime import date as _date
+        def _wday(iso):
+            try:
+                return _date.fromisoformat(iso).strftime("%a")
+            except Exception:
+                return ""
+        por_driver_canonical: list[dict] = []
+        for d_kpi in _me.kpis_por_driver(db, inicio, fin, aplicar_exclusiones=aplicar_excl):
+            did = d_kpi.get("driver_id")
+            if did is None:
+                continue
+            sub = _me.kpis_globales(db, inicio, fin, driver_id=did, seller_id=seller_id, aplicar_exclusiones=aplicar_excl)
+            if sub["paquetes_a_ruta"] == 0 and sub["retirados"] == 0:
+                continue
+            por_driver_canonical.append({"driver_id": did, "nombre": d_kpi["nombre"], **sub})
+        por_driver_canonical.sort(key=lambda x: -x["paquetes_a_ruta"])
+        detalle = {
+            "kpis": kpis,
+            "serie_temporal": [{"fecha": r["fecha"], "a_ruta": r["a_ruta"], "entregados": r["entregados"],
+                                 "same_day": r["same_day"], "pct_same_day": r["pct_same_day"]} for r in serie],
+            "por_dia": [{"fecha": r["fecha"], "weekday": _wday(r["fecha"]), "a_ruta": r["a_ruta"],
+                         "entregados": r["entregados"], "same_day": r["same_day"], "cancelados": r["cancelados"],
+                         "pct_same_day": r["pct_same_day"], "pct_delivery_success": r["pct_delivery_success"]} for r in serie],
+            "por_driver": por_driver_canonical,
         }
-        for row in serie
-    ]
-
-    # por_dia: shape extendido para tabla día-a-día
-    from datetime import date as _date
-    def _weekday_str(iso: str) -> str:
-        try:
-            return _date.fromisoformat(iso).strftime("%a")
-        except Exception:
-            return ""
-
-    por_dia = [
-        {
-            "fecha": row["fecha"],
-            "weekday": _weekday_str(row["fecha"]),
-            "a_ruta": row["a_ruta"],
-            "entregados": row["entregados"],
-            "same_day": row["same_day"],
-            "cancelados": row["cancelados"],
-            "pct_same_day": row["pct_same_day"],
-            "pct_delivery_success": row["pct_delivery_success"],
-        }
-        for row in serie
-    ]
-
-    # Por driver que le entrega a este seller: filtrar drivers globales con
-    # paquetes de este seller. Reutilizamos por-driver de la capa canónica
-    # filtrado por seller (lo hacemos con kpis_por_driver iterando agregados).
-    # Versión simple: usar la grilla materializada (kpi_dia con seller_id=X)
-    # cuando esté disponible; mientras tanto recalculamos.
-    por_driver: list[dict] = []
-    for d_kpi in _me.kpis_por_driver(db, inicio, fin, aplicar_exclusiones=aplicar_excl):
-        did = d_kpi.get("driver_id")
-        if did is None:
-            continue
-        # Filtrar al subconjunto de este seller usando kpis_globales con doble filtro
-        sub = _me.kpis_globales(
-            db, inicio, fin,
-            driver_id=did, seller_id=seller_id,
-            aplicar_exclusiones=aplicar_excl,
-        )
-        if sub["paquetes_a_ruta"] == 0 and sub["retirados"] == 0:
-            continue
-        por_driver.append({
-            "driver_id": did,
-            "nombre": d_kpi["nombre"],
-            **sub,
-        })
-    por_driver.sort(key=lambda x: -x["paquetes_a_ruta"])
+        source = "canonical"
 
     return {
         "seller_id": seller_id,
         "nombre": seller.nombre,
         "codigos": sorted(seller_codes),
         "rango": {"inicio": inicio.isoformat(), "fin": fin.isoformat()},
-        "version": "v3-canonica",
-        "kpis": kpis,
-        "serie_temporal": serie_temporal,
-        "por_dia": por_dia,
-        "por_driver": por_driver,
+        "version": "v4-kpi_dia",
+        "source": source,
+        "kpis": detalle["kpis"],
+        "serie_temporal": detalle["serie_temporal"],
+        "por_dia": detalle["por_dia"],
+        "por_driver": detalle["por_driver"],
     }
 
 

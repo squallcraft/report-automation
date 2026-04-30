@@ -364,6 +364,55 @@ export default function EfectividadDriver() {
             <KPICard label="% Primer intento"  value={fmtPct(k.pct_first_attempt)}   sub="entregado al 1er intento"            accent="fuchsia" icon={TrendingUp} />
           </div>
 
+          {/* ── Intentos de entrega ───────────────────────────────────── */}
+          {(k.pct_intento_1 != null || k.pct_intento_2 != null || k.pct_intento_3plus != null) && (
+            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <TrendingUp size={14} className="text-fuchsia-500" />
+                    % Entrega por intento
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Distribución de cuántos intentos tomó entregar · base: paquetes a ruta
+                  </p>
+                </div>
+                <p className="text-[10px] text-gray-400">Total entregados: {fmtN(k.paquetes_entregados)}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: '1er intento',  pct: k.pct_intento_1,    n: k.entregados_intento_1,    color: 'bg-emerald-500', good: 70, mid: 50 },
+                  { label: '2do intento',  pct: k.pct_intento_2,    n: k.entregados_intento_2,    color: 'bg-amber-400',   good: 999, mid: 999 },
+                  { label: '3er+ intento', pct: k.pct_intento_3plus, n: k.entregados_intento_3plus, color: 'bg-red-400',   good: 999, mid: 999 },
+                ].map(b => (
+                  <div key={b.label} className="text-center">
+                    <div className={`${b.color} text-white py-4 rounded-xl`}>
+                      <div className="text-3xl font-black">{b.pct != null ? `${b.pct}%` : '—'}</div>
+                      <div className="text-[11px] opacity-90 mt-0.5">{fmtN(b.n)} paq.</div>
+                    </div>
+                    <p className="text-[10px] text-gray-600 mt-1.5 font-semibold">{b.label}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex h-2 rounded-full overflow-hidden gap-px">
+                {(() => {
+                  const p1 = k.pct_intento_1 ?? 0
+                  const p2 = k.pct_intento_2 ?? 0
+                  const p3 = k.pct_intento_3plus ?? 0
+                  const total = p1 + p2 + p3
+                  if (!total) return null
+                  return [
+                    { w: (p1 / total) * 100, cls: 'bg-emerald-500' },
+                    { w: (p2 / total) * 100, cls: 'bg-amber-400' },
+                    { w: (p3 / total) * 100, cls: 'bg-red-400' },
+                  ].map((seg, i) => (
+                    <div key={i} className={`${seg.cls} transition-all`} style={{ width: `${seg.w}%` }} />
+                  ))
+                })()}
+              </div>
+            </div>
+          )}
+
           {/* ── Comparación zona / global ─────────────────────────────── */}
           <ComparisonBars data={comp} zona={comp?.zona} loading={compLoad} />
 

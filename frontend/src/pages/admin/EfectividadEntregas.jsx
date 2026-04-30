@@ -188,6 +188,55 @@ export default function EfectividadEntregas() {
         </div>
       )}
 
+      {/* ── % por intento de entrega ──────────────────────────────────────── */}
+      {g && (g.pct_intento_1 != null || g.pct_intento_2 != null || g.pct_intento_3plus != null) && (
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <TrendingUp size={14} className="text-fuchsia-500" />
+                % Entrega por intento · operación global
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">
+                De los paquetes a ruta, cuántos se entregaron en el 1er, 2do o 3er+ intento
+              </p>
+            </div>
+            <p className="text-[10px] text-gray-400">{fmtN(g.paquetes_entregados)} entregados / {fmtN(g.paquetes_a_ruta)} a ruta</p>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: '1er intento',  pct: g.pct_intento_1,     n: g.entregados_intento_1,     color: 'bg-emerald-500' },
+              { label: '2do intento',  pct: g.pct_intento_2,     n: g.entregados_intento_2,     color: 'bg-amber-400' },
+              { label: '3er+ intento', pct: g.pct_intento_3plus, n: g.entregados_intento_3plus, color: 'bg-red-400' },
+            ].map(b => (
+              <div key={b.label} className="text-center">
+                <div className={`${b.color} text-white py-4 rounded-xl`}>
+                  <div className="text-3xl font-black">{loading ? '…' : (b.pct != null ? `${b.pct}%` : '—')}</div>
+                  <div className="text-[11px] opacity-90 mt-0.5">{loading ? '' : fmtN(b.n)} paq.</div>
+                </div>
+                <p className="text-[10px] text-gray-600 mt-1.5 font-semibold">{b.label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex h-2 rounded-full overflow-hidden gap-px">
+            {(() => {
+              const p1 = g.pct_intento_1 ?? 0
+              const p2 = g.pct_intento_2 ?? 0
+              const p3 = g.pct_intento_3plus ?? 0
+              const total = p1 + p2 + p3
+              if (!total) return null
+              return [
+                { w: (p1 / total) * 100, cls: 'bg-emerald-500' },
+                { w: (p2 / total) * 100, cls: 'bg-amber-400' },
+                { w: (p3 / total) * 100, cls: 'bg-red-400' },
+              ].map((seg, i) => (
+                <div key={i} className={`${seg.cls}`} style={{ width: `${seg.w}%` }} />
+              ))
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* ── Calendario heatmap ─────────────────────────────────────────── */}
       {data?.serie_temporal?.length > 0 && (
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
